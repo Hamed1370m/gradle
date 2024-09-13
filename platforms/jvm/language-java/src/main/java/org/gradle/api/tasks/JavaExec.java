@@ -19,6 +19,7 @@ package org.gradle.api.tasks;
 import org.apache.tools.ant.types.Commandline;
 import org.gradle.api.Action;
 import org.gradle.api.JavaVersion;
+import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.ConventionTask;
 import org.gradle.api.jvm.ModularitySpec;
@@ -43,6 +44,7 @@ import org.gradle.process.ProcessForkOptions;
 import org.gradle.process.internal.DefaultJavaExecSpec;
 import org.gradle.process.internal.ExecActionFactory;
 import org.gradle.process.internal.JavaExecAction;
+import org.gradle.process.internal.JavaForkOptionsInternal;
 import org.gradle.work.DisableCachingByDefault;
 
 import javax.annotation.Nullable;
@@ -151,13 +153,13 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
     public void exec() {
         validateExecutableMatchesToolchain();
 
-        List<String> jvmArgs = javaExecSpec.getJvmArguments().getOrNull();
-        if (jvmArgs != null) {
-            javaExecSpec.setExtraJvmArgs(jvmArgs);
-        }
-
         JavaExecAction javaExecAction = getExecActionFactory().newJavaExecAction();
         javaExecSpec.copyTo(javaExecAction);
+        List<String> jvmArgs = javaExecSpec.getJvmArguments().getOrNull();
+        if (jvmArgs != null) {
+            ((JavaForkOptionsInternal) javaExecAction).setExtraJvmArgs(jvmArgs);
+        }
+
         String effectiveExecutable = getJavaLauncher().get().getExecutablePath().toString();
         javaExecAction.setExecutable(effectiveExecutable);
 
@@ -176,8 +178,7 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      * {@inheritDoc}
      */
     @Override
-    @ToBeReplacedByLazyProperty
-    public List<String> getAllJvmArgs() {
+    public Provider<List<String>> getAllJvmArgs() {
         return javaExecSpec.getAllJvmArgs();
     }
 
@@ -185,43 +186,25 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      * {@inheritDoc}
      */
     @Override
-    public void setAllJvmArgs(List<String> arguments) {
-        javaExecSpec.setAllJvmArgs(arguments);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public void setAllJvmArgs(Iterable<?> arguments) {
-        javaExecSpec.setAllJvmArgs(arguments);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    @ToBeReplacedByLazyProperty
+    @ToBeReplacedByLazyProperty(comment = "This property is modified at execution time")
     public List<String> getJvmArgs() {
         return javaExecSpec.getJvmArguments().getOrNull();
     }
 
-    /**
-     * {@inheritDoc}
-     */
     @Override
-    public void setJvmArgs(List<String> arguments) {
+    public void setJvmArgs(@Nullable List<String> arguments) {
         javaExecSpec.getJvmArguments().empty();
-        jvmArgs(arguments);
+        if (arguments != null) {
+            jvmArgs(arguments);
+        }
     }
 
-    /**
-     * {@inheritDoc}
-     */
     @Override
-    public void setJvmArgs(Iterable<?> arguments) {
+    public void setJvmArgs(@Nullable Iterable<?> arguments) {
         javaExecSpec.getJvmArguments().empty();
-        jvmArgs(arguments);
+        if (arguments != null) {
+            jvmArgs(arguments);
+        }
     }
 
     /**
@@ -253,14 +236,11 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      * {@inheritDoc}
      */
     @Override
-    @ToBeReplacedByLazyProperty
+    @ToBeReplacedByLazyProperty(comment = "This property is modified at execution time")
     public Map<String, Object> getSystemProperties() {
         return javaExecSpec.getSystemProperties();
     }
 
-    /**
-     * {@inheritDoc}
-     */
     @Override
     public void setSystemProperties(Map<String, ?> properties) {
         javaExecSpec.setSystemProperties(properties);
@@ -288,17 +268,8 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      * {@inheritDoc}
      */
     @Override
-    @ToBeReplacedByLazyProperty
-    public FileCollection getBootstrapClasspath() {
+    public ConfigurableFileCollection getBootstrapClasspath() {
         return javaExecSpec.getBootstrapClasspath();
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public void setBootstrapClasspath(FileCollection classpath) {
-        javaExecSpec.setBootstrapClasspath(classpath);
     }
 
     /**
@@ -314,8 +285,7 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      * {@inheritDoc}
      */
     @Override
-    @ToBeReplacedByLazyProperty
-    public String getMinHeapSize() {
+    public Property<String> getMinHeapSize() {
         return javaExecSpec.getMinHeapSize();
     }
 
@@ -323,16 +293,7 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      * {@inheritDoc}
      */
     @Override
-    public void setMinHeapSize(String heapSize) {
-        javaExecSpec.setMinHeapSize(heapSize);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    @ToBeReplacedByLazyProperty
-    public String getDefaultCharacterEncoding() {
+    public Property<String> getDefaultCharacterEncoding() {
         return javaExecSpec.getDefaultCharacterEncoding();
     }
 
@@ -340,16 +301,7 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      * {@inheritDoc}
      */
     @Override
-    public void setDefaultCharacterEncoding(String defaultCharacterEncoding) {
-        javaExecSpec.setDefaultCharacterEncoding(defaultCharacterEncoding);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    @ToBeReplacedByLazyProperty
-    public String getMaxHeapSize() {
+    public Property<String> getMaxHeapSize() {
         return javaExecSpec.getMaxHeapSize();
     }
 
@@ -357,16 +309,7 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      * {@inheritDoc}
      */
     @Override
-    public void setMaxHeapSize(String heapSize) {
-        javaExecSpec.setMaxHeapSize(heapSize);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    @ToBeReplacedByLazyProperty
-    public boolean getEnableAssertions() {
+    public Property<Boolean> getEnableAssertions() {
         return javaExecSpec.getEnableAssertions();
     }
 
@@ -374,26 +317,9 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      * {@inheritDoc}
      */
     @Override
-    public void setEnableAssertions(boolean enabled) {
-        javaExecSpec.setEnableAssertions(enabled);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    @ToBeReplacedByLazyProperty
-    public boolean getDebug() {
-        return javaExecSpec.getDebug();
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
     @Option(option = "debug-jvm", description = "Enable debugging for the process. The process is started suspended and listening on port 5005.")
-    public void setDebug(boolean enabled) {
-        javaExecSpec.setDebug(enabled);
+    public Property<Boolean> getDebug() {
+        return javaExecSpec.getDebug();
     }
 
     /**
@@ -766,8 +692,7 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      * {@inheritDoc}
      */
     @Override
-    @ToBeReplacedByLazyProperty
-    public List<CommandLineArgumentProvider> getJvmArgumentProviders() {
+    public ListProperty<CommandLineArgumentProvider> getJvmArgumentProviders() {
         return javaExecSpec.getJvmArgumentProviders();
     }
 

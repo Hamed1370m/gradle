@@ -220,12 +220,12 @@ class TestTest extends AbstractConventionTaskTest {
 
     def "jvm arg providers are added to java fork options"() {
         when:
-        test.jvmArgumentProviders << new CommandLineArgumentProvider() {
+        test.jvmArgumentProviders.add(new CommandLineArgumentProvider() {
             @Override
             Iterable<String> asArguments() {
                 return ["First", "Second"]
             }
-        }
+        })
         def javaForkOptions = TestFiles.execFactory().newJavaForkOptions()
         test.copyTo(javaForkOptions)
 
