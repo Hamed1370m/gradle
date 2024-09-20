@@ -205,8 +205,8 @@ class WorkerDaemonExpirationTest extends Specification {
     private JavaForkOptions javaForkOptions(String minHeap, String maxHeap, List<String> jvmArgs) {
         def options = TestFiles.execFactory().newJavaForkOptions()
         options.workingDir = systemSpecificAbsolutePath("foo")
-        options.minHeapSize = minHeap
-        options.maxHeapSize = maxHeap
+        options.minHeapSize.set(minHeap)
+        options.maxHeapSize.set(maxHeap)
         options.jvmArgs = jvmArgs
         return options
     }

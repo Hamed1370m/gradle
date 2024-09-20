@@ -230,7 +230,8 @@ class TestTest extends AbstractConventionTaskTest {
         test.copyTo(javaForkOptions)
 
         then:
-        javaForkOptions.getJvmArgs() == ['First', 'Second']
+        javaForkOptions.getAllJvmArgs().get().contains('First')
+        javaForkOptions.getAllJvmArgs().get().contains('Second')
     }
 
     @Requires(IntegTestPreconditions.JavaHomeWithDifferentVersionAvailable)

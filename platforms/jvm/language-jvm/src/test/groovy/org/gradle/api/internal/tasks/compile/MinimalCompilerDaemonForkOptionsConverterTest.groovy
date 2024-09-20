@@ -32,8 +32,8 @@ class MinimalCompilerDaemonForkOptionsConverterTest extends Specification {
         def javaForkOptions = converter.transform(baseForkOptions)
 
         then:
-        javaForkOptions.minHeapSize == "128m"
-        javaForkOptions.maxHeapSize == "1g"
+        javaForkOptions.minHeapSize.getOrNull() == "128m"
+        javaForkOptions.maxHeapSize.getOrNull() == "1g"
         javaForkOptions.jvmArgs == ["-foo", "-bar"]
     }
 
@@ -45,8 +45,8 @@ class MinimalCompilerDaemonForkOptionsConverterTest extends Specification {
         def javaForkOptions = converter.transform(baseForkOptions)
 
         then:
-        javaForkOptions.minHeapSize == "128m"
-        javaForkOptions.maxHeapSize == null
-        javaForkOptions.jvmArgs == []
+        javaForkOptions.minHeapSize.getOrNull() == "128m"
+        javaForkOptions.maxHeapSize.getOrNull() == null
+        javaForkOptions.jvmArgs  == []
     }
 }
