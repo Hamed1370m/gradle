@@ -31,23 +31,20 @@ import org.gradle.internal.operations.OperationFinishEvent;
 import org.gradle.internal.operations.OperationIdentifier;
 import org.gradle.internal.operations.OperationProgressEvent;
 import org.gradle.internal.operations.OperationStartEvent;
-import org.gradle.problems.buildtree.ProblemReporter;
 import org.gradle.tooling.events.OperationType;
 
 import javax.annotation.Nonnull;
-import java.io.File;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Supplier;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 
 @NonNullApi
-public class ToolingApiBuildEventListenerFactory implements BuildEventListenerFactory, ProblemReporter {
+public class ToolingApiBuildEventListenerFactory implements BuildEventListenerFactory {
     private final BuildOperationAncestryTracker ancestryTracker;
     private final BuildOperationIdFactory idFactory;
     private final List<OperationResultPostProcessorFactory> postProcessorFactories;
-    private Optional<AggregatingProblemConsumer> problemAggregator = Optional.empty();
+//    private Optional<AggregatingProblemConsumer> problemAggregator = Optional.empty();
 
     ToolingApiBuildEventListenerFactory(BuildOperationAncestryTracker ancestryTracker, BuildOperationIdFactory idFactory, List<OperationResultPostProcessorFactory> postProcessorFactories) {
         this.ancestryTracker = ancestryTracker;
@@ -126,9 +123,7 @@ public class ToolingApiBuildEventListenerFactory implements BuildEventListenerFa
     @Nonnull
     private ProblemsProgressEventConsumer createProblemsProgressConsumer(ProgressEventConsumer progressEventConsumer) {
         Supplier<OperationIdentifier> operationIdentifierSupplier = () -> new OperationIdentifier(idFactory.nextId());
-        AggregatingProblemConsumer aggregator = new AggregatingProblemConsumer(progressEventConsumer, operationIdentifierSupplier);
-        this.problemAggregator = Optional.of(aggregator);
-        return new ProblemsProgressEventConsumer(progressEventConsumer, operationIdentifierSupplier, aggregator);
+        return new ProblemsProgressEventConsumer(progressEventConsumer, operationIdentifierSupplier);
     }
 
     private static final BuildOperationListener NO_OP = new BuildOperationListener() {
@@ -145,13 +140,13 @@ public class ToolingApiBuildEventListenerFactory implements BuildEventListenerFa
         }
     };
 
-    @Override
-    public String getId() {
-        return "problems";
-    }
+//    @Override
+//    public String getId() {
+//        return "problems";
+//    }
 
-    @Override
-    public void report(File reportDir, ProblemConsumer validationFailures) {
-        problemAggregator.ifPresent(AggregatingProblemConsumer::sendProblemSummaries);
-    }
+//    @Override
+//    public void report(File reportDir, ProblemConsumer validationFailures) {
+////        problemAggregator.ifPresent(AggregatingProblemConsumer::sendProblemSummaries);
+//    }
 }

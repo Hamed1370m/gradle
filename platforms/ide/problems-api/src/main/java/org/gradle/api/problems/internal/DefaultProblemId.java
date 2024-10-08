@@ -83,6 +83,7 @@ public class DefaultProblemId implements ProblemId, Serializable {
     public int hashCode() {
         int result = id.hashCode();
         result = 31 * result + parent.hashCode();
+        result = 31 * result + displayName.hashCode();
         return result;
     }
 }

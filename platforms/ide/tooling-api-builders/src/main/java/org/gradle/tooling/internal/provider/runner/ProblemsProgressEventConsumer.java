@@ -83,19 +83,18 @@ public class ProblemsProgressEventConsumer extends ClientForwardingBuildOperatio
     private static final InternalSeverity ERROR = new DefaultSeverity(2);
 
     private final Supplier<OperationIdentifier> operationIdentifierSupplier;
-    private final AggregatingProblemConsumer aggregator;
 
-    ProblemsProgressEventConsumer(ProgressEventConsumer progressEventConsumer, Supplier<OperationIdentifier> operationIdentifierSupplier, AggregatingProblemConsumer aggregator) {
+    ProblemsProgressEventConsumer(ProgressEventConsumer progressEventConsumer, Supplier<OperationIdentifier> operationIdentifierSupplier) {
         super(progressEventConsumer);
         this.operationIdentifierSupplier = operationIdentifierSupplier;
-        this.aggregator = aggregator;
     }
 
     @Override
     public void progress(OperationIdentifier buildOperationId, OperationProgressEvent progressEvent) {
         Object details = progressEvent.getDetails();
+
         createProblemEvent(buildOperationId, details)
-            .ifPresent(aggregator::emit);
+            .ifPresent(eventConsumer::progress);
     }
 
     private Optional<InternalProblemEventVersion2> createProblemEvent(OperationIdentifier buildOperationId, @Nullable Object details) {
@@ -103,6 +102,10 @@ public class ProblemsProgressEventConsumer extends ClientForwardingBuildOperatio
             Problem problem = ((DefaultProblemProgressDetails) details).getProblem();
             return Optional.of(createProblemEvent(buildOperationId, problem));
         }
+//        if (details instanceof DefaultProblemsSummaryProgressDetails) {
+//            List<Pair<ProblemId, Integer>> problemIdCounts = ((DefaultProblemsSummaryProgressDetails) details).getProblemIdCounts();
+//            return Optional.of(createProblemEvent(buildOperationId, problemIdCounts));
+//        }
         return empty();
     }
 
@@ -120,6 +123,21 @@ public class ProblemsProgressEventConsumer extends ClientForwardingBuildOperatio
             )
         );
     }
+
+//    private InternalProblemEventVersion2 createProblemEvent(OperationIdentifier buildOperationId, List<Pair<ProblemId, Integer>> problemIdCounts) {
+//        return new DefaultProblemEvent(
+//            createDefaultProblemDescriptor(buildOperationId),
+//            new DefaultProblemDetails(
+//                toInternalDefinition(problem.getDefinition()),
+//                toInternalDetails(problem.getDetails()),
+//                toInternalContextualLabel(problem.getContextualLabel()),
+//                toInternalLocations(problem.getLocations()),
+//                toInternalSolutions(problem.getSolutions()),
+//                toInternalAdditionalData(problem.getAdditionalData()),
+//                toInternalFailure(problem.getException())
+//            )
+//        );
+//    }
 
     @Nullable
     private static InternalFailure toInternalFailure(@Nullable Throwable ex) {
