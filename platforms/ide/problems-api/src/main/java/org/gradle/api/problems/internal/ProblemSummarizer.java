@@ -19,6 +19,7 @@ package org.gradle.api.problems.internal;
 import org.gradle.api.problems.ProblemId;
 import org.gradle.internal.Pair;
 import org.gradle.internal.operations.BuildOperationProgressEventEmitter;
+import org.gradle.internal.operations.CurrentBuildOperationRef;
 import org.gradle.problems.buildtree.ProblemReporter;
 
 import java.io.File;
@@ -30,13 +31,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class ProblemSummarizer implements ProblemReporter {
 
-    private static final int THRESHOLD = 15;
+    public static final int THRESHOLD = 15;
     private final BuildOperationProgressEventEmitter eventEmitter;
+    private final CurrentBuildOperationRef currentBuildOperationRef;
 
     private final Map<ProblemId, AtomicInteger> map = new HashMap<ProblemId, AtomicInteger>();
 
-    public ProblemSummarizer(BuildOperationProgressEventEmitter eventEmitter) {
+    public ProblemSummarizer(BuildOperationProgressEventEmitter eventEmitter, CurrentBuildOperationRef currentBuildOperationRef) {
         this.eventEmitter = eventEmitter;
+        this.currentBuildOperationRef = currentBuildOperationRef;
     }
 
     public boolean register(Problem problem) {
@@ -58,7 +61,7 @@ public class ProblemSummarizer implements ProblemReporter {
     @Override
     public void report(File reportDir, ProblemConsumer validationFailures) {
         List<Pair<ProblemId, Integer>> cutOffProblems = getCutOffProblems();
-        eventEmitter.emitNow(null, new DefaultProblemsSummaryProgressDetails(cutOffProblems));
+        eventEmitter.emitNow(currentBuildOperationRef.getId(), new DefaultProblemsSummaryProgressDetails(cutOffProblems));
     }
 
     private List<Pair<ProblemId, Integer>> getCutOffProblems() {
