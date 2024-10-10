@@ -328,6 +328,11 @@ class DeprecatedUsageBuildOperationProgressIntegrationTest extends AbstractInteg
             }
         }
 
+        def summaries = problemSummaries
+        summaries.size() == 1
+
+        summaries[0][0].left.name == "thing"
+
         where:
         mode << [WarningMode.None, WarningMode.Summary]
     }
