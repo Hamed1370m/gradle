@@ -17,11 +17,12 @@
 package org.gradle.tooling.internal.protocol;
 
 import org.gradle.api.NonNullApi;
-import org.gradle.tooling.internal.protocol.problem.InternalProblemDetailsVersion2;
 
-import java.util.List;
+import java.io.Serializable;
 
 @NonNullApi
-public interface InternalProblemSummariesDetails extends InternalProblemDetailsVersion2 {
-    List<InternalProblemSummary> getProblemIdCounts();
+public interface InternalProblemSummary extends Serializable {
+    InternalProblemId getProblemId();
+
+    Integer getCount();
 }

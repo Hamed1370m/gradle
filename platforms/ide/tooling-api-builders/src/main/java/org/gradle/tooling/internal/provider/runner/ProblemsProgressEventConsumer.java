@@ -58,6 +58,7 @@ import org.gradle.tooling.internal.protocol.InternalProblemDefinition;
 import org.gradle.tooling.internal.protocol.InternalProblemEventVersion2;
 import org.gradle.tooling.internal.protocol.InternalProblemGroup;
 import org.gradle.tooling.internal.protocol.InternalProblemId;
+import org.gradle.tooling.internal.protocol.InternalProblemSummary;
 import org.gradle.tooling.internal.protocol.events.InternalProblemDescriptor;
 import org.gradle.tooling.internal.protocol.problem.InternalAdditionalData;
 import org.gradle.tooling.internal.protocol.problem.InternalContextualLabel;
@@ -128,8 +129,8 @@ public class ProblemsProgressEventConsumer extends ClientForwardingBuildOperatio
     }
 
     private InternalProblemEventVersion2 createProblemEvent(OperationIdentifier buildOperationId, List<Pair<ProblemId, Integer>> problemIdCounts) {
-        List<DefaultProblemsSummariesDetails.ProblemSummary> internalIdCounts = problemIdCounts.stream()
-            .map(it -> new DefaultProblemsSummariesDetails.ProblemSummary(toInternalId(it.left), it.right))
+        List<InternalProblemSummary> internalIdCounts = problemIdCounts.stream()
+            .map(it -> new DefaultProblemsSummariesDetails.DefaultProblemSummary(toInternalId(it.left), it.right))
             .collect(toImmutableList());
         return new DefaultProblemEvent(
             createDefaultProblemDescriptor(buildOperationId),

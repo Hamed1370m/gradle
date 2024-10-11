@@ -35,7 +35,7 @@ public class ProblemSummarizer implements ProblemReporter {
     private final BuildOperationProgressEventEmitter eventEmitter;
     private final CurrentBuildOperationRef currentBuildOperationRef;
 
-    private final Map<ProblemId, AtomicInteger> map = new HashMap<ProblemId, AtomicInteger>();
+    private final Map<ProblemId, AtomicInteger> seenProblemsWithCounts = new HashMap<ProblemId, AtomicInteger>();
 
     public ProblemSummarizer(BuildOperationProgressEventEmitter eventEmitter, CurrentBuildOperationRef currentBuildOperationRef) {
         this.eventEmitter = eventEmitter;
@@ -44,10 +44,10 @@ public class ProblemSummarizer implements ProblemReporter {
 
     public boolean register(Problem problem) {
         ProblemId problemId = problem.getDefinition().getId();
-        AtomicInteger count = map.get(problemId);
+        AtomicInteger count = seenProblemsWithCounts.get(problemId);
         if (count == null) {
             count = new AtomicInteger(0);
-            map.put(problemId, count);
+            seenProblemsWithCounts.put(problemId, count);
         }
         int countValue = count.incrementAndGet();
         return countValue >= THRESHOLD;
@@ -66,7 +66,7 @@ public class ProblemSummarizer implements ProblemReporter {
 
     private List<Pair<ProblemId, Integer>> getCutOffProblems() {
         List<Pair<ProblemId, Integer>> cutOffProblems = new ArrayList<Pair<ProblemId, Integer>>();
-        for (Map.Entry<ProblemId, AtomicInteger> entry : map.entrySet()) {
+        for (Map.Entry<ProblemId, AtomicInteger> entry : seenProblemsWithCounts.entrySet()) {
             if (entry.getValue().get() > THRESHOLD) {
                 cutOffProblems.add(Pair.of(entry.getKey(), entry.getValue().get() - THRESHOLD));
             }

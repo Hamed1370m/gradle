@@ -19,30 +19,43 @@ package org.gradle.internal.build.event.types;
 import org.gradle.api.NonNullApi;
 import org.gradle.tooling.internal.protocol.InternalProblemId;
 import org.gradle.tooling.internal.protocol.InternalProblemSummariesDetails;
+import org.gradle.tooling.internal.protocol.InternalProblemSummary;
 
+import java.io.Serializable;
 import java.util.List;
 
 @NonNullApi
-public class DefaultProblemsSummariesDetails implements InternalProblemSummariesDetails {
+public class DefaultProblemsSummariesDetails implements InternalProblemSummariesDetails, Serializable {
 
-    private final List<ProblemSummary> problemIdCounts;
+    private final List<InternalProblemSummary> problemIdCounts;
 
-    public DefaultProblemsSummariesDetails(List<ProblemSummary> problemIdCounts) {
+    public DefaultProblemsSummariesDetails(List<InternalProblemSummary> problemIdCounts) {
         this.problemIdCounts = problemIdCounts;
     }
 
-    public List<ProblemSummary> getProblemIdCounts() {
+    @Override
+    public List<InternalProblemSummary> getProblemIdCounts() {
         return problemIdCounts;
     }
 
     @NonNullApi
-    public static class ProblemSummary {
-        public InternalProblemId problemId;
-        public Integer count;
+    public static class DefaultProblemSummary implements InternalProblemSummary {
+        private InternalProblemId problemId;
+        private Integer count;
 
-        public ProblemSummary(InternalProblemId problemId, Integer count) {
+        public DefaultProblemSummary(InternalProblemId problemId, Integer count) {
             this.problemId = problemId;
             this.count = count;
+        }
+
+        @Override
+        public InternalProblemId getProblemId() {
+            return problemId;
+        }
+
+        @Override
+        public Integer getCount() {
+            return count;
         }
     }
 }

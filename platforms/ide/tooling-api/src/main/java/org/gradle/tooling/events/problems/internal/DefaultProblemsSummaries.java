@@ -14,14 +14,21 @@
  * limitations under the License.
  */
 
-package org.gradle.tooling.internal.protocol;
+package org.gradle.tooling.events.problems.internal;
 
-import org.gradle.api.NonNullApi;
-import org.gradle.tooling.internal.protocol.problem.InternalProblemDetailsVersion2;
+import org.gradle.tooling.events.problems.ProblemSummary;
+import org.gradle.tooling.events.problems.ProblemsSummaries;
 
 import java.util.List;
 
-@NonNullApi
-public interface InternalProblemSummariesDetails extends InternalProblemDetailsVersion2 {
-    List<InternalProblemSummary> getProblemIdCounts();
+public class DefaultProblemsSummaries implements ProblemsSummaries {
+    private final List<ProblemSummary> problemIdSummaries;
+
+    public DefaultProblemsSummaries(List<ProblemSummary> problemIdSummaries) {
+        this.problemIdSummaries = problemIdSummaries;
+    }
+
+    public List<ProblemSummary> getProblemIdSummaries() {
+        return problemIdSummaries;
+    }
 }
