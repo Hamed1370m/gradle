@@ -609,10 +609,6 @@ public class BuildProgressListenerAdapter implements InternalBuildProgressListen
                     toProblemDefinition(problemAggregationDetails.getLabel(), problemAggregationDetails.getCategory(), problemAggregationDetails.getSeverity(), problemAggregationDetails.getDocumentationLink()),
                     toProblemContextDetails(problemAggregationDetails.getProblems())));
 
-        } else if (details instanceof InternalProblemSummariesDetails) {
-            InternalProblemSummariesDetails problemSummariesDetails = (InternalProblemSummariesDetails) details;
-            return new DefaultProblemsSummariesEvent(problemEvent.getEventTime(), parentDescriptor,
-                new DefaultProblemsSummaries(toProblemIdSummaries(problemSummariesDetails.getProblemIdCounts())));
         }
         return null;
     }
@@ -651,6 +647,10 @@ public class BuildProgressListenerAdapter implements InternalBuildProgressListen
                     toProblemDefinition(problemAggregationDetails.getDefinition()),
                     toProblemContextDetails(problemAggregationDetails.getProblems())));
 
+        } else if (details instanceof InternalProblemSummariesDetails) {
+            InternalProblemSummariesDetails problemSummariesDetails = (InternalProblemSummariesDetails) details;
+            return new DefaultProblemsSummariesEvent(problemEvent.getEventTime(), parentDescriptor,
+                new DefaultProblemsSummaries(toProblemIdSummaries(problemSummariesDetails.getProblemIdCounts())));
         }
         return null;
     }
@@ -886,7 +886,7 @@ public class BuildProgressListenerAdapter implements InternalBuildProgressListen
     }
 
     private static ContextualLabel toContextualLabel(@Nullable InternalContextualLabel contextualLabel) {
-        return contextualLabel == null ? null :  new DefaultContextualLabel(contextualLabel.getContextualLabel());
+        return contextualLabel == null ? null : new DefaultContextualLabel(contextualLabel.getContextualLabel());
     }
 
     private static ContextualLabel toContextualLabel(@Nullable String contextualLabel) {

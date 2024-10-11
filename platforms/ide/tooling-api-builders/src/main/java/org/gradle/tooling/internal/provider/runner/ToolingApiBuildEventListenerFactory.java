@@ -44,7 +44,6 @@ public class ToolingApiBuildEventListenerFactory implements BuildEventListenerFa
     private final BuildOperationAncestryTracker ancestryTracker;
     private final BuildOperationIdFactory idFactory;
     private final List<OperationResultPostProcessorFactory> postProcessorFactories;
-//    private Optional<AggregatingProblemConsumer> problemAggregator = Optional.empty();
 
     ToolingApiBuildEventListenerFactory(BuildOperationAncestryTracker ancestryTracker, BuildOperationIdFactory idFactory, List<OperationResultPostProcessorFactory> postProcessorFactories) {
         this.ancestryTracker = ancestryTracker;
@@ -139,14 +138,4 @@ public class ToolingApiBuildEventListenerFactory implements BuildEventListenerFa
         public void finished(BuildOperationDescriptor buildOperation, OperationFinishEvent finishEvent) {
         }
     };
-
-//    @Override
-//    public String getId() {
-//        return "problems";
-//    }
-
-//    @Override
-//    public void report(File reportDir, ProblemConsumer validationFailures) {
-////        problemAggregator.ifPresent(AggregatingProblemConsumer::sendProblemSummaries);
-//    }
 }

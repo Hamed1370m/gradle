@@ -18,6 +18,8 @@ package org.gradle.tooling.events.problems;
 
 import org.gradle.api.Incubating;
 
+import java.util.List;
+
 /**
  * All problems summaries
  *
@@ -25,4 +27,11 @@ import org.gradle.api.Incubating;
  */
 @Incubating
 public interface ProblemsSummaries {
+
+    /**
+     * get problem summaries
+     *
+     * @since 8.12
+     */
+    List<ProblemSummary> getProblemsSummaries();
 }

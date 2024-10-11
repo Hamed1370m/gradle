@@ -25,6 +25,7 @@ import org.gradle.test.fixtures.file.TestFile
 import org.gradle.tooling.BuildException
 import org.gradle.tooling.Failure
 import org.gradle.tooling.events.problems.LineInFileLocation
+import org.gradle.tooling.events.problems.ProblemsSummariesEvent
 import org.gradle.tooling.events.problems.Severity
 import org.gradle.tooling.events.problems.SingleProblemEvent
 import org.gradle.tooling.events.problems.internal.GeneralData
@@ -194,8 +195,7 @@ class ProblemProgressEventCrossVersionTest extends ToolingApiSpecification {
         given:
         Assume.assumeTrue(javaHome != null)
         buildFile getBuildScriptSampleContent(false, false, targetVersion)
-        org.gradle.integtests.tooling.r87.ProblemProgressEventCrossVersionTest.ProblemProgressListener listener
-        listener = new org.gradle.integtests.tooling.r87.ProblemProgressEventCrossVersionTest.ProblemProgressListener()
+        def listener = new org.gradle.integtests.tooling.r89.ProblemProgressEventCrossVersionTest.ProblemProgressListener()
 
 
         when:
@@ -206,14 +206,18 @@ class ProblemProgressEventCrossVersionTest extends ToolingApiSpecification {
                 .get()
         }
 
-        def problems = listener.problems
-            .collect { it as SingleProblemEvent }
 
         then:
+        def problems = listener.problems
+            .find { it instanceof SingleProblemEvent }
+            .collect { it as SingleProblemEvent }
         problems.size() == 1
         problems[0].definition.id.displayName == 'label'
         problems[0].definition.id.group.displayName == 'Generic'
         failureMessage(problems[0].failure) == 'test'
+        def problemSummariesEvent = listener.summariesEvent as ProblemsSummariesEvent
+        problemSummariesEvent != null
+        problemSummariesEvent.problemsSummaries != null
 
         where:
         javaHome << [

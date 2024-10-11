@@ -197,8 +197,7 @@ class ProblemProgressEventCrossVersionTest extends ToolingApiSpecification {
         given:
         Assume.assumeTrue(javaHome != null)
         buildFile getBuildScriptSampleContent(false, false, targetVersion)
-        org.gradle.integtests.tooling.r87.ProblemProgressEventCrossVersionTest.ProblemProgressListener listener
-        listener = new org.gradle.integtests.tooling.r87.ProblemProgressEventCrossVersionTest.ProblemProgressListener()
+        ProblemProgressListener listener = new ProblemProgressListener()
 
 
         when:
@@ -209,10 +208,12 @@ class ProblemProgressEventCrossVersionTest extends ToolingApiSpecification {
                 .get()
         }
 
-        def problems = listener.problems
-            .collect { it as SingleProblemEvent }
 
         then:
+
+        def problems = listener.problems
+            .find { it instanceof SingleProblemEvent }
+            .collect { it as SingleProblemEvent }
         problems.size() == 1
         problems[0].definition.id.displayName == 'label'
         problems[0].definition.id.group.displayName == 'Generic'

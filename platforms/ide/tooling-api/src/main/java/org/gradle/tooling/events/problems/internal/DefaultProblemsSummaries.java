@@ -28,7 +28,8 @@ public class DefaultProblemsSummaries implements ProblemsSummaries {
         this.problemIdSummaries = problemIdSummaries;
     }
 
-    public List<ProblemSummary> getProblemIdSummaries() {
+    @Override
+    public List<ProblemSummary> getProblemsSummaries() {
         return problemIdSummaries;
     }
 }

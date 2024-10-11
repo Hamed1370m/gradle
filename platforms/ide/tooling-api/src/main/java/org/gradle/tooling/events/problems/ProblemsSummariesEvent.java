@@ -25,4 +25,10 @@ import org.gradle.api.Incubating;
  */
 @Incubating
 public interface ProblemsSummariesEvent extends ProblemEvent {
+    /**
+     * Get problems summaries
+     *
+     * @since 8.12
+     */
+    ProblemsSummaries getProblemsSummaries();
 }
