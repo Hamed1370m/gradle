@@ -31,6 +31,7 @@ import org.gradle.internal.buildoption.FeatureFlags
 import org.gradle.internal.buildtree.BuildModelParameters
 import org.gradle.internal.deprecation.DeprecationLogger
 import org.gradle.internal.reflect.JavaReflectionUtil
+import org.gradle.internal.serialization.Cached
 import org.gradle.internal.service.scopes.ListenerService
 import org.gradle.internal.service.scopes.Scope
 import org.gradle.internal.service.scopes.ServiceScope
@@ -57,7 +58,7 @@ class DeprecatedFeaturesListener(
                 DeprecationLogger.deprecateMethod(Gradle::class.java, "useLogger(Object)")
                     .willBeRemovedInGradle9()
                     .withUpgradeGuideSection(8, "deprecated_use_logger")
-                    .nagUser();
+                    .nagUser()
             }
             shouldNagAbout(listener) -> {
                 nagUserAbout("Listener registration using $invocationDescription()", 7, "task_execution_events")
@@ -104,7 +105,7 @@ class DeprecatedFeaturesListener(
     private
     fun shouldNag(ignoreStable: Boolean = false): Boolean =
         // TODO:configuration-cache - this listener shouldn't be registered when cc is enabled
-        !buildModelParameters.isConfigurationCache && (ignoreStable || featureFlags.isEnabled(STABLE_CONFIGURATION_CACHE))
+        !buildModelParameters.isConfigurationCache && ((ignoreStable && !Cached.isResolving()) || featureFlags.isEnabled(STABLE_CONFIGURATION_CACHE))
 
     private
     fun shouldNagAbout(listener: Any): Boolean = shouldNag() && !isSupportedListener(listener)
