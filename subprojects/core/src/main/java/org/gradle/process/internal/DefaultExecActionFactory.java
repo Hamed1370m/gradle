@@ -34,6 +34,7 @@ import org.gradle.api.internal.provider.PropertyHost;
 import org.gradle.api.internal.tasks.DefaultTaskDependencyFactory;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.util.PatternSet;
@@ -414,10 +415,11 @@ public abstract class DefaultExecActionFactory implements ExecFactory {
         private final Property<String> defaultCharacterEncoding;
         private final Property<String> minHeapSize;
         private final Property<String> maxHeapSize;
-        private final List<String> jvmArgs;
+        private final ListProperty<String> jvmArgs;
         private final ConfigurableFileCollection bootstrapClasspath;
         private final Property<Boolean> enableAssertions;
         private final Property<Boolean> debug;
+        private final MapProperty<String, Object> systemProperties;
 
         public ImmutableJavaForkOptions(ObjectFactory objectFactory, FileCollectionFactory fileCollectionFactory, JavaForkOptionsInternal delegate) {
             this.delegate = delegate;
@@ -427,13 +429,16 @@ public abstract class DefaultExecActionFactory implements ExecFactory {
             this.minHeapSize.disallowChanges();
             this.maxHeapSize = objectFactory.property(String.class).convention(delegate.getMaxHeapSize());
             this.maxHeapSize.disallowChanges();
-            this.jvmArgs = ImmutableList.copyOf(delegate.getJvmArgs());
+            this.jvmArgs = objectFactory.listProperty(String.class).convention(delegate.getJvmArgs());
+            this.jvmArgs.disallowChanges();
             this.bootstrapClasspath = fileCollectionFactory.configurableFiles().from(delegate.getBootstrapClasspath());
             this.bootstrapClasspath.disallowChanges();
             this.enableAssertions = objectFactory.property(Boolean.class).convention(delegate.getEnableAssertions());
             this.enableAssertions.disallowChanges();
             this.debug = objectFactory.property(Boolean.class).convention(delegate.getDebug());
             this.debug.disallowChanges();
+            this.systemProperties = objectFactory.mapProperty(String.class, Object.class).convention(delegate.getSystemProperties());
+            this.systemProperties.disallowChanges();
         }
 
         @Override
@@ -447,13 +452,8 @@ public abstract class DefaultExecActionFactory implements ExecFactory {
         }
 
         @Override
-        public Map<String, Object> getSystemProperties() {
-            return ImmutableMap.copyOf(delegate.getSystemProperties());
-        }
-
-        @Override
-        public void setSystemProperties(Map<String, ?> properties) {
-            throw new UnsupportedOperationException();
+        public MapProperty<String, Object> getSystemProperties() {
+            return systemProperties;
         }
 
         @Override
@@ -537,18 +537,8 @@ public abstract class DefaultExecActionFactory implements ExecFactory {
         }
 
         @Override
-        public List<String> getJvmArgs() {
+        public ListProperty<String> getJvmArgs() {
             return jvmArgs;
-        }
-
-        @Override
-        public void setJvmArgs(@Nullable List<String> jvmArgs) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void setJvmArgs(@Nullable Iterable<?> jvmArgs) {
-            throw new UnsupportedOperationException();
         }
 
         @Override

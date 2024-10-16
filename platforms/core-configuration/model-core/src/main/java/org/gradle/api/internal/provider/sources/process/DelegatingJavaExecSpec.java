@@ -21,6 +21,7 @@ import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.jvm.ModularitySpec;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.gradle.process.CommandLineArgumentProvider;
@@ -101,13 +102,8 @@ interface DelegatingJavaExecSpec extends DelegatingBaseExecSpec, JavaExecSpec {
     }
 
     @Override
-    default Map<String, Object> getSystemProperties() {
+    default MapProperty<String, Object> getSystemProperties() {
         return getDelegate().getSystemProperties();
-    }
-
-    @Override
-    default void setSystemProperties(Map<String, ?> properties) {
-        getDelegate().setSystemProperties(properties);
     }
 
     @Override
@@ -139,18 +135,8 @@ interface DelegatingJavaExecSpec extends DelegatingBaseExecSpec, JavaExecSpec {
 
     @Nullable
     @Override
-    default List<String> getJvmArgs() {
+    default ListProperty<String> getJvmArgs() {
         return getDelegate().getJvmArgs();
-    }
-
-    @Override
-    default void setJvmArgs(@Nullable List<String> jvmArgs) {
-        getDelegate().setJvmArgs(jvmArgs);
-    }
-
-    @Override
-    default void setJvmArgs(@Nullable Iterable<?> jvmArgs) {
-        getDelegate().setJvmArgs(jvmArgs);
     }
 
     @Override

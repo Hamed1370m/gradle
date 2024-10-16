@@ -19,8 +19,10 @@ package org.gradle.process.internal;
 import org.gradle.api.Action;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.internal.file.FileCollectionFactory;
+import org.gradle.api.internal.provider.MapPropertyInternal;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.gradle.internal.file.PathToFileResolver;
@@ -29,20 +31,17 @@ import org.gradle.process.CommandLineArgumentProvider;
 import org.gradle.process.JavaDebugOptions;
 import org.gradle.process.JavaForkOptions;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 public class DefaultJavaForkOptions extends DefaultProcessForkOptions implements JavaForkOptionsInternal {
     private final FileCollectionFactory fileCollectionFactory;
     private final ObjectFactory objectFactory;
-    private List<String> jvmArgs;
+    private final ListProperty<String> jvmArgs;
     private final ListProperty<CommandLineArgumentProvider> jvmArgumentProviders;
-    private Map<String, Object> systemProperties;
+    private final MapProperty<String, Object> systemProperties;
     private final ConfigurableFileCollection bootstrapClasspath;
     private final Property<String> minHeapSize;
     private final Property<String> maxHeapSize;
@@ -56,9 +55,9 @@ public class DefaultJavaForkOptions extends DefaultProcessForkOptions implements
         super(resolver);
         this.objectFactory = objectFactory;
         this.fileCollectionFactory = fileCollectionFactory;
-        this.jvmArgs = new ArrayList<>();
+        this.jvmArgs = objectFactory.listProperty(String.class);
         this.jvmArgumentProviders = objectFactory.listProperty(CommandLineArgumentProvider.class);
-        this.systemProperties = new LinkedHashMap<>();
+        this.systemProperties = objectFactory.mapProperty(String.class, Object.class);
         this.bootstrapClasspath = fileCollectionFactory.configurableFiles();
         this.minHeapSize = objectFactory.property(String.class);
         this.maxHeapSize = objectFactory.property(String.class);
@@ -77,36 +76,18 @@ public class DefaultJavaForkOptions extends DefaultProcessForkOptions implements
     }
 
     @Override
-    public List<String> getJvmArgs() {
+    public ListProperty<String> getJvmArgs() {
         return jvmArgs;
-    }
-
-    @Override
-    public void setJvmArgs(@Nullable List<String> arguments) {
-        this.jvmArgs = new ArrayList<>(jvmArgs);
-        if (arguments != null) {
-            jvmArgs(arguments);
-        }
-    }
-
-    @Override
-    public void setJvmArgs(@Nullable Iterable<?> arguments) {
-        this.jvmArgs = new ArrayList<>();
-        if (arguments != null) {
-            jvmArgs(arguments);
-        }
     }
 
     @Override
     public JavaForkOptions jvmArgs(Iterable<?> arguments) {
         for (Object argument : arguments) {
-            // TODO: uncomment once jvmArgs is a ListProperty
-            //  if (argument instanceof Provider) {
-            //      getJvmArgs().add(((Provider<?>) argument).map(Object::toString));
-            //  } else {
-            //      getJvmArgs().add(argument.toString());
-            //  }
-            getJvmArgs().add(argument.toString());
+            if (argument instanceof Provider) {
+                getJvmArgs().add(((Provider<?>) argument).map(Object::toString));
+            } else {
+                getJvmArgs().add(argument.toString());
+            }
         }
         return this;
     }
@@ -123,13 +104,8 @@ public class DefaultJavaForkOptions extends DefaultProcessForkOptions implements
     }
 
     @Override
-    public Map<String, Object> getSystemProperties() {
+    public MapProperty<String, Object> getSystemProperties() {
         return systemProperties;
-    }
-
-    @Override
-    public void setSystemProperties(Map<String, ?> properties) {
-        this.systemProperties = new LinkedHashMap<>(properties);
     }
 
     @Override
@@ -139,16 +115,12 @@ public class DefaultJavaForkOptions extends DefaultProcessForkOptions implements
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public JavaForkOptions systemProperty(String name, Object value) {
-        // TODO: uncomment once systemProperties is a MapProperty
-        //   if (value instanceof Provider) {
-        //      ((MapPropertyInternal<String, Object>) getSystemProperties()).insert(name, (Provider<?>) value);
-        //      return this;
-        //   }
-        if (value == null) {
-            getSystemProperties().put(name, NULL);
+        if (value instanceof Provider) {
+            ((MapPropertyInternal<String, Object>) getSystemProperties()).insert(name, (Provider<?>) value);
         } else {
-            getSystemProperties().put(name, value);
+            getSystemProperties().put(name, value == null ? "" : value);
         }
         return this;
     }
@@ -208,8 +180,8 @@ public class DefaultJavaForkOptions extends DefaultProcessForkOptions implements
     @Override
     public JavaForkOptions copyTo(JavaForkOptions target) {
         super.copyTo(target);
-        target.setJvmArgs(getJvmArgs());
-        target.setSystemProperties(getSystemProperties());
+        target.getJvmArgs().set(getJvmArgs());
+        target.getSystemProperties().set(getSystemProperties());
         target.getMinHeapSize().set(getMinHeapSize());
         target.getMaxHeapSize().set(getMaxHeapSize());
         target.bootstrapClasspath(getBootstrapClasspath());

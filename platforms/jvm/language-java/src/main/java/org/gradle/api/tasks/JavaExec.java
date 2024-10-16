@@ -25,6 +25,7 @@ import org.gradle.api.internal.ConventionTask;
 import org.gradle.api.jvm.ModularitySpec;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderFactory;
@@ -187,24 +188,8 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      */
     @Override
     @ToBeReplacedByLazyProperty(comment = "This property is modified at execution time")
-    public List<String> getJvmArgs() {
-        return javaExecSpec.getJvmArguments().getOrNull();
-    }
-
-    @Override
-    public void setJvmArgs(@Nullable List<String> arguments) {
-        javaExecSpec.getJvmArguments().empty();
-        if (arguments != null) {
-            jvmArgs(arguments);
-        }
-    }
-
-    @Override
-    public void setJvmArgs(@Nullable Iterable<?> arguments) {
-        javaExecSpec.getJvmArguments().empty();
-        if (arguments != null) {
-            jvmArgs(arguments);
-        }
+    public ListProperty<String> getJvmArgs() {
+        return javaExecSpec.getJvmArguments();
     }
 
     /**
@@ -236,14 +221,8 @@ public abstract class JavaExec extends ConventionTask implements JavaExecSpec {
      * {@inheritDoc}
      */
     @Override
-    @ToBeReplacedByLazyProperty(comment = "This property is modified at execution time")
-    public Map<String, Object> getSystemProperties() {
+    public MapProperty<String, Object> getSystemProperties() {
         return javaExecSpec.getSystemProperties();
-    }
-
-    @Override
-    public void setSystemProperties(Map<String, ?> properties) {
-        javaExecSpec.setSystemProperties(properties);
     }
 
     /**

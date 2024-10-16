@@ -361,12 +361,12 @@ public class JvmOptions {
 
     public void copyFrom(JavaForkOptionsInternal source) {
         setAllJvmArgs(Collections.emptyList());
-        jvmArgs(source.getJvmArgs());
+        jvmArgs(source.getJvmArgs().get());
         source.getJvmArgumentProviders().get().forEach(provider -> jvmArgs(provider.asArguments()));
         if (source.getExtraJvmArgs() != null) {
             setExtraJvmArgs(source.getExtraJvmArgs());
         }
-        systemProperties(source.getSystemProperties());
+        systemProperties(source.getSystemProperties().get());
         if (source.getMinHeapSize().isPresent()) {
             setMinHeapSize(source.getMinHeapSize().get());
         }
@@ -384,8 +384,8 @@ public class JvmOptions {
     }
 
     public void copyTo(JavaForkOptions target) {
-        target.setJvmArgs(extraJvmArgs);
-        target.setSystemProperties(mutableSystemProperties);
+        extraJvmArgs.forEach(arg -> target.getJvmArgs().add(arg.toString()));
+        target.getSystemProperties().set(mutableSystemProperties);
         target.getMinHeapSize().set(minHeapSize);
         target.getMaxHeapSize().set(maxHeapSize);
         target.bootstrapClasspath(getBootstrapClasspath());
