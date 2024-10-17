@@ -153,7 +153,7 @@ class JvmOptionsTest extends Specification {
         options.copyTo(target)
 
         then:
-        target.systemProperties == ["file.encoding": "UTF-16", "foo.encoding": "blah"] + localeProperties()
+        target.systemProperties.get() == ["file.encoding": "UTF-16", "foo.encoding": "blah"] + localeProperties()
     }
 
     def "copyTo copies debugOptions"() {

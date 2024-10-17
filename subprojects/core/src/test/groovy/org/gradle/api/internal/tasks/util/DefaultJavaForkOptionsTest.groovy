@@ -45,8 +45,8 @@ class DefaultJavaForkOptionsTest extends Specification {
 
     def "provides correct default values"() {
         expect:
-        options.jvmArgs.isEmpty()
-        options.systemProperties.isEmpty()
+        options.jvmArgs.get().isEmpty()
+        options.systemProperties.get().isEmpty()
         options.minHeapSize.getOrNull() == null
         options.maxHeapSize.getOrNull() == null
         options.bootstrapClasspath.files.isEmpty()
@@ -60,7 +60,7 @@ class DefaultJavaForkOptionsTest extends Specification {
         options.jvmArgs = ["12", "${1 + 2}"]
 
         then:
-        options.jvmArgs == ['12', '3']
+        options.jvmArgs.get() == ['12', '3']
     }
 
     def "can add jvmArgs"() {
@@ -69,7 +69,7 @@ class DefaultJavaForkOptionsTest extends Specification {
         options.jvmArgs('arg3')
 
         then:
-        options.jvmArgs == ['arg1', 'arg2', 'arg3']
+        options.jvmArgs.get() == ['arg1', 'arg2', 'arg3']
     }
 
     def "can set system properties"() {
@@ -77,7 +77,7 @@ class DefaultJavaForkOptionsTest extends Specification {
         options.systemProperties = [key: 12, key2: "value"]
 
         then:
-        options.systemProperties == [key: 12, key2: "value"]
+        options.systemProperties.get() == [key: 12, key2: "value"]
     }
 
     def "can add system properties"() {
@@ -86,7 +86,7 @@ class DefaultJavaForkOptionsTest extends Specification {
         options.systemProperty('key2', 'value2')
 
         then:
-        options.systemProperties == [key: 12, key2: 'value2']
+        options.systemProperties.get() == [key: 12, key2: 'value2']
     }
 
     def "all jvm args include system properties as string"() {
@@ -254,8 +254,8 @@ class DefaultJavaForkOptionsTest extends Specification {
 
         then:
         target.getExecutable() == 'executable'
-        target.getJvmArgs() == ['arg']
-        target.getSystemProperties() == [key: 12]
+        target.getJvmArgs().get() == ['arg']
+        target.getSystemProperties().get() == [key: 12]
         target.getMinHeapSize().get() == '64m'
         target.getMaxHeapSize().get() == '1g'
         target.getBootstrapClasspath().files == [new File('file1.jar').canonicalFile] as Set

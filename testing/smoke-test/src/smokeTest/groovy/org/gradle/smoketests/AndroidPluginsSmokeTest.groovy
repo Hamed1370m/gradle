@@ -101,7 +101,7 @@ class AndroidPluginsSmokeTest extends AbstractPluginValidatingSmokeTest implemen
             'testDebugUnitTest',
             'connectedDebugAndroidTest',
             "-Pandroid.injected.invoked.from.ide=$ide"
-        )
+        ).expectChangingPropertyValueAtExecutionTimeDeprecationWarning("systemProperties")
 
         when: 'first build'
         SantaTrackerConfigurationCacheWorkaround.beforeBuild(runner.projectDir, IntegrationTestBuildContext.INSTANCE.gradleUserHomeDir)

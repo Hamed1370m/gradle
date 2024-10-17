@@ -24,8 +24,14 @@ import java.util.List;
 
 import static org.gradle.process.internal.AllJvmArgsAdapterUtil.checkDebugConfiguration;
 
+/**
+ * Adapters for property upgrades of {@link JavaForkOptions}.
+ */
 class JavaForkOptionsAdapters {
 
+    /**
+     * Adapter for property upgrade of {@link JavaForkOptions#getAllJvmArgs()}.
+     */
     static class AllJvmArgsAdapter {
 
         @BytecodeUpgrade
@@ -92,6 +98,9 @@ class JavaForkOptionsAdapters {
         }
     }
 
+    /**
+     * Adapter for property upgrade of {@link JavaForkOptions#getJvmArgs()}.
+     */
     static class JvmArgsAdapter {
 
         @BytecodeUpgrade

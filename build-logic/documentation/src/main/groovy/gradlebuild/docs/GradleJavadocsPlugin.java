@@ -16,7 +16,7 @@
 
 package gradlebuild.docs;
 
-import gradlebuild.basics.Gradle9Support;
+import gradlebuild.basics.Gradle9PropertyUpgradeSupport;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.file.DirectoryProperty;
@@ -179,15 +179,15 @@ public abstract class GradleJavadocsPlugin implements Plugin<Project> {
         }
 
         public void setTitle(String title) {
-            Gradle9Support.setProperty(javadoc, "setTitle", title);
+            Gradle9PropertyUpgradeSupport.setProperty(javadoc, "setTitle", title);
         }
 
         public void setClasspath(FileCollection classpath) {
-            Gradle9Support.setProperty(javadoc, "setClasspath", classpath);
+            Gradle9PropertyUpgradeSupport.setProperty(javadoc, "setClasspath", classpath);
         }
 
         public void setDestinationDir(File destinationDir) {
-            Gradle9Support.setProperty(javadoc, "setDestinationDir", destinationDir);
+            Gradle9PropertyUpgradeSupport.setProperty(javadoc, "setDestinationDir", destinationDir);
         }
     }
 
@@ -203,7 +203,7 @@ public abstract class GradleJavadocsPlugin implements Plugin<Project> {
         }
 
         public void setClasspath(FileCollection classpath) {
-            Gradle9Support.setProperty(checkstyle, "setClasspath", classpath);
+            Gradle9PropertyUpgradeSupport.setProperty(checkstyle, "setClasspath", classpath);
         }
     }
 }

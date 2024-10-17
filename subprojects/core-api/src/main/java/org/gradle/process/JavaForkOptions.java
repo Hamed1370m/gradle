@@ -174,8 +174,6 @@ public interface JavaForkOptions extends ProcessForkOptions {
      * <p>
      * Since Gradle 5.6, you can configure the port and other Java debug properties via
      * {@link #debugOptions(Action)}.
-     *
-     * @return A Property[true] when debugging is enabled, false to disable.
      */
     @Input
     @ReplacesEagerProperty(replacedAccessors = {

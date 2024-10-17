@@ -16,7 +16,7 @@
 
 package gradlebuild.docs;
 
-import gradlebuild.basics.Gradle9Support;
+import gradlebuild.basics.Gradle9PropertyUpgradeSupport;
 import gradlebuild.docs.dsl.source.GenerateApiMapping;
 import gradlebuild.docs.dsl.source.GenerateDefaultImports;
 import org.asciidoctor.gradle.jvm.AsciidoctorTask;
@@ -309,7 +309,7 @@ public class GradleUserManualPlugin implements Plugin<Project> {
      * TODO: Remove this workaround after Gradle 9
      */
     private static void setMaxHeapSize(JavaForkOptions options, String value) {
-        Gradle9Support.setProperty(options, "setMaxHeapSize", value);
+        Gradle9PropertyUpgradeSupport.setProperty(options, "setMaxHeapSize", value);
     }
 
     private void configureForUserGuideSinglePage(AsciidoctorTask task, GradleDocumentationExtension extension, Project project) {

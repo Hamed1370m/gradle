@@ -84,6 +84,7 @@ class SpringBootPluginSmokeTest extends AbstractPluginValidatingSmokeTest implem
 
         when:
         def smokeTestRunner = runner('assembleBootDist', 'check')
+            .expectChangingPropertyValueAtExecutionTimeDeprecationWarning("jvmArguments")
         def buildResult = smokeTestRunner.build()
 
         then:

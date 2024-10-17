@@ -21,7 +21,10 @@ import org.gradle.util.GradleVersion;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
-public class Gradle9Support {
+/**
+ * Compatibility support class for upgraded properties that needs to work with Gradle 8 and Gradle 9.
+ */
+public class Gradle9PropertyUpgradeSupport {
 
     public static  <T> void setProperty(Object task, String setterName, T value) {
         if (GradleVersion.current().compareTo(GradleVersion.version("9.0")) < 0) {
