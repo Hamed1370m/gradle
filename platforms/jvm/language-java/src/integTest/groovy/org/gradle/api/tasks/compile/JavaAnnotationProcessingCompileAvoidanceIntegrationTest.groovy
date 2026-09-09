@@ -17,10 +17,12 @@
 package org.gradle.api.tasks.compile
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 
-@Requires(IntegTestPreconditions.NotParallelExecutor)
+@Requires(TestExecutionPreconditions.NotParallelExecutor)
+@ToBeFixedForIsolatedProjects(because = "subprojects, configure projects from root")
 class JavaAnnotationProcessingCompileAvoidanceIntegrationTest extends AbstractIntegrationSpec {
     def setup() {
         settingsFile << "include 'a', 'b'"
@@ -74,7 +76,7 @@ class JavaAnnotationProcessingCompileAvoidanceIntegrationTest extends AbstractIn
         succeeds(":a:assemble")
 
         then:
-        result.assertTasksNotSkipped(":b:compileJava", ":b:processResources", ":b:classes", ":b:jar")
+        result.assertTasksExecuted(":b:compileJava", ":b:processResources", ":b:classes", ":b:jar")
         result.assertTasksSkipped(":a:compileJava", ":a:processResources", ":a:classes", ":a:jar", ":a:assemble")
     }
 }

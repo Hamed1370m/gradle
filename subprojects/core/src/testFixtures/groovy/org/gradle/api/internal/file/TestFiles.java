@@ -26,12 +26,11 @@ import org.gradle.api.internal.resources.ApiTextResourceAdapter;
 import org.gradle.api.internal.resources.DefaultResourceHandler;
 import org.gradle.api.internal.tasks.DefaultTaskDependencyFactory;
 import org.gradle.api.internal.tasks.TaskDependencyFactory;
-import org.gradle.api.tasks.util.PatternSet;
+import org.gradle.api.tasks.util.internal.PatternSetFactory;
 import org.gradle.api.tasks.util.internal.PatternSets;
 import org.gradle.cache.internal.TestDecompressionCoordinators;
-import org.gradle.internal.Factory;
+import org.gradle.initialization.DefaultBuildCancellationToken;
 import org.gradle.internal.concurrent.DefaultExecutorFactory;
-import org.gradle.internal.event.DefaultListenerManager;
 import org.gradle.internal.file.Deleter;
 import org.gradle.internal.file.PathToFileResolver;
 import org.gradle.internal.file.impl.DefaultDeleter;
@@ -40,8 +39,8 @@ import org.gradle.internal.hash.DefaultFileHasher;
 import org.gradle.internal.hash.DefaultStreamHasher;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 import org.gradle.internal.resource.local.FileResourceConnector;
+import org.gradle.internal.resource.local.FileResourceListener;
 import org.gradle.internal.resource.local.FileResourceRepository;
-import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.snapshot.CaseSensitivity;
 import org.gradle.internal.snapshot.impl.DirectorySnapshotterStatistics;
 import org.gradle.internal.time.Time;
@@ -49,10 +48,11 @@ import org.gradle.internal.vfs.FileSystemAccess;
 import org.gradle.internal.vfs.VirtualFileSystem;
 import org.gradle.internal.vfs.impl.DefaultFileSystemAccess;
 import org.gradle.internal.vfs.impl.DefaultSnapshotHierarchy;
+import org.gradle.process.internal.ClientExecHandleBuilderFactory;
+import org.gradle.process.internal.DefaultClientExecHandleBuilderFactory;
 import org.gradle.process.internal.DefaultExecActionFactory;
 import org.gradle.process.internal.ExecActionFactory;
 import org.gradle.process.internal.ExecFactory;
-import org.gradle.process.internal.ExecHandleFactory;
 import org.gradle.process.internal.JavaExecHandleFactory;
 import org.gradle.testfixtures.internal.NativeServicesTestFixture;
 import org.gradle.util.TestUtil;
@@ -64,13 +64,14 @@ import java.util.Collection;
 import static org.gradle.internal.snapshot.CaseSensitivity.CASE_INSENSITIVE;
 import static org.gradle.internal.snapshot.CaseSensitivity.CASE_SENSITIVE;
 import static org.gradle.util.TestUtil.objectFactory;
+import static org.gradle.util.TestUtil.propertyFactory;
 import static org.gradle.util.TestUtil.providerFactory;
 
 public class TestFiles {
     private static final FileSystem FILE_SYSTEM = NativeServicesTestFixture.getInstance().get(FileSystem.class);
     private static final DefaultFileLookup FILE_LOOKUP = new DefaultFileLookup();
-    private static final DefaultExecActionFactory EXEC_FACTORY =
-        DefaultExecActionFactory.of(resolver(), fileCollectionFactory(), new DefaultExecutorFactory(), NativeServicesTestFixture.getInstance().get(TemporaryFileProvider.class));
+    private static final DefaultClientExecHandleBuilderFactory EXEC_HANDLE_FACTORY =
+        DefaultClientExecHandleBuilderFactory.of(resolver(), new DefaultExecutorFactory(), new DefaultBuildCancellationToken());
 
     public static FileCollectionInternal empty() {
         return FileCollectionFactory.empty();
@@ -93,7 +94,7 @@ public class TestFiles {
     }
 
     public static FileResourceRepository fileRepository() {
-        return new FileResourceConnector(FILE_SYSTEM, new DefaultListenerManager(Scope.Build.class));
+        return new FileResourceConnector(FILE_SYSTEM, FileResourceListener.NO_OP);
     }
 
     /**
@@ -167,7 +168,8 @@ public class TestFiles {
             fileHasher(),
             resourceHandlerFactory,
             fileCollectionFactory(basedDir),
-            objectFactory(),
+            propertyFactory(),
+            filePropertyFactory(basedDir),
             fileSystem,
             getPatternSetFactory(),
             deleter(),
@@ -233,7 +235,16 @@ public class TestFiles {
     }
 
     public static ExecFactory execFactory() {
-        return EXEC_FACTORY;
+        return DefaultExecActionFactory.of(
+            resolver(),
+            fileCollectionFactory(),
+            filePropertyFactory(),
+            TestUtil.instantiatorFactory().inject(),
+            new DefaultExecutorFactory(),
+            NativeServicesTestFixture.getInstance().get(TemporaryFileProvider.class),
+            new DefaultBuildCancellationToken(),
+            objectFactory()
+        );
     }
 
     public static ExecFactory execFactory(File baseDir) {
@@ -241,7 +252,7 @@ public class TestFiles {
             .withFileResolver(resolver(baseDir))
             .withFileCollectionFactory(fileCollectionFactory(baseDir))
             .withInstantiator(TestUtil.instantiatorFactory().inject())
-            .withObjectFactory(objectFactory())
+            .withObjectFactory(objectFactory(baseDir))
             .build();
     }
 
@@ -249,12 +260,12 @@ public class TestFiles {
         return execFactory();
     }
 
-    public static ExecHandleFactory execHandleFactory() {
-        return execFactory();
+    public static ClientExecHandleBuilderFactory execHandleFactory() {
+        return EXEC_HANDLE_FACTORY;
     }
 
-    public static ExecHandleFactory execHandleFactory(File baseDir) {
-        return execFactory(baseDir);
+    public static ClientExecHandleBuilderFactory execHandleFactory(File baseDir) {
+        return DefaultClientExecHandleBuilderFactory.of(resolver(baseDir), new DefaultExecutorFactory(), new DefaultBuildCancellationToken());
     }
 
     public static JavaExecHandleFactory javaExecHandleFactory(File baseDir) {
@@ -262,7 +273,7 @@ public class TestFiles {
     }
 
     @SuppressWarnings("deprecation")
-    public static Factory<PatternSet> getPatternSetFactory() {
+    public static PatternSetFactory getPatternSetFactory() {
         return PatternSets.getNonCachingPatternSetFactory();
     }
 

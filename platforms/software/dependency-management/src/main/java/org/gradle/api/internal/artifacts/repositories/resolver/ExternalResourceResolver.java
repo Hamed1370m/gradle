@@ -24,6 +24,7 @@ import org.gradle.api.artifacts.ComponentMetadataSupplierDetails;
 import org.gradle.api.artifacts.ModuleIdentifier;
 import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
+import org.gradle.api.artifacts.component.ModuleComponentSelector;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ComponentResolvers;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ConfiguredModuleComponentRepository;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ModuleComponentRepositoryAccess;
@@ -33,13 +34,11 @@ import org.gradle.api.internal.artifacts.repositories.metadata.ImmutableMetadata
 import org.gradle.api.internal.artifacts.repositories.metadata.MetadataArtifactProvider;
 import org.gradle.api.internal.artifacts.repositories.metadata.MetadataSource;
 import org.gradle.api.internal.component.ArtifactType;
-import org.gradle.internal.UncheckedException;
 import org.gradle.internal.action.InstantiatingAction;
 import org.gradle.internal.component.external.model.DefaultModuleComponentArtifactMetadata;
 import org.gradle.internal.component.external.model.ModuleComponentArtifactIdentifier;
 import org.gradle.internal.component.external.model.ModuleComponentArtifactMetadata;
 import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata;
-import org.gradle.internal.component.external.model.ModuleDependencyMetadata;
 import org.gradle.internal.component.external.model.MutableModuleComponentResolveMetadata;
 import org.gradle.internal.component.model.ComponentArtifactMetadata;
 import org.gradle.internal.component.model.ComponentArtifactResolveMetadata;
@@ -69,12 +68,12 @@ import org.gradle.internal.resource.local.LocallyAvailableExternalResource;
 import org.gradle.internal.resource.local.LocallyAvailableResourceFinder;
 import org.gradle.internal.resource.transfer.CacheAwareExternalResourceAccessor;
 import org.gradle.util.internal.CollectionUtils;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.io.File;
-import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -102,6 +101,7 @@ public abstract class ExternalResourceResolver implements ConfiguredModuleCompon
     private final InstantiatingAction<ComponentMetadataListerDetails> providedVersionLister;
     private final Instantiator injector;
     private final ChecksumService checksumService;
+    private final boolean continueOnConnectionFailure;
 
     private final String id;
     private ExternalResourceArtifactResolver cachedArtifactResolver;
@@ -118,7 +118,8 @@ public abstract class ExternalResourceResolver implements ConfiguredModuleCompon
         @Nullable InstantiatingAction<ComponentMetadataSupplierDetails> componentMetadataSupplierFactory,
         @Nullable InstantiatingAction<ComponentMetadataListerDetails> providedVersionLister,
         Instantiator injector,
-        ChecksumService checksumService
+        ChecksumService checksumService,
+        boolean continueOnConnectionFailure
     ) {
         this.id = descriptor.getId();
         this.name = descriptor.getName();
@@ -135,6 +136,7 @@ public abstract class ExternalResourceResolver implements ConfiguredModuleCompon
         this.providedVersionLister = providedVersionLister;
         this.injector = injector;
         this.checksumService = checksumService;
+        this.continueOnConnectionFailure = continueOnConnectionFailure;
     }
 
     @Override
@@ -149,6 +151,17 @@ public abstract class ExternalResourceResolver implements ConfiguredModuleCompon
 
     @Override
     public boolean isDynamicResolveMode() {
+        return false;
+    }
+
+    @Override
+    public boolean isContinueOnConnectionFailure() {
+        return continueOnConnectionFailure;
+    }
+
+    @Override
+    public boolean isRepositoryDisabled() {
+        // A repository is never disabled by default
         return false;
     }
 
@@ -186,8 +199,8 @@ public abstract class ExternalResourceResolver implements ConfiguredModuleCompon
         throw new UnsupportedOperationException();
     }
 
-    private void doListModuleVersions(ModuleDependencyMetadata dependency, BuildableModuleVersionListingResolveResult result) {
-        ModuleIdentifier module = dependency.getSelector().getModuleIdentifier();
+    private void doListModuleVersions(ModuleComponentSelector selector, ComponentOverrideMetadata overrideMetadata, BuildableModuleVersionListingResolveResult result) {
+        ModuleIdentifier module = selector.getModuleIdentifier();
 
         tryListingViaRule(module, result);
 
@@ -203,7 +216,7 @@ public abstract class ExternalResourceResolver implements ConfiguredModuleCompon
 
         // Iterate over the metadata sources to see if they can provide the version list
         for (MetadataSource<?> metadataSource : metadataSources.sources()) {
-            metadataSource.listModuleVersions(dependency, module, completeIvyPatterns, completeArtifactPatterns, versionLister, result);
+            metadataSource.listModuleVersions(selector, overrideMetadata, completeIvyPatterns, completeArtifactPatterns, versionLister, result);
             if (result.hasResult() && result.isAuthoritative()) {
                 return;
             }
@@ -308,7 +321,18 @@ public abstract class ExternalResourceResolver implements ConfiguredModuleCompon
 
     private void put(File src, ExternalResourceName destination) {
         repository.withProgressLogging().resource(destination).put(new FileReadableContent(src));
-        publishChecksums(destination, src);
+        if (!isSignatureFile(destination)) {
+            publishChecksums(destination, src);
+        }
+    }
+
+    /**
+     * Signature files (e.g. {@code .asc}, {@code .sig}) are themselves integrity artifacts, so we do not
+     * publish checksums for them.
+     */
+    private static boolean isSignatureFile(ExternalResourceName destination) {
+        String path = destination.getPath();
+        return path.endsWith(".asc") || path.endsWith(".sig");
     }
 
     private void publishChecksums(ExternalResourceName destination, File content) {
@@ -341,11 +365,7 @@ public abstract class ExternalResourceResolver implements ConfiguredModuleCompon
     private byte[] createChecksumFile(File src, String algorithm) {
         HashCode hash = checksumService.hash(src, algorithm);
         String formattedHashString = hash.toString();
-        try {
-            return formattedHashString.getBytes("US-ASCII");
-        } catch (UnsupportedEncodingException e) {
-            throw UncheckedException.throwAsUncheckedException(e);
-        }
+        return formattedHashString.getBytes(StandardCharsets.US_ASCII);
     }
 
     public List<String> getIvyPatterns() {
@@ -382,7 +402,7 @@ public abstract class ExternalResourceResolver implements ConfiguredModuleCompon
         }
 
         @Override
-        public final void listModuleVersions(ModuleDependencyMetadata dependency, BuildableModuleVersionListingResolveResult result) {
+        public final void listModuleVersions(ModuleComponentSelector selector, ComponentOverrideMetadata overrideMetadata, BuildableModuleVersionListingResolveResult result) {
         }
 
         @Override
@@ -418,8 +438,8 @@ public abstract class ExternalResourceResolver implements ConfiguredModuleCompon
         }
 
         @Override
-        public final void listModuleVersions(ModuleDependencyMetadata dependency, BuildableModuleVersionListingResolveResult result) {
-            doListModuleVersions(dependency, result);
+        public final void listModuleVersions(ModuleComponentSelector selector, ComponentOverrideMetadata overrideMetadata, BuildableModuleVersionListingResolveResult result) {
+            doListModuleVersions(selector, overrideMetadata, result);
         }
 
         @Override

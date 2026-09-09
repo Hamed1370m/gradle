@@ -17,7 +17,6 @@ package org.gradle.launcher.daemon.configuration
 
 import org.gradle.api.internal.file.TestFiles
 import org.gradle.jvm.toolchain.JavaLanguageVersion
-import org.gradle.launcher.configuration.BuildLayoutResult
 import org.gradle.launcher.daemon.toolchain.DaemonJvmCriteria
 import spock.lang.Specification
 
@@ -25,10 +24,7 @@ import static java.lang.Boolean.parseBoolean
 
 class DaemonParametersTest extends Specification {
     def userHomeDir = new File("gradle-user-home").absoluteFile
-    def buildLayoutResult = Stub(BuildLayoutResult) {
-        getGradleUserHomeDir() >> userHomeDir
-    }
-    def parameters = new DaemonParameters(buildLayoutResult, TestFiles.fileCollectionFactory())
+    def parameters = new DaemonParameters(userHomeDir, TestFiles.fileCollectionFactory())
 
     def "has reasonable default values"() {
         expect:
@@ -51,7 +47,7 @@ class DaemonParametersTest extends Specification {
     def "does not apply defaults when jvmargs already specified"() {
         when:
         parameters.setJvmArgs(["-Xmx17m"])
-        parameters.requestedJvmCriteria = new DaemonJvmCriteria.Spec(JavaLanguageVersion.of(8), null, null)
+        parameters.requestedJvmCriteria = new DaemonJvmCriteria.Spec(JavaLanguageVersion.of(8), null, null, false)
 
         then:
         parameters.effectiveJvmArgs.containsAll(["-Xmx17m"])
@@ -60,7 +56,7 @@ class DaemonParametersTest extends Specification {
 
     def "can apply defaults for Java 8 and later"() {
         when:
-        parameters.requestedJvmCriteria = new DaemonJvmCriteria.Spec(JavaLanguageVersion.of(9), null, null)
+        parameters.requestedJvmCriteria = new DaemonJvmCriteria.Spec(JavaLanguageVersion.of(9), null, null, false)
 
         then:
         parameters.effectiveJvmArgs.containsAll(DaemonParameters.DEFAULT_JVM_ARGS)
@@ -80,7 +76,7 @@ class DaemonParametersTest extends Specification {
     def "debug mode is persisted when defaults are applied"() {
         when:
         parameters.setDebug(true)
-        parameters.requestedJvmCriteria = new DaemonJvmCriteria.Spec(jvmDefault, null, null)
+        parameters.requestedJvmCriteria = new DaemonJvmCriteria.Spec(jvmDefault, null, null, false)
 
         then:
         parameters.effectiveJvmArgs.contains("-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005")

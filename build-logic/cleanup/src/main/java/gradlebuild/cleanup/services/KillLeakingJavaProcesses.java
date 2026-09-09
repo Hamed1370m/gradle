@@ -25,6 +25,7 @@ import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
@@ -37,6 +38,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.regex.Pattern.quote;
 
 /**
@@ -85,7 +87,12 @@ public class KillLeakingJavaProcesses {
     }
 
     static String generateLeakingProcessKillPattern(String rootProjectDir) {
-        String kotlinCompilerDaemonPattern = "(?:" + quote("-Dkotlin.environment.keepalive") + ".+org\\.jetbrains\\.kotlin\\.daemon\\.KotlinCompileDaemon)";
+        // Match the Kotlin compile daemon by its main class, which is stable across Kotlin versions.
+        // Older Kotlin releases launched the daemon with `-Dkotlin.environment.keepalive`, but Kotlin 2.4+
+        // (Build Tools API) no longer passes that flag and instead uses `-Dkotlin.daemon.initiator.marker.file`
+        // / `--daemon-logsPath`. Keying on the flag left 2.4+ daemons undetected, so they leaked and kept
+        // `<subproject>/build/tmp/kotlin-daemon.*.log` open, breaking the next build's `clean` on Windows.
+        String kotlinCompilerDaemonPattern = "(?:org\\.jetbrains\\.kotlin\\.daemon\\.KotlinCompileDaemon)";
         String quotedRootProjectDir = quote(rootProjectDir);
         String perfTestClasspathPattern = "(?:-cp.+\\\\build\\\\tmp\\\\performance-test-files.+?" + GRADLE_MAIN_CLASS_PATTERN_STR + ")";
         String buildDirClasspathPattern = "(?:-(classpath|cp) \"?" + quotedRootProjectDir + ".+?" + GRADLE_MAIN_CLASS_PATTERN_STR + ")";
@@ -138,7 +145,7 @@ public class KillLeakingJavaProcesses {
     }
 
     private static void writePsOutputToFile(File rootProjectDir, List<String> psOutput) {
-        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm-ss"));
+        String timestamp = LocalDateTime.now(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm-ss"));
         File psOutFile = new File(rootProjectDir, timestamp + ".psoutput");
 
         try {
@@ -158,9 +165,14 @@ public class KillLeakingJavaProcesses {
     }
 
     static void pkill(String pid) {
-        ExecResult execResult = run(isWindows() ? new String[]{"taskkill.exe", "/F", "/T", "/PID", pid} : new String[]{"kill", "-9", pid});
-        if (execResult.code != 0) {
-            System.out.println("Failed to kill daemon process " + pid + ". Maybe already killed?\nStdout:\n" + execResult.stdout + "\nStderr:\n" + execResult.stderr);
+        boolean killed = ProcessHandle.of(Long.parseLong(pid))
+            .map(handle -> {
+                handle.descendants().forEach(ProcessHandle::destroyForcibly);
+                return handle.destroyForcibly();
+            })
+            .orElse(false);
+        if (!killed) {
+            System.out.println("Failed to kill daemon process " + pid + ". Maybe already killed?");
         }
     }
 
@@ -185,25 +197,38 @@ public class KillLeakingJavaProcesses {
     }
 
     private static List<String> ps() {
-        return run(determinePsCommand()).assertZeroExit().stdout.lines().collect(Collectors.toList());
+        // ProcessHandle.Info.commandLine() is reliable on Unix but frequently empty on Windows (so the
+        // leak patterns could not match there). On Unix use the JDK process API - it also avoids spawning
+        // `ps`, which some sandboxes forbid - and fall back to PowerShell on Windows.
+        if (isWindows()) {
+            return run(windowsPsCommand()).assertZeroExit().stdout.lines().collect(Collectors.toList());
+        }
+        return listProcessesViaProcessHandle();
     }
 
-    private static String[] determinePsCommand() {
-        if (isWindows()) {
-            return new String[]{"wmic", "process", "get", "processid,commandline"};
-        } else if (isMacOS()) {
-            return new String[]{"ps", "x", "-o", "pid,command"};
-        } else {
-            return new String[]{"ps", "x", "-o", "pid,cmd"};
-        }
+    /**
+     * Lists running processes as "pid command-line" lines, matching the format produced by
+     * {@code ps -o pid,command}, so the same {@link #UNIX_PID_PATTERN} and command-line patterns apply.
+     * Used on Unix in place of spawning {@code ps}. Processes with no readable command line (owned by
+     * another user, kernel threads, zombies) are skipped, as they can never match the Gradle leak patterns.
+     */
+    private static List<String> listProcessesViaProcessHandle() {
+        return ProcessHandle.allProcesses()
+            .map(handle -> {
+                String commandLine = handle.info().commandLine().orElse("");
+                return commandLine.isEmpty() ? "" : handle.pid() + " " + commandLine;
+            })
+            .filter(line -> !line.isEmpty())
+            .collect(Collectors.toList());
+    }
+
+    private static String[] windowsPsCommand() {
+        // Windows is the only platform that still lists processes via an external command; Unix uses ProcessHandle (see ps()).
+        return new String[]{"powershell", "-Command", "\"Get-CimInstance Win32_Process | ForEach-Object { \\\"$($_.CommandLine) $($_.ProcessId)\\\" }\""};
     }
 
     private static boolean isWindows() {
         return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("windows");
-    }
-
-    private static boolean isMacOS() {
-        return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac");
     }
 
     private static class ExecResult {
@@ -241,18 +266,19 @@ public class KillLeakingJavaProcesses {
 
             process.waitFor(1, TimeUnit.MINUTES);
             latch.await(1, TimeUnit.MINUTES);
-            return new ExecResult(args, process.exitValue(), stdout.toString(), stderr.toString());
+            return new ExecResult(args, process.exitValue(), stdout.toString(UTF_8), stderr.toString(UTF_8));
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
+    @SuppressWarnings("CatchAndPrintStackTrace")
     private static ByteArrayOutputStream connectStream(InputStream forkedProcessOutput, CountDownLatch latch) {
         ByteArrayOutputStream os = new ByteArrayOutputStream();
         PrintStream ps = new PrintStream(os, true);
         new Thread(() -> {
             try {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(forkedProcessOutput));
+                BufferedReader reader = new BufferedReader(new InputStreamReader(forkedProcessOutput, UTF_8));
                 String line;
                 while ((line = reader.readLine()) != null) {
                     ps.println(line);

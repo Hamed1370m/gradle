@@ -34,12 +34,10 @@ import org.gradle.internal.work.AbstractConditionalExecution;
 import org.gradle.internal.work.AsyncWorkCompletion;
 import org.gradle.internal.work.AsyncWorkTracker;
 import org.gradle.internal.work.ConditionalExecutionQueue;
-import org.gradle.internal.work.DefaultConditionalExecutionQueue;
 import org.gradle.internal.work.WorkerThreadRegistry;
 import org.gradle.process.JavaForkOptions;
 import org.gradle.process.internal.JavaForkOptionsFactory;
 import org.gradle.process.internal.worker.child.WorkerDirectoryProvider;
-import org.gradle.util.internal.CollectionUtils;
 import org.gradle.workers.ClassLoaderWorkerSpec;
 import org.gradle.workers.ProcessWorkerSpec;
 import org.gradle.workers.WorkAction;
@@ -52,6 +50,7 @@ import org.gradle.workers.WorkerSpec;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Callable;
 
@@ -134,30 +133,26 @@ public class DefaultWorkerExecutor implements WorkerExecutor {
     public WorkQueue processIsolation(Action<? super ProcessWorkerSpec> action) {
         DefaultProcessWorkerSpec spec = instantiator.newInstance(DefaultProcessWorkerSpec.class, forkOptionsFactory.newDecoratedJavaForkOptions());
         File defaultWorkingDir = spec.getForkOptions().getWorkingDir();
-        File workingDirectory = workerDirectoryProvider.getWorkingDirectory();
         action.execute(spec);
-
         if (!defaultWorkingDir.equals(spec.getForkOptions().getWorkingDir())) {
             throw new IllegalArgumentException("Setting the working directory of a worker is not supported.");
-        } else {
-            spec.getForkOptions().setWorkingDir(workingDirectory);
         }
+        spec.getForkOptions().getWorkingDirectory().set(workerDirectoryProvider.getWorkingDirectory());
 
         return instantiator.newInstance(DefaultWorkQueue.class, this, spec, daemonWorkerFactory);
     }
+
     private <T extends WorkParameters> AsyncWorkCompletion submitWork(Class<? extends WorkAction<T>> workActionClass, Action<? super T> parameterAction, WorkerSpec workerSpec, WorkerFactory workerFactory) {
         Class<T> parameterType = isolationScheme.parameterTypeFor(workActionClass);
-        T parameters = (parameterType == null) ? null : instantiator.newInstance(parameterType);
-        if (parameters != null) {
-            parameterAction.execute(parameters);
-        }
+        T parameters = isolationScheme.instantiateParameters(parameterType, instantiator::newInstance);
+        parameterAction.execute(parameters);
 
         String description = workActionClass.getName();
         WorkerRequirement workerRequirement = getWorkerRequirement(workActionClass, workerSpec, parameters);
         IsolatedParametersActionExecutionSpec<?> spec;
         try {
             // Isolate parameters in this thread prior to starting work in a separate thread
-            spec = actionExecutionSpecFactory.newIsolatedSpec(description, workActionClass, parameters, workerRequirement, false);
+            spec = actionExecutionSpecFactory.newIsolatedSpec(description, workActionClass, parameters, workerRequirement, Collections.emptySet());
         } catch (Throwable t) {
             throw new WorkExecutionException(description, t);
         }
@@ -188,18 +183,12 @@ public class DefaultWorkerExecutor implements WorkerExecutor {
     }
 
     /**
-     * Wait for any outstanding work to complete.  Note that if there is uncompleted work associated
-     * with the current build operation, we'll also temporarily expand the thread pool of the execution queue.
-     * This is to avoid a thread starvation scenario (see {@link DefaultConditionalExecutionQueue#expand()}
-     * for further details).
+     * Wait for any outstanding work to complete.
      */
     @Override
     public void await() throws WorkerExecutionException {
         BuildOperationRef currentOperation = buildOperationRunner.getCurrentOperation();
         try {
-            if (asyncWorkTracker.hasUncompletedWork(currentOperation)) {
-                executionQueue.expand();
-            }
             asyncWorkTracker.waitForCompletion(currentOperation, RETAIN_PROJECT_LOCKS);
         } catch (DefaultMultiCauseException e) {
             throw workerExecutionException(e.getCauses());
@@ -209,9 +198,6 @@ public class DefaultWorkerExecutor implements WorkerExecutor {
     private void await(List<AsyncWorkCompletion> workItems) throws WorkExecutionException {
         BuildOperationRef currentOperation = buildOperationRunner.getCurrentOperation();
         try {
-            if (CollectionUtils.any(workItems, workItem -> !workItem.isComplete())) {
-                executionQueue.expand();
-            }
             asyncWorkTracker.waitForCompletion(currentOperation, workItems, RETAIN_PROJECT_LOCKS);
         } catch (DefaultMultiCauseException e) {
             throw workerExecutionException(e.getCauses());

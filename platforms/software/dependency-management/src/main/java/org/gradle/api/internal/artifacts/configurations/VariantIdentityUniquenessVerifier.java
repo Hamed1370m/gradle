@@ -19,16 +19,14 @@ package org.gradle.api.internal.artifacts.configurations;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.MultimapBuilder;
 import org.gradle.api.GradleException;
-import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.capabilities.Capability;
 import org.gradle.api.internal.attributes.ImmutableAttributes;
 import org.gradle.internal.component.external.model.ImmutableCapabilities;
-import org.gradle.internal.component.external.model.ProjectDerivedCapability;
 import org.gradle.internal.deprecation.DocumentedFailure;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
@@ -40,18 +38,19 @@ import java.util.stream.Collectors;
 public class VariantIdentityUniquenessVerifier {
 
     /**
-     * Build a report of all possible variant uniqueness failures for the given configurations.
+     * Build a report of all possible variant uniqueness failures for the given configurations. If configurations
+     * do not declare capabilities, they assume the given default capability.
      */
-    public static VerificationReport buildReport(ConfigurationsProvider configurations) {
+    public static VerificationReport buildReport(ConfigurationsProvider configurations, ImmutableCapabilities defaultCapabilities) {
         ListMultimap<VariantIdentity, ConfigurationInternal> byIdentity =
             MultimapBuilder.linkedHashKeys().arrayListValues().build();
 
-        configurations.visitAll(configuration -> {
+        configurations.visitConsumable(configuration -> {
             if (!mustHaveUniqueAttributes(configuration)) {
                 return;
             }
 
-            byIdentity.put(VariantIdentity.from(configuration), configuration);
+            byIdentity.put(VariantIdentity.from(configuration, defaultCapabilities), configuration);
         });
 
         return new VerificationReport(byIdentity);
@@ -61,8 +60,7 @@ public class VariantIdentityUniquenessVerifier {
      * Consumable, non-resolvable, non-default configurations with attributes must have unique attributes.
      */
     private static boolean mustHaveUniqueAttributes(Configuration configuration) {
-        return configuration.isCanBeConsumed() &&
-            !configuration.isCanBeResolved() &&
+        return !configuration.isCanBeResolved() &&
             !Dependency.DEFAULT_CONFIGURATION.equals(configuration.getName()) &&
             !configuration.getAttributes().isEmpty();
     }
@@ -79,12 +77,13 @@ public class VariantIdentityUniquenessVerifier {
         }
 
         /**
-         * Get a failure that only checks variant uniqueness for the given configuration.
+         * Get a failure that only checks variant uniqueness for the given configuration. If the configuration does
+         * not declare capabilities, it assumes the given default capability.
          */
         @Nullable
-        public GradleException failureFor(ConfigurationInternal configuration, boolean withTaskAdvice) {
+        public GradleException failureFor(ConfigurationInternal configuration, ImmutableCapabilities defaultCapabilities, boolean withTaskAdvice) {
             List<ConfigurationInternal> collisions =
-                byIdentity.get(VariantIdentity.from(configuration)).stream()
+                byIdentity.get(VariantIdentity.from(configuration, defaultCapabilities)).stream()
                     .filter(it -> !it.getName().equals(configuration.getName()))
                     .collect(Collectors.toList());
 
@@ -147,25 +146,16 @@ public class VariantIdentityUniquenessVerifier {
             this.capabilities = capabilities;
         }
 
-        public static VariantIdentity from(ConfigurationInternal configuration) {
+        public static VariantIdentity from(ConfigurationInternal configuration, ImmutableCapabilities defaultCapabilities) {
+            Collection<? extends Capability> declaredCapabilities = configuration.getOutgoing().getCapabilities();
+            ImmutableCapabilities capabilities = !declaredCapabilities.isEmpty()
+                ? ImmutableCapabilities.of(declaredCapabilities)
+                : defaultCapabilities;
+
             return new VariantIdentity(
                 configuration.getAttributes().asImmutable(),
-                allCapabilitiesIncludingDefault(configuration)
+                capabilities
             );
-        }
-
-        private static ImmutableCapabilities allCapabilitiesIncludingDefault(ConfigurationInternal conf) {
-            Collection<? extends Capability> declaredCapabilities = conf.getOutgoing().getCapabilities();
-            if (!declaredCapabilities.isEmpty()) {
-                return ImmutableCapabilities.of(declaredCapabilities);
-            }
-
-            // If no capabilities are declared, use the implicit capability.
-            Project project = conf.getDomainObjectContext().getProject();
-            if (project == null) {
-                return ImmutableCapabilities.EMPTY;
-            }
-            return ImmutableCapabilities.of(new ProjectDerivedCapability(project));
         }
 
         @Override

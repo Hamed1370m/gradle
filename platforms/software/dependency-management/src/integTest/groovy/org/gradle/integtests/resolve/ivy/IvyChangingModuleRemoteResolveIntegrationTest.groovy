@@ -28,7 +28,7 @@ class IvyChangingModuleRemoteResolveIntegrationTest extends AbstractHttpDependen
         given:
         buildFile << """
 repositories {
-    ivy { url "${ivyHttpRepo.uri}" }
+    ivy { url = "${ivyHttpRepo.uri}" }
 }
 
 configurations { compile }
@@ -38,7 +38,9 @@ configurations.all {
 }
 
 dependencies {
-    compile group: "group", name: "projectA", version: "1.1", changing: true
+    compile("group:projectA:1.1") {
+        changing = true
+    }
 }
 
 task retrieve(type: Copy) {
@@ -90,14 +92,16 @@ task retrieve(type: Copy) {
         buildFile << """
 def isChanging = providers.gradleProperty('isChanging').isPresent()
 repositories {
-    ivy { url "${ivyHttpRepo.uri}" }
+    ivy { url = "${ivyHttpRepo.uri}" }
 }
 
 configurations { compile }
 configurations.compile.resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
 
 dependencies {
-    compile group: "group", name: "projectA", version: "1.1", changing: isChanging
+    compile("group:projectA:1.1") {
+        changing = isChanging
+    }
 }
 
 task retrieve(type: Copy) {
@@ -137,7 +141,7 @@ task retrieve(type: Copy) {
         given:
         buildFile << """
 repositories {
-    ivy { url "${ivyHttpRepo.uri}" }
+    ivy { url = "${ivyHttpRepo.uri}" }
 }
 
 configurations { compile }
@@ -147,7 +151,9 @@ configurations.all {
 }
 
 dependencies {
-    compile group: "group", name: "projectA", version: "1.1", changing: true
+    compile("group:projectA:1.1") {
+        changing = true
+    }
 }
 
 task retrieve(type: Copy) {
@@ -194,7 +200,7 @@ task retrieve(type: Copy) {
         given:
         buildFile << """
 repositories {
-    ivy { url "${ivyHttpRepo.uri}" }
+    ivy { url = "${ivyHttpRepo.uri}" }
 }
 
 configurations { compile }
@@ -207,7 +213,9 @@ if (providers.gradleProperty('doNotCacheChangingModules').isPresent()) {
 }
 
 dependencies {
-    compile group: "group", name: "projectA", version: "1.1", changing: true
+    compile("group:projectA:1.1") {
+        changing = true
+    }
 }
 
 task retrieve(type: Copy) {
@@ -272,7 +280,7 @@ task retrieve(type: Copy) {
         given:
         buildFile << """
             repositories {
-                ivy { url "${ivyHttpRepo.uri}" }
+                ivy { url = "${ivyHttpRepo.uri}" }
             }
 
             configurations { compile }
@@ -282,7 +290,9 @@ task retrieve(type: Copy) {
             }
 
             dependencies {
-                compile group: "group", name: "projectA", version: "1.1", changing: true
+                compile("group:projectA:1.1") {
+                    changing = true
+                }
             }
 
             task retrieve(type: Copy) {

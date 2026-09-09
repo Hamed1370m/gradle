@@ -18,9 +18,14 @@ package org.gradle.api.internal.file;
 
 import javax.inject.Inject;
 
-public abstract class DefaultConfigurableUserClassFilePermissions extends AbstractUserClassFilePermissions implements ConfigurableUserClassFilePermissionsInternal {
+public class DefaultConfigurableUserClassFilePermissions extends AbstractUserClassFilePermissions implements ConfigurableUserClassFilePermissionsInternal {
+
+    private boolean read = false;
+    private boolean write = false;
+    private boolean execute = false;
 
     @Inject
+    @SuppressWarnings("this-escape")
     public DefaultConfigurableUserClassFilePermissions(int unixNumeric) {
         setRead(isRead(unixNumeric));
         setWrite(isWrite(unixNumeric));
@@ -39,5 +44,35 @@ public abstract class DefaultConfigurableUserClassFilePermissions extends Abstra
         setRead(isRead(unixNumeric));
         setWrite(isWrite(unixNumeric));
         setExecute(isExecute(unixNumeric));
+    }
+
+    @Override
+    public boolean getRead() {
+        return read;
+    }
+
+    @Override
+    public boolean getWrite() {
+        return write;
+    }
+
+    @Override
+    public boolean getExecute() {
+        return execute;
+    }
+
+    @Override
+    public void setRead(boolean read) {
+        this.read = read;
+    }
+
+    @Override
+    public void setWrite(boolean write) {
+        this.write = write;
+    }
+
+    @Override
+    public void setExecute(boolean execute) {
+        this.execute = execute;
     }
 }

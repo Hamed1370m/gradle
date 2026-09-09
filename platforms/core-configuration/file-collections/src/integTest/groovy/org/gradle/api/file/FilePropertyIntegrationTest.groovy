@@ -16,6 +16,7 @@
 
 package org.gradle.api.file
 
+import org.gradle.api.problems.Severity
 import org.gradle.api.tasks.TasksWithInputsAndOutputs
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.internal.reflect.validation.ValidationMessageChecker
@@ -221,35 +222,35 @@ task useFileProviderApi {
         fails("useIntTypeDsl")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':useIntTypeDsl'.")
+        failure.assertHasDescription("Execution failed for task ':useIntTypeDsl' (registered in build file 'build.gradle').")
         failure.assertHasCause("Cannot set the value of extension 'custom' property 'prop' of type org.gradle.api.file.Directory using an instance of type java.lang.Integer.")
 
         when:
         fails("useIntTypeApi")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':useIntTypeApi'.")
+        failure.assertHasDescription("Execution failed for task ':useIntTypeApi' (registered in build file 'build.gradle').")
         failure.assertHasCause("Cannot set the value of extension 'custom' property 'prop' of type org.gradle.api.file.Directory using an instance of type java.lang.Integer.")
 
         when:
         fails("useFileTypeDsl")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':useFileTypeDsl'.")
+        failure.assertHasDescription("Execution failed for task ':useFileTypeDsl' (registered in build file 'build.gradle').")
         failure.assertHasCause("Cannot set the value of extension 'custom' property 'prop' of type org.gradle.api.file.Directory using an instance of type org.gradle.api.internal.file.DefaultFilePropertyFactory\$FixedFile.")
 
         when:
         fails("useFileProviderDsl")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':useFileProviderDsl'.")
+        failure.assertHasDescription("Execution failed for task ':useFileProviderDsl' (registered in build file 'build.gradle').")
         failure.assertHasCause("Cannot set the value of extension 'custom' property 'prop' of type org.gradle.api.file.Directory using a provider of type org.gradle.api.file.RegularFile.")
 
         when:
         fails("useFileProviderApi")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':useFileProviderApi'.")
+        failure.assertHasDescription("Execution failed for task ':useFileProviderApi' (registered in build file 'build.gradle').")
         failure.assertHasCause("Cannot set the value of extension 'custom' property 'prop' of type org.gradle.api.file.Directory using a provider of type org.gradle.api.file.RegularFile.")
     }
 
@@ -310,35 +311,35 @@ task useDirProviderApi {
         fails("useIntTypeDsl")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':useIntTypeDsl'.")
+        failure.assertHasDescription("Execution failed for task ':useIntTypeDsl' (registered in build file 'build.gradle').")
         failure.assertHasCause("Cannot set the value of extension 'custom' property 'prop' of type org.gradle.api.file.RegularFile using an instance of type java.lang.Integer.")
 
         when:
         fails("useIntTypeApi")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':useIntTypeApi'.")
+        failure.assertHasDescription("Execution failed for task ':useIntTypeApi' (registered in build file 'build.gradle').")
         failure.assertHasCause("Cannot set the value of extension 'custom' property 'prop' of type org.gradle.api.file.RegularFile using an instance of type java.lang.Integer.")
 
         when:
         fails("useDirTypeDsl")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':useDirTypeDsl'.")
+        failure.assertHasDescription("Execution failed for task ':useDirTypeDsl' (registered in build file 'build.gradle').")
         failure.assertHasCause("Cannot set the value of extension 'custom' property 'prop' of type org.gradle.api.file.RegularFile using an instance of type org.gradle.api.internal.file.DefaultFilePropertyFactory\$FixedDirectory.")
 
         when:
         fails("useDirProviderDsl")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':useDirProviderDsl'.")
+        failure.assertHasDescription("Execution failed for task ':useDirProviderDsl' (registered in build file 'build.gradle').")
         failure.assertHasCause("Cannot set the value of extension 'custom' property 'prop' of type org.gradle.api.file.RegularFile using a provider of type org.gradle.api.file.Directory.")
 
         when:
         fails("useDirProviderApi")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':useDirProviderApi'.")
+        failure.assertHasDescription("Execution failed for task ':useDirProviderApi' (registered in build file 'build.gradle').")
         failure.assertHasCause("Cannot set the value of extension 'custom' property 'prop' of type org.gradle.api.file.RegularFile using a provider of type org.gradle.api.file.Directory.")
     }
 
@@ -375,21 +376,21 @@ task useDirProviderApi {
         run("merge")
 
         then:
-        result.assertTasksExecuted(":createFile", ":merge")
+        result.assertTasksScheduled(":createFile", ":merge")
         file("output/merged.txt").text == 'file1'
 
         when:
         run("merge")
 
         then:
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
 
         when:
         file("file-source.txt").text = "new-file1"
         run("merge")
 
         then:
-        result.assertTasksExecuted(":createFile", ":merge")
+        result.assertTasksScheduled(":createFile", ":merge")
         file("output/merged.txt").text == 'new-file1'
     }
 
@@ -432,21 +433,21 @@ task useDirProviderApi {
         run("merge")
 
         then:
-        result.assertTasksExecuted(":createFile", ":merge")
+        result.assertTasksScheduled(":createFile", ":merge")
         file("output/merged.txt").text == 'file1'
 
         when:
         run("merge")
 
         then:
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
 
         when:
         file("file-source.txt").text = "new-file1"
         run("merge")
 
         then:
-        result.assertTasksExecuted(":createFile", ":merge")
+        result.assertTasksScheduled(":createFile", ":merge")
         file("output/merged.txt").text == 'new-file1'
     }
 
@@ -487,21 +488,21 @@ task useDirProviderApi {
         run("merge")
 
         then:
-        result.assertTasksExecuted(":createFile", ":merge")
+        result.assertTasksScheduled(":createFile", ":merge")
         file("output/merged.txt").text == 'file1'
 
         when:
         run("merge")
 
         then:
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
 
         when:
         file("file-source.txt").text = "new-file1"
         run("merge")
 
         then:
-        result.assertTasksExecuted(":createFile", ":merge")
+        result.assertTasksScheduled(":createFile", ":merge")
         file("output/merged.txt").text == 'new-file1'
     }
 
@@ -544,14 +545,14 @@ task useDirProviderApi {
         run("merge")
 
         then:
-        result.assertTasksExecuted(":createFile", ":merge")
+        result.assertTasksScheduled(":createFile", ":merge")
         file("output/merged.txt").text == 'file1'
 
         when:
         run("merge")
 
         then:
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
     }
 
     def "can wire the output directory of a task as input to another task using property"() {
@@ -601,21 +602,21 @@ task useDirProviderApi {
         run("merge")
 
         then:
-        result.assertTasksExecuted(":createDir", ":merge")
+        result.assertTasksScheduled(":createDir", ":merge")
         file("output/merged.txt").text == 'dir1'
 
         when:
         run("merge")
 
         then:
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
 
         when:
         file("dir-source.txt").text = "new-dir1"
         run("merge")
 
         then:
-        result.assertTasksNotSkipped(":createDir", ":merge")
+        result.assertTasksExecuted(":createDir", ":merge")
         file("output/merged.txt").text == 'new-dir1'
     }
 
@@ -657,14 +658,14 @@ task useDirProviderApi {
         run("merge")
 
         then:
-        result.assertTasksExecuted(":createDir", ":merge")
+        result.assertTasksScheduled(":createDir", ":merge")
         file("output/merged.txt").text == 'dir1'
 
         when:
         run("merge")
 
         then:
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
     }
 
     def "can wire the output of a task as a dependency of another task via #fileMethod"() {
@@ -717,7 +718,7 @@ task useDirProviderApi {
         run("otherTask")
 
         then:
-        result.assertTasksExecuted(":createDir", ":createFile1", ":otherTask")
+        result.assertTasksScheduled(":createDir", ":createFile1", ":otherTask")
 
         where:
         fileMethod    | dirMethod
@@ -752,7 +753,7 @@ class SomeTask extends DefaultTask {
         run("doNothing")
 
         then:
-        result.assertTasksNotSkipped(":doNothing")
+        result.assertTasksExecuted(":doNothing")
 
         when:
         run("doNothing")
@@ -763,6 +764,7 @@ class SomeTask extends DefaultTask {
 
     def "optional output consumed as non-optional input yields a reasonable error message"() {
         given:
+        enableProblemsApiCheck()
         buildFile """
             class ProducerTask extends DefaultTask {
                 @Optional @OutputFile
@@ -805,7 +807,17 @@ class SomeTask extends DefaultTask {
 
         then:
         failure.assertHasDescription("A problem was found with the configuration of task ':consumer' (type 'ConsumerTask').")
-        failureDescriptionContains(missingValueMessage { type('ConsumerTask').property('bean.inputFile') })
-        failure.assertTasksExecuted(':producer', ':consumer')
+        failure.assertTasksScheduled(':producer', ':consumer')
+        verifyAll(receivedProblem) {
+            severity == Severity.ERROR
+            fqid == 'validation:property-validation:value-not-set'
+            definition.id.displayName == 'Value not set'
+            details == 'This property isn\'t marked as optional and no value has been configured'
+            definition.documentationLink.url == "https://docs.gradle.org/${distribution.version.version}/userguide/validation_problems.html#value_not_set"
+            additionalData.asMap == [
+                'typeName': 'ConsumerTask',
+                'propertyName': 'bean.inputFile',
+            ]
+        }
     }
 }

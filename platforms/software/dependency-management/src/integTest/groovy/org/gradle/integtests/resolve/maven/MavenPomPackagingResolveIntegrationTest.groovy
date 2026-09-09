@@ -36,8 +36,8 @@ class MavenPomPackagingResolveIntegrationTest extends AbstractHttpDependencyReso
     private void buildWithDependencies(def dependencies) {
         buildFile << """
 repositories {
-    maven { url '${repo1.uri}' }
-    maven { url '${repo2.uri}' }
+    maven { url = '${repo1.uri}' }
+    maven { url = '${repo2.uri}' }
 }
 configurations { compile }
 dependencies {
@@ -46,7 +46,7 @@ dependencies {
 task deleteDir(type: Delete) {
     delete 'libs'
 }
-task retrieve(type: Copy, dependsOn: deleteDir) {
+task retrieve(type: Copy, dependsOn: tasks.deleteDir) {
     into 'libs'
     from configurations.compile
 }

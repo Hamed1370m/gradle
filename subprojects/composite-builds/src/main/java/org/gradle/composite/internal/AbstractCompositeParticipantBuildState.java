@@ -20,32 +20,31 @@ import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
 import org.gradle.api.internal.BuildDefinition;
 import org.gradle.api.internal.artifacts.DefaultModuleVersionIdentifier;
-import org.gradle.api.internal.artifacts.DefaultProjectComponentIdentifier;
-import org.gradle.api.internal.artifacts.ForeignBuildIdentifier;
 import org.gradle.api.internal.artifacts.configurations.DependencyMetaDataProvider;
-import org.gradle.api.internal.project.ProjectIdentity;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.internal.project.ProjectState;
 import org.gradle.internal.Pair;
 import org.gradle.internal.build.AbstractBuildState;
+import org.gradle.internal.build.BuildProjectRegistry;
 import org.gradle.internal.build.BuildState;
 import org.gradle.internal.build.CompositeBuildParticipantBuildState;
-import org.gradle.internal.buildtree.BuildTreeState;
+import org.gradle.internal.buildtree.BuildTreeServices;
 import org.gradle.util.Path;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
 public abstract class AbstractCompositeParticipantBuildState extends AbstractBuildState implements CompositeBuildParticipantBuildState {
+
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractCompositeParticipantBuildState.class);
 
-    private Set<Pair<ModuleVersionIdentifier, ProjectComponentIdentifier>> availableModules;
+    private @Nullable Set<Pair<ModuleVersionIdentifier, ProjectComponentIdentifier>> availableModules;
 
-    public AbstractCompositeParticipantBuildState(BuildTreeState buildTree, BuildDefinition buildDefinition, @Nullable BuildState parent) {
-        super(buildTree, buildDefinition, parent);
+    public AbstractCompositeParticipantBuildState(BuildTreeServices buildTreeServices, BuildDefinition buildDefinition, Path identityPath, @Nullable BuildState parent) {
+        super(buildTreeServices, buildDefinition, identityPath, parent);
     }
 
     @Override
@@ -53,9 +52,12 @@ public abstract class AbstractCompositeParticipantBuildState extends AbstractBui
         if (availableModules == null) {
             ensureChildBuildConfigured();
             availableModules = new LinkedHashSet<>();
-            for (ProjectState project : getProjects().getAllProjects()) {
-                registerProject(availableModules, project.getMutableModel());
-            }
+            BuildProjectRegistry projectRegistry = getProjects();
+            projectRegistry.applyToMutableStateOfAllProjects(access -> {
+                for (ProjectState project : projectRegistry.getAllProjects()) {
+                    registerProject(availableModules, project, access.getMutableModel(project));
+                }
+            });
         }
         return availableModules;
     }
@@ -64,26 +66,15 @@ public abstract class AbstractCompositeParticipantBuildState extends AbstractBui
         ensureProjectsConfigured();
     }
 
-    private void registerProject(Set<Pair<ModuleVersionIdentifier, ProjectComponentIdentifier>> availableModules, ProjectInternal project) {
-        ProjectComponentIdentifier projectIdentifier = project.getOwner().getComponentIdentifier();
+    private static void registerProject(
+        Set<Pair<ModuleVersionIdentifier, ProjectComponentIdentifier>> availableModules,
+        ProjectState projectState,
+        ProjectInternal project
+    ) {
+        ProjectComponentIdentifier projectIdentifier = projectState.getComponentIdentifier();
         ModuleVersionIdentifier moduleId = DefaultModuleVersionIdentifier.newId(project.getServices().get(DependencyMetaDataProvider.class).getModule());
-        LOGGER.info("Registering {} in composite build. Will substitute for module '{}'.", project, moduleId.getModule());
+        LOGGER.info("Registering {} in composite build. Will substitute for module '{}'.", projectState, moduleId.getModule());
         availableModules.add(Pair.of(moduleId, projectIdentifier));
     }
 
-    @Override
-    public ProjectComponentIdentifier idToReferenceProjectFromAnotherBuild(ProjectComponentIdentifier identifier) {
-        DefaultProjectComponentIdentifier original = (DefaultProjectComponentIdentifier) identifier;
-        Path foreignBuildPath = Path.path(getBuildIdentifier().getBuildPath());
-
-        ProjectIdentity localIdentity = original.getProjectIdentity();
-        ProjectIdentity foreignIdentity = new ProjectIdentity(
-            new ForeignBuildIdentifier(foreignBuildPath),
-            localIdentity.getBuildTreePath(),
-            localIdentity.getProjectPath(),
-            localIdentity.getProjectName()
-        );
-
-        return new DefaultProjectComponentIdentifier(foreignIdentity);
-    }
 }

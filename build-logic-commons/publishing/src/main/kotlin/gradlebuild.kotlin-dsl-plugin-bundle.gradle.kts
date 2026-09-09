@@ -16,6 +16,7 @@
 
 import gradlebuild.basics.capitalize
 import gradlebuild.pluginpublish.extension.PluginPublishExtension
+import org.gradle.plugin.compatibility.compatibility
 import java.time.Year
 
 plugins {
@@ -44,7 +45,7 @@ configurations.all {
 publishing.publications.withType<MavenPublication>().configureEach {
     if (name == "pluginMaven") {
         groupId = project.group.toString()
-        artifactId = moduleIdentity.baseName.get()
+        artifactId = gradleModule.identity.baseName.get()
     }
     pom {
         licenses {
@@ -60,7 +61,7 @@ publishing.publications.withType<MavenPublication>().configureEach {
 // See AbstractPluginTest
 val localRepository = layout.buildDirectory.dir("repository")
 
-val publishPluginsToTestRepository by tasks.registering {
+val publishPluginsToTestRepository = tasks.register("publishPluginsToTestRepository") {
     dependsOn("publishPluginMavenPublicationToTestRepository")
     val repoDir = localRepository // Prevent capturing the Gradle script instance for configuration cache compatibility
     // This should be unified with publish-public-libraries if possible
@@ -82,7 +83,7 @@ val publishPluginsToTestRepository by tasks.registering {
 }
 
 val futurePluginVersionsPropertiesFile = layout.buildDirectory.file("generated-resources/future-plugin-versions/future-plugin-versions.properties")
-val writeFuturePluginVersions by tasks.registering(WriteProperties::class) {
+val writeFuturePluginVersions = tasks.register<WriteProperties>("writeFuturePluginVersions") {
     destinationFile = futurePluginVersionsPropertiesFile
 }
 val futurePluginVersionsDestDir = futurePluginVersionsPropertiesFile.map { it.asFile.parentFile }
@@ -125,27 +126,28 @@ gradlePlugin {
         writeFuturePluginVersions {
             property(plugin.id, version)
         }
+
+        compatibility {
+            features {
+                configurationCache = true
+            }
+        }
     }
 }
 
 // For local consumption by tests - this should be unified with publish-public-libraries if possible
 configurations.create("localLibsRepositoryElements") {
     attributes {
-        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.JAVA_RUNTIME))
-        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category.LIBRARY))
-        attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named("gradle-local-repository"))
-        attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling.EMBEDDED))
+        attribute(Category.CATEGORY_ATTRIBUTE, objects.named("gradle-local-repository"))
     }
     isCanBeResolved = false
     isCanBeConsumed = true
-    isVisible = false
     outgoing.artifact(localRepository) {
         builtBy(publishPluginsToTestRepository)
     }
 }
 
 configurations.create("futureVersion") {
-    isVisible = false
     isCanBeResolved = false
     isCanBeConsumed = true
     attributes {
@@ -165,6 +167,8 @@ configurations.archives.get().allArtifacts.removeIf {
     it.name != "plugins"
 }
 
+// The key ID is required because the signing key is a subkey.
+val pgpSigningKeyId: Provider<String> = providers.environmentVariable("PGP_SIGNING_KEY_ID")
 val pgpSigningKey: Provider<String> = providers.environmentVariable("PGP_SIGNING_KEY")
 val pgpSigningPassPhrase: Provider<String> = providers.environmentVariable("PGP_SIGNING_KEY_PASSPHRASE")
 val signArtifacts: Boolean = !pgpSigningKey.orNull.isNullOrEmpty()
@@ -172,7 +176,7 @@ val signArtifacts: Boolean = !pgpSigningKey.orNull.isNullOrEmpty()
 tasks.withType<Sign>().configureEach { isEnabled = signArtifacts }
 
 signing {
-    useInMemoryPgpKeys(pgpSigningKey.orNull, pgpSigningPassPhrase.orNull)
+    useInMemoryPgpKeys(pgpSigningKeyId.orNull, pgpSigningKey.orNull, pgpSigningPassPhrase.orNull)
     publishing.publications.configureEach {
         if (signArtifacts) {
             signing.sign(this)

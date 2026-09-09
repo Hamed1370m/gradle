@@ -17,6 +17,7 @@
 package org.gradle.api.publish.ivy
 
 import spock.lang.Issue
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 class IvyGradleModuleMetadataPublishIntegrationTest extends AbstractIvyPublishIntegTest {
     def setup() {
@@ -73,7 +74,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -117,7 +118,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -165,7 +166,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -216,7 +217,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -261,7 +262,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -306,7 +307,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -352,7 +353,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -391,7 +392,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -415,6 +416,7 @@ class TestCapability implements Capability {
         module.parsedModuleMetadata.attributes['org.gradle.status'] == 'milestone'
     }
 
+    @ToBeFixedForIsolatedProjects(because = "publishing plugin accesses subproject state at config time")
     def "maps project dependencies"() {
         given:
         createDirs("a", "b")
@@ -430,7 +432,7 @@ class TestCapability implements Capability {
 
                 publishing {
                     repositories {
-                        ivy { url "${ivyRepo.uri}" }
+                        ivy { url = "${ivyRepo.uri}" }
                     }
                 }
             }
@@ -522,7 +524,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -588,7 +590,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -642,7 +644,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -703,7 +705,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -747,7 +749,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -806,7 +808,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -869,7 +871,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -935,7 +937,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -980,7 +982,7 @@ class TestCapability implements Capability {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {

@@ -3,19 +3,15 @@
 package com.example
 
 import org.gradle.declarative.dsl.model.annotations.Adding
-import org.gradle.declarative.dsl.model.annotations.Builder
-import org.gradle.declarative.dsl.model.annotations.Restricted
+import org.gradle.declarative.dsl.model.annotations.HasDefaultValue
 
 
 class Abc {
-    @get:Restricted
     var a: Int = 0
 
-    @Restricted
     @Suppress("FunctionOnlyReturningConstant")
     fun b(): Int = 1
 
-    @get:Restricted
     var str: String = ""
 
     @Adding
@@ -28,32 +24,30 @@ class Abc {
 
     internal
     val cItems = mutableListOf<C>()
+
+    fun newD(id: String): D = D().also { it.id = id }
 }
 
 
-class C(@get:Restricted var x: Int = 0) {
-    @Builder
+class C(var x: Int = 0) {
+    @HasDefaultValue(false)
     fun d(newD: D): C {
         this.d = newD
         return this
     }
 
-    @get:Restricted
+    @get:HasDefaultValue(false)
     var d: D = D()
 
-    @get:Restricted
     val y = "test"
 
-    @Restricted
     @Suppress("FunctionOnlyReturningConstant")
     fun f(y: String) = 0
 }
 
 
 class D {
-    @get:Restricted
     var id: String = "none"
 }
 
 
-fun newD(id: String): D = D().also { it.id = id }

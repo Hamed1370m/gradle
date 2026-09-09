@@ -24,7 +24,6 @@ import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.artifacts.dsl.RepositoryHandler;
 import org.gradle.api.attributes.Attribute;
-import org.gradle.api.internal.DomainObjectContext;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.artifacts.configurations.RoleBasedConfigurationContainerInternal;
 import org.gradle.api.internal.file.FileResolver;
@@ -39,23 +38,24 @@ import org.gradle.api.provider.Property;
 import org.gradle.configuration.project.ProjectConfigurationActionContainer;
 import org.gradle.groovy.scripts.ScriptSource;
 import org.gradle.internal.logging.StandardOutputCapture;
-import org.gradle.internal.metaobject.DynamicObject;
+import org.gradle.internal.metaobject.HierarchicalDynamicObject;
 import org.gradle.internal.model.RuleBasedPluginListener;
 import org.gradle.internal.scan.UsedByScanPlugin;
 import org.gradle.internal.service.ServiceRegistry;
-import org.gradle.internal.service.scopes.ServiceRegistryFactory;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.model.internal.registry.ModelRegistry;
 import org.gradle.model.internal.registry.ModelRegistryScope;
 import org.gradle.normalization.internal.InputNormalizationHandlerInternal;
 import org.gradle.util.Path;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import java.util.Map;
 import java.util.Set;
 
 @UsedByScanPlugin("scan, test-retry")
-public interface ProjectInternal extends Project, ProjectIdentifier, HasScriptServices, DomainObjectContext, ModelRegistryScope, PluginAwareInternal {
+@ServiceScope(Scope.Project.class)
+public interface ProjectInternal extends Project, ProjectIdentifier, HasScriptServices, ModelRegistryScope, PluginAwareInternal {
 
     // These constants are defined here and not with the rest of their kind in HelpTasksPlugin because they are referenced
     // in the ‘core’ modules, which don't depend on ‘plugins’ where HelpTasksPlugin is defined.
@@ -70,12 +70,12 @@ public interface ProjectInternal extends Project, ProjectIdentifier, HasScriptSe
     ProjectInternal getParent();
 
     @Nullable
-    ProjectInternal getParent(ProjectInternal referrer);
+    ProjectInternal getParent(ProjectIdentity referrer);
 
     @Override
     ProjectInternal getRootProject();
 
-    ProjectInternal getRootProject(ProjectInternal referrer);
+    ProjectInternal getRootProject(ProjectIdentity referrer);
 
     Project evaluate();
 
@@ -94,57 +94,28 @@ public interface ProjectInternal extends Project, ProjectIdentifier, HasScriptSe
     @Override
     ProjectInternal project(String path) throws UnknownProjectException;
 
-    ProjectInternal project(ProjectInternal referrer, String path) throws UnknownProjectException;
+    ProjectInternal project(ProjectIdentity referrer, String path) throws UnknownProjectException;
 
-    ProjectInternal project(ProjectInternal referrer, String path, Action<? super Project> configureAction);
+    ProjectInternal project(ProjectIdentity referrer, String path, Action<? super Project> configureAction);
 
     @Override
     @Nullable
     ProjectInternal findProject(String path);
 
     @Nullable
-    ProjectInternal findProject(ProjectInternal referrer, String path);
+    ProjectInternal findProject(ProjectIdentity referrer, String path);
 
-    Set<? extends ProjectInternal> getSubprojects(ProjectInternal referrer);
+    Set<? extends ProjectInternal> getSubprojects(ProjectIdentity referrer);
 
-    void subprojects(ProjectInternal referrer, Action<? super Project> configureAction);
+    void subprojects(ProjectIdentity referrer, Action<? super Project> configureAction);
 
-    /**
-     * Do not use this method to access the child projects in the Gradle codebase!
-     * The implementations may add checks that enforce correct usage of the public API, such as
-     * cross-project model access checks, which are meant to report warnings on incorrect API usages
-     * from third-party code. The internal usages won't pass these checks and will break.
-     *
-     * @see ProjectInternal#getChildProjectsUnchecked()
-     * @see ProjectHierarchyUtils#getChildProjectsForInternalUse(Project)
-     */
-    @Override
-    Map<String, Project> getChildProjects();
+    Map<String, Project> getChildProjects(ProjectIdentity referrer);
 
-    Map<String, Project> getChildProjects(ProjectInternal referrer);
+    Set<? extends ProjectInternal> getAllprojects(ProjectIdentity referrer);
 
-    /**
-     * Returns a mapping of the direct child project names to the child project instances.
-     *
-     * Compared to {@link Project#getChildProjects()}, this method does not add any checks
-     * to the returned projects:
-     *
-     * <ul>
-     *     <li> With project isolation enabled, it does not add checks for cross-project model
-     *     access to the returned project instances. The returned project models can be accessed
-     *     without any limitations.
-     * </ul>
-     *
-     * This method is suitable for internal usages in the Gradle codebase.
-     * @return A map where the keys are the project names and the values are the child projects
-     */
-    Map<String, Project> getChildProjectsUnchecked();
+    void allprojects(ProjectIdentity referrer, Action<? super Project> configureAction);
 
-    Set<? extends ProjectInternal> getAllprojects(ProjectInternal referrer);
-
-    void allprojects(ProjectInternal referrer, Action<? super Project> configureAction);
-
-    DynamicObject getInheritedScope();
+    HierarchicalDynamicObject getInheritedScope();
 
     @Override
     @UsedByScanPlugin("test-retry")
@@ -162,8 +133,6 @@ public interface ProjectInternal extends Project, ProjectIdentifier, HasScriptSe
 
     @UsedByScanPlugin("scan, test-retry")
     ServiceRegistry getServices();
-
-    ServiceRegistryFactory getServiceRegistryFactory();
 
     StandardOutputCapture getStandardOutputCapture();
 
@@ -188,8 +157,6 @@ public interface ProjectInternal extends Project, ProjectIdentifier, HasScriptSe
 
     void fireDeferredConfiguration();
 
-    @Override
-    @Nonnull
     ProjectIdentity getProjectIdentity();
 
     /**
@@ -258,9 +225,40 @@ public interface ProjectInternal extends Project, ProjectIdentifier, HasScriptSe
     /**
      * The state of the execution of {@link org.gradle.api.invocation.GradleLifecycle} actions of this project.
      * Its mutation NOT considered a mutable state access.
-     * */
+     */
     @Nullable
     Object getLifecycleActionsState();
+
+    /**
+     * Returns the project's properties without firing the deprecation of {@link Project#getProperties()}
+     * or the Isolated Projects violation it triggers.
+     *
+     * <p>Intended for internal callers (e.g., diagnostic tasks) that have a legitimate need to enumerate
+     * the project's properties and accept responsibility for the call.
+     *
+     * @apiNote <p><b>Deliberately named {@code collect..}</b>, a {@code get*} name would make
+     * this a Groovy bean property on {@code Project}. {@code BeanDynamicObject.getProperties()}
+     * enumerates bean properties by invoking each getter — which would recurse straight back into
+     * this method via {@code extensibleDynamicObject.getProperties()}.
+     */
+    Map<String, ? extends @Nullable Object> collectPropertiesInternal();
+
+    /**
+     * Two {@link ProjectInternal} instances are considered equal if their {@link #getProjectIdentity() identity} is equal.
+     *
+     * @param obj the object to compare with this project
+     * @return true if the given object is a {@link ProjectInternal} with the same identity as this project, false otherwise
+     */
+    @Override
+    boolean equals(@Nullable Object obj);
+
+    /**
+     * Returns the hash code of this project based on its {@link #getProjectIdentity() identity}.
+     *
+     * @return the hash code of this project
+     */
+    @Override
+    int hashCode();
 
     interface DetachedResolver {
         RepositoryHandler getRepositories();

@@ -18,34 +18,51 @@ package org.gradle.kotlin.dsl.integration
 
 import org.gradle.kotlin.dsl.fixtures.AbstractKotlinIntegrationTest
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.junit.Test
 
 
 class KotlinDslPluginCustomKotlinOptionsIntegrationTest : AbstractKotlinIntegrationTest() {
 
     @Test
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor::class)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor::class)
     fun `can configure custom kotlin options on a kotlin-dsl project`() {
 
         withDefaultSettingsIn("buildSrc")
         val buildSrcBuildScript = withKotlinDslPluginIn("buildSrc")
-        withFile("buildSrc/src/main/kotlin/MyDataObject.kt", "data object MyDataObject")
-        withBuildScript("println(MyDataObject)")
+        buildSrcBuildScript.appendText("""
+            tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+                compilerOptions {
+                    apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_1)
+                    languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_1)
+                }
+            }
+        """)
+        withFile(
+            "buildSrc/src/main/kotlin/MyDataObject.kt",
+            """
+            data object MyDataObject {
+                val some = "content"
+                val other: String = ${'$'}${'$'}""${'"'}${'$'}some = ${'$'}${'$'}some""${'"'}
+            }
+            """.trimIndent()
+        )
+        withBuildScript("println(MyDataObject.other)")
+        executer.expectExternalDeprecatedMessage("    Language version 2.1 is deprecated and its support will be removed in a future version of Kotlin. Update the version to 2.2.")
         buildAndFail("help").apply {
-            assertHasErrorOutput("""The feature "data objects" is only available since language version 1.9""")
+            assertOutputContainsPattern("""The feature "multi dollar interpolation" is only available since language version 2.2\s+Location: .*?MyDataObject.kt:3""")
         }
 
         buildSrcBuildScript.appendText("""
             tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
                 compilerOptions {
-                    apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_1_9)
-                    languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_1_9)
+                    apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
+                    languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2)
                 }
             }
         """)
         build("help").apply {
-            assertOutputContains("MyDataObject")
+            assertOutputContains("${'$'}some = content")
         }
     }
 }

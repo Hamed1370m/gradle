@@ -17,8 +17,8 @@ package org.gradle.language.assembler.tasks;
 
 import org.gradle.api.DefaultTask;
 import org.gradle.api.Incubating;
+import org.gradle.api.Project;
 import org.gradle.api.file.ConfigurableFileCollection;
-import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.IgnoreEmptyDirectories;
 import org.gradle.api.tasks.Input;
@@ -52,44 +52,42 @@ import java.util.concurrent.Callable;
 
 /**
  * Translates Assembly language source files into object files.
+ * @since 2.2
  */
 @Incubating
 @DisableCachingByDefault(because = "Not made cacheable, yet")
 public abstract class Assemble extends DefaultTask {
     private ConfigurableFileCollection source;
     private ConfigurableFileCollection includes;
-    private final Property<NativePlatform> targetPlatform;
-    private final Property<NativeToolChain> toolChain;
     private File objectFileDir;
     private List<String> assemblerArgs;
 
+    @SuppressWarnings("this-escape")
     @Inject
     public Assemble() {
-        ObjectFactory objectFactory = getProject().getObjects();
         source = getProject().files();
         includes = getProject().files();
-        this.targetPlatform = objectFactory.property(NativePlatform.class);
-        this.toolChain = objectFactory.property(NativeToolChain.class);
         getInputs().property("outputType", new Callable<String>() {
             @Override
             public String call() throws Exception {
-                NativeToolChainInternal nativeToolChain = (NativeToolChainInternal) toolChain.get();
-                NativePlatformInternal nativePlatform = (NativePlatformInternal) targetPlatform.get();
+                NativeToolChainInternal nativeToolChain = (NativeToolChainInternal) getToolChain().get();
+                NativePlatformInternal nativePlatform = (NativePlatformInternal) getTargetPlatform().get();
                 return NativeToolChainInternal.Identifier.identify(nativeToolChain, nativePlatform);
             }
         });
     }
 
     @Inject
-    public BuildOperationLoggerFactory getOperationLoggerFactory() {
-        throw new UnsupportedOperationException();
-    }
+    public abstract BuildOperationLoggerFactory getOperationLoggerFactory();
 
     @Inject
-    protected Deleter getDeleter() {
-        throw new UnsupportedOperationException("Decorator takes care of injection");
-    }
+    protected abstract Deleter getDeleter();
 
+    /**
+     * Assemble.
+     *
+     * @since 2.2
+     */
     @TaskAction
     public void assemble() {
         BuildOperationLogger operationLogger = getOperationLoggerFactory().newOperationLogger(getName(), getTemporaryDir());
@@ -109,13 +107,18 @@ public abstract class Assemble extends DefaultTask {
         spec.args(getAssemblerArgs());
         spec.setOperationLogger(operationLogger);
 
-        NativeToolChainInternal nativeToolChain = (NativeToolChainInternal) toolChain.get();
-        NativePlatformInternal nativePlatform = (NativePlatformInternal) targetPlatform.get();
+        NativeToolChainInternal nativeToolChain = (NativeToolChainInternal) getToolChain().get();
+        NativePlatformInternal nativePlatform = (NativePlatformInternal) getTargetPlatform().get();
         Compiler<AssembleSpec> compiler = nativeToolChain.select(nativePlatform).newCompiler(AssembleSpec.class);
         WorkResult result = BuildOperationLoggingCompilerDecorator.wrap(compiler).execute(spec);
         setDidWork(result.getDidWork() || cleanedOutputs);
     }
 
+    /**
+     * Returns the source.
+     *
+     * @since 2.2
+     */
     @InputFiles
     @SkipWhenEmpty
     @IgnoreEmptyDirectories
@@ -125,7 +128,8 @@ public abstract class Assemble extends DefaultTask {
     }
 
     /**
-     * Adds a set of assembler sources files to be translated. The provided sourceFiles object is evaluated as per {@link org.gradle.api.Project#files(Object...)}.
+     * Adds a set of assembler sources files to be translated. The provided sourceFiles object is evaluated as per {@link Project#files(Object...)}.
+     * @since 2.2
      */
     public void source(Object sourceFiles) {
         source.from(sourceFiles);
@@ -133,12 +137,18 @@ public abstract class Assemble extends DefaultTask {
 
     /**
      * Additional arguments to provide to the assembler.
+     * @since 2.2
      */
     @Input
     public List<String> getAssemblerArgs() {
         return assemblerArgs;
     }
 
+    /**
+     * Sets the assembler args.
+     *
+     * @since 2.2
+     */
     public void setAssemblerArgs(List<String> assemblerArgs) {
         this.assemblerArgs = assemblerArgs;
     }
@@ -149,9 +159,7 @@ public abstract class Assemble extends DefaultTask {
      * @since 4.7
      */
     @Internal
-    public Property<NativeToolChain> getToolChain() {
-        return toolChain;
-    }
+    public abstract Property<NativeToolChain> getToolChain();
 
     /**
      * The platform being compiled for.
@@ -159,18 +167,22 @@ public abstract class Assemble extends DefaultTask {
      * @since 4.7
      */
     @Nested
-    public Property<NativePlatform> getTargetPlatform() {
-        return targetPlatform;
-    }
+    public abstract Property<NativePlatform> getTargetPlatform();
 
     /**
      * The directory where object files will be generated.
+     * @since 2.2
      */
     @OutputDirectory
     public File getObjectFileDir() {
         return objectFileDir;
     }
 
+    /**
+     * Sets the object file dir.
+     *
+     * @since 2.2
+     */
     public void setObjectFileDir(File objectFileDir) {
         this.objectFileDir = objectFileDir;
     }

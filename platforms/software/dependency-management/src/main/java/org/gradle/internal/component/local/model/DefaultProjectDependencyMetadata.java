@@ -16,16 +16,13 @@
 
 package org.gradle.internal.component.local.model;
 
+import com.google.common.collect.ImmutableList;
 import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.artifacts.component.ProjectComponentSelector;
 import org.gradle.internal.component.model.DelegatingDependencyMetadata;
 import org.gradle.internal.component.model.DependencyMetadata;
-import org.gradle.internal.component.model.ExcludeMetadata;
 import org.gradle.internal.component.model.ForcingDependencyMetadata;
 import org.gradle.internal.component.model.IvyArtifactName;
-
-import java.util.Collections;
-import java.util.List;
 
 public class DefaultProjectDependencyMetadata extends DelegatingDependencyMetadata implements ForcingDependencyMetadata {
     private final ProjectComponentSelector selector;
@@ -43,11 +40,6 @@ public class DefaultProjectDependencyMetadata extends DelegatingDependencyMetada
     }
 
     @Override
-    public List<ExcludeMetadata> getExcludes() {
-        return Collections.emptyList();
-    }
-
-    @Override
     public DependencyMetadata withTarget(ComponentSelector target) {
         if (target.equals(selector)) {
             return this;
@@ -56,7 +48,7 @@ public class DefaultProjectDependencyMetadata extends DelegatingDependencyMetada
     }
 
     @Override
-    public DependencyMetadata withTargetAndArtifacts(ComponentSelector target, List<IvyArtifactName> artifacts) {
+    public DependencyMetadata withTargetAndArtifacts(ComponentSelector target, ImmutableList<IvyArtifactName> artifacts) {
         if (target.equals(selector) && delegate.getArtifacts().equals(artifacts)) {
             return this;
         }
@@ -74,8 +66,14 @@ public class DefaultProjectDependencyMetadata extends DelegatingDependencyMetada
     @Override
     public ForcingDependencyMetadata forced() {
         if (delegate instanceof ForcingDependencyMetadata) {
-            return ((ForcingDependencyMetadata) delegate).forced();
+            ForcingDependencyMetadata forced = ((ForcingDependencyMetadata) delegate).forced();
+            return new DefaultProjectDependencyMetadata(selector, forced);
         }
         return this;
+    }
+
+    @Override
+    public String toString() {
+        return "ProjectDependencyMetadata: " + selector;
     }
 }

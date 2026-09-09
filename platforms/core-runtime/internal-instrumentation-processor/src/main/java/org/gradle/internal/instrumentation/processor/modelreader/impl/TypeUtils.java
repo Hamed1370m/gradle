@@ -19,9 +19,9 @@ package org.gradle.internal.instrumentation.processor.modelreader.impl;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.ParameterizedTypeName;
 import com.squareup.javapoet.TypeName;
+import org.jspecify.annotations.NonNull;
 import org.objectweb.asm.Type;
 
-import javax.annotation.Nonnull;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -33,6 +33,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import static java.util.Objects.requireNonNull;
 
 public class TypeUtils {
     public static Type extractType(TypeMirror typeMirror) {
@@ -102,7 +104,7 @@ public class TypeUtils {
         return getTypeParameter(typeMirror, index).orElseThrow(() -> new IllegalArgumentException(String.format("Missing type parameter with index %s for %s", index, typeMirror)));
     }
 
-    @Nonnull
+    @NonNull
     public static List<ExecutableElement> getExecutableElementsFromElements(Stream<? extends Element> elements) {
         return elements
             .flatMap(element -> element.getKind() == ElementKind.METHOD ? Stream.of(element) : element.getEnclosedElements().stream())
@@ -118,7 +120,7 @@ public class TypeUtils {
 
     public static String elementQualifiedName(Element element) {
         if (element instanceof ExecutableElement) {
-            String enclosingTypeName = ((TypeElement) element.getEnclosingElement()).getQualifiedName().toString();
+            String enclosingTypeName = ((TypeElement) requireNonNull(element.getEnclosingElement())).getQualifiedName().toString();
             return enclosingTypeName + "." + element.getSimpleName();
         } else if (element instanceof TypeElement) {
             return ((TypeElement) element).getQualifiedName().toString();

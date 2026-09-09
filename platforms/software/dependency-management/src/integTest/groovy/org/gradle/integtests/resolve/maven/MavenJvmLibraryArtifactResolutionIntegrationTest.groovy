@@ -15,8 +15,8 @@
  */
 package org.gradle.integtests.resolve.maven
 
+import org.gradle.initialization.StartParameterBuildOptions.ConfigurationCacheRecreateOption
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.resolve.JvmLibraryArtifactResolveTestFixture
 import org.gradle.test.fixtures.maven.MavenRepository
 
@@ -39,7 +39,7 @@ class MavenJvmLibraryArtifactResolutionIntegrationTest extends AbstractHttpDepen
     def initBuild(MavenRepository repo) {
         buildFile.text = """
 repositories {
-    maven { url '$repo.uri' }
+    maven { url = '$repo.uri' }
 }
 """
     }
@@ -199,7 +199,6 @@ if (project.hasProperty('nocache')) {
         "when snapshot pom changes"   | "-Pnocache"
     }
 
-    @ToBeFixedForConfigurationCache(because = "does not check for missing artifact on second invocation")
     def "reports failure to resolve artifacts of non-existing component"() {
         fixture.expectComponentNotFound().prepare()
 
@@ -217,7 +216,7 @@ Searched in the following locations:
         module.pom.expectGetMissing()
 
         then:
-        fails("verify")
+        fails("verify", "-D${ConfigurationCacheRecreateOption.PROPERTY_NAME}=true")
         failure.assertHasCause("""Could not find some.group:some-artifact:1.0.
 Searched in the following locations:
   - ${module.pom.uri}""")
@@ -261,7 +260,8 @@ Searched in the following locations:
         then:
         fails("verify")
         failure.assertHasCause("Could not determine artifacts for some.group:some-artifact:1.0")
-        failure.assertHasCause("Could not HEAD '${sourceArtifact.uri}'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not HEAD '${sourceArtifact.uri}'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
 
         when:
         fixture.clearExpectations()
@@ -291,7 +291,8 @@ Searched in the following locations:
         fails("verify")
         failure.assertHasCause("Could not download some-artifact-1.0-javadoc.jar (some.group:some-artifact:1.0)")
         failure.assertHasCause("Could not get resource '${javadocArtifact.uri}'")
-        failure.assertHasCause("Could not GET '${javadocArtifact.uri}'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${javadocArtifact.uri}'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
 
         when:
         fixture.clearExpectations()

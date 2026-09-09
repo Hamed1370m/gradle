@@ -16,4 +16,7 @@
 /**
  * Outputs trace files from build operations.
  */
+@NullMarked
 package org.gradle.internal.operations.trace;
+
+import org.jspecify.annotations.NullMarked;

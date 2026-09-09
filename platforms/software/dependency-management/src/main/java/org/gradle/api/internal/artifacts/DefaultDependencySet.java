@@ -18,7 +18,7 @@ package org.gradle.api.internal.artifacts;
 import org.gradle.api.Action;
 import org.gradle.api.Describable;
 import org.gradle.api.DomainObjectSet;
-import org.gradle.api.GradleException;
+import org.gradle.api.InvalidUserCodeException;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.artifacts.DependencySet;
@@ -37,6 +37,7 @@ public class DefaultDependencySet extends DelegatingDomainObjectSet<Dependency> 
     private final ConfigurationInternal clientConfiguration;
     private final Action<? super ModuleDependency> mutationValidator;
 
+    @SuppressWarnings("this-escape")
     public DefaultDependencySet(Describable displayName, final ConfigurationInternal clientConfiguration, DomainObjectSet<Dependency> backingSet) {
         super(backingSet);
         this.displayName = displayName;
@@ -70,7 +71,7 @@ public class DefaultDependencySet extends DelegatingDomainObjectSet<Dependency> 
 
     private void assertConfigurationIsDeclarable() {
         if (!clientConfiguration.isCanBeDeclared()) {
-            throw new GradleException("Dependencies can not be declared against the `" + clientConfiguration.getName() + "` configuration.");
+            throw new InvalidUserCodeException("Dependencies can not be declared against the `" + clientConfiguration.getName() + "` configuration.");
         }
     }
 

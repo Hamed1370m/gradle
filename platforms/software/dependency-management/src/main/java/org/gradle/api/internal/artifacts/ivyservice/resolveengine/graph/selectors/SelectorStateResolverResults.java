@@ -15,7 +15,7 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.selectors;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.gradle.api.internal.artifacts.ResolvedVersionConstraint;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.LatestVersionSelector;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.Version;
@@ -131,7 +131,7 @@ class SelectorStateResolverResults {
             ComponentIdResolveResult discovered = registration.result;
             if (selectorAcceptsCandidate(selector, discovered, registration.selector.isFromLock())) {
                 found = discovered;
-                selector.markResolved();
+                selector.markSelectionCompleted();
                 break;
             }
         }
@@ -195,7 +195,7 @@ class SelectorStateResolverResults {
         }
         ResolvedVersionConstraint versionConstraint = dep.getVersionConstraint();
         if (versionConstraint == null) {
-            return dep.getSelector().matchesStrictly(candidate.getId());
+            return dep.getComponentSelector().matchesStrictly(candidate.getId());
         }
         VersionSelector versionSelector = versionConstraint.getRequiredSelector();
         if (versionSelector != null &&

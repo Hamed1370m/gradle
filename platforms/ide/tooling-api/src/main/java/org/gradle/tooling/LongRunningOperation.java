@@ -17,8 +17,8 @@ package org.gradle.tooling;
 
 import org.gradle.api.Incubating;
 import org.gradle.tooling.events.OperationType;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -38,7 +38,7 @@ import java.util.Set;
  * Those settings might not be supported by the target Gradle version. Refer to Javadoc for those methods
  * to understand what kind of exception throw and when is it thrown.
  *
- * @since 1.0-milestone-7
+ * @since 1.0
  */
 public interface LongRunningOperation {
 
@@ -48,7 +48,7 @@ public interface LongRunningOperation {
      *
      * @param outputStream The output stream. The system default character encoding will be used to encode characters written to this stream.
      * @return this
-     * @since 1.0-milestone-7
+     * @since 1.0
      */
     LongRunningOperation setStandardOutput(OutputStream outputStream);
 
@@ -58,7 +58,7 @@ public interface LongRunningOperation {
      *
      * @param outputStream The output stream. The system default character encoding will be used to encode characters written to this stream.
      * @return this
-     * @since 1.0-milestone-7
+     * @since 1.0
      */
     LongRunningOperation setStandardError(OutputStream outputStream);
 
@@ -79,7 +79,7 @@ public interface LongRunningOperation {
      *
      * @param inputStream The input stream
      * @return this
-     * @since 1.0-milestone-8
+     * @since 1.0
      */
     LongRunningOperation setStandardInput(InputStream inputStream);
 
@@ -94,7 +94,7 @@ public interface LongRunningOperation {
      * @param javaHome to use for the Gradle process
      * @return this
      * @throws IllegalArgumentException when supplied javaHome is not a valid folder.
-     * @since 1.0-milestone-8
+     * @since 1.0
      */
     LongRunningOperation setJavaHome(@Nullable File javaHome) throws IllegalArgumentException;
 
@@ -105,15 +105,21 @@ public interface LongRunningOperation {
      * If you want to get hold of this information you can ask tooling API to build this model.
      * <p>
      * If not configured, null, or an empty array is passed, then the reasonable default will be used.
+     * <p>
+     * The jvm argument set by this method is independent of arguments set by {{@code addJvmArguments}} methods.
+     * The daemon JVM arguments list will always have the arguments from the {{@code setJvmArguments}} at the beginning of the list, and then have the {{@code addJvmArguments}} configuration appended.
      *
      * @param jvmArguments to use for the Gradle process
      * @return this
-     * @since 1.0-milestone-8
+     * @since 1.0
      */
     LongRunningOperation setJvmArguments(@Nullable String... jvmArguments);
 
     /**
      * Appends Java VM arguments to the existing list.
+     * <p>
+     * The jvm argument set by this method is independent of arguments set by {{@code setJvmArguments}} methods.
+     * The daemon JVM arguments list will always have the arguments from the {{@code setJvmArguments}} at the beginning of the list, and then have the {{@code addJvmArguments}} configuration appended.
      *
      * @param jvmArguments the argument to use for the Gradle process
      * @return this
@@ -145,6 +151,9 @@ public interface LongRunningOperation {
 
     /**
      * Appends Java VM arguments to the existing list.
+     * <p>
+     * The jvm argument set by this method is independent of arguments set by {{@code setJvmArguments}} methods.
+     * The daemon JVM arguments list will always have the arguments from the {{@code setJvmArguments}} at the beginning of the list, and then have the {{@code addJvmArguments}} configuration appended.
      *
      * @param jvmArguments the argument to use for the Gradle process
      * @return this
@@ -159,6 +168,9 @@ public interface LongRunningOperation {
      * If you want to get hold of this information you can ask tooling API to build this model.
      * <p>
      * If not configured, null, or an empty list is passed, then the reasonable default will be used.
+     * <p>
+     * The jvm argument set by this method is independent of arguments set by {{@code addJvmArguments}} methods.
+     * The daemon JVM arguments list will always have the arguments from the {{@code setJvmArguments}} at the beginning of the list, and then have the {{@code addJvmArguments}} configuration appended.
      *
      * @param jvmArguments to use for the Gradle process
      * @return this
@@ -239,6 +251,16 @@ public interface LongRunningOperation {
      * If you want to get hold of this information you can ask tooling API to build this model.
      * <p>
      * If not configured or null is passed, then the reasonable default will be used.
+     * * <p>
+     * Note: When this method is called, the provided map completely replaces the environment variables for the operation.
+     * To add custom environment variables while preserving system environment variables, first copy the current environment
+     * and then add custom values:
+     * <pre>
+     *  Map&lt;String, String&gt; env = new HashMap&lt;&gt;(System.getenv());
+     *  env.put("MY_VAR", "my_value");
+     *  operation.setEnvironmentVariables(env);
+     *  </pre>
+     * This is particularly important on Windows, where omitting essential system environment variables may cause the operation to fail.
      *
      * @param envVariables environment variables
      * @return this
@@ -256,7 +278,7 @@ public interface LongRunningOperation {
      *
      * @param listener The listener
      * @return this
-     * @since 1.0-milestone-7
+     * @since 1.0
      */
     @SuppressWarnings("overloads")
     LongRunningOperation addProgressListener(ProgressListener listener);
@@ -317,4 +339,13 @@ public interface LongRunningOperation {
      * @since 2.1
      */
     LongRunningOperation withCancellationToken(CancellationToken cancellationToken);
+
+    /**
+     * Adds more detailed information about the build failure to the {@link GradleConnectionException} that provides insights into the reasons for the failure, making it easier to diagnose and fix issues.
+     *
+     * @return this
+     * @since 8.12
+     */
+    @Incubating
+    LongRunningOperation withDetailedFailure();
 }

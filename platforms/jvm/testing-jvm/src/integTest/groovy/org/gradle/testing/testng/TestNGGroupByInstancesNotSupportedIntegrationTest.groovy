@@ -16,20 +16,20 @@
 
 package org.gradle.testing.testng
 
+import org.gradle.api.internal.tasks.testing.report.VerifiesGenericTestReportResults
+import org.gradle.api.tasks.testing.TestResult
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.DefaultTestExecutionResult
 
-import static org.hamcrest.CoreMatchers.containsString
+import static org.hamcrest.Matchers.containsString
 
-class TestNGGroupByInstancesNotSupportedIntegrationTest extends AbstractIntegrationSpec {
-
+class TestNGGroupByInstancesNotSupportedIntegrationTest extends AbstractIntegrationSpec implements VerifiesGenericTestReportResults {
     def "run tests using TestNG version not supporting groupByInstances"() {
         given:
         buildFile << """
             apply plugin: 'java'
             ${mavenCentralRepository()}
             dependencies { testImplementation 'org.testng:testng:6.0.1' }
-            test { useTestNG { groupByInstances true } }
+            test { useTestNG { groupByInstances = true } }
         """
 
         file("src/test/java/SimpleTest.java") << """
@@ -46,8 +46,12 @@ class TestNGGroupByInstancesNotSupportedIntegrationTest extends AbstractIntegrat
         fails "test"
 
         then:
-        def result = new DefaultTestExecutionResult(testDirectory)
-        result.testClassStartsWith('Gradle Test Executor').assertExecutionFailedWithCause(
-            containsString("Grouping tests by instances is not supported by this version of TestNG."))
+        def result = resultsFor()
+        result.assertTestPathsExecuted(":")
+        result.testPath(':').onlyRoot()
+            .assertHasResult(TestResult.ResultType.FAILURE)
+            .assertFailureMessages(containsString(
+                "Grouping tests by instances is not supported by this version of TestNG."
+            ))
     }
 }

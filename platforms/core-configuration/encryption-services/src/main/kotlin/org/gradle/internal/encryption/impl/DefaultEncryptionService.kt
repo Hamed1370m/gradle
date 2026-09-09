@@ -21,12 +21,9 @@ import org.gradle.api.InvalidUserDataException
 import org.gradle.cache.scopes.GlobalScopedCacheBuilderFactory
 import org.gradle.internal.buildoption.InternalOptions
 import org.gradle.internal.encryption.EncryptionService
-import org.gradle.internal.extensions.core.getInternalFlag
-import org.gradle.internal.extensions.core.getInternalString
+import org.gradle.internal.file.FileSystem
 import org.gradle.internal.hash.HashCode
 import org.gradle.internal.hash.Hashing
-import org.gradle.internal.service.scopes.Scope
-import org.gradle.internal.service.scopes.ServiceScope
 import org.gradle.util.internal.EncryptionAlgorithm
 import org.gradle.util.internal.SupportedEncryptionAlgorithm
 import java.io.File
@@ -36,21 +33,21 @@ import java.security.InvalidKeyException
 import javax.crypto.SecretKey
 
 
-@ServiceScope(Scope.BuildTree::class)
 internal
 class DefaultEncryptionService(
-    options: InternalOptions,
+    internalOptions: InternalOptions,
     private val cacheBuilderFactory: GlobalScopedCacheBuilderFactory,
+    private val fileSystem: FileSystem
 ) : EncryptionService {
 
     private
-    val encryptionRequestedOption: Boolean = options.getInternalFlag("org.gradle.configuration-cache.internal.encryption", true)
+    val encryptionRequestedOption: Boolean = internalOptions.getBoolean("org.gradle.internal.configuration-cache.encryption", true)
 
     private
-    val keystoreDirOption: String? = options.getInternalString("org.gradle.configuration-cache.internal.key-store-dir", null)
+    val keystoreDirOption: String? = internalOptions.getStringOrNull("org.gradle.internal.configuration-cache.key-store-dir")
 
     private
-    val encryptionAlgorithmOption: String = options.getInternalString("org.gradle.configuration-cache.internal.encryption-alg", SupportedEncryptionAlgorithm.getDefault().transformation)
+    val encryptionAlgorithmOption: String = internalOptions.getString("org.gradle.internal.configuration-cache.encryption-alg", SupportedEncryptionAlgorithm.getDefault().transformation)
 
     private
     val secretKey: SecretKey? by lazy {
@@ -122,7 +119,8 @@ class DefaultEncryptionService(
                     encryptionAlgorithm = encryptionAlgorithm.algorithm,
                     customKeyStoreDir = keystoreDirOption?.let { File(it) },
                     keyAlias = "gradle-secret",
-                    cacheBuilderFactory = cacheBuilderFactory
+                    cacheBuilderFactory = cacheBuilderFactory,
+                    fileSystem = fileSystem
                 )
 
             EncryptionKind.ENV_VAR ->
@@ -132,5 +130,7 @@ class DefaultEncryptionService(
 
             EncryptionKind.NONE ->
                 NoEncryptionKeySource()
+        }.apply {
+            logger.info("Encryption key source: $sourceDescription")
         }
 }

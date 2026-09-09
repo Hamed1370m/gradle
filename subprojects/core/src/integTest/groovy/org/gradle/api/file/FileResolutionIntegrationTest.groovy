@@ -56,7 +56,7 @@ def f = file(12)
         fails()
 
         then:
-        failure.assertHasCause("""Cannot convert the provided notation to a File or URI: 12.
+        failure.assertHasCause("""Cannot convert the provided notation to a File: 12.
 The following types/formats are supported:
   - A String or CharSequence path, for example 'src/main/java' or '/usr/include'.
   - A String or CharSequence URI, for example 'file:/usr/include'.
@@ -64,34 +64,38 @@ The following types/formats are supported:
   - A Path instance.
   - A Directory instance.
   - A RegularFile instance.
-  - A URI or URL instance.""")
+  - A URI or URL instance of file.
+  - A TextResource instance.""")
     }
 
-    def "produces deprecation warning for relative file URLs"() {
+    def "throws error for relative file URLs"() {
         buildFile """
 def f = file("file:testdir")
 assert f == project.layout.projectDirectory.dir("testdir").asFile
 """
 
-        expect:
-        executer.expectDocumentedDeprecationWarning("Passing invalid URIs to URI or File converting methods. This behavior has been deprecated. This will fail with an error in Gradle 9.0. Use a valid URL or a file path instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_invalid_url_decoding")
-        succeeds()
+        when:
+        fails()
+
+        then:
+        failureHasCause(~/Cannot convert URI '.*' to a file./)
     }
 
-    def "produces deprecation warning for invalid URLs"() {
+    def "throws error for invalid URLs"() {
         buildFile """
 def originalFile = layout.projectDirectory.dir("test% dir").asFile
 def fileURI = layout.projectDirectory.dir("test% dir").asFile.toURI().toString().replaceFirst("%25", "%")
 def f = file(fileURI)
 assert f == originalFile
 """
+        when:
+        fails()
 
-        expect:
-        executer.expectDocumentedDeprecationWarning("Passing invalid URIs to URI or File converting methods. This behavior has been deprecated. This will fail with an error in Gradle 9.0. Use a valid URL or a file path instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_invalid_url_decoding")
-        succeeds()
+        then:
+        failureHasCause(~/Cannot convert URI '.*' to a file./)
     }
 
-    def "produces no deprecation warning for valid URLs"() {
+    def "produces no error for valid URLs"() {
         buildFile """
 def originalFile = layout.projectDirectory.dir("test% dir").asFile
 def fileURI = layout.projectDirectory.dir("test% dir").asFile.toURI().toString()
@@ -141,7 +145,7 @@ f.files.each { println it }
         fails()
 
         then:
-        failure.assertHasCause("""Cannot convert the provided notation to a File or URI: 12.
+        failure.assertHasCause("""Cannot convert the provided notation to a File: 12.
 The following types/formats are supported:
   - A String or CharSequence path, for example 'src/main/java' or '/usr/include'.
   - A String or CharSequence URI, for example 'file:/usr/include'.
@@ -149,6 +153,7 @@ The following types/formats are supported:
   - A Path instance.
   - A Directory instance.
   - A RegularFile instance.
-  - A URI or URL instance.""")
+  - A URI or URL instance of file.
+  - A TextResource instance.""")
     }
 }

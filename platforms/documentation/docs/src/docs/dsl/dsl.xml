@@ -110,9 +110,6 @@
                 <td>repositories</td>
             </tr>
             <tr>
-                <td>sourceSets</td>
-            </tr>
-            <tr>
                 <td>subprojects</td>
             </tr>
             <tr>
@@ -442,6 +439,9 @@
             </tr>
             <tr>
                 <td>org.gradle.api.tasks.diagnostics.ResolvableConfigurationsReportTask</td>
+            </tr>
+            <tr>
+                <td>org.gradle.api.tasks.diagnostics.ArtifactTransformsReportTask</td>
             </tr>
         </table>
     </section>

@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +20,13 @@ import java.util.Set;
 
 /**
  * <p>A container for adding exclude rules for dependencies.</p>
+ * @since 0.7
  */
 public interface ExcludeRuleContainer {
     /**
      * Returns all the exclude rules added to this container. If no exclude rules has been added an empty list is
      * returned.
+     * @since 0.7
      */
     Set<ExcludeRule> getRules();
 
@@ -38,6 +40,7 @@ public interface ExcludeRuleContainer {
      * </ul>
      *
      * @param args A map describing the exclude pattern.
+     * @since 0.7
      */
     void add(Map<String, String> args);
 }

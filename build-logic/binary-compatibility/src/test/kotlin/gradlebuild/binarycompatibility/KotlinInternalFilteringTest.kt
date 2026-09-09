@@ -16,7 +16,8 @@
 
 package gradlebuild.binarycompatibility
 
-import org.junit.Test
+import org.intellij.lang.annotations.Language
+import org.junit.jupiter.api.Test
 
 
 /**
@@ -24,6 +25,7 @@ import org.junit.Test
  */
 class KotlinInternalFilteringTest : AbstractBinaryCompatibilityTest() {
 
+    @Language("kotlin")
     private
     val internalMembers = """
 
@@ -46,6 +48,7 @@ class KotlinInternalFilteringTest : AbstractBinaryCompatibilityTest() {
 
     """
 
+    @Language("kotlin")
     private
     val publicMembers = """
 
@@ -68,6 +71,7 @@ class KotlinInternalFilteringTest : AbstractBinaryCompatibilityTest() {
 
     """
 
+    @Language("kotlin")
     private
     val existingSource = """
 
@@ -83,6 +87,7 @@ class KotlinInternalFilteringTest : AbstractBinaryCompatibilityTest() {
         typealias ExistingTypeAlias = String
     """
 
+    @Language("kotlin")
     private
     val internalSource = """
 
@@ -132,6 +137,7 @@ class KotlinInternalFilteringTest : AbstractBinaryCompatibilityTest() {
         }
     """
 
+    @Language("kotlin")
     private
     val publicSource = """
 
@@ -198,7 +204,7 @@ class KotlinInternalFilteringTest : AbstractBinaryCompatibilityTest() {
             v2 = publicSource
         ).apply {
             assertHasErrors(
-                *reportedMembers.map {
+                *(reportedMembers - generatedMembers.toSet()).map {
                     added(it.first, it.second)
                 }.toTypedArray()
             )
@@ -246,6 +252,16 @@ class KotlinInternalFilteringTest : AbstractBinaryCompatibilityTest() {
         "Field" to "cathedral"
     ) + reportedMembersFor("SourceKt") + listOf(
         "Method" to "SourceKt.setValTurnedIntoVar(java.lang.String)"
+    )
+
+    private
+    val generatedMembers = listOf(
+        "Constructor" to "AddedClass()",
+        "Method" to "AddedEnum.values()",
+        "Method" to "AddedEnum.valueOf(java.lang.String)",
+        "Method" to "AddedEnum.getEntries()",
+        "Field" to "INSTANCE",
+        "Constructor" to "ExistingClass${'$'}ExistingNestedClass()"
     )
 
     private

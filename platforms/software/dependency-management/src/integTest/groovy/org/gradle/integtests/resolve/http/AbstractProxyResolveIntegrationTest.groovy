@@ -65,7 +65,7 @@ task listJars {
         and:
         buildFile << """
 repositories {
-    maven { url "${repoServerUrl}" }
+    maven { url = "${repoServerUrl}" }
 }
 """
         when:
@@ -92,7 +92,7 @@ repositories {
         and:
         buildFile << """
 repositories {
-    maven { url "${repoServerUrl}" }
+    maven { url = "${repoServerUrl}" }
 }
 """
         when:
@@ -117,7 +117,7 @@ repositories {
         and:
         buildFile << """
 repositories {
-    maven { url "${repoServerUrl}" }
+    maven { url = "${repoServerUrl}" }
 }
 """
         when:
@@ -144,7 +144,7 @@ repositories {
         and:
         buildFile << """
 repositories {
-    maven { url "${repoServerUrl}" }
+    maven { url = "${repoServerUrl}" }
 }
 """
         when:
@@ -168,7 +168,7 @@ repositories {
         and:
         buildFile << """
 repositories {
-    maven { url "${repoServerUrl}" }
+    maven { url = "${repoServerUrl}" }
 }
 """
         when:
@@ -192,7 +192,7 @@ repositories {
         and:
         buildFile << """
 repositories {
-    maven { url "${repoServerUrl}" }
+    maven { url = "${repoServerUrl}" }
 }
 """
 
@@ -207,6 +207,51 @@ repositories {
         proxyServer.requestCount == 0
     }
 
+    def "can publish artifact through authenticated proxy"() {
+        given:
+        def (proxyUserName, proxyPassword) = ['proxyUser', 'proxyPassword']
+        proxyServer.start(proxyUserName, proxyPassword)
+        setupServer()
+
+        and:
+        settingsFile << """
+rootProject.name = 'publish-test'
+"""
+        buildFile.text = """
+plugins {
+    id 'java'
+    id 'maven-publish'
+}
+
+group = 'org.gradle.test'
+version = '1.0'
+
+publishing {
+    repositories {
+        maven { url = "${repoServerUrl}" }
+    }
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
+}
+"""
+
+        def publishModule = repo.module("org.gradle.test", "publish-test", "1.0")
+
+        when:
+        proxyServer.configureProxy(executer, proxyScheme, proxyUserName, proxyPassword)
+        publishModule.artifact.expectPublish()
+        publishModule.pom.expectPublish()
+        publishModule.rootMetaData.expectGetMissing()
+        publishModule.rootMetaData.expectPublish()
+        publishModule.moduleMetadata.expectPublish()
+
+        then:
+        succeeds('publish')
+    }
+
     def "passes target credentials to #authScheme authenticated server via proxy"() {
         given:
         def (proxyUserName, proxyPassword) = ['proxyUser', 'proxyPassword']
@@ -218,10 +263,10 @@ repositories {
         buildFile << """
 repositories {
     maven {
-        url "${repoServerUrl}"
+        url = "${repoServerUrl}"
         credentials {
-            username '$repoUserName'
-            password '$repoPassword'
+            username = '$repoUserName'
+            password = '$repoPassword'
         }
     }
 }

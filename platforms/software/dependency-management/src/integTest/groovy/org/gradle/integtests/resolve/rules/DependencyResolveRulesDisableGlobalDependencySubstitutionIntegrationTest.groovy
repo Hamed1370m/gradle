@@ -21,81 +21,77 @@ import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 
 class DependencyResolveRulesDisableGlobalDependencySubstitutionIntegrationTest extends AbstractIntegrationSpec {
 
-    ResolveTestFixture resolveLocal
-    ResolveTestFixture resolvePublished
+    ResolveTestFixture resolve = new ResolveTestFixture(testDirectory)
 
     def setup() {
-        resolveLocal = new ResolveTestFixture(buildFile, 'localPath')
-        resolveLocal.expectDefaultConfiguration('runtime')
-        resolvePublished = new ResolveTestFixture(buildFile, 'publishedPath')
-        resolvePublished.expectDefaultConfiguration('runtime')
-        resolveLocal.addJavaEcosystem()
-
         mavenRepo.module("org.test", "m2", "1.0").dependsOn("org.test", "m3", "1.0").withModuleMetadata().publish()
         mavenRepo.module("org.test", "m3", '1.0').withModuleMetadata().publish()
 
-        createDirs("m1", "m2", "m3")
         settingsFile << """
             dependencyResolutionManagement {
-                repositories.maven { url "${mavenRepo.uri}" }
+                repositories.maven { url = "${mavenRepo.uri}" }
             }
             includeBuild '.' // enable global substitution for this build
             include 'm1', 'm2', 'm3'
         """
 
-        buildFile << """
-            allprojects {
-                group = 'org.test'
-                version = '0.9'
-                def conf = configurations.create('conf') {
+        def common = """
+            group = 'org.test'
+            version = '0.9'
+            configurations {
+                conf {
                     canBeConsumed = false
                     canBeResolved = false
                 }
-                configurations.create('runtime') {
+                runtime {
                     extendsFrom(conf)
                     assert canBeConsumed
                     canBeResolved = false
                     attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
                 }
             }
-            project(':m1') {
-                configurations.create('localPath') {
-                    extendsFrom(configurations.conf)
-                    canBeConsumed = false
-                    assert canBeResolved
-                    attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
-                }
-                configurations.create('publishedPath') {
-                    extendsFrom(configurations.conf)
-                    canBeConsumed = false
-                    assert canBeResolved
-                    resolutionStrategy.useGlobalDependencySubstitutionRules.set(false)
-                    attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
-                }
-                dependencies {
-                    conf 'org.test:m2:1.0'
-                }
+        """
+
+        file("m1/build.gradle") << """
+            plugins {
+                id("jvm-ecosystem")
             }
-            project(':m2') {
-                dependencies {
-                    conf 'org.test:m3:1.0'
-                }
+
+            $common
+
+            ${resolve.configureProject("localPath", "publishedPath")}
+
+            configurations.create('localPath') {
+                extendsFrom(configurations.conf)
+                canBeConsumed = false
+                assert canBeResolved
+                attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+            }
+            configurations.create('publishedPath') {
+                extendsFrom(configurations.conf)
+                canBeConsumed = false
+                assert canBeResolved
+                resolutionStrategy.useGlobalDependencySubstitutionRules.set(false)
+                attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+            }
+            dependencies {
+                conf 'org.test:m2:1.0'
             }
         """
+
+        file("m2/build.gradle") << """
+            $common
+
+            dependencies {
+                conf 'org.test:m3:1.0'
+            }
+        """
+
+        file("m3/build.gradle") << common
     }
 
-    def resolveLocalPath() {
-        resolveLocal.prepare()
-        resolveLocal
-    }
-
-    def resolvePublishedPath() {
-        resolvePublished.prepare()
-        resolvePublished
-    }
-
-    def static expectResolvedToLocal(ResolveTestFixture resolve) {
-        resolve.expectGraph {
+    void expectResolvedToLocal() {
+        resolve.expectGraph(":m1") {
             root(":m1", "org.test:m1:0.9") {
                 edge("org.test:m2:1.0", ":m2", "org.test:m2:0.9") {
                     compositeSubstitute()
@@ -107,76 +103,65 @@ class DependencyResolveRulesDisableGlobalDependencySubstitutionIntegrationTest e
                 }
             }
         }
-        true
     }
 
-    def static expectResolveToPublished(ResolveTestFixture resolve) {
-        resolve.expectGraph {
+    void expectResolveToPublished() {
+        resolve.expectGraph(":m1") {
             root(":m1", "org.test:m1:0.9") {
                 edge("org.test:m2:1.0", "org.test:m2:1.0") {
                     edge("org.test:m3:1.0", "org.test:m3:1.0") { }
                 }
             }
         }
-        true
     }
 
     def "global dependency substitution is only disabled for the configuration that it is configured for"() {
         when:
-        resolveLocalPath()
-        run ':m1:checkDeps'
+        run ':m1:checkLocalPath'
 
         then:
-        expectResolvedToLocal(resolveLocal)
+        expectResolvedToLocal()
 
         when:
-        resolvePublishedPath()
-        run ':m1:checkDeps'
+        run ':m1:checkPublishedPath'
 
         then:
-        expectResolveToPublished(resolvePublished)
+        expectResolveToPublished()
     }
 
     def "global dependency substitution can be re-enabled"() {
         given:
-        buildFile << """
-            project(':m1') {
-                configurations.publishedPath.resolutionStrategy.useGlobalDependencySubstitutionRules.set(true)
-            }
+        file("m1/build.gradle") << """
+            configurations.publishedPath.resolutionStrategy.useGlobalDependencySubstitutionRules.set(true)
         """
 
         when:
-        resolvePublishedPath()
-        run ':m1:checkDeps'
+        run ':m1:checkPublishedPath'
 
         then:
-        expectResolvedToLocal(resolvePublished)
+        expectResolvedToLocal()
     }
 
 
     def "global dependency substitution can be disabled for all configurations"() {
         given:
-        buildFile << """
-            project(':m1') {
-                configurations.all {
-                    resolutionStrategy.useGlobalDependencySubstitutionRules.set(false)
-                }
+        file("m1/build.gradle") << """
+            configurations.all {
+                resolutionStrategy.useGlobalDependencySubstitutionRules.set(false)
             }
         """
 
         when:
-        resolveLocalPath()
-        run ':m1:checkDeps'
+        run ':m1:checkLocalPath'
 
         then:
-        expectResolveToPublished(resolveLocal)
+        expectResolveToPublished()
 
         when:
-        resolvePublishedPath()
-        run ':m1:checkDeps'
+        run ':m1:checkPublishedPath'
 
         then:
-        expectResolveToPublished(resolvePublished)
+        expectResolveToPublished()
     }
 
 }

@@ -17,26 +17,41 @@
 package org.gradle.internal.declarativedsl.mappingToJvm
 
 import org.gradle.declarative.dsl.schema.ConfigureAccessor
+import org.gradle.internal.declarativedsl.InstanceAndPublicType
 
-
+/**
+ * Allows resolution of custom accessors at runtime. This is used for accessors that cannot be resolved statically, for example
+ * project features or container elements.
+ *
+ */
 interface RuntimeCustomAccessors {
-    fun getObjectFromCustomAccessor(receiverObject: Any, accessor: ConfigureAccessor.Custom): Any?
+    fun getObjectFromCustomAccessor(receiverObject: Any, accessor: ConfigureAccessor.Custom): InstanceAndPublicType
 
     companion object {
         val none: RuntimeCustomAccessors = object : RuntimeCustomAccessors {
-            override fun getObjectFromCustomAccessor(receiverObject: Any, accessor: ConfigureAccessor.Custom): Any? = null
+            override fun getObjectFromCustomAccessor(receiverObject: Any, accessor: ConfigureAccessor.Custom): InstanceAndPublicType = InstanceAndPublicType.NULL
         }
     }
 }
 
+/**
+ * Allows [RuntimeCustomAccessors] that have post-processing requirements that must be met once all conversion is complete.
+ */
+interface RuntimeCustomAccessorsWithPostProcessing : RuntimeCustomAccessors {
+    fun postProcess()
+}
 
+
+/**
+ * Allows grouping of multiple [RuntimeCustomAccessors] into a single implementation.
+ */
 class CompositeCustomAccessors(private val implementations: List<RuntimeCustomAccessors>) : RuntimeCustomAccessors {
-    override fun getObjectFromCustomAccessor(receiverObject: Any, accessor: ConfigureAccessor.Custom): Any? {
+    override fun getObjectFromCustomAccessor(receiverObject: Any, accessor: ConfigureAccessor.Custom): InstanceAndPublicType {
         implementations.forEach {
             val result = it.getObjectFromCustomAccessor(receiverObject, accessor)
-            if (result != null)
+            if (result.instance != null)
                 return result
         }
-        return null
+        return InstanceAndPublicType.NULL
     }
 }

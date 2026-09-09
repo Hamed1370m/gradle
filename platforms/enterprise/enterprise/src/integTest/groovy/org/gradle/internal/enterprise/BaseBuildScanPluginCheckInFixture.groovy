@@ -18,8 +18,12 @@ package org.gradle.internal.enterprise
 
 import org.gradle.api.Plugin
 import org.gradle.api.initialization.Settings
+import org.gradle.api.internal.DocumentationRegistry
 import org.gradle.execution.RunRootBuildWorkBuildOperationType
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.fixtures.executer.GradleExecuter
+import org.gradle.internal.enterprise.impl.legacy.DevelocityPluginCompatibility
+import org.gradle.util.internal.VersionNumber
 import org.gradle.internal.enterprise.core.GradleEnterprisePluginManager
 import org.gradle.internal.operations.notify.BuildOperationFinishedNotification
 import org.gradle.internal.operations.notify.BuildOperationNotificationListener
@@ -31,6 +35,9 @@ import org.gradle.test.fixtures.maven.MavenFileRepository
 import org.gradle.test.fixtures.plugin.PluginBuilder
 
 import javax.annotation.Nullable
+import java.util.regex.Pattern
+
+import static org.gradle.internal.enterprise.impl.legacy.DevelocityPluginCompatibility.FIRST_PLUGIN_VERSION_WITHOUT_PARENT_PROPERTY_LOOKUP
 
 @SuppressWarnings("GrMethodMayBeStatic")
 abstract class BaseBuildScanPluginCheckInFixture {
@@ -71,11 +78,17 @@ abstract class BaseBuildScanPluginCheckInFixture {
         this.pluginArtifactName = pluginArtifactName
     }
 
+    String serviceOfGradleEnterprisePluginServiceRef() {
+        """
+            services.get(${GradleEnterprisePluginServiceRef.name})
+        """
+    }
+
     String pluginManagement() {
         """
             pluginManagement {
                 repositories {
-                    maven { url '${mavenRepo.uri}' }
+                    maven { url = uri("${mavenRepo.uri}") }
                 }
             }
         """
@@ -83,7 +96,7 @@ abstract class BaseBuildScanPluginCheckInFixture {
 
     String plugins() {
         """
-            plugins { id "$id" version "$runtimeVersion" }
+            plugins { id("$id").version("$runtimeVersion") }
         """
     }
 
@@ -164,6 +177,12 @@ abstract class BaseBuildScanPluginCheckInFixture {
                             $GradleEnterprisePluginEndOfBuildListener.name getEndOfBuildListener() {
                                 return { $GradleEnterprisePluginEndOfBuildListener.BuildResult.name buildResult ->
                                     println "${propertyPrefix}.endOfBuild.buildResult.failure = \$buildResult.failure"
+                                    println "${propertyPrefix}.endOfBuild.buildResult.buildFailure.failureMessages = \${buildResult.buildFailure?.failures*.message}"
+                                    if (buildResult.buildFailure != null) {
+                                        buildResult.buildFailure.failures.eachWithIndex { failure, index ->
+                                            println "${propertyPrefix}.endOfBuild.buildResult.buildFailure.\${index}.message = \${failure.message}"
+                                        }
+                                    }
                                     if (System.getProperty("build-listener-failure") != null) {
                                         throw new RuntimeException("broken")
                                     }
@@ -203,9 +222,35 @@ abstract class BaseBuildScanPluginCheckInFixture {
         assert output.contains("${propertyPrefix}.checkIn.unsupported.reasonMessage = $unsupported")
     }
 
+    /**
+     * Registers an expectation for the deprecation warning emitted at plugin check-in for
+     * Develocity plugin versions affected by the implicit parent-project property lookup.
+     */
+    void expectParentPropertyLookupDeprecation(GradleExecuter executer, String pluginVersion) {
+        // Under IP, plugin versions older than 3.15 hit the unsupported-with-IP path
+        // and short-circuit before the pre-4.0 deprecation, so the warning is not emitted.
+        if (GradleContextualExecuter.isIsolatedProjects()
+            && DevelocityPluginCompatibility.isUnsupportedWithIsolatedProjects(VersionNumber.parse(pluginVersion))) {
+            return
+        }
+        executer.expectDocumentedDeprecationWarning(
+            "Usage of the Develocity plugin ${pluginVersion} has been deprecated. " +
+                "This will fail with an error in Gradle 10. " +
+                "Upgrade to version ${FIRST_PLUGIN_VERSION_WITHOUT_PARENT_PROPERTY_LOOKUP} or later of the Develocity plugin. " +
+                "Consult the upgrading guide for further information: " +
+                "${new DocumentationRegistry().getDocumentationFor("upgrading_version_9", "deprecated_develocity_plugin_pre_4_0")}"
+        )
+    }
+
     void assertEndOfBuildWithFailure(String output, @Nullable String failure) {
         assert output.count("${propertyPrefix}.endOfBuild.buildResult.failure = ") == 1
         assert output.contains("${propertyPrefix}.endOfBuild.buildResult.failure = $failure")
+        assert output.count("${propertyPrefix}.endOfBuild.buildResult.buildFailure.failureMessages = ") == 1
+        if (failure == null) {
+            assert output.contains("${propertyPrefix}.endOfBuild.buildResult.buildFailure.failureMessages = null")
+        } else {
+            assert Pattern.compile(".*${propertyPrefix}\\.endOfBuild\\.buildResult\\.buildFailure\\.failureMessages = \\[.*${Pattern.quote(failure)}.*").matcher(output).find()
+        }
     }
 
     void receivedBuildOperationNotifications(String output) {

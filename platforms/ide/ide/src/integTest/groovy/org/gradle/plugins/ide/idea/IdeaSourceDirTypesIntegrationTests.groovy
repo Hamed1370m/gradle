@@ -16,13 +16,11 @@
 
 package org.gradle.plugins.ide.idea;
 
-import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.plugins.ide.AbstractIdeIntegrationSpec
 
 import static org.gradle.plugins.ide.fixtures.IdeaFixtures.parseIml
 
-class IdeaSourceDirTypesIntegrationTests extends AbstractIntegrationSpec {
-    @ToBeFixedForConfigurationCache
+class IdeaSourceDirTypesIntegrationTests extends AbstractIdeIntegrationSpec {
     def "properly marks additional source sets created by test suites as test source"() {
         given:
         settingsFile << """
@@ -47,10 +45,11 @@ class IdeaSourceDirTypesIntegrationTests extends AbstractIntegrationSpec {
         file('src/integTest/java').createDir()
 
         when:
+        expectTaskDeprecations("idea", "ideaModule", "ideaProject", "ideaWorkspace")
         succeeds ":idea"
 
         then:
-        result.assertTasksExecuted(":ideaModule", ":ideaProject", ":ideaWorkspace", ":idea")
+        result.assertTasksScheduled(":ideaModule", ":ideaProject", ":ideaWorkspace", ":idea")
 
         def moduleFixture = parseIml(file ( 'root.iml'))
         def sources = moduleFixture.getContent().getProperty("sources")

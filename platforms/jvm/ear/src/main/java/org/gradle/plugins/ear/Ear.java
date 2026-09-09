@@ -41,8 +41,8 @@ import org.gradle.plugins.ear.descriptor.internal.DefaultEarWebModule;
 import org.gradle.util.internal.ConfigureUtil;
 import org.gradle.util.internal.GUtil;
 import org.gradle.work.DisableCachingByDefault;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.io.File;
 import java.io.OutputStreamWriter;
@@ -55,27 +55,36 @@ import static org.gradle.plugins.ear.EarPlugin.DEFAULT_LIB_DIR_NAME;
 
 /**
  * Assembles an EAR archive.
+ * @since 1.0
  */
 @DisableCachingByDefault(because = "Not worth caching")
 public abstract class Ear extends Jar {
+    /**
+     * The ear extension.
+     *
+     * @since 1.0
+     */
     public static final String EAR_EXTENSION = "ear";
 
     private String libDirName;
-    private final Property<Boolean> generateDeploymentDescriptor;
     private DeploymentDescriptor deploymentDescriptor;
     private CopySpec lib;
-    private final DirectoryProperty appDir;
 
+    /**
+     * Creates a new {@code Ear}.
+     *
+     * @since 1.0
+     */
+    @SuppressWarnings({"this-escape", "DefaultCharset"}) //TODO: evaluate errorprone suppression (https://github.com/gradle/gradle/issues/35864)
     public Ear() {
         getArchiveExtension().set(EAR_EXTENSION);
         setMetadataCharset("UTF-8");
-        generateDeploymentDescriptor = getObjectFactory().property(Boolean.class);
-        generateDeploymentDescriptor.convention(true);
+        getGenerateDeploymentDescriptor().convention(true);
         lib = getRootSpec().addChildBeforeSpec(getMainSpec()).into(
             callable(() -> GUtil.elvis(getLibDirName(), DEFAULT_LIB_DIR_NAME))
         );
         getMainSpec().appendCachingSafeCopyAction(action(details -> {
-            if (generateDeploymentDescriptor.get()) {
+            if (getGenerateDeploymentDescriptor().get()) {
                 checkIfShouldGenerateDeploymentDescriptor(details);
                 recordTopLevelModules(details);
             }
@@ -89,7 +98,7 @@ public abstract class Ear extends Jar {
         descriptorChild.setDuplicatesStrategy(DuplicatesStrategy.EXCLUDE);
         descriptorChild.from(callable(() -> {
             final DeploymentDescriptor descriptor = getDeploymentDescriptor();
-            if (descriptor != null && generateDeploymentDescriptor.get()) {
+            if (descriptor != null && getGenerateDeploymentDescriptor().get()) {
                 if (descriptor.getLibraryDirectory() == null) {
                     descriptor.setLibraryDirectory(getLibDirName());
                 }
@@ -118,8 +127,6 @@ public abstract class Ear extends Jar {
 
             return null;
         }));
-
-        appDir = getObjectFactory().directoryProperty();
     }
 
     private FileCollectionFactory fileCollectionFactory() {
@@ -155,11 +162,9 @@ public abstract class Ear extends Jar {
         }
     }
 
-    @Inject
     @Override
-    protected ObjectFactory getObjectFactory() {
-        throw new UnsupportedOperationException();
-    }
+    @Inject
+    protected abstract ObjectFactory getObjectFactory();
 
     /**
      * Configures the deployment descriptor for this EAR archive.
@@ -168,6 +173,7 @@ public abstract class Ear extends Jar {
      *
      * @param configureClosure The closure.
      * @return This.
+     * @since 1.0
      */
     public Ear deploymentDescriptor(@DelegatesTo(value = DeploymentDescriptor.class, strategy = Closure.DELEGATE_FIRST) Closure configureClosure) {
         ConfigureUtil.configure(configureClosure, forceDeploymentDescriptor());
@@ -197,6 +203,7 @@ public abstract class Ear extends Jar {
 
     /**
      * A location for dependency libraries to include in the 'lib' directory of the EAR archive.
+     * @since 1.0
      */
     @Internal
     @ToBeReplacedByLazyProperty(comment = "Should this be lazy?")
@@ -211,6 +218,7 @@ public abstract class Ear extends Jar {
      *
      * @param configureClosure The closure.
      * @return The created {@code CopySpec}
+     * @since 1.0
      */
     public CopySpec lib(@DelegatesTo(value = CopySpec.class, strategy = Closure.DELEGATE_FIRST) Closure configureClosure) {
         return ConfigureUtil.configure(configureClosure, getLib());
@@ -233,6 +241,7 @@ public abstract class Ear extends Jar {
 
     /**
      * The name of the library directory in the EAR file. Default is "lib".
+     * @since 1.0
      */
     @Nullable
     @Optional
@@ -242,6 +251,11 @@ public abstract class Ear extends Jar {
         return libDirName;
     }
 
+    /**
+     * Sets the lib dir name.
+     *
+     * @since 1.0
+     */
     public void setLibDirName(@Nullable String libDirName) {
         this.libDirName = libDirName;
     }
@@ -252,12 +266,11 @@ public abstract class Ear extends Jar {
      * @since 6.0
      */
     @Input
-    public Property<Boolean> getGenerateDeploymentDescriptor() {
-        return generateDeploymentDescriptor;
-    }
+    public abstract Property<Boolean> getGenerateDeploymentDescriptor();
 
     /**
      * The deployment descriptor configuration.
+     * @since 1.0
      */
     @Internal
     @ToBeReplacedByLazyProperty
@@ -265,6 +278,11 @@ public abstract class Ear extends Jar {
         return deploymentDescriptor;
     }
 
+    /**
+     * Sets the deployment descriptor.
+     *
+     * @since 1.0
+     */
     public void setDeploymentDescriptor(DeploymentDescriptor deploymentDescriptor) {
         this.deploymentDescriptor = deploymentDescriptor;
     }
@@ -279,7 +297,5 @@ public abstract class Ear extends Jar {
      * @since 7.1
      */
     @Internal
-    public DirectoryProperty getAppDirectory() {
-        return appDir;
-    }
+    public abstract DirectoryProperty getAppDirectory();
 }

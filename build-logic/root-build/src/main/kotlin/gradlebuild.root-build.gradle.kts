@@ -14,10 +14,31 @@
  * limitations under the License.
  */
 
+import com.autonomousapps.DependencyAnalysisExtension
+
 plugins {
-    id("gradlebuild.internal.cc-experiment")
-    id("gradlebuild.buildscan") // Reporting: Add more data through custom tags to build scans
+    id("gradlebuild.buildscan") // Reporting: Add more data through custom tags to a Build Scan
     id("gradlebuild.ide") // Local development: Tweak IDEA import
-    id("gradlebuild.dependency-analysis") // Auditing dependencies to find unused libraries
     id("gradlebuild.warmup-ec2") // Warm up EC2 AMI
+    id("gradlebuild.ci-reporting")
+
+    id("com.autonomousapps.dependency-analysis")
+}
+
+configure<DependencyAnalysisExtension> {
+    issues {
+        all {
+            onDuplicateClassWarnings {
+                severity("fail")
+            }
+        }
+    }
+
+    usage {
+        analysis {
+            checkSuperClasses(true)
+        }
+    }
+
+    useTypesafeProjectAccessors(true)
 }

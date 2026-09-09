@@ -16,28 +16,23 @@
 package org.gradle.launcher.daemon.bootstrap;
 
 import com.google.common.io.Files;
-import org.gradle.api.UncheckedIOException;
 import org.gradle.api.logging.LogLevel;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
-import org.gradle.internal.classpath.DefaultClassPath;
 import org.gradle.internal.concurrent.CompositeStoppable;
 import org.gradle.internal.instrumentation.agent.AgentInitializer;
+import org.gradle.internal.logging.LoggingManagerFactory;
 import org.gradle.internal.logging.LoggingManagerInternal;
 import org.gradle.internal.logging.services.LoggingServiceRegistry;
 import org.gradle.internal.nativeintegration.ProcessEnvironment;
 import org.gradle.internal.nativeintegration.services.NativeServices;
 import org.gradle.internal.nativeintegration.services.NativeServices.NativeServicesMode;
 import org.gradle.internal.remote.Address;
-import org.gradle.internal.serialize.kryo.KryoBackedDecoder;
 import org.gradle.internal.service.ServiceRegistry;
-import org.gradle.internal.stream.EncodedStream;
 import org.gradle.launcher.bootstrap.EntryPoint;
 import org.gradle.launcher.bootstrap.ExecutionListener;
-import org.gradle.launcher.daemon.configuration.DaemonPriority;
-import org.gradle.launcher.daemon.configuration.DaemonServerConfiguration;
-import org.gradle.launcher.daemon.configuration.DefaultDaemonServerConfiguration;
 import org.gradle.launcher.daemon.context.DaemonContext;
+import org.gradle.launcher.daemon.diagnostics.DaemonDiagnostics;
 import org.gradle.launcher.daemon.logging.DaemonMessages;
 import org.gradle.launcher.daemon.server.Daemon;
 import org.gradle.launcher.daemon.server.DaemonLogFile;
@@ -45,15 +40,16 @@ import org.gradle.launcher.daemon.server.DaemonProcessState;
 import org.gradle.launcher.daemon.server.DaemonStopState;
 import org.gradle.launcher.daemon.server.MasterExpirationStrategy;
 import org.gradle.launcher.daemon.server.expiry.DaemonExpirationStrategy;
+import org.gradle.launcher.daemon.startup.DaemonServerConfiguration;
+import org.gradle.launcher.daemon.startup.DaemonStartupCommunication;
+import org.gradle.launcher.daemon.startup.DaemonStartupInfo;
 import org.gradle.process.internal.shutdown.ShutdownHooks;
 
 import java.io.ByteArrayInputStream;
-import java.io.EOFException;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.PrintStream;
-import java.util.ArrayList;
-import java.util.List;
+
+import static java.nio.file.Files.newOutputStream;
 
 /**
  * The entry point for a daemon process.
@@ -69,53 +65,18 @@ public class DaemonMain extends EntryPoint {
 
     @Override
     protected void doAction(String[] args, ExecutionListener listener) {
-        // The first argument is not really used but it is very useful in diagnosing, i.e. running 'jps -m'
+        // The first argument is not really used, but it is very useful in diagnosing, i.e. running 'jps -m'
         if (args.length != 1) {
-            invalidArgs("Following arguments are required: <gradle-version>");
+            invalidArgs();
         }
 
         // Read configuration from stdin
-        List<String> startupOpts;
-        File gradleHomeDir;
-        File daemonBaseDir;
-        int idleTimeoutMs;
-        int periodicCheckIntervalMs;
-        boolean singleUse;
-        NativeServicesMode nativeServicesMode;
-        String daemonUid;
-        DaemonPriority priority;
-        List<File> additionalClassPath;
-
-        KryoBackedDecoder decoder = new KryoBackedDecoder(new EncodedStream.EncodedInput(System.in));
-        try {
-            gradleHomeDir = new File(decoder.readString());
-            daemonBaseDir = new File(decoder.readString());
-            idleTimeoutMs = decoder.readSmallInt();
-            periodicCheckIntervalMs = decoder.readSmallInt();
-            singleUse = decoder.readBoolean();
-            nativeServicesMode = NativeServicesMode.values()[decoder.readSmallInt()];
-            daemonUid = decoder.readString();
-            priority = DaemonPriority.values()[decoder.readSmallInt()];
-            int argCount = decoder.readSmallInt();
-            startupOpts = new ArrayList<String>(argCount);
-            for (int i = 0; i < argCount; i++) {
-                startupOpts.add(decoder.readString());
-            }
-            int additionalClassPathLength = decoder.readSmallInt();
-            additionalClassPath = new ArrayList<File>(additionalClassPathLength);
-            for (int i = 0; i < additionalClassPathLength; i++) {
-                additionalClassPath.add(new File(decoder.readString()));
-            }
-        } catch (EOFException e) {
-            throw new UncheckedIOException(e);
-        }
-
-        NativeServices.initializeOnDaemon(gradleHomeDir, NativeServicesMode.fromSystemProperties());
-        DaemonServerConfiguration parameters = new DefaultDaemonServerConfiguration(daemonUid, daemonBaseDir, idleTimeoutMs, periodicCheckIntervalMs, singleUse, priority, startupOpts, nativeServicesMode);
+        DaemonServerConfiguration parameters = DaemonStartupCommunication.readDaemonServerConfiguration(System.in);
+        NativeServices.initializeOnDaemon(parameters.getGradleUserHomeDir(), NativeServicesMode.fromSystemProperties());
         ServiceRegistry loggingRegistry = LoggingServiceRegistry.newCommandLineProcessLogging();
-        LoggingManagerInternal loggingManager = loggingRegistry.newInstance(LoggingManagerInternal.class);
+        LoggingManagerInternal loggingManager = loggingRegistry.get(LoggingManagerFactory.class).createLoggingManager();
 
-        DaemonProcessState daemonProcessState = new DaemonProcessState(parameters, loggingRegistry, loggingManager, DefaultClassPath.of(additionalClassPath));
+        DaemonProcessState daemonProcessState = new DaemonProcessState(parameters, loggingRegistry, loggingManager);
         ServiceRegistry daemonServices = daemonProcessState.getServices();
         File daemonLog = daemonServices.get(DaemonLogFile.class).getFile();
 
@@ -126,7 +87,7 @@ public class DaemonMain extends EntryPoint {
         ProcessEnvironment processEnvironment = daemonServices.get(ProcessEnvironment.class);
         processEnvironment.maybeDetachProcess();
 
-        LOGGER.debug("Assuming the daemon was started with following jvm opts: {}", startupOpts);
+        LOGGER.debug("Assuming the daemon was started with following jvm opts: {}", parameters.getJvmOptions());
 
         daemonServices.get(AgentInitializer.class).maybeConfigureInstrumentationAgent();
 
@@ -145,15 +106,15 @@ public class DaemonMain extends EntryPoint {
         }
     }
 
-    private static void invalidArgs(String message) {
+    private static void invalidArgs() {
         System.out.println("USAGE: <gradle version>");
-        System.out.println(message);
+        System.out.println("Following arguments are required: <gradle-version>");
         System.exit(1);
     }
 
     protected void daemonStarted(Long pid, String uid, Address address, File daemonLog) {
         // directly printing to the stream to avoid log level filtering.
-        new DaemonStartupCommunication().printDaemonStarted(originalOut, pid, uid, address, daemonLog);
+        DaemonStartupCommunication.writeDaemonStartupInfo(originalOut, new DaemonStartupInfo(uid, address, new DaemonDiagnostics(daemonLog, pid)));
         try {
             originalOut.close();
             originalErr.close();
@@ -164,19 +125,8 @@ public class DaemonMain extends EntryPoint {
     }
 
     protected void initialiseLogging(LoggingManagerInternal loggingManager, File daemonLog) {
-        // create log file
-        PrintStream result;
-        try {
-            Files.createParentDirs(daemonLog);
-            // Note that DaemonDiagnostics class reads this log.
-            result = new PrintStream(new FileOutputStream(daemonLog), true, "UTF-8");
-        } catch (Exception e) {
-            throw new RuntimeException("Unable to create daemon log file", e);
-        }
-
+        PrintStream log = createLogFile(daemonLog);
         reducePermissionsOnDaemonLog(daemonLog);
-
-        final PrintStream log = result;
 
         ShutdownHooks.addShutdownHook(new Runnable() {
             @Override
@@ -201,10 +151,20 @@ public class DaemonMain extends EntryPoint {
         loggingManager.start();
     }
 
+    private static PrintStream createLogFile(File daemonLog) {
+        try {
+            Files.createParentDirs(daemonLog);
+            // Note that DaemonDiagnostics class reads this log.
+            return new PrintStream(newOutputStream(daemonLog.toPath()), true, "UTF-8");
+        } catch (Exception e) {
+            throw new RuntimeException("Unable to create daemon log file", e);
+        }
+    }
+
     /**
      * Set the permissions for the daemon log to be only readable/writable by the current user.
      */
-    private void reducePermissionsOnDaemonLog(File daemonLog) {
+    private static void reducePermissionsOnDaemonLog(File daemonLog) {
         //noinspection ResultOfMethodCallIgnored
         daemonLog.setReadable(false, false);
         //noinspection ResultOfMethodCallIgnored

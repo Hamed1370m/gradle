@@ -45,7 +45,7 @@ class PluginManagementDslSpec extends AbstractIntegrationSpec {
             pluginManagement {
                 repositories {
                     maven {
-                        url "http://repo.internal.net/m2"
+                        url = "http://repo.internal.net/m2"
                         authentication {
                             basic(BasicAuthentication)
                         }
@@ -68,7 +68,7 @@ class PluginManagementDslSpec extends AbstractIntegrationSpec {
             pluginManagement {
                 repositories {
                     ivy {
-                        url "http://repo.internal.net/ivy"
+                        url = "http://repo.internal.net/ivy"
                         authentication {
                             basic(BasicAuthentication)
                         }
@@ -97,7 +97,7 @@ class PluginManagementDslSpec extends AbstractIntegrationSpec {
                 }
                 repositories {
                     maven {
-                        url "http://repo.internal.net/m2"
+                        url = "http://repo.internal.net/m2"
                     }
                 }
             }
@@ -241,7 +241,7 @@ class PluginManagementDslSpec extends AbstractIntegrationSpec {
             pluginManagement {
                 repositories {
                     maven {
-                        url repoUrl
+                        url = repoUrl
                     }
                 }
             }
@@ -257,7 +257,7 @@ class PluginManagementDslSpec extends AbstractIntegrationSpec {
             pluginManagement {
                 repositories {
                     maven {
-                        url file('bar')
+                        url = file('bar')
                     }
                 }
             }
@@ -272,29 +272,29 @@ class PluginManagementDslSpec extends AbstractIntegrationSpec {
             pluginManagement {
                 repositories {
                     ivy {
-                        url "http://repo.internal.net/ivy"
+                        url = "http://repo.internal.net/ivy"
                         patternLayout {
                             ivy '[organisation]/[module]/[revision]/[module]-[revision].ivy'
                             artifact '[organisation]/[module]/[revision]/[artifact]-[revision](-[classifier]).[ext]'
-                            m2compatible true
+                            m2compatible = true
                         }
                     }
                     ivy {
-                        url "http://repo.internal.net/ivy"
+                        url = "http://repo.internal.net/ivy"
                         layout("maven")
                     }
                     ivy {
-                        url "http://repo.internal.net/ivy"
+                        url = "http://repo.internal.net/ivy"
                         layout("ivy")
                     }
                     ivy {
-                        url "http://repo.internal.net/ivy"
+                        url = "http://repo.internal.net/ivy"
                         layout("gradle")
                     }
                     ivy {
-                        url "http://repo.internal.net/ivy"
-                        artifactPattern '[organisation]/[module]/[revision]/[artifact]-[revision](-[classifier]).[ext]'
-                        ivyPattern '[organisation]/[module]/[revision]/[module]-[revision].ivy'
+                        url = "http://repo.internal.net/ivy"
+                        artifactPattern('[organisation]/[module]/[revision]/[artifact]-[revision](-[classifier]).[ext]')
+                        ivyPattern('[organisation]/[module]/[revision]/[module]-[revision].ivy')
                     }
                 }
             }
@@ -311,7 +311,6 @@ class PluginManagementDslSpec extends AbstractIntegrationSpec {
             pluginManagement {
                 repositories {
                     gradlePluginPortal()
-                    jcenter()
                     google()
                     mavenCentral()
                     mavenLocal()
@@ -320,19 +319,7 @@ class PluginManagementDslSpec extends AbstractIntegrationSpec {
         """
 
         expect:
-        executer.expectDocumentedDeprecationWarning "The RepositoryHandler.jcenter() method has been deprecated. " +
-            "This is scheduled to be removed in Gradle 9.0. JFrog announced JCenter's sunset in February 2021. Use mavenCentral() instead. " +
-            "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_6.html#jcenter_deprecation"
-
-        when:
-        succeeds "help"
-
-        then:
-        verifyAll(receivedProblem) {
-            fqid == 'deprecation:repository-jcenter'
-            contextualLabel == 'The RepositoryHandler.jcenter() method has been deprecated.'
-            solutions == [ 'JFrog announced JCenter\'s sunset in February 2021. Use mavenCentral() instead.' ]
-        }
+        succeeds("help")
     }
 
     void includesLinkToUserguide() {

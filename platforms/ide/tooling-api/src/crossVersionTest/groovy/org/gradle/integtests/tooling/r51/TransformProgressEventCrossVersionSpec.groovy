@@ -30,9 +30,7 @@ class TransformProgressEventCrossVersionSpec extends ToolingApiSpecification {
     def events = ProgressEvents.create()
 
     def setup() {
-        settingsFile << """
-            include 'lib', 'app'
-        """
+        includeProjects("lib", "app")
         buildFile << """
             import org.gradle.api.artifacts.transform.TransformParameters
 
@@ -146,6 +144,7 @@ class TransformProgressEventCrossVersionSpec extends ToolingApiSpecification {
         withFileSizerTransform()
         settingsFile.moveToDirectory(file('included'))
         buildFile.moveToDirectory(file('included'))
+        createProjectSubDirs("included/lib", "included/app")
         settingsFile << """
             includeBuild 'included'
         """
@@ -249,7 +248,7 @@ class TransformProgressEventCrossVersionSpec extends ToolingApiSpecification {
 
     String applyTransform(String transformName, String project = ":lib") {
         if (targetVersion.baseVersion >= GradleVersion.version("6.6")) {
-            return "Transform lib.jar (project $project) with $transformName"
+            return "Transform lib.jar (project ${projectDisplayName(project)}) with $transformName"
         } else {
             return "Transform artifact lib.jar (project $project) with $transformName"
         }
@@ -257,9 +256,17 @@ class TransformProgressEventCrossVersionSpec extends ToolingApiSpecification {
 
     String transformTarget(String project = ":lib") {
         if (targetVersion.baseVersion >= GradleVersion.version("6.6")) {
-            return "lib.jar (project $project)"
+            return "lib.jar (project ${projectDisplayName(project)})"
         } else {
             return "artifact lib.jar (project $project)"
+        }
+    }
+
+    String projectDisplayName(String project) {
+        if (targetVersion.baseVersion >= GradleVersion.version("9.6")) {
+            return "'$project'"
+        } else {
+            return project
         }
     }
 

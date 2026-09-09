@@ -18,12 +18,12 @@ package org.gradle.internal.build;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import org.gradle.api.NonNullApi;
 import org.gradle.api.Task;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.execution.plan.ExecutionPlan;
 import org.gradle.execution.plan.FinalizedExecutionPlan;
 import org.gradle.execution.plan.QueryableExecutionPlan;
+import org.gradle.execution.plan.ScheduledWork;
 import org.gradle.execution.plan.ToPlannedNodeConverterRegistry;
 import org.gradle.internal.operations.BuildOperationContext;
 import org.gradle.internal.operations.BuildOperationDescriptor;
@@ -31,8 +31,9 @@ import org.gradle.internal.operations.BuildOperationRunner;
 import org.gradle.internal.operations.RunnableBuildOperation;
 import org.gradle.internal.operations.trace.CustomOperationTraceSerialization;
 import org.gradle.internal.taskgraph.NodeIdentity;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.NullMarked;
 
-import javax.annotation.Nonnull;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
@@ -45,7 +46,7 @@ import static org.gradle.internal.taskgraph.CalculateTaskGraphBuildOperationType
 import static org.gradle.internal.taskgraph.CalculateTaskGraphBuildOperationType.PlannedTask;
 import static org.gradle.internal.taskgraph.CalculateTaskGraphBuildOperationType.Result;
 
-@NonNullApi
+@NullMarked
 public class BuildOperationFiringBuildWorkPreparer implements BuildWorkPreparer {
     private final BuildOperationRunner buildOperationRunner;
     private final BuildWorkPreparer delegate;
@@ -95,7 +96,7 @@ public class BuildOperationFiringBuildWorkPreparer implements BuildWorkPreparer 
             QueryableExecutionPlan contents = plan.getContents();
             Set<Task> requestedTasks = contents.getRequestedTasks();
             Set<Task> filteredTasks = contents.getFilteredTasks();
-            QueryableExecutionPlan.ScheduledNodes scheduledWork = contents.getScheduledNodes();
+            ScheduledWork scheduledWork = contents.getScheduledNodes();
 
             PlannedNodeGraph plannedNodeGraph = computePlannedNodeGraph(scheduledWork);
 
@@ -106,22 +107,30 @@ public class BuildOperationFiringBuildWorkPreparer implements BuildWorkPreparer 
             delegate.populateWorkGraph(gradle, plan, action);
         }
 
-        @Nonnull
         @Override
-        public BuildOperationDescriptor.Builder description() {
+        public BuildOperationDescriptor.@NonNull Builder description() {
             //noinspection Convert2Lambda
             return BuildOperationDescriptor.displayName(gradle.contextualize("Calculate task graph"))
+                .progressDisplayName(buildingTaskGraphDisplayName(gradle))
                 .details(new Details() {
                     @Override
                     public String getBuildPath() {
-                        return gradle.getIdentityPath().getPath();
+                        return gradle.getIdentityPath().asString();
                     }
                 });
         }
 
-        private PlannedNodeGraph computePlannedNodeGraph(QueryableExecutionPlan.ScheduledNodes scheduledWork) {
+        private static String buildingTaskGraphDisplayName(GradleInternal gradle) {
+            if (gradle.isRootBuild()) {
+                return "Building task graph of root build";
+            } else {
+                return "Building task graph of build '" + gradle.getIdentityPath().asString() + "'";
+            }
+        }
+
+        private PlannedNodeGraph computePlannedNodeGraph(ScheduledWork scheduledWork) {
             PlannedNodeGraph.Collector collector = new PlannedNodeGraph.Collector(converterRegistry);
-            scheduledWork.visitNodes((nodes, entryNodes) -> collector.collectNodes(nodes));
+            collector.collectNodes(scheduledWork.getScheduledNodes());
             return collector.getGraph();
         }
 

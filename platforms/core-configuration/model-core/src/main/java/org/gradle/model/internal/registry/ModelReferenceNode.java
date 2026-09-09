@@ -19,7 +19,6 @@ package org.gradle.model.internal.registry;
 import com.google.common.base.Optional;
 import com.google.common.base.Predicate;
 import org.gradle.internal.Cast;
-import org.gradle.model.RuleSource;
 import org.gradle.model.internal.core.InstanceModelView;
 import org.gradle.model.internal.core.ModelAction;
 import org.gradle.model.internal.core.ModelActionRole;
@@ -33,16 +32,17 @@ import org.gradle.model.internal.core.MutableModelNode;
 import org.gradle.model.internal.core.NodePredicate;
 import org.gradle.model.internal.core.rule.describe.ModelRuleDescriptor;
 import org.gradle.model.internal.type.ModelType;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.Set;
 
 /**
  * A model node that is a reference to some other node.
  */
+@SuppressWarnings("deprecation")
 public class ModelReferenceNode extends ModelNodeInternal {
     private static final Logger LOGGER = LoggerFactory.getLogger(ModelReferenceNode.class);
 
@@ -140,7 +140,7 @@ public class ModelReferenceNode extends ModelNodeInternal {
     }
 
     @Override
-    public void applyTo(NodePredicate predicate, Class<? extends RuleSource> rules) {
+    public void applyTo(NodePredicate predicate, Class<? extends org.gradle.model.RuleSource> rules) {
         throw new UnsupportedOperationException();
     }
 

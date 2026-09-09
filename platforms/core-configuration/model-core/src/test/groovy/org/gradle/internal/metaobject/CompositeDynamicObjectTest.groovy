@@ -16,23 +16,16 @@
 
 package org.gradle.internal.metaobject
 
-import org.gradle.test.precondition.TestPrecondition
-import org.gradle.test.preconditions.UnitTestPreconditions
+
 import spock.lang.Specification
 
 class CompositeDynamicObjectTest extends Specification {
-    def obj = new CompositeDynamicObject() {
-        @Override
-        String getDisplayName() {
-            return "<obj>"
-        }
-    }
 
     def "get property returns result from first delegate that has the property"() {
         def obj1 = Mock(DynamicObject)
         def obj2 = Mock(DynamicObject)
         def obj3 = Mock(DynamicObject)
-        obj.setObjects(obj1, obj2, obj3)
+        def obj = create(obj1, obj2, obj3)
 
         when:
         def result = obj.getProperty("p")
@@ -50,7 +43,7 @@ class CompositeDynamicObjectTest extends Specification {
         def obj1 = Mock(DynamicObject)
         def obj2 = Mock(DynamicObject)
         def obj3 = Mock(DynamicObject)
-        obj.setObjects(obj1, obj2, obj3)
+        def obj = create(obj1, obj2, obj3)
 
         when:
         def result = obj.getProperty("p")
@@ -68,7 +61,7 @@ class CompositeDynamicObjectTest extends Specification {
         def obj1 = Mock(DynamicObject)
         def obj2 = Mock(DynamicObject)
         def obj3 = Mock(DynamicObject)
-        obj.setObjects(obj1, obj2, obj3)
+        def obj = create(obj1, obj2, obj3)
 
         when:
         obj.getProperty("p")
@@ -85,7 +78,7 @@ class CompositeDynamicObjectTest extends Specification {
         def obj1 = Mock(DynamicObject)
         def obj2 = Mock(DynamicObject)
         def obj3 = Mock(DynamicObject)
-        obj.setObjects(obj1, obj2, obj3)
+        def obj = create(obj1, obj2, obj3)
 
         when:
         obj.setProperty("p", "value")
@@ -98,7 +91,7 @@ class CompositeDynamicObjectTest extends Specification {
 
     def "set property fails when property cannot be found"() {
         def obj1 = Mock(DynamicObject)
-        obj.setObjects(obj1)
+        def obj = create(obj1)
 
         when:
         obj.setProperty("p", "value")
@@ -115,7 +108,7 @@ class CompositeDynamicObjectTest extends Specification {
         def obj1 = Mock(DynamicObject)
         def obj2 = Mock(DynamicObject)
         def obj3 = Mock(DynamicObject)
-        obj.setObjects(obj1, obj2, obj3)
+        def obj = create(obj1, obj2, obj3)
 
         when:
         def result = obj.invokeMethod("m", ["value"] as Object[])
@@ -133,7 +126,7 @@ class CompositeDynamicObjectTest extends Specification {
         def obj1 = Mock(DynamicObject)
         def obj2 = Mock(DynamicObject)
         def obj3 = Mock(DynamicObject)
-        obj.setObjects(obj1, obj2, obj3)
+        def obj = create(obj1, obj2, obj3)
 
         when:
         def result = obj.invokeMethod("m", ["value"] as Object[])
@@ -151,15 +144,19 @@ class CompositeDynamicObjectTest extends Specification {
         def obj1 = Mock(DynamicObject)
         def obj2 = Mock(DynamicObject)
         def obj3 = Mock(DynamicObject)
-        obj.setObjects(obj1, obj2, obj3)
+        def obj = create(obj1, obj2, obj3)
 
         when:
         obj.invokeMethod("m", "value")
 
         then:
-        // Groovy 3.x incorrectly records the name of the enclosing class for some reason
-        def className = TestPrecondition.satisfied(UnitTestPreconditions.IsGroovy3) ? CompositeDynamicObjectTest.name : CompositeDynamicObjectTest.name + '$1'
+        def className = CompositeDynamicObject.name
         def e = thrown MissingMethodException
         e.message.startsWith("No signature of method: ${className}.m() is applicable for argument types: (String) values: [value]")
     }
+
+    CompositeDynamicObject create(DynamicObject... objects) {
+        return new CompositeDynamicObject(objects.toList(), () -> "<obj>")
+    }
+
 }

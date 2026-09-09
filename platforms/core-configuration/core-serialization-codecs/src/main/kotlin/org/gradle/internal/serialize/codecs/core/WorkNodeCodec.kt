@@ -19,6 +19,8 @@ package org.gradle.internal.serialize.codecs.core
 import com.google.common.collect.ImmutableList
 import com.google.common.collect.ImmutableSet
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet
+import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap
 import org.apache.commons.lang3.StringUtils
 import org.gradle.api.internal.GradleInternal
 import org.gradle.api.internal.project.ProjectInternal
@@ -33,6 +35,7 @@ import org.gradle.execution.plan.OrdinalGroup
 import org.gradle.execution.plan.OrdinalGroupFactory
 import org.gradle.execution.plan.PostExecutionNodeAwareActionNode
 import org.gradle.execution.plan.ScheduledWork
+import org.gradle.execution.plan.TaskInAnotherBuild
 import org.gradle.execution.plan.TaskNode
 import org.gradle.internal.cc.base.exceptions.ConfigurationCacheException
 import org.gradle.internal.cc.base.serialize.withGradleIsolate
@@ -54,21 +57,17 @@ import org.gradle.internal.serialize.graph.decodePreservingIdentity
 import org.gradle.internal.serialize.graph.encodePreservingIdentityOf
 import org.gradle.internal.serialize.graph.ownerService
 import org.gradle.internal.serialize.graph.readCollectionInto
-import org.gradle.internal.serialize.graph.readList
 import org.gradle.internal.serialize.graph.readNonNull
 import org.gradle.internal.serialize.graph.readWith
 import org.gradle.internal.serialize.graph.runWriteOperation
 import org.gradle.internal.serialize.graph.serviceOf
 import org.gradle.internal.serialize.graph.writeCollection
 import org.gradle.util.Path
-import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicReference
 
-private
 typealias NodeForId = (Int) -> Node
 
 
-private
 typealias IdForNode = (Node) -> Int
 
 
@@ -78,10 +77,73 @@ interface IsolateContextSource {
 }
 
 
+/**
+ * The work graph restored from a build's state, the ids of the nodes it owns, and
+ * the restored references to task nodes in other builds, which are not yet to be bound to their
+ * target nodes.
+ */
+class RestoredWorkGraph(
+    val scheduledWork: ScheduledWork,
+    /** The global node id of this graph's first node in the build-tree-wide id space. */
+    val baseNodeId: Int,
+    /** The number of node ids owned by this graph. */
+    val nodeCount: Int,
+    /** Returns the node with the given global node id, which must be one of the ids owned by this graph. */
+    val nodeForId: NodeForId,
+    val taskReferences: List<RestoredTaskReference>
+)
+
+
+/**
+ * A restored [TaskInAnotherBuild] node, together with the id of its target node in another build's work graph.
+ */
+class RestoredTaskReference(
+    val node: TaskInAnotherBuild.Restored,
+    val targetNodeId: Int
+)
+
+
+/**
+ * Assigns an ID to every node of the given work graphs, in a single id space spanning all graphs.
+ */
+fun assignNodeIds(workGraphs: Iterable<ScheduledWork>): IdForNode {
+    val ids = Object2IntOpenHashMap<Node>().apply {
+        defaultReturnValue(-1)
+    }
+    for (workGraph in workGraphs) {
+        for (node in workGraph.scheduledNodes) {
+            require(ids.put(node, ids.size) == -1) {
+                "$node is scheduled in more than one work graph"
+            }
+            if (node is LocalTaskNode) {
+                // The prepareNode is not included as a scheduled node but is a dependency of
+                // scheduled task nodes. Also assign an ID for it here.
+                ids.put(node.prepareNode, ids.size)
+            }
+        }
+    }
+    return { node ->
+        ids.getInt(node).also { globalNodeId ->
+            require(globalNodeId >= 0) {
+                "Node id missing for node $node"
+            }
+        }
+    }
+}
+
+
+/**
+ * The number of node ids assigned to a single build's work graph by [assignNodeIds]: one per scheduled node,
+ * plus one for each [LocalTaskNode]'s prepare node.
+ */
+private
+fun buildNodeCountOf(nodes: List<Node>): Int =
+    nodes.size + nodes.count { it is LocalTaskNode }
+
+
 class WorkNodeCodec(
     private val owner: GradleInternal,
     private val internalTypesCodec: Codec<Any?>,
-    private val ordinalGroups: OrdinalGroupFactory,
     private val contextSource: IsolateContextSource,
     /** Should we store work nodes in parallel? */
     private val parallelStore: Boolean,
@@ -89,49 +151,44 @@ class WorkNodeCodec(
     private val parallelLoad: Boolean
 ) {
 
-    fun WriteContext.writeWork(work: ScheduledWork) {
+    fun WriteContext.writeWork(work: ScheduledWork, idForNode: IdForNode) {
         // Share bean instances across all nodes (except tasks, which have their own isolate)
         withGradleIsolate(owner, internalTypesCodec) {
-            doWrite(work)
+            doWrite(work, idForNode)
         }
     }
 
-    fun ReadContext.readWork(): ScheduledWork =
+    fun ReadContext.readWork(): RestoredWorkGraph =
         withGradleIsolate(owner, internalTypesCodec) {
             doRead()
         }
 
     private
-    fun WriteContext.doWrite(work: ScheduledWork) {
+    fun WriteContext.doWrite(work: ScheduledWork, idForNode: IdForNode) {
         val nodes = work.scheduledNodes
-        val entryNodes = work.entryNodes
-        val nodeCount = nodes.size
-        val scheduledNodeIds = Object2IntOpenHashMap<Node>(nodeCount).apply {
-            defaultReturnValue(-1)
-        }
-
-        val scheduledEntryNodeIds = assignNodeIds(scheduledNodeIds, nodes, entryNodes)
-        val idForNode: IdForNode = { node ->
-            scheduledNodeIds.getInt(node).also { nodeId ->
-                require(nodeId >= 0) {
-                    "Node id missing for node $node"
-                }
-            }
-        }
-
-        writeSmallInt(scheduledNodeIds.size)
+        val scheduledEntryNodeIds = entryNodeIdsOf(nodes, work.entryNodes, idForNode)
+        val baseNodeId = idForNode(nodes.first())
+        writeSmallInt(baseNodeId)
+        writeSmallInt(buildNodeCountOf(nodes))
         val actionNodeSuccessors = writeNodes(nodes, idForNode)
         writeEntryNodes(scheduledEntryNodeIds)
         writeEdgesAndGroupMembership(nodes, actionNodeSuccessors, idForNode)
     }
 
     private
-    fun ReadContext.doRead(): ScheduledWork {
-        val nodeIdCount = readSmallInt()
-        val nodeForId = readNodes(nodeIdCount)
-        val entryNodes = readEntryNodes(nodeForId)
-        val nodes = readEdgesAndGroupMembership(nodeForId)
-        return ScheduledWork(nodes, entryNodes)
+    fun ReadContext.doRead(): RestoredWorkGraph {
+        val baseNodeId = readSmallInt()
+        val buildNodeCount = readSmallInt()
+        val nodesForId = readNodes(baseNodeId, buildNodeCount)
+        val entryNodes = readEntryNodes(nodesForId)
+        val taskReferences = mutableListOf<RestoredTaskReference>()
+        val nodes = readEdgesAndGroupMembership(nodesForId, taskReferences)
+        val work = ScheduledWork(nodes, entryNodes).also {
+            // ensure no unnecessary copying happens (for performance)
+            assert(it.scheduledNodes === nodes)
+            assert(it.entryNodes === entryNodes)
+        }
+        return RestoredWorkGraph(work, baseNodeId, buildNodeCount, nodesForId, taskReferences)
     }
 
     private
@@ -160,24 +217,32 @@ class WorkNodeCodec(
             writeSmallInt(idForNode(node))
             writeSuccessorReferencesOf(node, actionNodeSuccessors, idForNode)
             writeNodeGroup(node.group, idForNode)
+            if (node is TaskInAnotherBuild) {
+                // A stored reference always has a scheduled target. A reference whose target task has
+                // already executed is also complete, so the reference is never part of the stored work graph.
+                writeSmallInt(idForNode(node.targetNode))
+            }
         }
     }
 
     private
-    fun ReadContext.readEdgesAndGroupMembership(nodeForId: NodeForId): List<Node> {
-        return readList {
+    fun ReadContext.readEdgesAndGroupMembership(nodeForId: NodeForId, taskReferences: MutableList<RestoredTaskReference>): ImmutableList<Node> =
+        buildCollection({ ImmutableList.builderWithExpectedSize<Node>(it) }) {
             val node = nodeForId(readSmallInt())
             readSuccessorReferencesOf(node, nodeForId)
             node.group = readNodeGroup(nodeForId)
-            node
-        }
-    }
+            if (node is TaskInAnotherBuild) {
+                val targetNodeId = readSmallInt()
+                taskReferences.add(RestoredTaskReference(node as TaskInAnotherBuild.Restored, targetNodeId))
+            }
+            add(node)
+        }.build()
 
     private
-    fun assignNodeIds(
-        scheduledNodeIds: Object2IntOpenHashMap<Node>,
+    fun entryNodeIdsOf(
         nodes: List<Node>,
-        entryNodes: ImmutableSet<Node>
+        entryNodes: ImmutableSet<Node>,
+        idForNode: IdForNode
     ): List<Int> {
         // Not all entry nodes are always scheduled.
         // In particular, it happens when the entry node is a task of the included plugin build that runs as part of building the plugin.
@@ -185,13 +250,8 @@ class WorkNodeCodec(
         // Not restoring them as entry points doesn't affect the resulting execution plan.
         val scheduledEntryNodeIds = mutableListOf<Int>()
         nodes.forEach { node ->
-            val nodeId = scheduledNodeIds.size
-            scheduledNodeIds[node] = nodeId
             if (node in entryNodes) {
-                scheduledEntryNodeIds.add(nodeId)
-            }
-            if (node is LocalTaskNode) {
-                scheduledNodeIds[node.prepareNode] = scheduledNodeIds.size
+                scheduledEntryNodeIds.add(idForNode(node))
             }
         }
         return scheduledEntryNodeIds
@@ -203,10 +263,39 @@ class WorkNodeCodec(
         nodes: List<Node>,
         idForNode: IdForNode
     ): (ActionNode) -> List<Node>? {
+        val postNodesByNode = flatten(
+            writeNodeBatchesInParallel(nodes, idForNode).iterator(),
+            Reference2ObjectOpenHashMap<ActionNode, List<Node>>()
+        ) { (node, successors) ->
+            this[node] = successors
+        }
+        return postNodesByNode::get
+    }
+
+    private
+    fun ReadContext.readNodes(baseNodeId: Int, buildNodeCount: Int): NodeForId {
+        // Node ids of a work graph form a dense, contiguous range, so fill a null-initialized array
+        // indexed by build node id (batches arrive out of order).
+        val nullableNodesById = arrayOfNulls<Node>(buildNodeCount)
+        readNodeBatchesInParallel().forEach { batch ->
+            batch.forEach { (node, globalNodeId) ->
+                nullableNodesById[globalNodeId - baseNodeId] = node
+            }
+        }
+        val buildNodesById: Array<Node> = nullableNodesById.requireNoNulls()
+        return { globalNodeId -> buildNodesById[globalNodeId - baseNodeId] }
+    }
+
+    private
+    fun WriteContext.writeNodeBatchesInParallel(
+        nodes: List<Node>,
+        idForNode: IdForNode
+    ): PersistentList<Iterable<PostExecutionNodes>> {
+
         val groupedNodes = nodes.groupBy(NodeOwner::of)
         writeCollection(groupedNodes.keys) { nodeOwner ->
             val groupPath = nodeOwner.path()
-            writeString(groupPath.path)
+            writeString(groupPath.asString())
         }
 
         val batchedActionNodeSuccessors =
@@ -227,28 +316,20 @@ class WorkNodeCodec(
                 }
             }
         }
-
-        return combineActionNodeSuccessors(batchedActionNodeSuccessors)::get
+        return batchedActionNodeSuccessors.get()
     }
 
     private
-    fun combineActionNodeSuccessors(batchedActionNodeSuccessors: AtomicReference<PersistentList<Iterable<PostExecutionNodes>>>) =
-        batchedActionNodeSuccessors.get()
-            .combineInto(IdentityHashMap<ActionNode, List<Node>>()) { (node, successors) ->
-                this[node] = successors
-            }
-
-    private
-    fun ReadContext.readNodes(nodeIdCount: Int): NodeForId {
+    fun ReadContext.readNodeBatchesInParallel(): PersistentList<List<NodeWithId>> {
+        val baseContext = this
         val batchedGroupNodes = AtomicReference<PersistentList<List<NodeWithId>>>(PersistentList.of())
         val groupPaths = readCollectionInto<Path, MutableList<Path>>(::ArrayList) {
             Path.path(readString())
         }
-
         runBuildOperations(parallel = parallelLoad, message = "reading task graph") {
             groupPaths.map { groupPath ->
                 OperationInfo(displayName = "Loading configuration for $groupPath", context = groupPath) {
-                    contextSource.readContextFor(this@readNodes, groupPath).readWith(Unit) {
+                    contextSource.readContextFor(baseContext, groupPath).readWith(Unit) {
                         val nodesInGroup = readGroupedNodes()
                         batchedGroupNodes.updateAndGet {
                             it.plus(nodesInGroup)
@@ -257,22 +338,7 @@ class WorkNodeCodec(
                 }
             }
         }
-
-        val nodesById = batchedGroupNodes.get()
-            .combineInto(Array<Node?>(nodeIdCount) { null }) { (node, id) ->
-                this[id] = node
-            }
-        return { id: Int -> nodesById[id]!! }
-    }
-
-    private
-    inline fun <T, O> Iterable<Iterable<T>>.combineInto(destination: O, combine: O.(T) -> Unit): O {
-        this.forEach { batch ->
-            batch.forEach {
-                destination.combine(it)
-            }
-        }
-        return destination
+        return batchedGroupNodes.get()
     }
 
     private
@@ -368,6 +434,10 @@ class WorkNodeCodec(
                 override fun <T : Any> getService(type: Class<T>): T {
                     return ownerService(type)
                 }
+
+                override fun isPartOfExecutionGraph(): Boolean {
+                    return false
+                }
             })
             val postExecutionNodes = setupNode.postExecutionNodes
             if (postExecutionNodes.isNotEmpty()) {
@@ -458,7 +528,7 @@ class WorkNodeCodec(
                 2 -> {
                     val reachableFromCommandLine = readBoolean()
                     val ordinalGroup = readNodeGroup(nodeForId)
-                    val groups = readCollectionInto(::HashSet) { readNodeGroup(nodeForId) as FinalizerGroup }
+                    val groups = readCollectionInto(::ObjectOpenHashSet) { readNodeGroup(nodeForId) as FinalizerGroup }
                     CompositeNodeGroup(reachableFromCommandLine, ordinalGroup, groups)
                 }
 
@@ -478,6 +548,7 @@ class WorkNodeCodec(
     private
     fun ReadContext.readOrdinal(): OrdinalGroup {
         val ordinal = readSmallInt()
+        val ordinalGroups = isolate.owner.serviceOf<OrdinalGroupFactory>()
         return ordinalGroups.group(ordinal)
     }
 
@@ -531,7 +602,7 @@ class WorkNodeCodec(
                 readSuccessorReferences(nodeForId) {
                     node.addFinalizingSuccessor(it)
                 }
-                val lifecycleSuccessors = mutableSetOf<Node>()
+                val lifecycleSuccessors = ObjectOpenHashSet<Node>()
                 readSuccessorReferences(nodeForId) {
                     lifecycleSuccessors.add(it)
                 }
@@ -553,7 +624,7 @@ class WorkNodeCodec(
 
     private
     fun WriteContext.writeSuccessorReferences(
-        successors: Collection<Node>,
+        successors: Iterable<Node>,
         idForNode: IdForNode
     ) {
         for (successor in successors) {
@@ -623,7 +694,7 @@ data class OperationInfo(
 
 
 private
-class OperationException(message: String, cause: Throwable): RuntimeException(message, cause)
+class OperationException(message: String, cause: Throwable) : RuntimeException(message, cause)
 
 
 private
@@ -640,6 +711,17 @@ fun asBuildOperation(displayName: String, contextPath: Path, action: () -> Unit)
         override fun description(): BuildOperationDescriptor.Builder {
             return BuildOperationDescriptor
                 .displayName(displayName)
-                .progressDisplayName(contextPath.path)
+                .progressDisplayName(contextPath.asString())
         }
     }
+
+
+private
+fun <T, O> flatten(iterables: Iterator<Iterable<T>>, destination: O, combine: O.(T) -> Unit): O {
+    iterables.forEach { batch ->
+        batch.forEach {
+            destination.combine(it)
+        }
+    }
+    return destination
+}

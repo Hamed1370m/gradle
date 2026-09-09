@@ -17,6 +17,7 @@
 package org.gradle.language.cpp
 
 import org.gradle.integtests.fixtures.CompilationOutputsFixture
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.executer.GradleExecuter
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 import org.gradle.nativeplatform.fixtures.AvailableToolChains
@@ -24,6 +25,7 @@ import org.gradle.test.fixtures.file.TestFile
 
 import static org.junit.Assume.assumeFalse
 
+@ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp/Swift build")
 class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainIntegrationSpec implements CppTaskNames {
 
     private static final String LIBRARY = ':library'
@@ -157,9 +159,9 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         run installApp
 
         then:
-        result.assertTasksExecuted(libraryDebug.allToLink, appDebug.allToInstall)
+        result.assertTasksScheduled(libraryDebug.allToLink, appDebug.allToInstall)
         result.assertTasksSkipped(libraryDebug.allToLink)
-        result.assertTasksNotSkipped(appDebug.allToInstall)
+        result.assertTasksExecuted(appDebug.allToInstall)
 
         and:
         libObjects.noneRecompiled()
@@ -191,7 +193,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
         run installApp
 
         then:
-        result.assertTasksExecuted(libraryDebug.allToLink, appDebug.allToInstall)
+        result.assertTasksScheduled(libraryDebug.allToLink, appDebug.allToInstall)
         if (toolChain.visualCpp) {
             // App link may or may not be required
             skipped appDebug.compile
@@ -199,7 +201,7 @@ class CppIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInteg
             executed appDebug.install
         } else {
             result.assertTasksSkipped(appDebug.compile)
-            result.assertTasksNotSkipped(libraryDebug.allToLink, appDebug.link, appDebug.install)
+            result.assertTasksExecuted(libraryDebug.allToLink, appDebug.link, appDebug.install)
         }
 
         and:

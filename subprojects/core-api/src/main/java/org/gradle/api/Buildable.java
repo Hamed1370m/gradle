@@ -16,11 +16,14 @@
 package org.gradle.api;
 
 import org.gradle.api.tasks.TaskDependency;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
 
 /**
  * A {@code Buildable} represents an artifact or set of artifacts which are built by one or more {@link Task}
  * instances.
+ * @since 0.8
  */
+@HiddenInDefinition
 public interface Buildable {
     /**
      * Returns a dependency which contains the tasks which build this artifact. All {@code Buildable} implementations
@@ -29,6 +32,7 @@ public interface Buildable {
      *
      * @return The dependency. Never returns null. Returns an empty dependency when this artifact is not built by any
      *         tasks.
+     * @since 0.8
      */
     TaskDependency getBuildDependencies();
 }

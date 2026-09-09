@@ -16,9 +16,8 @@
 
 package org.gradle.internal.jvm;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
+import com.google.common.collect.ImmutableList;
+
 import java.util.List;
 
 /**
@@ -26,33 +25,119 @@ import java.util.List;
  * Gradle accesses those packages reflectively. On Java versions 9 to 15, the users will get
  * a warning they can do nothing about. On Java 16+, strong encapsulation of JDK internals is
  * enforced and not having the explicit permissions for reflective accesses will result in runtime exceptions.
+ *
+ * <p>
+ * For the {@code --enable-native-access} flag, users will get a warning on Java 24+ if the flag is not present.
+ * There is no enforcement of the flag at the time of writing.
+ * </p>
+ *
+ * <p>
+ * The {@code --sun-misc-unsafe-memory-access} flag suppresses the Java 24+ warning about terminally
+ * deprecated {@code sun.misc.Unsafe} memory-access methods called from Gradle's own runtime.
+ * </p>
  */
 public class JpmsConfiguration {
-
-    public static final List<String> GROOVY_JPMS_ARGS = Collections.unmodifiableList(Arrays.asList(
+    /**
+     * Exposes the required packages for Groovy to work on Java 9+.
+     */
+    private static final List<String> GROOVY_JPMS_ARGS_9 = ImmutableList.of(
         "--add-opens=java.base/java.lang=ALL-UNNAMED",
         "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
         "--add-opens=java.base/java.util=ALL-UNNAMED",
         "--add-opens=java.prefs/java.util.prefs=ALL-UNNAMED", // required by PreferenceCleaningGroovySystemLoader
         "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED", // Required by JdkTools and JdkJavaCompiler
         "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED" // Required by JdkTools and JdkJavaCompiler
-    ));
+    );
 
-    public static final List<String> GRADLE_DAEMON_JPMS_ARGS;
+    /**
+     * These flags are only needed when processes use native services.
+     */
+    private static final List<String> GRADLE_SHARED_JPMS_ARGS_24 = ImmutableList.of(
+        "--enable-native-access=ALL-UNNAMED" // required by NativeServices to access native libraries
+    );
 
-    static {
-        List<String> gradleDaemonJvmArgs = new ArrayList<String>(GROOVY_JPMS_ARGS);
+    /**
+     * Enables native access for worker processes.
+     */
+    private static final List<String> GRADLE_WORKER_JPMS_ARGS_24 = GRADLE_SHARED_JPMS_ARGS_24;
 
-        List<String> configurationCacheJpmsArgs = Collections.unmodifiableList(Arrays.asList(
-            "--add-opens=java.base/java.util=ALL-UNNAMED", // for overriding environment variables
-            "--add-opens=java.prefs/java.util.prefs=ALL-UNNAMED", // required by JavaObjectSerializationCodec.kt
-            "--add-opens=java.base/java.nio.charset=ALL-UNNAMED", // required by BeanSchemaKt
-            "--add-opens=java.base/java.net=ALL-UNNAMED", // required by JavaObjectSerializationCodec
-            "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED", // serialized from org.gradle.internal.file.StatStatistics$Collector
-            "--add-opens=java.xml/javax.xml.namespace=ALL-UNNAMED" // serialized from IvyDescriptorFileGenerator.Model
-        ));
-        gradleDaemonJvmArgs.addAll(configurationCacheJpmsArgs);
+    /**
+     * Libraries bundled with Gradle call terminally deprecated {@code sun.misc.Unsafe} memory-access
+     * methods, which make the JVM print a warning to stderr on Java 24+ (see
+     * <a href="https://openjdk.org/jeps/498">JEP 498</a>). For example, {@code org.jctools.util.UnsafeAccess}
+     * calls {@code Unsafe::objectFieldOffset} when Gradle's internal queues are first used.
+     * Users can do nothing about those warnings, so we opt out of them.
+     */
+    private static final List<String> UNSAFE_MEMORY_ACCESS_ARGS_24 = ImmutableList.of(
+        "--sun-misc-unsafe-memory-access=allow"
+    );
 
-        GRADLE_DAEMON_JPMS_ARGS = Collections.unmodifiableList(gradleDaemonJvmArgs);
+    /**
+     * Exposes the required packages for the Gradle daemon to work on Java 9+.
+     */
+    private static final List<String> GRADLE_DAEMON_JPMS_ARGS_9 = ImmutableList.<String>builder()
+        .addAll(GROOVY_JPMS_ARGS_9)
+        .add("--add-opens=java.base/java.nio.charset=ALL-UNNAMED") // required by BeanSchemaKt
+        .add("--add-opens=java.base/java.net=ALL-UNNAMED") // required by JavaObjectSerializationCodec
+        .add("--add-opens=java.base/java.util.concurrent=ALL-UNNAMED") // required by AccessTrackingProperties
+        .add("--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED") // serialized from org.gradle.internal.file.StatStatistics$Collector
+        .add("--add-opens=java.xml/javax.xml.namespace=ALL-UNNAMED") // serialized from IvyDescriptorFileGenerator.Model
+        .add("--add-opens=java.base/java.time=ALL-UNNAMED")
+        .build();
+
+
+    /**
+     * Exposes the required packages for the Gradle daemon to work on Java 9+.
+     * Also silences the {@code sun.misc.Unsafe} memory-access warnings triggered by Gradle itself.
+     */
+    private static final List<String> GRADLE_DAEMON_JPMS_ARGS_24 = ImmutableList.<String>builder()
+        .addAll(GRADLE_DAEMON_JPMS_ARGS_9)
+        .addAll(UNSAFE_MEMORY_ACCESS_ARGS_24)
+        .build();
+
+    /**
+     * Same as {@link #GRADLE_DAEMON_JPMS_ARGS_24}, but also enables native access for the daemon process.
+     */
+    private static final List<String> GRADLE_DAEMON_JPMS_ARGS_24_NATIVE = ImmutableList.<String>builder()
+        .addAll(GRADLE_DAEMON_JPMS_ARGS_24)
+        .addAll(GRADLE_SHARED_JPMS_ARGS_24)
+        .build();
+
+    public static List<String> forGroovyWorker(int majorVersion) {
+        if (majorVersion < 9) {
+            return ImmutableList.of();
+        }
+        return GROOVY_JPMS_ARGS_9;
+    }
+
+    /**
+     * Returns the JVM arguments that should be passed to a worker process.
+     *
+     * @param majorVersion the major version of the JVM for the worker process
+     * @param usingNativeServices whether the worker process is using native services, {@code true} if it cannot be determined
+     * @return the JVM arguments
+     */
+    public static List<String> forWorkerProcesses(int majorVersion, boolean usingNativeServices) {
+        if (majorVersion < 24 || !usingNativeServices) {
+            return ImmutableList.of();
+        }
+        return GRADLE_WORKER_JPMS_ARGS_24;
+    }
+
+    /**
+     * Returns the JVM arguments that should be passed to a daemon process.
+     *
+     * @param majorVersion the major version of the JVM for the daemon process
+     * @param usingNativeServices whether the daemon process is using native services, {@code true} if it cannot be determined
+     * @return the JVM arguments
+     */
+    public static List<String> forDaemonProcesses(int majorVersion, boolean usingNativeServices) {
+        if (majorVersion < 9) {
+            return ImmutableList.of();
+        }
+        if (majorVersion < 24) {
+            return GRADLE_DAEMON_JPMS_ARGS_9;
+        }
+        return usingNativeServices ? GRADLE_DAEMON_JPMS_ARGS_24_NATIVE : GRADLE_DAEMON_JPMS_ARGS_24;
     }
 }

@@ -56,13 +56,16 @@ import java.util.stream.Collectors;
 
 import static org.gradle.internal.instrumentation.model.CallableKindInfo.GROOVY_PROPERTY_GETTER;
 import static org.gradle.internal.instrumentation.model.CallableKindInfo.GROOVY_PROPERTY_SETTER;
+import static org.gradle.internal.instrumentation.processor.codegen.CodeGenUtils.SUPPRESS_UNCHECKED_AND_RAWTYPES;
 import static org.gradle.internal.instrumentation.processor.codegen.GradleReferencedType.GENERATED_ANNOTATION;
 import static org.gradle.internal.instrumentation.processor.codegen.JavadocUtils.callableKindForJavadoc;
 import static org.gradle.internal.instrumentation.processor.codegen.JavadocUtils.interceptedCallableLink;
 import static org.gradle.internal.instrumentation.processor.codegen.JavadocUtils.interceptorImplementationLink;
+import org.jspecify.annotations.Nullable;
 
 public class InterceptGroovyCallsGenerator extends RequestGroupingInstrumentationClassSourceGenerator {
     @Override
+    @Nullable
     protected String classNameForRequest(CallInterceptionRequest request) {
         return request.getRequestExtras().getByType(RequestExtra.InterceptGroovyCalls.class)
             .map(RequestExtra.InterceptGroovyCalls::getImplementationClassName)
@@ -79,6 +82,7 @@ public class InterceptGroovyCallsGenerator extends RequestGroupingInstrumentatio
         List<TypeSpec> interceptorTypeSpecs = generateInterceptorClasses(requestsClassGroup, onFailure);
 
         return builder -> builder
+            .addAnnotation(GENERATED_ANNOTATION.asClassName())
             .addModifiers(Modifier.PUBLIC)
             .addTypes(interceptorTypeSpecs);
     }
@@ -132,6 +136,7 @@ public class InterceptGroovyCallsGenerator extends RequestGroupingInstrumentatio
 
         MethodSpec interceptMethod = MethodSpec.methodBuilder("intercept")
             .addAnnotation(Override.class)
+            .addAnnotation(SUPPRESS_UNCHECKED_AND_RAWTYPES)
             .addModifiers(Modifier.PUBLIC)
             .returns(Object.class)
             .addParameter(INVOCATION_CLASS, "invocation")

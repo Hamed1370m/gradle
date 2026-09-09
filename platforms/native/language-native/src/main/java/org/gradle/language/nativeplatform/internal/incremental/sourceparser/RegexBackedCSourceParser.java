@@ -24,8 +24,8 @@ import org.gradle.language.nativeplatform.internal.IncludeDirectives;
 import org.gradle.language.nativeplatform.internal.IncludeType;
 import org.gradle.language.nativeplatform.internal.Macro;
 import org.gradle.language.nativeplatform.internal.MacroFunction;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -45,7 +45,9 @@ import java.util.Set;
  */
 public class RegexBackedCSourceParser implements CSourceParser {
     @Override
+    @SuppressWarnings("DefaultCharset")
     public IncludeDirectives parseSource(File sourceFile) {
+        // Note: source files can have non-UTF8 encoding. FileReader uses default Charset and also handles invalid characters.
         try (Reader fileReader = new FileReader(sourceFile)) {
             return parseSource(fileReader);
         } catch (Exception e) {
@@ -599,19 +601,6 @@ public class RegexBackedCSourceParser implements CSourceParser {
             }
             pos++;
             return String.valueOf(ch);
-        }
-
-        /**
-         * Reads any character except the given. Does not consume anything if there is no more input or the given chars is at the current location.
-         *
-         * @return the character or null if none present.
-         */
-        @Nullable
-        String readAnyExcept(char ch) {
-            if (pos < value.length() && value.charAt(pos) != ch) {
-                return value.substring(pos, ++pos);
-            }
-            return null;
         }
 
         /**

@@ -15,7 +15,6 @@
  */
 package org.gradle.tooling.internal.consumer;
 
-import org.gradle.api.internal.classpath.DefaultModuleRegistry;
 import org.gradle.initialization.BuildCancellationToken;
 import org.gradle.initialization.layout.BuildLayout;
 import org.gradle.initialization.layout.BuildLayoutFactory;
@@ -26,10 +25,8 @@ import org.gradle.internal.time.Clock;
 import org.gradle.tooling.BuildCancelledException;
 import org.gradle.tooling.GradleConnectionException;
 import org.gradle.tooling.internal.protocol.InternalBuildProgressListener;
-import org.gradle.util.internal.DistributionLocator;
 import org.gradle.util.GradleVersion;
-import org.gradle.wrapper.GradleUserHomeLookup;
-import org.gradle.wrapper.SystemPropertiesHandler;
+import org.gradle.util.internal.DistributionLocator;
 import org.gradle.wrapper.WrapperConfiguration;
 import org.gradle.wrapper.WrapperExecutor;
 
@@ -38,8 +35,6 @@ import java.io.FileFilter;
 import java.io.FileNotFoundException;
 import java.net.URI;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.CancellationException;
 
 import static org.gradle.internal.FileUtils.hasExtension;
@@ -87,19 +82,12 @@ public class DistributionFactory {
         return new ZippedDistribution(configuration, clock);
     }
 
-    /**
-     * Uses the classpath to locate the distribution.
-     */
-    public Distribution getClasspathDistribution() {
-        return new ClasspathDistribution();
-    }
-
     private Distribution getDownloadedDistribution(String gradleVersion) {
         URI distUri = new DistributionLocator().getDistributionFor(GradleVersion.version(gradleVersion));
         return getDistribution(distUri);
     }
 
-    private static class ZippedDistribution implements Distribution {
+    public static class ZippedDistribution implements Distribution {
         private InstalledDistribution installedDistribution;
         private final WrapperConfiguration wrapperConfiguration;
         private final Clock clock;
@@ -117,7 +105,7 @@ public class DistributionFactory {
         @Override
         public ClassPath getToolingImplementationClasspath(ProgressLoggerFactory progressLoggerFactory, final InternalBuildProgressListener progressListener, final ConnectionParameters connectionParameters, BuildCancellationToken cancellationToken) {
             if (installedDistribution == null) {
-                final DistributionInstaller installer = new DistributionInstaller(progressLoggerFactory, progressListener, clock);
+                final DistributionInstaller installer = new DistributionInstaller(progressLoggerFactory, progressListener, clock, wrapperConfiguration.getNetworkTimeout());
                 File installDir;
                 try {
                     cancellationToken.addCallback(new Runnable() {
@@ -126,7 +114,7 @@ public class DistributionFactory {
                             installer.cancel();
                         }
                     });
-                    installDir = installer.install(determineRealUserHomeDir(connectionParameters), determineRootDir(connectionParameters), wrapperConfiguration, determineSystemProperties(connectionParameters));
+                    installDir = installer.install(ConnectionConfigurationUtil.determineRealUserHomeDir(connectionParameters), ConnectionConfigurationUtil.determineRootDir(connectionParameters), wrapperConfiguration, ConnectionConfigurationUtil.determineSystemProperties(connectionParameters));
                 } catch (CancellationException e) {
                     throw new BuildCancelledException(String.format("Distribution download cancelled. Using distribution from '%s'.", wrapperConfiguration.getDistribution()), e);
                 } catch (FileNotFoundException e) {
@@ -137,32 +125,6 @@ public class DistributionFactory {
                 installedDistribution = new InstalledDistribution(installDir, getDisplayName(), getDisplayName());
             }
             return installedDistribution.getToolingImplementationClasspath(progressLoggerFactory, progressListener, connectionParameters, cancellationToken);
-        }
-
-        private Map<String, String> determineSystemProperties(ConnectionParameters connectionParameters) {
-            Map<String, String> systemProperties = new HashMap<String, String>();
-            for (Map.Entry<Object, Object> entry : System.getProperties().entrySet()) {
-                systemProperties.put(entry.getKey().toString(), entry.getValue() == null ? null : entry.getValue().toString());
-            }
-            systemProperties.putAll(SystemPropertiesHandler.getSystemProperties(new File(determineRootDir(connectionParameters), "gradle.properties")));
-            systemProperties.putAll(SystemPropertiesHandler.getSystemProperties(new File(determineRealUserHomeDir(connectionParameters), "gradle.properties")));
-            return systemProperties;
-        }
-
-        private File determineRootDir(ConnectionParameters connectionParameters) {
-            return new BuildLayoutFactory().getLayoutFor(
-                connectionParameters.getProjectDir(),
-                connectionParameters.isSearchUpwards() != null ? connectionParameters.isSearchUpwards() : true
-            ).getRootDirectory();
-        }
-
-        private File determineRealUserHomeDir(ConnectionParameters connectionParameters) {
-            File distributionBaseDir = connectionParameters.getDistributionBaseDir();
-            if (distributionBaseDir != null) {
-                return distributionBaseDir;
-            }
-            File userHomeDir = connectionParameters.getGradleUserHomeDir();
-            return userHomeDir != null ? userHomeDir : GradleUserHomeLookup.gradleUserHome();
         }
     }
 
@@ -190,6 +152,9 @@ public class DistributionFactory {
             if (!gradleHomeDir.isDirectory()) {
                 throw new IllegalArgumentException(String.format("The specified %s is not a directory.", locationDisplayName));
             }
+            // The lib directory implements a cross-gradle-version contract, where the
+            // TAPI consumer will load the TAPI provider classpath from the
+            // `lib` directory of the target gradle distribution.
             File libDir = new File(gradleHomeDir, "lib");
             if (!libDir.isDirectory()) {
                 throw new IllegalArgumentException(String.format("The specified %s does not appear to contain a Gradle distribution.", locationDisplayName));
@@ -206,16 +171,4 @@ public class DistributionFactory {
         }
     }
 
-    private static class ClasspathDistribution implements Distribution {
-        @Override
-        public String getDisplayName() {
-            return "Gradle classpath distribution";
-        }
-
-        @Override
-        public ClassPath getToolingImplementationClasspath(ProgressLoggerFactory progressLoggerFactory, InternalBuildProgressListener progressListener, ConnectionParameters connectionParameters, BuildCancellationToken cancellationToken) {
-            DefaultModuleRegistry registry = new DefaultModuleRegistry(null);
-            return registry.getModule("gradle-tooling-api-provider").getAllRequiredModulesClasspath();
-        }
-    }
 }

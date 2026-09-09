@@ -16,54 +16,69 @@
 
 package org.gradle.composite.internal;
 
-import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.capabilities.Capability;
 import org.gradle.api.internal.artifacts.dsl.CapabilityNotationParserFactory;
+import org.gradle.api.internal.artifacts.ivyservice.dependencysubstitution.ComponentSelectorNotationConverter;
+import org.gradle.api.internal.artifacts.ivyservice.projectmodule.BuildTreeLocalComponentProvider;
 import org.gradle.api.internal.attributes.AttributesFactory;
 import org.gradle.api.internal.composite.CompositeBuildContext;
+import org.gradle.api.internal.project.HoldsProjectState;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.composite.internal.plugins.CompositeBuildPluginResolverContributor;
+import org.gradle.internal.build.BuildStateRegistry;
+import org.gradle.internal.build.IncludedBuildFactory;
+import org.gradle.internal.buildtree.BuildModelParameters;
 import org.gradle.internal.buildtree.GlobalDependencySubstitutionRegistry;
+import org.gradle.internal.composite.BuildIncludeListener;
+import org.gradle.internal.event.ListenerManager;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.service.Provides;
 import org.gradle.internal.service.ServiceRegistration;
 import org.gradle.internal.service.ServiceRegistrationProvider;
 import org.gradle.internal.service.scopes.AbstractGradleModuleServices;
-import org.gradle.internal.snapshot.impl.ValueSnapshotterSerializerRegistry;
+import org.gradle.internal.service.scopes.BrokenBuildsCapturingListener;
 import org.gradle.internal.typeconversion.NotationParser;
+import org.gradle.plugin.use.resolve.internal.PluginResolverContributor;
 
 public class CompositeBuildServices extends AbstractGradleModuleServices {
 
     @Override
-    public void registerBuildSessionServices(ServiceRegistration registration) {
-        registration.addProvider(new CompositeBuildSessionScopeServices());
-    }
-
-    @Override
     public void registerBuildTreeServices(ServiceRegistration registration) {
         registration.addProvider(new CompositeBuildTreeScopeServices());
-        registration.add(DefaultBuildTreeLocalComponentProvider.class);
+        registration.add(BuildTreeLocalComponentProvider.class, HoldsProjectState.class, DefaultBuildTreeLocalComponentProvider.class);
     }
 
     @Override
     public void registerBuildServices(ServiceRegistration registration) {
-        registration.add(CompositeBuildPluginResolverContributor.class);
-    }
-
-    private static class CompositeBuildSessionScopeServices implements ServiceRegistrationProvider {
-        @Provides
-        public ValueSnapshotterSerializerRegistry createCompositeBuildsValueSnapshotterSerializerRegistry() {
-            return new CompositeBuildsValueSnapshotterSerializerRegistry();
-        }
+        registration.add(PluginResolverContributor.class, HoldsProjectState.class, CompositeBuildPluginResolverContributor.class);
     }
 
     private static class CompositeBuildTreeScopeServices implements ServiceRegistrationProvider {
         @Provides
         public void configure(ServiceRegistration serviceRegistration) {
             serviceRegistration.add(BuildStateFactory.class);
-            serviceRegistration.add(DefaultIncludedBuildFactory.class);
-            serviceRegistration.add(DefaultIncludedBuildTaskGraph.class);
-            serviceRegistration.add(DefaultIncludedBuildRegistry.class);
+            serviceRegistration.add(IncludedBuildFactory.class, DefaultIncludedBuildFactory.class);
+            serviceRegistration.add(BuildTreeWorkGraphController.class, DefaultIncludedBuildTaskGraph.class);
+        }
+
+        @Provides
+        BuildIncludeListener createBuildIncludeListener() {
+            return new BrokenBuildsCapturingListener();
+        }
+
+        @Provides
+        public BuildStateRegistry createBuildStateRegistry(
+            BuildModelParameters buildModelParameters,
+            IncludedBuildFactory includedBuildFactory,
+            ListenerManager listenerManager,
+            BuildStateFactory buildStateFactory
+        ) {
+            if (buildModelParameters.isIsolatedProjects()) {
+                // IP mode prohibits cycles in included plugin builds graph
+                return new AcyclicIncludedBuildRegistry(includedBuildFactory, listenerManager, buildStateFactory);
+            } else {
+                return new DefaultIncludedBuildRegistry(includedBuildFactory, listenerManager, buildStateFactory);
+            }
         }
 
         @Provides
@@ -71,16 +86,16 @@ public class CompositeBuildServices extends AbstractGradleModuleServices {
             CompositeBuildContext context,
             Instantiator instantiator,
             ObjectFactory objectFactory,
-            NotationParser<Object, ComponentSelector> moduleSelectorNotationParser,
+            ComponentSelectorNotationConverter componentSelectorNotationParser,
             AttributesFactory attributesFactory
         ) {
             NotationParser<Object, Capability> capabilityNotationParser = new CapabilityNotationParserFactory(false).create();
-            return new IncludedBuildDependencySubstitutionsBuilder(context, instantiator, objectFactory, attributesFactory, moduleSelectorNotationParser, capabilityNotationParser);
+            return new IncludedBuildDependencySubstitutionsBuilder(context, instantiator, objectFactory, attributesFactory, componentSelectorNotationParser, capabilityNotationParser);
         }
 
         @Provides
         public CompositeBuildContext createCompositeBuildContext() {
             return new DefaultBuildableCompositeBuildContext();
         }
-    }
+        }
 }

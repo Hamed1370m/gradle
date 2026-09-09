@@ -17,28 +17,18 @@
 package org.gradle.integtests.resolve.api
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.extensions.FluidDependenciesResolveTest
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 
 @FluidDependenciesResolveTest
 class ResolvedConfigurationApiIntegrationTest extends AbstractHttpDependencyResolutionTest {
     def setup() {
         settingsFile << """
-rootProject.name = 'test'
-"""
-        buildFile << """
-allprojects {
-    configurations {
-        compile
-        "default" {
-            extendsFrom compile
-        }
-    }
-}
-"""
+            rootProject.name = 'test'
+        """
     }
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the ResolvedConfiguration API")
+    @UnsupportedWithConfigurationCache(because = "task exercises the ResolvedConfiguration API, which is a deprecated API that we don't want to invest in making compatible with configuration cache")
     def "artifacts may have no extension"() {
         def m1 = ivyHttpRepo.module('org', 'test', '1.0')
         m1.artifact(type: 'jar', ext: '')
@@ -47,24 +37,30 @@ allprojects {
         m1.publish()
 
         buildFile << """
-allprojects {
-    repositories { ivy { url '$ivyHttpRepo.uri' } }
-}
-dependencies {
-    compile 'org:test:1.0'
-}
+            repositories { ivy { url = '$ivyHttpRepo.uri' } }
 
-task show {
-    inputs.files configurations.compile
-    doLast {
-        println "files: " + configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { it.file.name }
-        println "display-names: " + configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { it.toString() }
-        println "ids: " + configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { it.id.toString() }
-        println "names: " + configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { "\$it.name:\$it.extension:\$it.type" }
-        println "classifiers: " + configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { it.classifier }
-    }
-}
-"""
+            configurations {
+                compile
+                "default" {
+                    extendsFrom compile
+                }
+            }
+
+            dependencies {
+                compile 'org:test:1.0'
+            }
+
+            task show {
+                inputs.files configurations.compile
+                doLast {
+                    println "files: " + configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { it.file.name }
+                    println "display-names: " + configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { it.toString() }
+                    println "ids: " + configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { it.id.toString() }
+                    println "names: " + configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { "\$it.name:\$it.extension:\$it.type" }
+                    println "classifiers: " + configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { it.classifier }
+                }
+            }
+        """
 
         when:
         m1.ivy.expectGet()
@@ -82,10 +78,18 @@ task show {
         outputContains("classifiers: [null, null, classy]")
     }
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the ResolvedConfiguration API")
+    @UnsupportedWithConfigurationCache(because = "task exercises the ResolvedConfiguration API, which is a deprecated API that we don't want to invest in making compatible with configuration cache")
     def "reports multiple failures to resolve components"() {
         buildFile << """
-            repositories { maven { url '${mavenHttpRepo.uri}' } }
+            repositories { maven { url = '${mavenHttpRepo.uri}' } }
+
+            configurations {
+                compile
+                "default" {
+                    extendsFrom compile
+                }
+            }
+
             dependencies {
                 compile 'test:test1:1.2'
                 compile 'test:test2:1.2'
@@ -97,7 +101,7 @@ task show {
                     configurations.compile.resolvedConfiguration.resolvedArtifacts
                 }
             }
-"""
+        """
 
         when:
         def m1 = mavenHttpRepo.module("test", "test1", "1.2")
@@ -110,16 +114,24 @@ task show {
         fails("show")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':show'.")
+        failure.assertHasDescription("Execution failed for task ':show' (registered in build file 'build.gradle').")
         failure.assertHasCause("Could not resolve all artifacts for configuration ':compile'.")
         failure.assertHasCause("Could not find test:test1:1.2.")
         failure.assertHasCause("Could not resolve test:test2:1.2.")
     }
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the ResolvedConfiguration API")
+    @UnsupportedWithConfigurationCache(because = "task exercises the ResolvedConfiguration API, which is a deprecated API that we don't want to invest in making compatible with configuration cache")
     def "reports failure to resolve artifact"() {
         buildFile << """
-            repositories { maven { url '${mavenHttpRepo.uri}' } }
+            repositories { maven { url = '${mavenHttpRepo.uri}' } }
+
+            configurations {
+                compile
+                "default" {
+                    extendsFrom compile
+                }
+            }
+
             dependencies {
                 compile 'test:test1:1.2'
                 compile 'test:test2:1.2'
@@ -131,7 +143,7 @@ task show {
                     configurations.compile.resolvedConfiguration.resolvedArtifacts.each { it.file }
                 }
             }
-"""
+        """
 
         when:
         def m1 = mavenHttpRepo.module("test", "test1", "1.2").publish()
@@ -145,7 +157,7 @@ task show {
         fails("show")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':show'.")
+        failure.assertHasDescription("Execution failed for task ':show' (registered in build file 'build.gradle').")
         failure.assertHasCause("Could not find test1-1.2.jar (test:test1:1.2).")
     }
 }

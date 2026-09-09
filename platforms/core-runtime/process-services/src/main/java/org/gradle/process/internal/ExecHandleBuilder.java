@@ -19,7 +19,14 @@ package org.gradle.process.internal;
 import org.gradle.process.BaseExecSpec;
 import org.gradle.process.ExecSpec;
 import org.gradle.process.ProcessForkOptions;
+import org.gradle.process.internal.streams.StreamsHandler;
 
+/**
+ * Deprecated. Use {@link ClientExecHandleBuilder} instead. Kept for now since it's used by the Kotlin plugin.
+ *
+ * Can be merged with {@link ClientExecHandleBuilder} in Gradle 10.
+ */
+@Deprecated
 public interface ExecHandleBuilder extends ProcessForkOptions, BaseExecSpec, ExecSpec {
     /**
      * Merge the process' error stream into its output stream

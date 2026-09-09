@@ -27,7 +27,7 @@ class SamplesResolutionStrategyIntegrationTest extends AbstractIntegrationSpec {
     @Rule
     Sample sample = new Sample(testDirectoryProvider)
 
-    @UsesSample("dependencyManagement/customizingResolution-resolutionStrategy")
+    @UsesSample("integration-tests/dependencyManagement/customizingResolution-resolutionStrategy")
     def "can resolve dependencies in #dsl dsl"() {
         TestFile dslDir = sample.dir.file(dsl)
         executer.inDirectory(dslDir)
@@ -59,7 +59,7 @@ class SamplesResolutionStrategyIntegrationTest extends AbstractIntegrationSpec {
         if (dsl == 'groovy') {
             return """
                 configurations { conf }
-                repositories { maven { url "${mavenRepo.uri}" } }
+                repositories { maven { url = "${mavenRepo.uri}" } }
                 dependencies {
                     conf "org:foo:1.0"
                     conf "org.gradle:gradle-core:1.4"

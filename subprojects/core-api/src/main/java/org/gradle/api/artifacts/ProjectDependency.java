@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,26 +16,25 @@
 package org.gradle.api.artifacts;
 
 import org.gradle.api.Project;
-import org.gradle.api.tasks.TaskDependency;
+import org.gradle.declarative.dsl.model.annotations.internal.DeclarativeWithHiddenMembers;
 import org.gradle.internal.HasInternalProtocol;
-
-import java.io.File;
-import java.util.Set;
 
 /**
  * <p>A {@code ProjectDependency} is a {@link Dependency} on another project in the current project hierarchy.</p>
+ * @since 0.7
  */
 @HasInternalProtocol
-@SuppressWarnings("deprecation") // Because of SelfResolvingDependency
-public interface ProjectDependency extends ModuleDependency, SelfResolvingDependency {
+@DeclarativeWithHiddenMembers
+public interface ProjectDependency extends ModuleDependency {
+
     /**
-     * Returns the project associated with this project dependency.
+     * Get the path to the project that this dependency refers to relative to its owning build.
      *
-     * @deprecated This method will be removed in Gradle 9.0. Accessing the mutable
-     * state of other projects should be avoided.
+     * @see Project#getPath()
+     *
+     * @since 8.11
      */
-    @Deprecated
-    Project getDependencyProject();
+    String getPath();
 
     /**
      * {@inheritDoc}
@@ -43,30 +42,4 @@ public interface ProjectDependency extends ModuleDependency, SelfResolvingDepend
     @Override
     ProjectDependency copy();
 
-    /**
-     * {@inheritDoc}
-     *
-     * @deprecated This class will no longer implement {@link SelfResolvingDependency} in Gradle 9.0
-     */
-    @Override
-    @Deprecated
-    TaskDependency getBuildDependencies();
-
-    /**
-     * {@inheritDoc}
-     *
-     * @deprecated This class will no longer implement {@link SelfResolvingDependency} in Gradle 9.0
-     */
-    @Override
-    @Deprecated
-    Set<File> resolve();
-
-    /**
-     * {@inheritDoc}
-     *
-     * @deprecated This class will no longer implement {@link SelfResolvingDependency} in Gradle 9.0
-     */
-    @Override
-    @Deprecated
-    Set<File> resolve(boolean transitive);
 }

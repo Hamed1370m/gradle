@@ -17,9 +17,7 @@
 package org.gradle.model.dsl
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
-import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 
 @UnsupportedWithConfigurationCache(because = "software model")
 class ModelMapDslIntegrationTest extends AbstractIntegrationSpec {
@@ -37,6 +35,7 @@ class MyPlugin extends RuleSource {
 }
 
 apply plugin: MyPlugin
+apply plugin: 'model-reporting-tasks'
 '''
     }
 
@@ -64,6 +63,8 @@ model {
 }
 '''
         when:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
         succeeds "show"
 
         then:
@@ -96,6 +97,8 @@ model {
 }
 '''
         when:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
         succeeds "show"
 
         then:
@@ -128,6 +131,8 @@ model {
 }
 '''
         when:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
         succeeds "show"
 
         then:
@@ -163,6 +168,8 @@ model {
 }
 '''
         when:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
         succeeds "show"
 
         then:
@@ -199,6 +206,8 @@ model {
 }
 '''
         when:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
         succeeds "show"
 
         then:
@@ -235,6 +244,8 @@ model {
 }
 '''
         when:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
         succeeds "show"
 
         then:
@@ -244,25 +255,6 @@ configure test
         outputContains("value = 12")
     }
 
-    @Requires(UnitTestPreconditions.IsGroovy3)
-    def "nested rule cannot reference method of delegate of outer closure with Groovy 3"() {
-        buildFile << '''
-model {
-    things {
-        create('main') {
-            create('test') { println "no" }
-        }
-    }
-}
-'''
-        expect:
-        fails "model"
-        failure.assertHasLineNumber(18)
-        failure.assertHasCause('Exception thrown while executing model rule: create(main) { ... } @ build.gradle line 17, column 9')
-        failure.assertHasCause('No signature of method: org.gradle.api.Project.create() is applicable for argument types:')
-    }
-
-    @Requires(UnitTestPreconditions.IsGroovy4)
     def "nested rule cannot reference method of delegate of outer closure with Groovy 4"() {
         buildFile << '''
 model {
@@ -274,9 +266,12 @@ model {
 }
 '''
         expect:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         fails "model"
-        failure.assertHasLineNumber(18)
-        failure.assertHasCause('Exception thrown while executing model rule: create(main) { ... } @ build.gradle line 17, column 9')
+        failure.assertHasLineNumber(19)
+        failure.assertHasCause('Exception thrown while executing model rule: create(main) { ... } @ build.gradle line 18, column 9')
         failure.assertHasCause('No signature of method: Thing.create() is applicable for argument types')
     }
 
@@ -292,6 +287,9 @@ model {
 }
 '''
         expect:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         succeeds "model"
     }
 
@@ -310,6 +308,9 @@ model {
 }
 '''
         expect:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         succeeds "model"
     }
 
@@ -340,6 +341,8 @@ model {
 }
 '''
         when:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
         succeeds "show"
 
         then:
@@ -374,6 +377,8 @@ model {
 }
 '''
         when:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
         succeeds "show"
 
         then:
@@ -392,8 +397,11 @@ model {
 '''
 
         expect:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         fails 'model'
-        failure.assertHasCause('Exception thrown while executing model rule: main(Thing) { ... } @ build.gradle line 17, column 9')
+        failure.assertHasCause('Exception thrown while executing model rule: main(Thing) { ... } @ build.gradle line 18, column 9')
         failure.assertHasCause('No such property: unknown for class: Thing')
     }
 
@@ -410,8 +418,11 @@ model {
 '''
 
         expect:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         fails 'model'
-        failure.assertHasCause('Exception thrown while executing model rule: main { ... } @ build.gradle line 17, column 9')
+        failure.assertHasCause('Exception thrown while executing model rule: main { ... } @ build.gradle line 18, column 9')
         failure.assertHasCause('No such property: unknown for class: Thing')
     }
 
@@ -428,8 +439,11 @@ model {
 '''
 
         expect:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         fails 'model'
-        failure.assertHasCause('Exception thrown while executing model rule: all { ... } @ build.gradle line 17, column 9')
+        failure.assertHasCause('Exception thrown while executing model rule: all { ... } @ build.gradle line 18, column 9')
         failure.assertHasCause('No such property: unknown for class: Thing')
     }
 
@@ -446,8 +460,11 @@ model {
 '''
 
         expect:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         fails 'model'
-        failure.assertHasCause('Exception thrown while executing model rule: withType(Thing) { ... } @ build.gradle line 17, column 9')
+        failure.assertHasCause('Exception thrown while executing model rule: withType(Thing) { ... } @ build.gradle line 18, column 9')
         failure.assertHasCause('No such property: unknown for class: Thing')
     }
 
@@ -464,8 +481,11 @@ model {
 '''
 
         expect:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         fails 'model'
-        failure.assertHasCause('Exception thrown while executing model rule: beforeEach(Thing) { ... } @ build.gradle line 17, column 9')
+        failure.assertHasCause('Exception thrown while executing model rule: beforeEach(Thing) { ... } @ build.gradle line 18, column 9')
         failure.assertHasCause('No such property: unknown for class: Thing')
     }
 
@@ -482,8 +502,23 @@ model {
 '''
 
         expect:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         fails 'model'
-        failure.assertHasCause('Exception thrown while executing model rule: afterEach(Thing) { ... } @ build.gradle line 17, column 9')
+        failure.assertHasCause('Exception thrown while executing model rule: afterEach(Thing) { ... } @ build.gradle line 18, column 9')
         failure.assertHasCause('No such property: unknown for class: Thing')
+    }
+
+    private void expectSoftwareModelDeprecation(String pluginName) {
+        executer.expectDocumentedDeprecationWarning("The ${pluginName} plugin has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
+    }
+
+    private void expectModelDslDeprecation() {
+        executer.expectDocumentedDeprecationWarning("The model DSL has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
+    }
+
+    private void expectModelReportTaskDeprecation() {
+        executer.expectDocumentedDeprecationWarning("The task type org.gradle.api.reporting.model.ModelReport (used by the :model task) has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
     }
 }

@@ -16,9 +16,9 @@
 package org.gradle.api
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForIsolatedProjects
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.executer.ArtifactBuilder
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
 import org.gradle.test.fixtures.file.TestFile
 import spock.lang.Issue
@@ -209,7 +209,7 @@ rootProject {
         run "root"
 
         then:
-        result.assertTasksExecuted(':worker', ':a:worker', ':b:worker', ':root')
+        result.assertTasksScheduled(':worker', ':a:worker', ':b:worker', ':root')
     }
 
     def "notices changes to init scripts that do not change the file length"() {

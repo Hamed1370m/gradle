@@ -21,11 +21,12 @@ import org.gradle.api.Task
 import org.gradle.api.internal.TaskInputsInternal
 import org.gradle.api.internal.TaskInternal
 import org.gradle.api.internal.TaskOutputsInternal
+import org.gradle.api.internal.project.ProjectIdentity
 import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.api.internal.project.ProjectState
 import org.gradle.api.internal.project.taskfactory.TestTaskIdentities
 import org.gradle.api.internal.tasks.TaskContainerInternal
-import org.gradle.api.internal.tasks.TaskDependencyContainerInternal
+import org.gradle.api.internal.tasks.TaskDependencyInternal
 import org.gradle.api.internal.tasks.TaskDependencyResolveContext
 import org.gradle.api.internal.tasks.TaskDestroyablesInternal
 import org.gradle.api.internal.tasks.TaskLocalStateInternal
@@ -33,6 +34,8 @@ import org.gradle.api.internal.tasks.TaskRequiredServices
 import org.gradle.api.internal.tasks.TaskStateInternal
 import org.gradle.api.tasks.TaskDependency
 import org.gradle.api.tasks.TaskDestroyables
+import org.gradle.internal.Describables
+import org.gradle.internal.code.UserCodeSource
 import org.gradle.internal.resources.DefaultResourceLockCoordinationService
 import org.gradle.internal.resources.ResourceLock
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
@@ -65,10 +68,19 @@ abstract class AbstractExecutionPlanSpec extends Specification {
     protected ProjectInternal project(ProjectInternal parent = null, String name = "root") {
         def projectState = Mock(ProjectState)
 
+        def identity
+        if (parent == null) {
+            identity = ProjectIdentity.forRootProject(Path.ROOT, name)
+        } else {
+            identity = ProjectIdentity.forSubproject(
+                parent.projectIdentity.buildPath,
+                parent.projectIdentity.projectPath.child(name)
+            )
+        }
+
         def project = Mock(ProjectInternal, name: name)
-        _ * project.identityPath >> (parent == null ? Path.ROOT : Path.ROOT.child(name))
-        _ * project.projectPath(_) >> { taskName -> Path.ROOT.child(taskName) }
-        _ * project.identityPath(_) >> { taskName -> (parent == null ? Path.ROOT : Path.ROOT.child(name)).child(taskName) }
+        _ * project.identityPath >> identity.buildTreePath
+        _ * project.projectIdentity >> identity
         _ * project.gradle >> thisBuild
         _ * project.owner >> projectState
         _ * project.services >> backing.services
@@ -99,7 +111,7 @@ abstract class AbstractExecutionPlanSpec extends Specification {
         task.localState >> emptyTaskLocalState()
         task.inputs >> emptyTaskInputs()
         task.requiredServices >> emptyTaskRequiredServices()
-        task.taskIdentity >> TestTaskIdentities.create(name, DefaultTask, project)
+        task.taskIdentity >> TestTaskIdentities.create(name, DefaultTask, project, new UserCodeSource.Script(Describables.of("mock"), null))
         return task
     }
 
@@ -129,7 +141,7 @@ abstract class AbstractExecutionPlanSpec extends Specification {
     }
 
     protected TaskDependency taskDependencyResolvingTo(TaskInternal task, List<Task> tasks) {
-        Mock(TaskDependencyContainerInternal) {
+        Mock(TaskDependencyInternal) {
             visitDependencies(_) >> { TaskDependencyResolveContext context -> tasks.forEach { context.add(it) } }
         }
     }

@@ -17,13 +17,18 @@
 package org.gradle.plugin.devel.tasks;
 
 import org.gradle.api.DefaultTask;
+import org.gradle.api.GradleException;
 import org.gradle.api.Incubating;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.internal.DocumentationRegistry;
-import org.gradle.api.problems.internal.InternalProblemReporter;
-import org.gradle.api.problems.internal.InternalProblems;
-import org.gradle.api.problems.internal.Problem;
+import org.gradle.api.plugins.JavaPluginExtension;
+import org.gradle.api.problems.ProblemId;
+import org.gradle.api.problems.ProblemReporter;
+import org.gradle.api.problems.Problems;
+import org.gradle.api.problems.internal.GradleCoreProblemGroup;
+import org.gradle.api.problems.internal.ProblemInternal;
+import org.gradle.api.problems.internal.ProblemsInternal;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.CacheableTask;
 import org.gradle.api.tasks.Classpath;
@@ -37,24 +42,26 @@ import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SkipWhenEmpty;
 import org.gradle.api.tasks.TaskAction;
-import org.gradle.internal.deprecation.DeprecationLogger;
+import org.gradle.internal.deprecation.Documentation;
 import org.gradle.internal.execution.WorkValidationException;
-import org.gradle.internal.jvm.Jvm;
+import org.gradle.internal.execution.WorkValidationUtils;
+import org.gradle.internal.jvm.SupportedJavaVersions;
 import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.plugin.devel.tasks.internal.ValidateAction;
 import org.gradle.plugin.devel.tasks.internal.ValidationProblemSerialization;
+import org.gradle.problems.internal.rendering.ProblemWriter;
 import org.gradle.workers.WorkerExecutor;
 
 import javax.inject.Inject;
 import java.io.IOException;
-import java.nio.file.Files;
+import java.io.StringWriter;
 import java.util.List;
 import java.util.stream.Stream;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
-import static java.util.stream.Collectors.joining;
-import static org.gradle.api.problems.Severity.ERROR;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.nio.file.Files.readAllBytes;
 
 /**
  * Validates plugins by checking property annotations on work items like tasks and artifact transforms.
@@ -73,34 +80,88 @@ import static org.gradle.api.problems.Severity.ERROR;
 @CacheableTask
 public abstract class ValidatePlugins extends DefaultTask {
 
+    /**
+     * Creates a new {@code ValidatePlugins}.
+     *
+     * @since 6.0
+     */
+    @SuppressWarnings("this-escape")
     public ValidatePlugins() {
         getEnableStricterValidation().convention(false);
         getIgnoreFailures().convention(false);
         getFailOnWarning().convention(true);
 
-        JavaToolchainService service = getProject().getExtensions().findByType(JavaToolchainService.class);
-        if (service != null) {
-            // This will be the only case in v9.0
-            getLauncher().convention(service.launcherFor(spec -> {}));
+        JavaToolchainService toolchainService = getProject().getExtensions().findByType(JavaToolchainService.class);
+        if (toolchainService != null) {
+            JavaPluginExtension javaPlugin = getProject().getExtensions().findByType(JavaPluginExtension.class);
+            if (javaPlugin != null) {
+                createToolchainConvention(toolchainService, javaPlugin);
+            } else {
+                getLauncher().convention(toolchainService.launcherFor(spec -> {}));
+            }
         }
     }
 
+    private void createToolchainConvention(JavaToolchainService toolchainService, JavaPluginExtension javaPlugin) {
+        getLauncher().convention(
+            toolchainService.launcherFor(javaPlugin.getToolchain()).zip(toolchainService.launcherFor(spec -> {}), (project, current) -> {
+                if (project.getMetadata().getLanguageVersion().canCompileOrRun(SupportedJavaVersions.MINIMUM_DAEMON_JAVA_VERSION)) {
+                    // We use the project toolchain only if it is compatible with the minimum required version for the daemon
+                    return project;
+                } else {
+                    // Otherwise we fall back to the daemon JVM
+                    return current;
+                }
+            }));
+    }
+
+    /**
+     * Validate task classes.
+     *
+     * @since 6.0
+     */
     @TaskAction
     public void validateTaskClasses() throws IOException {
         getWorkerExecutor()
             .processIsolation(spec -> {
                 if (getLauncher().isPresent()) {
-                    spec.getForkOptions().setExecutable(getLauncher().get().getExecutablePath());
+                    JavaLauncher launcher = getLauncher().get();
+                    if (!launcher.getMetadata().getLanguageVersion().canCompileOrRun(SupportedJavaVersions.MINIMUM_DAEMON_JAVA_VERSION)) {
+                        ProblemId problemId = ProblemId.create(
+                            "invalid-java-toolchain",
+                            "Running task ValidatePlugins with Java Toolchain lower than " + SupportedJavaVersions.MINIMUM_DAEMON_JAVA_VERSION,
+                            GradleCoreProblemGroup.validation().thisGroup()
+                        );
+                        ProblemReporter problemReporter = getServices().get(Problems.class).getReporter();
+                        GradleException exception = new GradleException(problemId.getDisplayName() + " is not supported.");
+                        throw problemReporter.throwing(
+                            exception,
+                            problemReporter.create(problemId, problemSpec -> {
+                                problemSpec.documentedAt(Documentation.upgradeMinorGuide(9, "validate_plugins_java_version").getUrl());
+                                problemSpec.contextualLabel(exception.getMessage());
+                            })
+                        );
+
+                    }
+                    spec.getForkOptions().setExecutable(launcher.getExecutablePath());
                 } else {
-                    DeprecationLogger.deprecateBehaviour("Using task ValidatePlugins without applying the Java Toolchain plugin.")
-                        .withProblemIdDisplayName("Using task ValidatePlugins without applying the Java Toolchain plugin.")
-                        .withProblemId("missing-java-toolchain-plugin")
-                        .willBecomeAnErrorInGradle9()
-                        .withUpgradeGuideSection(8, "validate_plugins_without_java_toolchain")
-                        .nagUser();
-                    spec.getForkOptions().setExecutable(Jvm.current().getJavaExecutable());
+                    ProblemId problemId = ProblemId.create(
+                        "missing-java-toolchain-plugin",
+                        "Using task ValidatePlugins without applying the Java Toolchain plugin",
+                        GradleCoreProblemGroup.validation().thisGroup()
+                    );
+                    ProblemReporter problemReporter = getServices().get(Problems.class).getReporter();
+                    GradleException exception = new GradleException(problemId.getDisplayName() + " is not supported.");
+                    throw problemReporter.throwing(
+                        exception,
+                        problemReporter.create(problemId, problemSpec -> {
+                            problemSpec.documentedAt(Documentation.upgradeMajorGuide(9, "validate_plugins_without_java_toolchain_90").getUrl());
+                            problemSpec.contextualLabel(exception.getMessage());
+                        })
+                    );
                 }
-                spec.getClasspath().setFrom(getClasses(), getClasspath());
+                // The classpath includes both the plugin classes and the dependencies:
+                spec.getClasspath().setFrom(getClasspath());
             })
             .submit(ValidateAction.class, params -> {
                 params.getClasses().setFrom(getClasses());
@@ -109,33 +170,36 @@ public abstract class ValidatePlugins extends DefaultTask {
             });
         getWorkerExecutor().await();
 
-        List<? extends Problem> problems = ValidationProblemSerialization.parseMessageList(new String(Files.readAllBytes(getOutputFile().get().getAsFile().toPath())));
+        ValidationProblemSerialization.SerializationResult parsedProblems = ValidationProblemSerialization.deserialize(new String(readAllBytes(getOutputFile().get().getAsFile().toPath()), UTF_8));
+        List<? extends ProblemInternal> warnings = parsedProblems.getWarnings();
+        List<? extends ProblemInternal> errors = parsedProblems.getErrors();
 
-        Stream<String> messages = ValidationProblemSerialization.toPlainMessage(problems).sorted();
-        if (problems.isEmpty()) {
+        if (errors.isEmpty() && warnings.isEmpty()) {
             getLogger().info("Plugin validation finished without warnings.");
-        } else {
-            if (getFailOnWarning().get() || problems.stream().anyMatch(problem -> problem.getDefinition().getSeverity() == ERROR)) {
-                if (getIgnoreFailures().get()) {
-                    getLogger().warn("Plugin validation finished with errors. {} {}",
-                        annotateTaskPropertiesDoc(),
-                        messages.collect(joining()));
-                } else {
-                    reportProblems(problems);
-                    throw WorkValidationException.forProblems(messages.collect(toImmutableList()))
-                        .withSummaryForPlugin()
-                        .getWithExplanation(annotateTaskPropertiesDoc());
-                }
+        } else if (getFailOnWarning().get() || !errors.isEmpty()) {
+            if (getIgnoreFailures().get()) {
+                getLogger().warn("Plugin validation finished with errors. {}{}{}",
+                    annotateTaskPropertiesDoc(),
+                    System.lineSeparator(),
+                    renderProblems(warnings, errors));
             } else {
-                getLogger().warn("Plugin validation finished with warnings:{}",
-                    messages.collect(joining()));
+                ProblemReporter reporter = getServices().get(ProblemsInternal.class).getReporter();
+                List<ProblemInternal> reportedProblems = WorkValidationUtils.deduplicateAndTruncate(Stream.concat(warnings.stream(), errors.stream()).collect(toImmutableList()));
+                WorkValidationException exception = WorkValidationException.withSummaryForPlugin(reportedProblems.size(), List.of(annotateTaskPropertiesDoc()));
+                throw reporter.throwing(exception, reportedProblems);
             }
+        } else {
+            getLogger().warn("Plugin validation finished with warnings:{}{}",
+                System.lineSeparator(),
+                renderProblems(warnings, errors));
         }
     }
 
-    private void reportProblems(List<? extends Problem> problems) {
-        InternalProblemReporter reporter = getServices().get(InternalProblems.class).getInternalReporter();
-        problems.forEach(reporter::report);
+    private static String renderProblems(List<? extends ProblemInternal> warnings, List<? extends ProblemInternal> errors) {
+        List<ProblemInternal> all = Stream.concat(warnings.stream(), errors.stream()).collect(toImmutableList());
+        StringWriter writer = new StringWriter();
+        ProblemWriter.simple().write(all, writer);
+        return writer.toString();
     }
 
     private String annotateTaskPropertiesDoc() {
@@ -144,6 +208,7 @@ public abstract class ValidatePlugins extends DefaultTask {
 
     /**
      * The classes to validate.
+     * @since 6.0
      */
     @InputFiles
     @SkipWhenEmpty
@@ -153,6 +218,9 @@ public abstract class ValidatePlugins extends DefaultTask {
 
     /**
      * The classpath used to load the classes under validation.
+     * <p>
+     * Includes the classes under validation and both the runtime-scoped dependencies and the compile-scoped ones.
+     * @since 6.0
      */
     @Classpath
     public abstract ConfigurableFileCollection getClasspath();
@@ -169,24 +237,28 @@ public abstract class ValidatePlugins extends DefaultTask {
 
     /**
      * Specifies whether the build should break when plugin verifications fails.
+     * @since 6.0
      */
     @Input
     public abstract Property<Boolean> getIgnoreFailures();
 
     /**
      * Returns whether the build should break when the verifications performed by this task detects a warning.
+     * @since 6.0
      */
     @Input
     public abstract Property<Boolean> getFailOnWarning();
 
     /**
      * Enable the stricter validation for cacheable tasks for all tasks.
+     * @since 6.0
      */
     @Input
     public abstract Property<Boolean> getEnableStricterValidation();
 
     /**
      * Returns the output file to store the report in.
+     * @since 6.0
      */
     @OutputFile
     public abstract RegularFileProperty getOutputFile();

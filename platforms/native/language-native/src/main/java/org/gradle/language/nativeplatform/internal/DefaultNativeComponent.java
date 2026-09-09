@@ -32,10 +32,17 @@ import java.util.concurrent.Callable;
 public abstract class DefaultNativeComponent {
     private final ConfigurableFileCollection source;
 
-    public DefaultNativeComponent(ObjectFactory objectFactory) {
+    @SuppressWarnings("this-escape")
+    public DefaultNativeComponent() {
         // TODO - introduce a new 'var' data structure that allows these conventions to be configured explicitly
-        source = objectFactory.fileCollection();
+        source = getObjectFactory().fileCollection();
     }
+
+    @Inject
+    protected abstract ObjectFactory getObjectFactory();
+
+    @Inject
+    protected abstract ProjectLayout getProjectLayout();
 
     public abstract DisplayName getDisplayName();
 
@@ -50,11 +57,6 @@ public abstract class DefaultNativeComponent {
 
     public void source(Action<? super ConfigurableFileCollection> action) {
         action.execute(source);
-    }
-
-    @Inject
-    protected ProjectLayout getProjectLayout() {
-        throw new UnsupportedOperationException();
     }
 
     // TODO - this belongs with the 'var' data structure

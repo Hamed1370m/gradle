@@ -31,6 +31,7 @@ public interface TransformSpec<T extends TransformParameters> {
      * Attributes that match the variant that is consumed.
      *
      * @see org.gradle.api.artifacts.dsl.DependencyHandler#registerTransform(Class, Action)
+     * @since 5.3
      */
     AttributeContainer getFrom();
 
@@ -38,20 +39,29 @@ public interface TransformSpec<T extends TransformParameters> {
      * Attributes that match the variant that is produced.
      *
      * @see org.gradle.api.artifacts.dsl.DependencyHandler#registerTransform(Class, Action)
+     * @since 5.3
      */
     AttributeContainer getTo();
 
     /**
      * The parameters for the transform action.
      *
+     * <p>When the transform action declares {@link TransformParameters.None} as its parameters type,
+     * this returns the {@link TransformParameters.None} singleton.</p>
+     *
      * @see org.gradle.api.artifacts.dsl.DependencyHandler#registerTransform(Class, Action)
+     * @since 5.3
      */
     T getParameters();
 
     /**
      * Configure the parameters for the transform action.
-     * 
+     *
+     * <p>The action is invoked even when the transform action declares {@link TransformParameters.None} as its
+     * parameters type; in that case it receives the {@link TransformParameters.None} singleton.</p>
+     *
      * @see org.gradle.api.artifacts.dsl.DependencyHandler#registerTransform(Class, Action)
+     * @since 5.3
      */
     void parameters(Action<? super T> action);
 }

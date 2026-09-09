@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,26 @@
 package org.gradle.api.artifacts;
 
 import org.gradle.api.Action;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
 
 /**
  * <p>An {@code ExternalDependency} is a {@link Dependency} on a source outside the current project hierarchy.</p>
+ * @since 0.7
  */
 public interface ExternalDependency extends ModuleDependency, ModuleVersionSelector {
 
     /**
      * Returns whether or not the version of this dependency should be enforced in the case of version conflicts.
+     * @since 0.7
      */
+    @HiddenInDefinition
     boolean isForce();
 
     /**
      * {@inheritDoc}
      */
     @Override
+    @HiddenInDefinition
     ExternalDependency copy();
 
     /**
@@ -38,13 +43,15 @@ public interface ExternalDependency extends ModuleDependency, ModuleVersionSelec
      * @param configureAction the configuration action for the module version
      * @since 4.4
      */
+    @HiddenInDefinition
     void version(Action<? super MutableVersionConstraint> configureAction);
 
     /**
      * Returns the version constraint to be used during selection.
      * @return the version constraint
      *
-     * @since 4.4
+     * @since 4.10
      */
+    @HiddenInDefinition
     VersionConstraint getVersionConstraint();
 }

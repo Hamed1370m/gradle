@@ -44,6 +44,7 @@ public abstract class ImmutableActionSet<T> implements Action<T>, InternalListen
     /**
      * Creates an action set.
      */
+    @SuppressWarnings("unchecked")
     public static <T> ImmutableActionSet<T> of(Action<? super T>... actions) {
         if (actions.length == 0) {
             return empty();
@@ -143,8 +144,10 @@ public abstract class ImmutableActionSet<T> implements Action<T>, InternalListen
      */
     public abstract boolean isEmpty();
 
+    @SuppressWarnings("ExposedPrivateType")
     abstract ImmutableActionSet<T> addAll(SetWithFewActions<T> source);
 
+    @SuppressWarnings("ExposedPrivateType")
     abstract ImmutableActionSet<T> addAll(SetWithManyActions<T> source);
 
     abstract ImmutableActionSet<T> addOne(Action<? super T> action);

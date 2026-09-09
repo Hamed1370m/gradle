@@ -25,11 +25,13 @@ import org.gradle.nativeplatform.fixtures.app.SourceElement
 import org.gradle.nativeplatform.fixtures.app.Swift3XCTest
 import org.gradle.nativeplatform.fixtures.app.Swift4XCTest
 import org.gradle.nativeplatform.fixtures.app.Swift5XCTest
+import org.gradle.nativeplatform.fixtures.app.Swift6XCTest
 import org.gradle.nativeplatform.fixtures.app.XCTestSourceElement
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.TestEnvironmentPreconditions
 
-@Requires(UnitTestPreconditions.HasXCTest)
+
+@Requires(TestEnvironmentPreconditions.HasXCTest)
 @RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5_OR_OLDER)
 abstract class AbstractSwiftXCTestComponentIntegrationTest extends AbstractSwiftComponentIntegrationTest implements SwiftTaskNames {
     def "check task warns when current operating system family is excluded"() {
@@ -75,6 +77,11 @@ abstract class AbstractSwiftXCTestComponentIntegrationTest extends AbstractSwift
     @Override
     SourceElement getSwift5Component() {
         return new Swift5XCTest('project')
+    }
+
+    @Override
+    SourceElement getSwift6Component() {
+        return new Swift6XCTest('project')
     }
 
     @Override

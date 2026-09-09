@@ -26,6 +26,7 @@ import org.gradle.internal.classpath.ClasspathWalker
 import org.gradle.internal.classpath.DefaultClasspathBuilder
 import org.gradle.internal.installation.GradleRuntimeShadedJarDetector
 import org.gradle.internal.logging.progress.ProgressLoggerFactory
+import org.gradle.internal.operations.TestBuildOperationExecutor
 import org.gradle.test.fixtures.file.CleanupTestDirectory
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
@@ -52,11 +53,13 @@ class RuntimeShadedJarCreatorTest extends Specification {
     def progressLoggerFactory = Stub(ProgressLoggerFactory)
     def relocatedJarCreator
     def outputJar = tmpDir.testDirectory.file('gradle-api.jar')
+    def jarType = RuntimeShadedJarType.API
 
     def setup() {
         relocatedJarCreator = new RuntimeShadedJarCreator(
             progressLoggerFactory,
-            new ImplementationDependencyRelocator(RuntimeShadedJarType.API),
+            new TestBuildOperationExecutor(),
+            new ImplementationDependencyRelocator(RuntimeShadedJarCreatorTest.class.getResource(RuntimeShadedJarType.API.getIdentifier() + "-relocated.txt")),
             new ClasspathWalker(TestFiles.fileSystem()),
             new DefaultClasspathBuilder(TestFiles.tmpDirTemporaryFileProvider(tmpDir.createDir("tmp")))
         )
@@ -68,7 +71,7 @@ class RuntimeShadedJarCreatorTest extends Specification {
         writeClass(inputFilesDir, "org/gradle/MyClass")
 
         when:
-        relocatedJarCreator.create(outputJar, [inputFilesDir])
+        relocatedJarCreator.create(jarType, outputJar, [inputFilesDir])
 
         then:
         TestFile[] contents = tmpDir.testDirectory.listFiles().findAll { it.isFile() }
@@ -86,7 +89,7 @@ class RuntimeShadedJarCreatorTest extends Specification {
         createJarFileWithClassFiles(jarFile2, [className])
 
         when:
-        relocatedJarCreator.create(outputJar, [jarFile1, jarFile2])
+        relocatedJarCreator.create(jarType, outputJar, [jarFile1, jarFile2])
 
         then:
         TestFile[] contents = tmpDir.testDirectory.listFiles().findAll { it.isFile() }
@@ -124,7 +127,7 @@ org.gradle.api.internal.tasks.CompileServices
         writeClass(inputDirectory, "org/gradle/MyBClass")
 
         when:
-        relocatedJarCreator.create(outputJar, [jarFile1, jarFile2, jarFile3, jarFile4, jarFile5, jarFile6, inputDirectory])
+        relocatedJarCreator.create(jarType, outputJar, [jarFile1, jarFile2, jarFile3, jarFile4, jarFile5, jarFile6, inputDirectory])
 
         then:
 
@@ -175,7 +178,7 @@ org.gradle.api.internal.tasks.CompileServices
         writeClass(inputDirectory, "org/gradle/MyFirstClass")
 
         when:
-        relocatedJarCreator.create(outputJar, [jarFile1, jarFile2, inputDirectory])
+        relocatedJarCreator.create(jarType, outputJar, [jarFile1, jarFile2, inputDirectory])
 
         then:
 
@@ -215,7 +218,7 @@ org.gradle.api.internal.tasks.CompileServices
 # Too many comments""")
 
         when:
-        relocatedJarCreator.create(outputJar, [jarFile1, jarFile2, jarFile3])
+        relocatedJarCreator.create(jarType, outputJar, [jarFile1, jarFile2, jarFile3])
 
         then:
         TestFile[] contents = tmpDir.testDirectory.listFiles().findAll { it.isFile() }
@@ -249,9 +252,10 @@ org.gradle.api.internal.tasks.CompileServices"""
                                       'org/apache/commons/logging/Log',
                                       'org/apache/log4j/Logger',
                                       'org/apache/xerces/parsers/SAXParser',
+                                      'org/jspecify/annotations/Nullable',
                                       'org/w3c/dom/Document',
                                       'org/xml/sax/XMLReader']
-        def relocationClassNames = ['org/apache/commons/lang/StringUtils',
+        def relocationClassNames = ['org/apache/commons/lang3/StringUtils',
                                     'com/google/common/collect/Lists']
         def classNames = noRelocationClassNames + relocationClassNames
         def inputFilesDir = tmpDir.createDir('inputFiles')
@@ -259,7 +263,7 @@ org.gradle.api.internal.tasks.CompileServices"""
         createJarFileWithClassFiles(jarFile, classNames)
 
         when:
-        relocatedJarCreator.create(outputJar, [jarFile])
+        relocatedJarCreator.create(jarType, outputJar, [jarFile])
 
         then:
         TestFile[] contents = tmpDir.testDirectory.listFiles().findAll { it.isFile() }
@@ -280,9 +284,10 @@ org.gradle.api.internal.tasks.CompileServices"""
             assert jar.getJarEntry('org/apache/commons/logging/Log.class')
             assert jar.getJarEntry('org/apache/log4j/Logger.class')
             assert jar.getJarEntry('org/apache/xerces/parsers/SAXParser.class')
+            assert jar.getJarEntry('org/jspecify/annotations/Nullable.class')
             assert jar.getJarEntry('org/w3c/dom/Document.class')
             assert jar.getJarEntry('org/xml/sax/XMLReader.class')
-            assert jar.getJarEntry('org/gradle/internal/impldep/org/apache/commons/lang/StringUtils.class')
+            assert jar.getJarEntry('org/gradle/internal/impldep/org/apache/commons/lang3/StringUtils.class')
             assert jar.getJarEntry('org/gradle/internal/impldep/com/google/common/collect/Lists.class')
         }
     }
@@ -350,7 +355,7 @@ org.gradle.api.internal.tasks.CompileServices"""
         createJarFileWithClassFiles(jarFile, ["org.slf4j.impl.StaticLoggerBinder"])
 
         when:
-        relocatedJarCreator.create(outputJar, [jarFile])
+        relocatedJarCreator.create(jarType, outputJar, [jarFile])
 
         then:
         handleAsJarFile(outputJar) {
@@ -384,7 +389,7 @@ org.gradle.api.internal.tasks.CompileServices"""
         createJarFileWithResources(jarFile, resources)
 
         when:
-        relocatedJarCreator.create(outputJar, [jarFile])
+        relocatedJarCreator.create(jarType, outputJar, [jarFile])
 
         then:
         TestFile[] contents = tmpDir.testDirectory.listFiles().findAll { it.isFile() }
@@ -410,17 +415,43 @@ org.gradle.api.internal.tasks.CompileServices"""
         }
     }
 
+    def "excludes Gradle module pom.properties but keeps third-party ones"() {
+        given:
+        // Our own distribution jars each carry a pom.properties naming their module; those
+        // coordinates resolve to nothing once bundled here, so they are dropped. Third-party
+        // pom.properties name real published artifacts and are kept.
+        def gradleModulePomProperties = [
+            'META-INF/maven/org.gradle/gradle-core/pom.properties',
+            'META-INF/maven/org.gradle.kotlin/gradle-kotlin-dsl-plugins/pom.properties'
+        ]
+        def thirdPartyPomProperties = 'META-INF/maven/com.google.guava/guava/pom.properties'
+        def inputFilesDir = tmpDir.createDir('inputFiles')
+        def jarFile = inputFilesDir.file('lib.jar')
+        createJarFileWithResources(jarFile, gradleModulePomProperties + thirdPartyPomProperties)
+
+        when:
+        relocatedJarCreator.create(jarType, outputJar, [jarFile])
+
+        then:
+        handleAsJarFile(outputJar) { JarFile jar ->
+            gradleModulePomProperties.each { resourceName ->
+                assert jar.getEntry(resourceName) == null
+            }
+            assert jar.getEntry(thirdPartyPomProperties) != null
+        }
+    }
+
     @Issue("https://github.com/gradle/gradle/issues/11027")
     def "relocates multiple third-party impl dependency service providers in the same provider-configuration file"() {
         given:
         def inputFilesDir = tmpDir.createDir('inputFiles')
         def serviceType = 'java.util.spi.ToolProvider'
         def jarFile = inputFilesDir.file('lib1.jar')
-        def multiLineProviders = 'org.junit.JarToolProvider\norg.jetbrains.ide.JavadocToolProvider\nbsh.Main'
+        def multiLineProviders = 'com.fasterxml.jackson.core.ObjectCodec\njava.security.Provider'
         createJarFileWithProviderConfigurationFile(jarFile, serviceType, multiLineProviders)
 
         when:
-        relocatedJarCreator.create(outputJar, [jarFile])
+        relocatedJarCreator.create(jarType, outputJar, [jarFile])
 
         then:
         TestFile[] contents = tmpDir.testDirectory.listFiles().findAll { it.isFile() }
@@ -432,7 +463,7 @@ org.gradle.api.internal.tasks.CompileServices"""
             JarEntry providerConfigJarEntry = jar.getJarEntry("META-INF/services/$serviceType")
             IoActions.withResource(jar.getInputStream(providerConfigJarEntry), new Action<InputStream>() {
                 void execute(InputStream inputStream) {
-                    assert inputStream.text == "org.gradle.internal.impldep.org.junit.JarToolProvider\norg.gradle.internal.impldep.bsh.Main"
+                    assert inputStream.text == "org.gradle.internal.impldep.com.fasterxml.jackson.core.ObjectCodec\njava.security.Provider"
                 }
             })
         }

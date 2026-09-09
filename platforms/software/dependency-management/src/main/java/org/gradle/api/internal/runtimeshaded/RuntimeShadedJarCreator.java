@@ -16,19 +16,24 @@
 
 package org.gradle.api.internal.runtimeshaded;
 
-import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import org.gradle.api.GradleException;
-import org.gradle.model.internal.asm.AsmConstants;
 import org.gradle.internal.classpath.ClasspathBuilder;
 import org.gradle.internal.classpath.ClasspathEntryVisitor;
 import org.gradle.internal.classpath.ClasspathWalker;
+import org.gradle.internal.concurrent.MultiProducerSingleConsumerProcessor;
 import org.gradle.internal.installation.GradleRuntimeShadedJarDetector;
 import org.gradle.internal.logging.progress.ProgressLogger;
 import org.gradle.internal.logging.progress.ProgressLoggerFactory;
+import org.gradle.internal.operations.BuildOperationContext;
+import org.gradle.internal.operations.BuildOperationDescriptor;
+import org.gradle.internal.operations.BuildOperationExecutor;
+import org.gradle.internal.operations.RunnableBuildOperation;
 import org.gradle.internal.progress.PercentageProgressFormatter;
+import org.gradle.model.internal.asm.AsmConstants;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
@@ -41,40 +46,57 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import static java.util.Arrays.asList;
 
+@NullMarked
 class RuntimeShadedJarCreator {
+
     private static final int ADDITIONAL_PROGRESS_STEPS = 2;
     private static final String SERVICES_DIR_PREFIX = "META-INF/services/";
+    private static final String GRADLE_MAVEN_METADATA_PREFIX = "META-INF/maven/org.gradle";
     private static final String CLASS_DESC = "Ljava/lang/Class;";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeShadedJarCreator.class);
 
     private final ProgressLoggerFactory progressLoggerFactory;
+    private final BuildOperationExecutor buildOperationExecutor;
     private final ImplementationDependencyRelocator remapper;
     private final ClasspathWalker classpathWalker;
     private final ClasspathBuilder classpathBuilder;
 
-    public RuntimeShadedJarCreator(ProgressLoggerFactory progressLoggerFactory, ImplementationDependencyRelocator remapper, ClasspathWalker classpathWalker, ClasspathBuilder classpathBuilder) {
+    public RuntimeShadedJarCreator(
+        ProgressLoggerFactory progressLoggerFactory,
+        BuildOperationExecutor buildOperationExecutor,
+        ImplementationDependencyRelocator remapper,
+        ClasspathWalker classpathWalker,
+        ClasspathBuilder classpathBuilder
+    ) {
         this.progressLoggerFactory = progressLoggerFactory;
+        this.buildOperationExecutor = buildOperationExecutor;
         this.remapper = remapper;
         this.classpathWalker = classpathWalker;
         this.classpathBuilder = classpathBuilder;
     }
 
-    public void create(final File outputJar, final Iterable<? extends File> files) {
-        LOGGER.info("Generating " + outputJar.getAbsolutePath());
+    public void create(RuntimeShadedJarType type, final File outputJar, final Collection<? extends File> files) {
+        LOGGER.info("Generating " + type.getDisplayName() + ": " + outputJar.getAbsolutePath());
         ProgressLogger progressLogger = progressLoggerFactory.newOperation(RuntimeShadedJarCreator.class);
-        progressLogger.setDescription("Generating " + outputJar.getName());
+        progressLogger.setDescription("Generating " + type.getDisplayName());
         progressLogger.started();
         try {
             createFatJar(outputJar, files, progressLogger);
@@ -83,19 +105,38 @@ class RuntimeShadedJarCreator {
         }
     }
 
-    private void createFatJar(final File outputJar, final Iterable<? extends File> files, final ProgressLogger progressLogger) {
+    private void createFatJar(final File outputJar, final Collection<? extends File> files, final ProgressLogger progressLogger) {
         classpathBuilder.jar(outputJar, builder -> processFiles(builder, files, progressLogger));
     }
 
-    private void processFiles(ClasspathBuilder.EntryBuilder builder, Iterable<? extends File> files, ProgressLogger progressLogger) throws IOException {
-        Set<String> seenPaths = new HashSet<>();
-        Map<String, List<String>> services = new LinkedHashMap<>();
-
+    private void processFiles(ClasspathBuilder.EntryBuilder builder, Collection<? extends File> files, ProgressLogger progressLogger) throws IOException {
         PercentageProgressFormatter progressFormatter = new PercentageProgressFormatter("Generating", Iterables.size(files) + ADDITIONAL_PROGRESS_STEPS);
-        for (File file : files) {
-            progressLogger.progress(progressFormatter.getProgress());
-            classpathWalker.visit(file, entry -> processEntry(builder, entry, seenPaths, services));
-            progressFormatter.increment();
+
+        Map<String, List<String>> services = new LinkedHashMap<>();
+        MultiProducerSingleConsumerProcessor<InputFile> writer = createShadedJarWriter(builder, progressLogger, progressFormatter, services);
+
+        writer.start();
+        try {
+            buildOperationExecutor.runAll(queue -> {
+                int index = 0;
+                for (File file : files) {
+                    InputFile inputFile = new InputFile(file, index++);
+                    queue.add(new RunnableBuildOperation() {
+                        @Override
+                        public void run(BuildOperationContext context) throws Exception {
+                            classpathWalker.visit(inputFile.file, entry -> processEntry(inputFile, entry));
+                            writer.submit(inputFile);
+                        }
+
+                        @Override
+                        public BuildOperationDescriptor.Builder description() {
+                            return BuildOperationDescriptor.displayName("Visiting " + file.getName());
+                        }
+                    });
+                }
+            });
+        } finally {
+            writer.stop(Duration.ofMinutes(5));
         }
 
         writeServiceFiles(builder, services);
@@ -105,10 +146,108 @@ class RuntimeShadedJarCreator {
         progressLogger.progress(progressFormatter.incrementAndGetProgress());
     }
 
+    /**
+     * The processed and remapped contents of a file that is to be included
+     * in the relocated jar.
+     */
+    private static final class InputFile implements Comparable<InputFile> {
+
+        private final int index;
+        private final File file;
+        private final List<String> names;
+        private final List<byte[]> contents;
+        private final Map<String, List<String>> services;
+
+        public InputFile(File file, int index) {
+            this.file = file;
+            this.index = index;
+
+            this.names = new ArrayList<>();
+            this.contents = new ArrayList<>();
+            this.services = new LinkedHashMap<>();
+        }
+
+        public void addServiceProviders(String serviceType, List<String> providers) {
+            services.computeIfAbsent(serviceType, k -> new ArrayList<>()).addAll(providers);
+        }
+
+        public Map<String, List<String>> getServices() {
+            return services;
+        }
+
+        /**
+         * Put a new entry into the remapped result.
+         */
+        public void put(String name, byte[] content) {
+            names.add(name);
+            contents.add(content);
+        }
+
+        public void forEachEntry(EntryConsumer consumer) throws IOException {
+            for (int i = 0; i < names.size(); i++) {
+                String name = names.get(i);
+                byte[] content = contents.get(i);
+                consumer.accept(name, content);
+            }
+        }
+
+        public int getIndex() {
+            return index;
+        }
+
+        @Override
+        public int compareTo(InputFile o) {
+            return Integer.compare(index, o.index);
+        }
+
+        interface EntryConsumer {
+            void accept(String name, byte[] content) throws IOException;
+        }
+
+    }
+
+    private static MultiProducerSingleConsumerProcessor<InputFile> createShadedJarWriter(
+        ClasspathBuilder.EntryBuilder builder,
+        ProgressLogger progressLogger,
+        PercentageProgressFormatter progressFormatter,
+        Map<String, List<String>> services
+    ) {
+        return new MultiProducerSingleConsumerProcessor<>("shaded jar writer", new Consumer<InputFile>() {
+            private int index = 0;
+            private final PriorityQueue<InputFile> allProcessedFiles = new PriorityQueue<>();
+            private final Set<String> seenPaths = new HashSet<>();
+
+            @Override
+            public void accept(InputFile processedFile) {
+                allProcessedFiles.add(processedFile);
+
+                InputFile toProcess;
+                while (!allProcessedFiles.isEmpty() && (toProcess = allProcessedFiles.peek()).getIndex() == index) {
+                    try {
+                        progressLogger.progress(progressFormatter.getProgress());
+                        toProcess.forEachEntry((name, content) -> {
+                            if (seenPaths.add(name)) {
+                                builder.put(name, content);
+                            }
+                        });
+                        for (Map.Entry<String, List<String>> entry : toProcess.getServices().entrySet()) {
+                            services.computeIfAbsent(entry.getKey(), k -> new ArrayList<>()).addAll(entry.getValue());
+                        }
+                        progressFormatter.increment();
+                        index++;
+                        allProcessedFiles.poll();
+                    } catch (IOException e) {
+                        throw new RuntimeException("Failed to write shaded jar", e);
+                    }
+                }
+            }
+        });
+    }
+
     private void writeServiceFiles(ClasspathBuilder.EntryBuilder builder, Map<String, List<String>> services) throws IOException {
         for (Map.Entry<String, List<String>> service : services.entrySet()) {
             String allProviders = Joiner.on("\n").join(service.getValue());
-            builder.put(SERVICES_DIR_PREFIX + service.getKey(), allProviders.getBytes(Charsets.UTF_8));
+            builder.put(SERVICES_DIR_PREFIX + service.getKey(), allProviders.getBytes(StandardCharsets.UTF_8));
         }
     }
 
@@ -116,7 +255,7 @@ class RuntimeShadedJarCreator {
         builder.put(GradleRuntimeShadedJarDetector.MARKER_FILENAME, new byte[0]);
     }
 
-    private void processEntry(ClasspathBuilder.EntryBuilder builder, ClasspathEntryVisitor.Entry entry, final Set<String> seenPaths, Map<String, List<String>> services) throws IOException {
+    private void processEntry(InputFile builder, ClasspathEntryVisitor.Entry entry) throws IOException {
         String name = entry.getName();
         if (name.equals("META-INF/MANIFEST.MF")) {
             return;
@@ -125,14 +264,17 @@ class RuntimeShadedJarCreator {
         if (name.startsWith("LICENSE") || name.startsWith("license")) {
             return;
         }
-        if (!name.startsWith(SERVICES_DIR_PREFIX) && !seenPaths.add(name)) {
+        // Distribution jars carry a Maven pom.properties naming their own module. Bundled into the
+        // shaded gradle-api jar those coordinates resolve to nothing, so drop them rather than have
+        // gradleApi()/TestKit advertise ~150 phantom org.gradle artifacts to SBOM/vulnerability scanners.
+        if (isGradleModulePomProperties(name)) {
             return;
         }
 
         if (name.endsWith(".class")) {
             processClassFile(builder, entry);
         } else if (name.startsWith(SERVICES_DIR_PREFIX)) {
-            processServiceDescriptor(entry, services);
+            processServiceDescriptor(builder, entry);
         } else {
             processResource(builder, entry);
         }
@@ -142,7 +284,12 @@ class RuntimeShadedJarCreator {
         return "module-info".equals(name);
     }
 
-    private void processServiceDescriptor(ClasspathEntryVisitor.Entry entry, Map<String, List<String>> services) throws IOException {
+    private static boolean isGradleModulePomProperties(String name) {
+        return name.endsWith("/pom.properties")
+            && (name.startsWith(GRADLE_MAVEN_METADATA_PREFIX + "/") || name.startsWith(GRADLE_MAVEN_METADATA_PREFIX + "."));
+    }
+
+    private void processServiceDescriptor(InputFile inputFile, ClasspathEntryVisitor.Entry entry) throws IOException {
         String name = entry.getName();
         String descriptorName = name.substring(SERVICES_DIR_PREFIX.length());
         String descriptorApiClass = periodsToSlashes(descriptorName)[0];
@@ -152,38 +299,29 @@ class RuntimeShadedJarCreator {
         }
 
         byte[] bytes = entry.getContent();
-        String content = new String(bytes, Charsets.UTF_8).replaceAll("(?m)^#.*", "").trim(); // clean up comments and new lines
+        String content = new String(bytes, StandardCharsets.UTF_8).replaceAll("(?m)^#.*", "").trim(); // clean up comments and new lines
 
         String[] descriptorImplClasses = periodsToSlashes(separateLines(content));
         String[] relocatedImplClassNames = maybeRelocateResources(descriptorImplClasses);
-        if (relocatedImplClassNames.length == 0) {
-            relocatedImplClassNames = descriptorImplClasses;
-        }
-
         String serviceType = slashesToPeriods(relocatedApiClassName)[0];
         String[] serviceProviders = slashesToPeriods(relocatedImplClassNames);
 
-        if (!services.containsKey(serviceType)) {
-            services.put(serviceType, Lists.newArrayList(serviceProviders));
-        } else {
-            List<String> providers = services.get(serviceType);
-            providers.addAll(asList(serviceProviders));
-        }
+        inputFile.addServiceProviders(serviceType, asList(serviceProviders));
     }
 
-    private String[] slashesToPeriods(String... slashClassNames) {
+    private String[] slashesToPeriods(@Nullable String... slashClassNames) {
         return Arrays.stream(slashClassNames).filter(Objects::nonNull)
             .map(clsName -> clsName.replace('/', '.')).map(String::trim)
             .toArray(String[]::new);
     }
 
-    private String[] periodsToSlashes(String... periodClassNames) {
+    private String[] periodsToSlashes(@Nullable String... periodClassNames) {
         return Arrays.stream(periodClassNames).filter(Objects::nonNull)
             .map(clsName -> clsName.replace('.', '/'))
             .toArray(String[]::new);
     }
 
-    private void processResource(ClasspathBuilder.EntryBuilder builder, ClasspathEntryVisitor.Entry entry) throws IOException {
+    private void processResource(InputFile builder, ClasspathEntryVisitor.Entry entry) throws IOException {
         String name = entry.getName();
         byte[] resource = entry.getContent();
 
@@ -203,7 +341,7 @@ class RuntimeShadedJarCreator {
         }
     }
 
-    private void processClassFile(ClasspathBuilder.EntryBuilder builder, ClasspathEntryVisitor.Entry entry) throws IOException {
+    private void processClassFile(InputFile builder, ClasspathEntryVisitor.Entry entry) throws IOException {
         String name = entry.getName();
         String className = name.substring(0, name.length() - ".class".length());
         if (isModuleInfoClass(className)) {
@@ -235,11 +373,11 @@ class RuntimeShadedJarCreator {
 
     private static class ShadingClassRemapper extends ClassRemapper {
         final Map<String, String> remappedClassLiterals;
-        private final ImplementationDependencyRelocator remapper;
+        private final ImplementationDependencyRelocator dependencyRelocator;
 
-        public ShadingClassRemapper(ClassWriter classWriter, ImplementationDependencyRelocator remapper) {
-            super(classWriter, remapper);
-            this.remapper = remapper;
+        public ShadingClassRemapper(ClassWriter classWriter, ImplementationDependencyRelocator dependencyRelocator) {
+            super(classWriter, dependencyRelocator);
+            this.dependencyRelocator = dependencyRelocator;
             remappedClassLiterals = new HashMap<>();
         }
 
@@ -247,7 +385,7 @@ class RuntimeShadedJarCreator {
         public FieldVisitor visitField(int access, String name, String desc, String signature, Object value) {
             ImplementationDependencyRelocator.ClassLiteralRemapping remapping = null;
             if (CLASS_DESC.equals(desc)) {
-                remapping = remapper.maybeRemap(name);
+                remapping = dependencyRelocator.maybeRemap(name);
                 if (remapping != null) {
                     remappedClassLiterals.put(remapping.getLiteral(), remapping.getLiteralReplacement().replace("/", "."));
                 }
@@ -264,11 +402,11 @@ class RuntimeShadedJarCreator {
                         String literal = remappedClassLiterals.get(cst);
                         if (literal == null) {
                             // tries to relocate literals in the form of foo/bar/Bar
-                            literal = remapper.maybeRelocateResource((String) cst);
+                            literal = dependencyRelocator.maybeRelocateResource((String) cst);
                         }
                         if (literal == null) {
                             // tries to relocate literals in the form of foo.bar.Bar
-                            literal = remapper.maybeRelocateResource(((String) cst).replace('.', '/'));
+                            literal = dependencyRelocator.maybeRelocateResource(((String) cst).replace('.', '/'));
                             if (literal != null) {
                                 literal = literal.replace("/", ".");
                             }
@@ -282,7 +420,7 @@ class RuntimeShadedJarCreator {
                 @Override
                 public void visitFieldInsn(int opcode, String owner, String name, String desc) {
                     if ((opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC) && CLASS_DESC.equals(desc)) {
-                        ImplementationDependencyRelocator.ClassLiteralRemapping remapping = remapper.maybeRemap(name);
+                        ImplementationDependencyRelocator.ClassLiteralRemapping remapping = dependencyRelocator.maybeRemap(name);
                         if (remapping != null) {
                             super.visitFieldInsn(opcode, owner, remapping.getFieldNameReplacement(), desc);
                             return;
@@ -294,15 +432,21 @@ class RuntimeShadedJarCreator {
         }
     }
 
-    private String[] maybeRelocateResources(String... resources) {
+    private String[] maybeRelocateResources(@Nullable String... resources) {
         return Arrays.stream(resources)
             .filter(Objects::nonNull)
-            .map(remapper::maybeRelocateResource)
-            .filter(Objects::nonNull)
+            .map(resource -> {
+                String remapped = remapper.maybeRelocateResource(resource);
+                if (remapped == null) {
+                    return resource; // This resource was not relocated. Use the original name.
+                }
+                return remapped;
+            })
             .toArray(String[]::new);
     }
 
     private String[] separateLines(String entry) {
         return entry.split("\\n");
     }
+
 }

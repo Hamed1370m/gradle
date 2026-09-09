@@ -17,40 +17,54 @@
 package org.gradle.integtests
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.StableConfigurationCacheDeprecations
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
+class ClosureScopeIntegrationTest extends AbstractIntegrationSpec implements StableConfigurationCacheDeprecations {
 
-class ClosureScopeIntegrationTest extends AbstractIntegrationSpec {
-
-    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
+    @ToBeFixedForIsolatedProjects(because = "cross-project configuration / project loading")
     def "check scope when closure in ext"() {
         given:
-        file('closure_in_ext.gradle') << """
-allprojects {
-    ext.someClosure = {
-        project.name
-    }
+        buildFile("closure_in_ext.gradle", """
+            abstract class TaskWithClosure extends DefaultTask {
+                @Input
+                abstract Property<String> getClosure()
+                @Input
+                abstract Property<String> getClosureProvider()
+                @Input
+                abstract Property<String> getProjectName()
 
-    task someTask {
-        doLast {
-            println someClosure()
-            assert someClosure() == project.name
-        }
-    }
-}
-"""
-        buildFile << """
-apply from:'closure_in_ext.gradle'
-"""
+                @TaskAction
+                void print() {
+                    println("Closure: \${getClosure().get()} Provider: \${getClosureProvider().get()} - Configuration: \${getProjectName().get()}")
+                }
+            }
+
+            allprojects {
+                ext.someClosure = {
+                    project.name
+                }
+
+                tasks.register("someTask", TaskWithClosure) {
+                    closure.set(someClosure())
+                    closureProvider.set(provider(someClosure))
+                    projectName.set(project.name)
+                }
+            }
+        """)
+        buildFile """
+            apply from:'closure_in_ext.gradle'
+        """
         createDirs("sampleSub")
-        settingsFile << """
-rootProject.name = "rootProject"
-include 'sampleSub'
-"""
+        settingsFile """
+            rootProject.name = "rootProject"
+            include 'sampleSub'
+        """
         when:
-        succeeds(":sampleSub:someTask")
+        succeeds("someTask")
 
         then:
-        noExceptionThrown()
+        outputContains("Closure: sampleSub Provider: sampleSub - Configuration: sampleSub")
+        outputContains("Closure: rootProject Provider: rootProject - Configuration: rootProject")
     }
 }

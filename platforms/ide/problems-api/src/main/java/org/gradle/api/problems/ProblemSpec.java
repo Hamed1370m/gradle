@@ -16,6 +16,7 @@
 
 package org.gradle.api.problems;
 
+import org.gradle.api.Action;
 import org.gradle.api.Incubating;
 
 /**
@@ -26,36 +27,10 @@ import org.gradle.api.Incubating;
  */
 @Incubating
 public interface ProblemSpec {
-
-    /**
-     * Defines simple identification for this problem.
-     * <p>
-     * It is a mandatory property to configure when emitting a problem with {@link ProblemReporter}..
-     * <p>
-     * Calling this method will set the reported problem group to {@link SharedProblemGroup#generic()}
-     *
-     * @param name the name of the problem. As a convention kebab-case-formatting should be used.
-     * @param displayName a human-readable representation of the problem, free of any contextual information.
-     * @return this
-     * @since 8.8
-     */
-    ProblemSpec id(String name, String displayName);
-
-    /**
-     * Defines simple identification for this problem.
-     * <p>
-     * It is a mandatory property to configure when emitting a problem with {@link ProblemReporter}.
-     *
-     * @param name the name of the problem. As a convention kebab-case-formatting should be used.
-     * @param displayName a human-readable representation of the problem, free of any contextual information.
-     * @param parent the container problem group.
-     * @return this
-     * @since 8.8
-     */
-    ProblemSpec id(String name, String displayName, ProblemGroup parent);
-
     /**
      * Declares a short, but context-dependent message for this problem.
+     * <p>
+     * The label is expected to span a single line. Any newline characters will be removed.
      *
      * @param contextualLabel the short message
      * @return this
@@ -125,7 +100,7 @@ public interface ProblemSpec {
     ProblemSpec offsetInFileLocation(String path, int offset, int length);
 
     /**
-     * Declares that this problem should automatically collect the location information based on the current stack trace.
+     * Declares that this problem is at the same place where it's reported. The stack trace will be used to determine the location.
      *
      * @return this
      * @since 8.6
@@ -133,7 +108,10 @@ public interface ProblemSpec {
     ProblemSpec stackLocation();
 
     /**
-     * The long description of this problem.
+      Declares a long description detailing the problem.
+     * <p>
+     * Details can elaborate on the problem, and provide more information about the problem.
+     * They can be multiple lines long, but should not detail solutions; for that, use {@link #solution(String)}.
      *
      * @param details the details
      * @return this
@@ -142,7 +120,7 @@ public interface ProblemSpec {
     ProblemSpec details(String details);
 
     /**
-     * A description of how to solve this problem.
+     * Declares solutions and advice that contain context-sensitive data, e.g. the message contains references to variables, locations, etc.
      *
      * @param solution the solution.
      * @return this
@@ -151,7 +129,40 @@ public interface ProblemSpec {
     ProblemSpec solution(String solution);
 
     /**
-     * The exception causing this problem.
+     * Declares additional data attached to the problem.
+     *
+     * @param type The type of the additional data.
+     * This can be any type that implements {@link AdditionalData} including {@code abstract} classes and interfaces.
+     * This type will be instantiated and provided as an argument for the {@code Action} passed as the second argument.
+     * <p>
+     * The type can have the following properties:
+     * <ul>
+     *     <li>getters and setters for collections, simple types and other types that itself follow these restrictions
+     *         <ul>
+     *            <li>simple types: {@link String}, {@link Integer}, {@link Boolean}, etc.</li>
+     *            <li>collections: {@link java.util.List}, {@link java.util.Set}, {@link java.util.Map}</li>
+     *            <li>primitives: {@code int}, {@code boolean}, etc.</li>
+     *         </ul>
+     *     </li>
+     *     <li>Provider API types
+     *       <ul>
+     *           <li>{@link org.gradle.api.provider.Property}</li>
+     *           <li>{@link org.gradle.api.provider.ListProperty}</li>
+     *           <li>{@link org.gradle.api.provider.SetProperty}</li>
+     *           <li>{@link org.gradle.api.provider.MapProperty}</li>
+     *       </ul>
+     *     </li>
+     * </ul>
+     *
+     * @param config The configuration action for the additional data.
+     *
+     * @return this
+     * @since 8.13
+     */
+    <T extends AdditionalData> ProblemSpec additionalData(Class<T> type, Action<? super T> config);
+
+    /**
+     * Declares the exception causing this problem.
      *
      * @param t the exception.
      * @return this
@@ -165,6 +176,8 @@ public interface ProblemSpec {
      * @param severity the severity
      * @return this
      * @since 8.6
+     * @deprecated Severity is now determined automatically: use {@link ProblemReporter#report} for warnings and {@link ProblemReporter#throwing} for errors.
      */
+    @Deprecated
     ProblemSpec severity(Severity severity);
 }

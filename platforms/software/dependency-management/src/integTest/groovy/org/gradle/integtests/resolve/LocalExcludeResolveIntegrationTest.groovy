@@ -60,7 +60,7 @@ class LocalExcludeResolveIntegrationTest extends AbstractDependencyResolutionTes
 
         and:
         buildFile << """
-repositories { maven { url "${mavenRepo().uri}" } }
+repositories { maven { url = "${mavenRepo().uri}" } }
 configurations { compile }
 dependencies {
     compile('${testModule.groupId}:${testModule.artifactId}:${testModule.version}') {
@@ -102,7 +102,7 @@ task check {
 
         buildFile << """
 repositories {
-    maven { url '${repo.uri}' }
+    maven { url = '${repo.uri}' }
 }
 configurations {
     excluded {
@@ -130,52 +130,6 @@ task test {
         succeeds 'test'
     }
 
-
-    /**
-     * Dependency graph:
-     *
-     * org.gradle:test:1.0
-     * +--- org.foo:foo:2.0
-     *      \--- org.bar:bar:3.0
-     */
-    @Issue("gradle/gradle#951")
-    def "can declare fine-grained transitive dependency #condition"() {
-        given:
-        def testModule = mavenRepo().module('org.gradle', 'test', '1.0')
-        def fooModule = mavenRepo().module('org.foo', 'foo', '2.0')
-        def barModule = mavenRepo().module('org.bar', 'bar', '3.0')
-        barModule.publish()
-        fooModule.dependsOn(barModule).publish()
-        testModule.dependsOn(fooModule).publish()
-
-        buildFile << """
-repositories { maven { url "${mavenRepo().uri}" } }
-
-configurations { compile }
-
-dependencies {
-    compile module('${testModule.groupId}:${testModule.artifactId}:${testModule.version}') {
-        dependency('${fooModule.groupId}:${fooModule.artifactId}:${fooModule.version}') ${includeBar ? "" : "{ exclude module: '${barModule.artifactId}'}"}
-    }
-}
-
-task check {
-    def files = configurations.compile
-    doLast {
-        assert files.collect { it.name } == [${expectedJars.collect { "'${it}.jar'" }.join(", ")}]
-    }
-}
-"""
-        expect:
-        executer.expectDocumentedDeprecationWarning("Declaring client module dependencies has been deprecated. This is scheduled to be removed in Gradle 9.0. Please use component metadata rules instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#declaring_client_module_dependencies")
-        succeeds "check"
-
-        where:
-        condition                | includeBar | expectedJars
-        'include bar dependency' | true       | ['test-1.0', 'foo-2.0', 'bar-3.0']
-        'exclude bar dependency' | false      | ['test-1.0', 'foo-2.0']
-    }
-
     def "configuration excludes are supported for project dependency"() {
         given:
         mavenRepo.module('org.gradle.test', 'direct', '1.0').publish()
@@ -184,40 +138,18 @@ task check {
             .dependsOn('org.gradle.test', 'transitive', '1.0')
             .publish()
 
-        createDirs("a", "b", "c")
         settingsFile << """
             rootProject.name = 'root'
-            include 'a', 'b', 'c'
-"""
+            include 'a'
+            include 'b'
+            dependencyResolutionManagement {
+                ${mavenTestRepository()}
+            }
+        """
+
         buildFile << """
-            allprojects {
-                apply plugin: 'java'
-                repositories { maven { url "${mavenRepo.uri}" } }
-            }
-
-            project(':a') {
-                configurations {
-                    implementation {
-                        exclude module: 'direct'
-                        exclude module: 'transitive'
-                    }
-                    other {
-                        exclude module: 'external'
-                    }
-                }
-                dependencies {
-                    implementation 'org.gradle.test:external:1.0'
-                    implementation 'org.gradle.test:direct:1.0'
-                    implementation project(':b')
-                }
-            }
-
-            project(':b') {
-                configurations {
-                    implementation {
-                        exclude module: 'external' // Only applies to transitive dependencies of 'b'
-                    }
-                }
+            plugins {
+                id("java-library")
             }
 
             dependencies {
@@ -234,7 +166,40 @@ task check {
                     assert runtimeClasspath*.name == ['a.jar', 'external-1.0.jar', 'b.jar']
                 }
             }
-"""
+        """
+
+        file("a/build.gradle") << """
+            plugins {
+                id("java-library")
+            }
+
+            configurations {
+                implementation {
+                    exclude module: 'direct'
+                    exclude module: 'transitive'
+                }
+                other {
+                    exclude module: 'external'
+                }
+            }
+            dependencies {
+                implementation 'org.gradle.test:external:1.0'
+                implementation 'org.gradle.test:direct:1.0'
+                implementation project(':b')
+            }
+        """
+
+        file("b/build.gradle") << """
+            plugins {
+                id("java-library")
+            }
+
+            configurations {
+                implementation {
+                    exclude module: 'external' // Only applies to transitive dependencies of 'b'
+                }
+            }
+        """
 
         expect:
         succeeds ":checkDeps"
@@ -279,7 +244,7 @@ task check {
         when:
         buildFile << """
 repositories {
-    maven { url '${mavenRepo.uri}' }
+    maven { url = '${mavenRepo.uri}' }
 }
 configurations {
     excluded {

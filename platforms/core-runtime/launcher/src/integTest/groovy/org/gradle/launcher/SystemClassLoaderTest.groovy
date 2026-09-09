@@ -19,7 +19,7 @@ import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.internal.instrumentation.agent.AgentUtils
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 
 /**
  * Verifies that Gradle doesn't pollute the system class loader.
@@ -41,7 +41,7 @@ class SystemClassLoaderTest extends AbstractIntegrationSpec {
         for a class it doesn't have, it simply returns null. I've not been able to find any official documentation
         explaining why this is.
     */
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor)
     def "daemon bootstrap classpath is bare bones"() {
         given:
         buildFile << """
@@ -56,7 +56,7 @@ class SystemClassLoaderTest extends AbstractIntegrationSpec {
 
                     try {
                         def clazz = systemLoader.loadClass(nonLauncherOrCoreClass)
-                        assert clazz == null : "ClassNotFoundException should have been thrown trying to load a “\${nonLauncherOrCoreClass}” class from the system classloader as its not a launcher or core class (loaded class: \$clazz)"
+                        assert clazz == null : "ClassNotFoundException should have been thrown trying to load a '\${nonLauncherOrCoreClass}' class from the system classloader as its not a launcher or core class (loaded class: \$clazz)"
                     } catch (ClassNotFoundException e) {
                         // expected
                     }

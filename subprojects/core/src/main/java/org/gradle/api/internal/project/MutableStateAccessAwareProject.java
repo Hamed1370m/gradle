@@ -64,6 +64,7 @@ import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.resources.ResourceHandler;
+import org.gradle.api.services.ProjectService;
 import org.gradle.api.tasks.WorkResult;
 import org.gradle.configuration.ConfigurationTargetIdentifier;
 import org.gradle.configuration.project.ProjectConfigurationActionContainer;
@@ -72,28 +73,23 @@ import org.gradle.internal.Cast;
 import org.gradle.internal.accesscontrol.AllowUsingApiForExternalUse;
 import org.gradle.internal.logging.StandardOutputCapture;
 import org.gradle.internal.metaobject.DynamicObject;
-import org.gradle.internal.model.ModelContainer;
+import org.gradle.internal.metaobject.HierarchicalDynamicObject;
 import org.gradle.internal.model.RuleBasedPluginListener;
 import org.gradle.internal.service.ServiceRegistry;
-import org.gradle.internal.service.scopes.ServiceRegistryFactory;
 import org.gradle.model.internal.registry.ModelRegistry;
 import org.gradle.normalization.InputNormalizationHandler;
 import org.gradle.normalization.internal.InputNormalizationHandlerInternal;
-import org.gradle.process.ExecResult;
-import org.gradle.process.ExecSpec;
-import org.gradle.process.JavaExecSpec;
 import org.gradle.util.Path;
 import org.gradle.util.internal.ConfigureUtil;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import java.io.File;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Wrapper for {@link ProjectInternal}, that declares some API methods as access to a mutable state of the project.
@@ -112,19 +108,18 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
 
     public static <T extends MutableStateAccessAwareProject> ProjectInternal wrap(
         ProjectInternal target,
-        ProjectInternal referrer,
-        Function<ProjectInternal, T> wrapper
+        ProjectIdentity referrer,
+        Supplier<T> wrapperSupplier
     ) {
-        return target == referrer
-            ? target
-            : wrapper.apply(target);
+        return target.getProjectIdentity().equals(referrer) ? target : wrapperSupplier.get();
     }
 
     protected final ProjectInternal delegate;
-    protected final ProjectInternal referrer;
+    protected final ProjectIdentity referrer;
     private final DynamicObject dynamicObject;
 
-    protected MutableStateAccessAwareProject(ProjectInternal delegate, ProjectInternal referrer) {
+    @SuppressWarnings("this-escape")
+    protected MutableStateAccessAwareProject(ProjectInternal delegate, ProjectIdentity referrer) {
         this.delegate = delegate;
         this.referrer = referrer;
         this.dynamicObject = new HasPropertyMissingDynamicObject(this, Project.class, this::hasPropertyMissing);
@@ -138,14 +133,17 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    @SuppressWarnings({"EqualsDoesntCheckParameterClass", "EqualsWhichDoesntCheckParameterClass"})
-    public final boolean equals(Object other) {
-        return delegate.equals(other);
+    public final boolean equals(@Nullable Object other) {
+        if (!(other instanceof ProjectInternal)) {
+            return false;
+        }
+        ProjectInternal otherProject = (ProjectInternal) other;
+        return getProjectIdentity().equals(otherProject.getProjectIdentity());
     }
 
     @Override
     public final int hashCode() {
-        return delegate.hashCode();
+        return getProjectIdentity().hashCode();
     }
 
     @Nullable
@@ -245,7 +243,7 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
 
     @Nullable
     @Override
-    public ProjectInternal getParent(ProjectInternal referrer) {
+    public ProjectInternal getParent(ProjectIdentity referrer) {
         return delegate.getParent(referrer);
     }
 
@@ -255,7 +253,6 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    @Nonnull
     public ProjectIdentity getProjectIdentity() {
         return delegate.getProjectIdentity();
     }
@@ -308,7 +305,7 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    public ProjectInternal getRootProject(ProjectInternal referrer) {
+    public ProjectInternal getRootProject(ProjectIdentity referrer) {
         return delegate.getRootProject(referrer);
     }
 
@@ -341,7 +338,7 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    public void subprojects(ProjectInternal referrer, Action<? super Project> configureAction) {
+    public void subprojects(ProjectIdentity referrer, Action<? super Project> configureAction) {
         delegate.subprojects(referrer, configureAction);
     }
 
@@ -366,7 +363,7 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    public void allprojects(ProjectInternal referrer, Action<? super Project> configureAction) {
+    public void allprojects(ProjectIdentity referrer, Action<? super Project> configureAction) {
         delegate.allprojects(referrer, configureAction);
     }
 
@@ -386,12 +383,12 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    public ProjectInternal project(ProjectInternal referrer, String path, Action<? super Project> configureAction) {
+    public ProjectInternal project(ProjectIdentity referrer, String path, Action<? super Project> configureAction) {
         return delegate.project(referrer, path, configureAction);
     }
 
     @Override
-    public ProjectInternal project(ProjectInternal referrer, String path) throws UnknownProjectException {
+    public ProjectInternal project(ProjectIdentity referrer, String path) throws UnknownProjectException {
         return delegate.project(referrer, path);
     }
 
@@ -402,7 +399,7 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    public Set<? extends ProjectInternal> getSubprojects(ProjectInternal referrer) {
+    public Set<? extends ProjectInternal> getSubprojects(ProjectIdentity referrer) {
         return delegate.getSubprojects(referrer);
     }
 
@@ -413,7 +410,7 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    public Map<String, Project> getChildProjects(ProjectInternal referrer) {
+    public Map<String, Project> getChildProjects(ProjectIdentity referrer) {
         return delegate.getChildProjects(referrer);
     }
 
@@ -423,7 +420,7 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    public Set<? extends ProjectInternal> getAllprojects(ProjectInternal referrer) {
+    public Set<? extends ProjectInternal> getAllprojects(ProjectIdentity referrer) {
         return delegate.getAllprojects(referrer);
     }
 
@@ -432,14 +429,9 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
         return Cast.uncheckedCast(delegate.getSubprojects(referrer));
     }
 
-    @Override
-    public Map<String, Project> getChildProjectsUnchecked() {
-        return delegate.getChildProjectsUnchecked();
-    }
-
     @Nullable
     @Override
-    public ProjectInternal findProject(ProjectInternal referrer, String path) {
+    public ProjectInternal findProject(ProjectIdentity referrer, String path) {
         return delegate.findProject(referrer, path);
     }
 
@@ -473,10 +465,16 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
         return delegate.hasProperty(propertyName);
     }
 
+    @SuppressWarnings("deprecation")
     @Override
-    public Map<String, ?> getProperties() {
+    public Map<String, ? extends @Nullable Object> getProperties() {
         onMutableStateAccess("properties");
         return delegate.getProperties();
+    }
+
+    @Override
+    public Map<String, ? extends @Nullable Object> collectPropertiesInternal() {
+        return delegate.collectPropertiesInternal();
     }
 
     @Nullable
@@ -521,30 +519,35 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
         return delegate.getTasksByName(name, recursive);
     }
 
+    @Deprecated
     @Override
     public Task task(String name) throws InvalidUserDataException {
         onMutableStateAccess("task");
         return delegate.task(name);
     }
 
+    @Deprecated
     @Override
     public Task task(Map<String, ?> args, String name) throws InvalidUserDataException {
         onMutableStateAccess("task");
         return delegate.task(args, name);
     }
 
+    @Deprecated
     @Override
     public Task task(Map<String, ?> args, String name, Closure configureClosure) {
         onMutableStateAccess("task");
         return delegate.task(args, name, configureClosure);
     }
 
+    @Deprecated
     @Override
     public Task task(String name, Closure configureClosure) {
         onMutableStateAccess("task");
         return delegate.task(name, configureClosure);
     }
 
+    @Deprecated
     @Override
     public Task task(String name, Action<? super Task> configureAction) {
         onMutableStateAccess("task");
@@ -648,27 +651,12 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    @Deprecated
-    public ExecResult javaexec(Closure closure) {
-        return delegate.javaexec(closure);
-    }
-
-    @Override
-    @Deprecated
-    public ExecResult javaexec(Action<? super JavaExecSpec> action) {
-        return delegate.javaexec(action);
-    }
-
-    @Override
-    @Deprecated
-    public ExecResult exec(Closure closure) {
-        return delegate.exec(closure);
-    }
-
-    @Override
-    @Deprecated
-    public ExecResult exec(Action<? super ExecSpec> action) {
-        return delegate.exec(action);
+    public <T extends ProjectService> T service(Class<T> serviceType) {
+        if (ProjectLayout.class.equals(serviceType)) {
+            // parity with getLayout()
+            onMutableStateAccess("layout");
+        }
+        return delegate.service(serviceType);
     }
 
     @Override
@@ -689,16 +677,6 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     @Override
     public String getPath() {
         return delegate.getPath();
-    }
-
-    @Override
-    public Path identityPath(String name) {
-        return delegate.identityPath(name);
-    }
-
-    @Override
-    public Path projectPath(String name) {
-        return delegate.projectPath(name);
     }
 
     @Override
@@ -728,12 +706,6 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     public AntBuilder ant(Action<? super AntBuilder> configureAction) {
         onMutableStateAccess("ant");
         return delegate.ant(configureAction);
-    }
-
-    @Nullable
-    @Override
-    public ProjectIdentifier getParentIdentifier() {
-        return delegate.getParentIdentifier();
     }
 
     @Override
@@ -772,7 +744,7 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    public DynamicObject getInheritedScope() {
+    public HierarchicalDynamicObject getInheritedScope() {
         return delegate.getInheritedScope();
     }
 
@@ -864,12 +836,6 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    public ServiceRegistryFactory getServiceRegistryFactory() {
-        onMutableStateAccess("serviceRegistryFactory");
-        return delegate.getServiceRegistryFactory();
-    }
-
-    @Override
     public StandardOutputCapture getStandardOutputCapture() {
         return delegate.getStandardOutputCapture();
     }
@@ -881,16 +847,19 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
+    @Deprecated
     public <T> NamedDomainObjectContainer<T> container(Class<T> type) {
         return delegate.container(type);
     }
 
     @Override
+    @Deprecated
     public <T> NamedDomainObjectContainer<T> container(Class<T> type, NamedDomainObjectFactory<T> factory) {
         return delegate.container(type, factory);
     }
 
     @Override
+    @Deprecated
     public <T> NamedDomainObjectContainer<T> container(Class<T> type, Closure factoryClosure) {
         return delegate.container(type, factoryClosure);
     }
@@ -947,11 +916,6 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     }
 
     @Override
-    public boolean isScript() {
-        return delegate.isScript();
-    }
-
-    @Override
     public void addDeferredConfiguration(Runnable configuration) {
         onMutableStateAccess("deferredConfiguration");
         delegate.addDeferredConfiguration(configuration);
@@ -961,27 +925,6 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     public void fireDeferredConfiguration() {
         onMutableStateAccess("deferredConfiguration");
         delegate.fireDeferredConfiguration();
-    }
-
-    @Override
-    public ModelContainer<?> getModel() {
-        onMutableStateAccess("model");
-        return delegate.getModel();
-    }
-
-    @Override
-    public Path getBuildPath() {
-        return delegate.getBuildPath();
-    }
-
-    @Override
-    public boolean isRootScript() {
-        return delegate.isRootScript();
-    }
-
-    @Override
-    public boolean isPluginContext() {
-        return delegate.isPluginContext();
     }
 
     @Override
@@ -1106,17 +1049,6 @@ public abstract class MutableStateAccessAwareProject implements ProjectInternal,
     public void artifacts(Action<? super ArtifactHandler> configureAction) {
         onMutableStateAccess("artifacts");
         delegate.artifacts(configureAction);
-    }
-
-    /**
-     * @deprecated the concept of conventions is deprecated. Use extensions instead
-     */
-    @Override
-    @Deprecated
-    @SuppressWarnings("deprecation")
-    public org.gradle.api.plugins.Convention getConvention() {
-        onMutableStateAccess("convention");
-        return delegate.getConvention();
     }
 
     @Override

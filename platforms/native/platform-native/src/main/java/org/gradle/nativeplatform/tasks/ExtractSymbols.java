@@ -18,7 +18,6 @@ package org.gradle.nativeplatform.tasks;
 
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.RegularFileProperty;
-import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.Internal;
@@ -49,36 +48,21 @@ import org.gradle.work.DisableCachingByDefault;
  */
 @DisableCachingByDefault(because = "Not made cacheable, yet")
 public abstract class ExtractSymbols extends DefaultTask {
-    private final RegularFileProperty binaryFile;
-    private final RegularFileProperty symbolFile;
-    private final Property<NativePlatform> targetPlatform;
-    private final Property<NativeToolChain> toolChain;
-
-    public ExtractSymbols() {
-        ObjectFactory objectFactory = getProject().getObjects();
-
-        this.binaryFile = objectFactory.fileProperty();
-        this.symbolFile = objectFactory.fileProperty();
-        this.targetPlatform = objectFactory.property(NativePlatform.class);
-        this.toolChain = objectFactory.property(NativeToolChain.class);
-    }
 
     /**
      * The file to extract debug symbols from.
+     * @since 4.5
      */
     @InputFile
     @PathSensitive(PathSensitivity.NONE)
-    public RegularFileProperty getBinaryFile() {
-        return binaryFile;
-    }
+    public abstract RegularFileProperty getBinaryFile();
 
     /**
      * The destination file to extract debug symbols into.
+     * @since 4.5
      */
     @OutputFile
-    public RegularFileProperty getSymbolFile() {
-        return symbolFile;
-    }
+    public abstract RegularFileProperty getSymbolFile();
 
     /**
      * The tool chain used for extracting symbols.
@@ -86,9 +70,7 @@ public abstract class ExtractSymbols extends DefaultTask {
      * @since 4.7
      */
     @Internal
-    public Property<NativeToolChain> getToolChain() {
-        return toolChain;
-    }
+    public abstract Property<NativeToolChain> getToolChain();
 
     /**
      * The platform for the binary.
@@ -96,19 +78,22 @@ public abstract class ExtractSymbols extends DefaultTask {
      * @since 4.7
      */
     @Nested
-    public Property<NativePlatform> getTargetPlatform() {
-        return targetPlatform;
-    }
+    public abstract Property<NativePlatform> getTargetPlatform();
 
     // TODO: Need to track version/implementation of symbol extraction tool.
 
+    /**
+     * Extract symbols.
+     *
+     * @since 4.5
+     */
     @TaskAction
     protected void extractSymbols() {
         BuildOperationLogger operationLogger = getServices().get(BuildOperationLoggerFactory.class).newOperationLogger(getName(), getTemporaryDir());
 
         SymbolExtractorSpec spec = new DefaultSymbolExtractorSpec();
-        spec.setBinaryFile(binaryFile.get().getAsFile());
-        spec.setSymbolFile(symbolFile.get().getAsFile());
+        spec.setBinaryFile(getBinaryFile().get().getAsFile());
+        spec.setSymbolFile(getSymbolFile().get().getAsFile());
         spec.setOperationLogger(operationLogger);
 
         Compiler<SymbolExtractorSpec> symbolExtractor = createCompiler();
@@ -118,7 +103,7 @@ public abstract class ExtractSymbols extends DefaultTask {
     }
 
     private Compiler<SymbolExtractorSpec> createCompiler() {
-        NativePlatformInternal targetPlatform = Cast.cast(NativePlatformInternal.class, this.targetPlatform.get());
+        NativePlatformInternal targetPlatform = Cast.cast(NativePlatformInternal.class, this.getTargetPlatform().get());
         NativeToolChainInternal toolChain = Cast.cast(NativeToolChainInternal.class, getToolChain().get());
         PlatformToolProvider toolProvider = toolChain.select(targetPlatform);
         return toolProvider.newCompiler(SymbolExtractorSpec.class);

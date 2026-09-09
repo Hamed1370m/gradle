@@ -20,7 +20,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.io.Files;
 import org.apache.commons.io.FilenameUtils;
 import org.gradle.api.GradleException;
-import org.gradle.api.UncheckedIOException;
 import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.file.FileTree;
 import org.gradle.api.internal.file.FileOperations;
@@ -37,13 +36,12 @@ import org.gradle.internal.os.OperatingSystem;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
 import org.gradle.jvm.toolchain.internal.InstallationLocation;
 import org.gradle.jvm.toolchain.internal.JdkCacheDirectory;
-import org.gradle.jvm.toolchain.internal.JvmInstallationMetadataMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.StandardCopyOption;
@@ -86,7 +84,15 @@ public class DefaultJdkCacheDirectory implements JdkCacheDirectory {
     // This is a prerequisite for atomic moves in most cases, which are used in the provisionFromArchive method
     private final GradleUserHomeTemporaryFileProvider temporaryFileProvider;
 
-    @Inject
+    /**
+     * Creates a new JDK cache directory manager.
+     *
+     * @param homeDirProvider provider for the Gradle user home directory information
+     * @param operations file operations
+     * @param lockManager lock manager
+     * @param detector JVM metadata detector, an instance of {@link org.gradle.internal.jvm.inspection.DefaultJvmMetadataDetector} should be passed to avoid logging of any kind
+     * @param temporaryFileProvider temporary file provider
+     */
     public DefaultJdkCacheDirectory(
         GradleUserHomeDirProvider homeDirProvider,
         FileOperations operations,

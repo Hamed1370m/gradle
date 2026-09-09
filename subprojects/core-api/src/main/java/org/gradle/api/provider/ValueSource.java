@@ -17,9 +17,10 @@
 package org.gradle.api.provider;
 
 import org.gradle.api.Action;
+import org.gradle.api.Describable;
 import org.gradle.api.file.RegularFile;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 
 /**
@@ -45,9 +46,9 @@ import javax.inject.Inject;
  * considered as an input to the work graph cache.
  * </p>
  * <p>
- * It is possible to have some Gradle services to be <a href="https://docs.gradle.org/current/userguide/service_injection.html#service_injection">injected</a>
+ * It is possible to have Gradle services <a href="https://docs.gradle.org/current/userguide/service_injection.html#service_injection">injected</a>
  * into the implementation, similar to tasks and plugins.
- * It can be done by adding a parameter to the constructor and annotating the
+ * This can be done by adding a parameter to the constructor and annotating the
  * constructor with the {@code @Inject} annotation:
  * <pre>
  * public abstract class MyValueSource implements ValueSource&lt;String, ValueSourceParameters.None&gt; {
@@ -93,6 +94,29 @@ import javax.inject.Inject;
  * also allowed.
  * </p>
  *
+ * <p>
+ * A {@code ValueSource} implementation can also implement {@link Describable}
+ * to provide a human-readable display name. Gradle uses this display name when reporting configuration
+ * cache invalidation reasons. Without it, the invalidation message uses the implementation class name,
+ * which may not be informative to users. For example:
+ * <pre class='autoTested'>
+ * import org.gradle.api.provider.ValueSourceParameters
+ *
+ * public abstract class GitCommitValueSource
+ *         implements ValueSource&lt;String, ValueSourceParameters.None&gt;, Describable {
+ *
+ *     {@literal @}Override
+ *     public String getDisplayName() {
+ *         return "current Git commit ID";
+ *     }
+ *
+ *     {@literal @}Override
+ *     public String obtain() {
+ *         return null;
+ *     }
+ * }
+ * </pre>
+ *
  * Implementations of ValueSource are subject to the following constraint:
  * <ul>
  *     <li>Do not implement {@link #getParameters()} in your class, the method will be implemented by Gradle.</li>
@@ -100,6 +124,7 @@ import javax.inject.Inject;
  *
  * @param <T> The type of value obtained from this source.
  * @param <P> The source specific parameter type.
+ * @see org.gradle.api.Describable
  * @see ProviderFactory#environmentVariable(String)
  * @see ProviderFactory#systemProperty(String)
  * @see ProviderFactory#fileContents(RegularFile)
@@ -128,6 +153,7 @@ public interface ValueSource<T, P extends ValueSourceParameters> {
      * <p>This method is only called if the provider value is requested and only once in that case.</p>
      *
      * @return the value obtained or {@code null} if the value is not present.
+     * @since 6.1
      */
     @Nullable
     T obtain();

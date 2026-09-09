@@ -76,9 +76,9 @@ class PrecompiledScriptPluginVersionCatalogIntegrationTest : AbstractKotlinInteg
         )
 
         buildAndFail(":help").apply {
-            assertHasFailure("Execution failed for task ':buildSrc:compileKotlin'.") {
-                assertHasErrorOutput("buildSrc/src/main/kotlin/plugin-without-plugins.gradle.kts:1:9 Unresolved reference: libs")
-                assertHasErrorOutput("buildSrc/src/main/kotlin/plugin-with-plugins.gradle.kts:3:21 Unresolved reference: libs")
+            assertHasFailure("Execution failed for task ':buildSrc:compileKotlin' (registered by plugin class 'org.jetbrains.kotlin.gradle.plugin.KotlinPluginWrapper').") {
+                assertOutputContainsPattern("""Unresolved reference 'libs'\.\s+Location: .*?plugin-without-plugins\.gradle\.kts:1""")
+                assertOutputContainsPattern("""Unresolved reference 'libs'\.\s+Location: .*?plugin-with-plugins\.gradle\.kts:3""")
             }
         }
     }

@@ -15,6 +15,7 @@
  */
 package org.gradle.wrapper;
 
+import org.jspecify.annotations.Nullable;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FilenameFilter;
@@ -28,6 +29,8 @@ public class BootstrapMainStarter {
         if (gradleJar == null) {
             throw new RuntimeException(String.format("Could not locate the Gradle launcher JAR in Gradle distribution '%s'.", gradleHome));
         }
+        // The URLClassloader will also include the jars listed in the launcher jar's
+        // Class-Path manifest attributes as candidates for loading classes.
         URLClassLoader contextClassLoader = new URLClassLoader(new URL[]{gradleJar.toURI().toURL()}, ClassLoader.getSystemClassLoader().getParent());
         Thread.currentThread().setContextClassLoader(contextClassLoader);
         Class<?> mainClass = contextClassLoader.loadClass("org.gradle.launcher.GradleMain");
@@ -36,6 +39,7 @@ public class BootstrapMainStarter {
         ((Closeable) contextClassLoader).close();
     }
 
+    @Nullable
     static File findLauncherJar(File gradleHome) {
         File libDirectory = new File(gradleHome, "lib");
         if (libDirectory.exists() && libDirectory.isDirectory()) {

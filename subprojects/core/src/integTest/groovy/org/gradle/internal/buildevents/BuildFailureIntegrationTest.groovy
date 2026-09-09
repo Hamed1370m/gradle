@@ -17,8 +17,12 @@
 package org.gradle.internal.buildevents
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
 
 class BuildFailureIntegrationTest extends AbstractIntegrationSpec {
+
+    @Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = "explicitly requests a daemon")
     def "still prints errors when exception misbehaves"() {
         // When running in-process, the NPE propagates out of the test fixtures
         executer.requireIsolatedDaemons()

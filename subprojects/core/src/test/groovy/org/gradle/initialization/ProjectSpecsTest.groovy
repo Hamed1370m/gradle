@@ -17,6 +17,7 @@
 package org.gradle.initialization
 
 import org.gradle.StartParameter
+import org.gradle.api.internal.StartParameterInternal
 import org.gradle.api.internal.SettingsInternal
 import spock.lang.Specification
 
@@ -36,20 +37,9 @@ class ProjectSpecsTest extends Specification {
 
     }
 
-    def "build file based spec"() {
-        given:
-        StartParameter parameter = new StartParameter()
-        parameter.setBuildFile(buildFile)
-        parameter.setProjectDir(projectDir)
-        parameter.setCurrentDir(currentDir)
-
-        expect:
-        ProjectSpecs.forStartParameter(parameter, Stub(SettingsInternal)).class == BuildFileProjectSpec
-    }
-
     def "project dir based spec"() {
         given:
-        StartParameter parameter = new StartParameter()
+        StartParameter parameter = new StartParameterInternal()
         parameter.setProjectDir(projectDir)
         parameter.setCurrentDir(currentDir)
 
@@ -59,7 +49,7 @@ class ProjectSpecsTest extends Specification {
 
     def "current dir based spec"() {
         given:
-        StartParameter parameter = new StartParameter()
+        StartParameter parameter = new StartParameterInternal()
         parameter.setCurrentDir(currentDir)
 
         expect:

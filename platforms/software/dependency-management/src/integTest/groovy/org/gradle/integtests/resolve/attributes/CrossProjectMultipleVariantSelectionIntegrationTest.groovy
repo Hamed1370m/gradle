@@ -22,19 +22,12 @@ import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 
 class CrossProjectMultipleVariantSelectionIntegrationTest extends AbstractDependencyResolutionTest {
 
-    ResolveTestFixture resolve
+    ResolveTestFixture resolve = new ResolveTestFixture(testDirectory)
 
     def setup() {
-        buildFile << """
-            allprojects {
-                apply plugin: 'java-library'
-            }
-        """
         settingsFile << """
             rootProject.name = 'test'
         """
-        resolve = new ResolveTestFixture(buildFile, "compileClasspath")
-        resolve.prepare()
     }
 
     def "can select both main variant and test fixtures with project dependencies"() {
@@ -42,6 +35,9 @@ class CrossProjectMultipleVariantSelectionIntegrationTest extends AbstractDepend
         settingsFile << "include 'lib'"
 
         file("lib/build.gradle") << """
+            plugins {
+                id("java-library")
+            }
             configurations {
                 testFixtures {
                     canBeResolved = false
@@ -62,6 +58,9 @@ class CrossProjectMultipleVariantSelectionIntegrationTest extends AbstractDepend
         """
 
         buildFile << """
+            plugins {
+                id("java-library")
+            }
             dependencies {
                 implementation project(':lib')
                 implementation (project(':lib')) {
@@ -73,6 +72,7 @@ class CrossProjectMultipleVariantSelectionIntegrationTest extends AbstractDepend
                     }
                 }
             }
+            ${resolve.configureProject("compileClasspath")}
         """
 
         when:
@@ -98,6 +98,9 @@ class CrossProjectMultipleVariantSelectionIntegrationTest extends AbstractDepend
         settingsFile << "include 'lib'"
 
         file("lib/build.gradle") << """
+            plugins {
+                id("java-library")
+            }
             configurations {
                 testFixtures {
                     canBeResolved = false
@@ -120,9 +123,13 @@ class CrossProjectMultipleVariantSelectionIntegrationTest extends AbstractDepend
         """
 
         buildFile << """
+            plugins {
+                id("java-library")
+            }
             dependencies {
                 implementation project(':lib')
             }
+            ${resolve.configureProject("compileClasspath")}
         """
 
         when:

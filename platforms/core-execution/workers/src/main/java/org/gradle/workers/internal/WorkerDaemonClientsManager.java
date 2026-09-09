@@ -28,6 +28,8 @@ import org.gradle.internal.logging.events.LogLevelChangeEvent;
 import org.gradle.internal.logging.events.OutputEvent;
 import org.gradle.internal.logging.events.OutputEventListener;
 import org.gradle.internal.os.OperatingSystem;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.internal.session.BuildSessionLifecycleListener;
 import org.gradle.process.internal.health.memory.MemoryManager;
 import org.gradle.process.internal.health.memory.OsMemoryInfo;
@@ -40,6 +42,7 @@ import java.util.function.Consumer;
 
 import static java.util.Comparator.comparingInt;
 
+@ServiceScope(Scope.UserHome.class)
 public class WorkerDaemonClientsManager implements Stoppable {
 
     private static final Logger LOGGER = Logging.getLogger(WorkerDaemonClientsManager.class);
@@ -58,6 +61,7 @@ public class WorkerDaemonClientsManager implements Stoppable {
     private final MemoryManager memoryManager;
     private volatile LogLevel currentLogLevel;
 
+    @SuppressWarnings("this-escape")
     public WorkerDaemonClientsManager(WorkerDaemonStarter workerDaemonStarter, ListenerManager listenerManager, LoggingManagerInternal loggingManager, MemoryManager memoryManager, OsMemoryInfo memoryInfo) {
         this.workerDaemonStarter = workerDaemonStarter;
         this.listenerManager = listenerManager;
@@ -114,7 +118,7 @@ public class WorkerDaemonClientsManager implements Stoppable {
         }
     }
 
-    public WorkerDaemonClient reserveNewClient(DaemonForkOptions forkOptions) {
+    WorkerDaemonClient reserveNewClient(DaemonForkOptions forkOptions) {
         //allow the daemon to be started concurrently
         WorkerDaemonClient client = workerDaemonStarter.startDaemon(forkOptions);
         synchronized (lock) {
@@ -123,9 +127,9 @@ public class WorkerDaemonClientsManager implements Stoppable {
         return client;
     }
 
-    public void release(WorkerDaemonClient client) {
+    void release(WorkerDaemonClient client) {
         synchronized (lock) {
-            if (!client.isFailed()) {
+            if (!client.isFailed() && !client.isAbandoned()) {
                 idleClients.add(client);
             }
         }
@@ -167,7 +171,23 @@ public class WorkerDaemonClientsManager implements Stoppable {
     }
 
     private void stopWorkers(List<WorkerDaemonClient> clientsToStop) {
-        stopWorkers(clientsToStop, STOP_CLIENT);
+        stopWorkers(clientsToStop, this::stopOrKillClient);
+    }
+
+    /**
+     * Stops a client, or kills it if it is still busy.
+     *
+     * <p>A client that is still busy when we get here is running work that nothing is waiting for any more,
+     * because the owning task timed out or failed. A graceful stop would wait for that work to finish, hanging
+     * the build on a result that is going to be thrown away.</p>
+     */
+    private void stopOrKillClient(WorkerDaemonClient client) {
+        if (client.isExecuting() || client.isAbandoned()) {
+            LOGGER.info("Worker daemon '{}' is still executing work that is no longer being waited for, stopping it immediately.", client.getDisplayName());
+            client.kill();
+        } else {
+            client.stop();
+        }
     }
 
     private void stopWorkers(List<WorkerDaemonClient> clientsToStop, Consumer<WorkerDaemonClient> stopAction) {
@@ -206,7 +226,7 @@ public class WorkerDaemonClientsManager implements Stoppable {
     }
 
     public void stopAllWorkers() {
-        stopAllWorkers(STOP_CLIENT);
+        stopAllWorkers(this::stopOrKillClient);
     }
 
     public void killAllWorkers() {
@@ -227,12 +247,11 @@ public class WorkerDaemonClientsManager implements Stoppable {
         @Override
         public void beforeComplete() {
             synchronized (lock) {
-                List<WorkerDaemonClient> sessionScopedClients = CollectionUtils.filter(allClients, client -> client.getKeepAliveMode() == KeepAliveMode.SESSION);
-                stopWorkers(sessionScopedClients);
+                List<WorkerDaemonClient> clientsToStop = CollectionUtils.filter(allClients, client -> client.getKeepAliveMode() == KeepAliveMode.SESSION || client.isAbandoned());
+                stopWorkers(clientsToStop);
             }
         }
     }
 
-    private static final Consumer<WorkerDaemonClient> STOP_CLIENT = WorkerDaemonClient::stop;
     private static final Consumer<WorkerDaemonClient> KILL_CLIENT = WorkerDaemonClient::kill;
 }

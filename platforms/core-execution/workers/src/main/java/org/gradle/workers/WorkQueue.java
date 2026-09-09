@@ -34,6 +34,10 @@ public interface WorkQueue {
      * Work submitted using {@link WorkerExecutor#processIsolation()} will execute in an idle daemon that meets the requirements set
      * in the {@link ProcessWorkerSpec}.  If no idle daemons are available, a new daemon will be started.  Any errors
      * will be thrown from {@link #await()} or from the surrounding task action if {@link #await()} is not used.
+     *
+     * <p>The {@code parameterAction} is invoked even when the work action declares {@link WorkParameters.None} as its
+     * parameters type; in that case it receives the {@link WorkParameters.None} singleton.</p>
+     * @since 5.6
      */
     <T extends WorkParameters> void submit(Class<? extends WorkAction<T>> workActionClass, Action<? super T> parameterAction);
 
@@ -43,6 +47,7 @@ public interface WorkQueue {
      * tasks from the same project cannot be run in parallel while the task action is still executing.
      *
      * @throws WorkerExecutionException when a failure occurs while executing the work.
+     * @since 5.6
      */
     void await() throws WorkerExecutionException;
 }

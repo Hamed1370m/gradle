@@ -18,49 +18,49 @@ package org.gradle.scala
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.ScalaCoverage
+import org.gradle.test.fixtures.Flaky
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
 import org.junit.Rule
 import spock.lang.Issue
 
 
+@Flaky(because = "https://github.com/gradle/gradle-private/issues/4636")
 class ScalaConcurrencyIntegrationTest extends AbstractIntegrationSpec {
     @Rule BlockingHttpServer httpServer = new BlockingHttpServer()
 
     @Issue("https://github.com/gradle/gradle/issues/14434")
     def "can run tests in parallel with project dependencies"() {
         given:
+        String latestScala2 = ScalaCoverage.getLatestSupportedScala2Version()
         httpServer.expectConcurrent(':a:test', ':b:test', ':c:test', ':d:test')
         httpServer.start()
 
         settingsFile << """
             include 'a', 'b', 'c', 'd'
         """
-        buildFile << """
-            allprojects {
+        // Configure each project from its own build script rather than from the root
+        // via 'allprojects', so the build is compatible with Isolated Projects.
+        ['a', 'b', 'c', 'd'].each { project ->
+            file("${project}/build.gradle") << """
+                plugins {
+                    id 'scala'
+                }
+
                 tasks.withType(AbstractScalaCompile) {
                     options.fork = true
                 }
                 ${mavenCentralRepository()}
-                plugins.withId("scala") {
-                    dependencies {
-                        implementation 'org.scala-lang:scala-library:${ScalaCoverage.SCALA_2.last()}'
+                dependencies {
+                    implementation 'org.scala-lang:scala-library:${latestScala2}'
 
-                        testImplementation 'junit:junit:4.12'
-                        testImplementation 'org.scalatest:scalatest_2.13:3.2.0'
-                        testImplementation 'org.scalatestplus:junit-4-12_2.13:3.2.0.0'
-                    }
+                    testImplementation 'junit:junit:4.12'
+                    testImplementation 'org.scalatest:scalatest_2.13:3.2.0'
+                    testImplementation 'org.scalatestplus:junit-4-12_2.13:3.2.0.0'
                 }
                 tasks.withType(Test) { task ->
                     doLast {
                         ${httpServer.callFromBuild('${task.path}')}
                     }
-                }
-            }
-        """
-        ['a', 'b', 'c', 'd'].each { project ->
-            file("${project}/build.gradle") << """
-                plugins {
-                    id 'scala'
                 }
             """
             file("${project}/src/main/scala/${project}/${project.toUpperCase()}.scala") << """

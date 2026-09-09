@@ -16,7 +16,9 @@
 package org.gradle.api;
 
 import groovy.lang.Closure;
+import org.gradle.api.model.ManagedType;
 import org.gradle.api.provider.Provider;
+import org.gradle.declarative.dsl.model.annotations.internal.DeclarativeWithHiddenMembers;
 import org.gradle.util.Configurable;
 
 /**
@@ -28,46 +30,62 @@ import org.gradle.util.Configurable;
  * <p>Note that a container is an implementation of {@link java.util.SortedSet}, which means that the container is guaranteed
  * to only contain elements with unique names within this container. Furthermore, items are ordered by their name.</p>
  *
- * <p>You can create an instance of this type using the factory method {@link org.gradle.api.model.ObjectFactory#domainObjectContainer(Class)}.</p>
- *
  * @param <T> The type of objects in this container.
+ *
+ * @see ManagedType Create an instance of this as a managed property (preferred).
+ * @see org.gradle.api.model.ObjectFactory#domainObjectContainer(Class) Create an instance of this manually.
+ * @since 0.9
  */
+@ManagedType
+@DeclarativeWithHiddenMembers
 public interface NamedDomainObjectContainer<T> extends NamedDomainObjectSet<T>, Configurable<NamedDomainObjectContainer<T>> {
 
     /**
      * Creates a new item with the given name, adding it to this container.
+     * <p>
+     * This operation is eager, the element is realized before being returned.
      *
      * @param name The name to assign to the created object
      * @return The created object. Never null.
      * @throws InvalidUserDataException if an object with the given name already exists in this container.
+     * @since 1.0
      */
     T create(String name) throws InvalidUserDataException;
 
     /**
      * Looks for an item with the given name, creating and adding it to this container if it does not exist.
+     * <p>
+     * This operation is eager, the element is realized before being returned.
      *
      * @param name The name to find or assign to the created object
      * @return The found or created object. Never null.
+     * @since 1.5
      */
     T maybeCreate(String name);
 
     /**
      * Creates a new item with the given name, adding it to this container, then configuring it with the given closure.
+     * <p>
+     * This operation is eager, the element is realized before being returned.
      *
      * @param name The name to assign to the created object
      * @param configureClosure The closure to configure the created object with
      * @return The created object. Never null.
      * @throws InvalidUserDataException if an object with the given name already exists in this container.
+     * @since 1.0
      */
     T create(String name, Closure configureClosure) throws InvalidUserDataException;
 
     /**
      * Creates a new item with the given name, adding it to this container, then configuring it with the given action.
+     * <p>
+     * This operation is eager, the element is realized before being returned.
      *
      * @param name The name to assign to the created object
      * @param configureAction The action to configure the created object with
      * @return The created object. Never null.
      * @throws InvalidUserDataException if an object with the given name already exists in this container.
+     * @since 1.6
      */
     T create(String name, Action<? super T> configureAction) throws InvalidUserDataException;
 
@@ -84,8 +102,12 @@ public interface NamedDomainObjectContainer<T> extends NamedDomainObjectSet<T>, 
 
     /**
      * Defines a new object, which will be created and configured when it is required. An object is 'required' when the object is located using query methods such as {@link NamedDomainObjectCollection#getByName(java.lang.String)} or when {@link Provider#get()} is called on the return value of this method.
-     *
-     * <p>It is generally more efficient to use this method instead of {@link #create(java.lang.String, org.gradle.api.Action)} or {@link #create(java.lang.String)}, as those methods will eagerly create and configure the object, regardless of whether that object is required for the current build or not. This method, on the other hand, will defer creation and configuration until required.</p>
+     * <p>
+     * It is generally more efficient to use this method instead of {@link #create(java.lang.String, org.gradle.api.Action)} or {@link #create(java.lang.String)}, as those methods will eagerly create and configure the object, regardless of whether that object is required for the current build or not.
+     * This method, on the other hand, will defer creation and configuration until required.
+     * <p>
+     * This operation is lazy, the returned element is NOT realized.
+     * A {@link NamedDomainObjectProvider lazy wrapper} is returned, allowing to continue to use it with other lazy APIs.
      *
      * @param name The name of the object.
      * @param configurationAction The action to run to configure the object. This action runs when the object is required.
@@ -97,8 +119,12 @@ public interface NamedDomainObjectContainer<T> extends NamedDomainObjectSet<T>, 
 
     /**
      * Defines a new object, which will be created when it is required. A object is 'required' when the object is located using query methods such as {@link NamedDomainObjectCollection#getByName(java.lang.String)} or when {@link Provider#get()} is called on the return value of this method.
-     *
-     * <p>It is generally more efficient to use this method instead of {@link #create(java.lang.String)}, as that method will eagerly create the object, regardless of whether that object is required for the current build or not. This method, on the other hand, will defer creation until required.</p>
+     * <p>
+     * It is generally more efficient to use this method instead of {@link #create(java.lang.String)}, as that method will eagerly create the object, regardless of whether that object is required for the current build or not.
+     * This method, on the other hand, will defer creation until required.
+     * <p>
+     * This operation is lazy, the returned element is NOT realized.
+     * A {@link NamedDomainObjectProvider lazy wrapper} is returned, allowing to continue to use it with other lazy APIs.
      *
      * @param name The name of the object.
      * @return A {@link Provider} whose value will be the object, when queried.

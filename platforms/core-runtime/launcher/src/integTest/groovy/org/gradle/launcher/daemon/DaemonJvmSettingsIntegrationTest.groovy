@@ -19,8 +19,7 @@ package org.gradle.launcher.daemon
 import org.gradle.api.JavaVersion
 import org.gradle.integtests.fixtures.daemon.DaemonIntegrationSpec
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 
 class DaemonJvmSettingsIntegrationTest extends DaemonIntegrationSpec {
     def "uses current JVM and default JVM args when none specified"() {
@@ -36,7 +35,7 @@ assert java.lang.management.ManagementFactory.runtimeMXBean.inputArguments.conta
         succeeds()
     }
 
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor)
     def "JVM args from gradle.properties packaged in distribution override defaults"() {
         setup:
         requireIsolatedGradleDistribution()
@@ -45,7 +44,7 @@ assert java.lang.management.ManagementFactory.runtimeMXBean.inputArguments.conta
         file('build.gradle') << """
             def inputArguments = java.lang.management.ManagementFactory.runtimeMXBean.inputArguments
             assert inputArguments.contains('-Xmx1024m')
-            assert inputArguments.count { !it.startsWith('--add-opens=') && !it.startsWith('--add-exports') && !it.startsWith('-D') && !it.startsWith('-javaagent:') } == 1
+            assert inputArguments.count { !it.startsWith('--add-opens=') && !it.startsWith('--add-exports=') && !it.startsWith('--enable-native-access=') && !it.startsWith('--sun-misc-unsafe-memory-access=') && !it.startsWith('-D') && !it.startsWith('-javaagent:') } == 1
         """
 
         when:
@@ -100,8 +99,7 @@ assert java.lang.management.ManagementFactory.runtimeMXBean.inputArguments.conta
         javaToolOptions << ["-Xms513m", "-Xmx255m", "-Xms128m -Xmx256m"]
     }
 
-    @Requires(UnitTestPreconditions.Jdk16OrEarlier) // TraceClassLoading option has been deprecated and is removed in JDK17
-    def 'can start the daemon with ClassLoading tracing enabled'() {
+    def 'can start the daemon with flag that emits to stdout'() {
         given:
         file('build.gradle') << """
 println 'Started'
@@ -109,7 +107,7 @@ println 'Started'
         executer.useOnlyRequestedJvmOpts()
 
         when:
-        file('gradle.properties') << 'org.gradle.jvmargs=-XX:+TraceClassLoading'
+        file('gradle.properties') << 'org.gradle.jvmargs=-XshowSettings'
 
         then:
         succeeds()

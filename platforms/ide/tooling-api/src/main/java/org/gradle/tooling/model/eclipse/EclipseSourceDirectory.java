@@ -18,18 +18,20 @@ package org.gradle.tooling.model.eclipse;
 import org.gradle.tooling.model.DomainObjectSet;
 import org.gradle.tooling.model.SourceDirectory;
 import org.gradle.tooling.model.UnsupportedMethodException;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 /**
  * A source directory in an Eclipse project.
+ * @since 1.0
  */
 public interface EclipseSourceDirectory extends SourceDirectory, EclipseClasspathEntry {
     /**
      * Returns the relative path for this source directory.
      *
      * @return The path for this source directory. Does not return null.
+     * @since 1.0
      */
     String getPath();
 

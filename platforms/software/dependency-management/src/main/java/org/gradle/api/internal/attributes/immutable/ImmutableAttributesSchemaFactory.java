@@ -19,8 +19,6 @@ package org.gradle.api.internal.attributes.immutable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Interner;
-import com.google.common.collect.Interners;
 import com.google.common.collect.Sets;
 import org.gradle.api.Action;
 import org.gradle.api.attributes.Attribute;
@@ -28,11 +26,13 @@ import org.gradle.api.attributes.CompatibilityCheckDetails;
 import org.gradle.api.attributes.MultipleCandidatesDetails;
 import org.gradle.api.internal.attributes.AttributesSchemaInternal;
 import org.gradle.api.internal.attributes.DefaultAttributeMatchingStrategy;
+import org.gradle.internal.model.InMemoryCacheFactory;
+import org.gradle.internal.model.InMemoryInterner;
+import org.gradle.internal.model.InMemoryLoadingCache;
 import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceScope;
 
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Factory for creating and interning immutable attribute schemas.
@@ -40,12 +40,14 @@ import java.util.concurrent.ConcurrentHashMap;
 @ServiceScope(Scope.BuildSession.class)
 public class ImmutableAttributesSchemaFactory {
 
-    private final Interner<ImmutableAttributesSchema> schemas = Interners.newStrongInterner();
-    private final Map<SchemaPair, ImmutableAttributesSchema> mergedSchemas = new ConcurrentHashMap<>();
+    private final InMemoryInterner<ImmutableAttributesSchema> schemas;
+    private final InMemoryLoadingCache<SchemaPair, ImmutableAttributesSchema> mergedSchemas;
 
-    @SuppressWarnings("CheckReturnValue")
-    public ImmutableAttributesSchemaFactory() {
-        schemas.intern(ImmutableAttributesSchema.EMPTY);
+    @SuppressWarnings({"this-escape", "CheckReturnValue"})
+    public ImmutableAttributesSchemaFactory(InMemoryCacheFactory cacheFactory) {
+        this.schemas = cacheFactory.createInterner();
+        this.schemas.intern(ImmutableAttributesSchema.EMPTY);
+        this.mergedSchemas = cacheFactory.create(this::doConcatSchemas);
     }
 
     /**
@@ -108,11 +110,13 @@ public class ImmutableAttributesSchemaFactory {
      * @return The merged schema.
      */
     public ImmutableAttributesSchema concat(ImmutableAttributesSchema consumer, ImmutableAttributesSchema producer) {
-        return mergedSchemas.computeIfAbsent(new SchemaPair(consumer, producer), pair ->
-            create(
-                mergeStrategies(consumer, producer),
-                mergePrecedence(consumer.precedence, producer.precedence)
-            )
+        return mergedSchemas.get(new SchemaPair(consumer, producer));
+    }
+
+    private ImmutableAttributesSchema doConcatSchemas(SchemaPair pair) {
+        return create(
+            mergeStrategies(pair.consumer, pair.producer),
+            mergePrecedence(pair.consumer.precedence, pair.producer.precedence)
         );
     }
 
@@ -135,6 +139,7 @@ public class ImmutableAttributesSchemaFactory {
 
 
         @Override
+        @SuppressWarnings("ReferenceEquality") //TODO: evaluate errorprone suppression (https://github.com/gradle/gradle/issues/35864)
         public boolean equals(Object obj) {
             if (this == obj) {
                 return true;
@@ -189,7 +194,7 @@ public class ImmutableAttributesSchemaFactory {
 
     /**
      * Merge the consumer strategy with another producer strategy, giving priority to rules
-     * configured in this consumer strategy.
+     * configured in the consumer strategy.
      */
     public static <T> ImmutableAttributesSchema.ImmutableAttributeMatchingStrategy<T> doMergeStrategies(
         ImmutableAttributesSchema.ImmutableAttributeMatchingStrategy<T> consumer,
@@ -197,12 +202,12 @@ public class ImmutableAttributesSchemaFactory {
     ) {
         return new ImmutableAttributesSchema.ImmutableAttributeMatchingStrategy<>(
             ImmutableList.<Action<? super CompatibilityCheckDetails<T>>>builder()
-                .addAll(consumer.compatibilityRules.rules)
-                .addAll(producer.compatibilityRules.rules)
+                .addAll(consumer.compatibilityRules)
+                .addAll(producer.compatibilityRules)
                 .build(),
             ImmutableList.<Action<? super MultipleCandidatesDetails<T>>>builder()
-                .addAll(consumer.disambiguationRules.rules)
-                .addAll(producer.disambiguationRules.rules)
+                .addAll(consumer.disambiguationRules)
+                .addAll(producer.disambiguationRules)
                 .build()
         );
     }

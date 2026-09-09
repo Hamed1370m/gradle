@@ -16,7 +16,6 @@
 
 package org.gradle.api.internal.artifacts.query
 
-import org.gradle.api.artifacts.ModuleVersionIdentifier
 import org.gradle.api.artifacts.component.ComponentIdentifier
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.result.ArtifactResolutionResult
@@ -24,15 +23,14 @@ import org.gradle.api.artifacts.result.UnresolvedComponentResult
 import org.gradle.api.component.Artifact
 import org.gradle.api.component.Component
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier
-import org.gradle.api.internal.artifacts.GlobalDependencyResolutionRules
 import org.gradle.api.internal.artifacts.configurations.ResolutionStrategyFactory
+import org.gradle.api.internal.artifacts.dsl.ComponentMetadataHandlerInternal
+import org.gradle.api.internal.artifacts.dsl.ComponentMetadataRulesSupplier
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ComponentResolvers
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ExternalModuleComponentResolverFactory
 import org.gradle.api.internal.component.ComponentTypeRegistration
 import org.gradle.api.internal.component.ComponentTypeRegistry
 import org.gradle.internal.component.external.model.DefaultModuleComponentIdentifier
-import org.gradle.internal.component.model.ComponentArtifactResolveState
-import org.gradle.internal.component.model.ComponentGraphResolveMetadata
 import org.gradle.internal.component.model.ComponentGraphResolveState
 import org.gradle.internal.component.model.ComponentGraphSpecificResolveState
 import org.gradle.internal.component.model.ComponentOverrideMetadata
@@ -43,9 +41,11 @@ import spock.lang.Shared
 import spock.lang.Specification
 
 class DefaultArtifactResolutionQueryTest extends Specification {
+
     def resolutionStrategyFactory = Stub(ResolutionStrategyFactory)
     def externalResolverFactory = Mock(ExternalModuleComponentResolverFactory)
-    def globalDependencyResolutionRules = Mock(GlobalDependencyResolutionRules)
+    def componentMetadataRulesSupplier = Stub(ComponentMetadataRulesSupplier)
+    def componentMetadataHandler = Stub(ComponentMetadataHandlerInternal)
     def componentTypeRegistry = Mock(ComponentTypeRegistry)
     def artifactResolver = Mock(ArtifactResolver)
     def repositoryChain = Mock(ComponentResolvers)
@@ -129,20 +129,16 @@ class DefaultArtifactResolutionQueryTest extends Specification {
         1 * externalResolverFactory.createResolvers(_, _, _, _, _, _, _) >> repositoryChain
         1 * repositoryChain.artifactResolver >> artifactResolver
         1 * repositoryChain.componentResolver >> componentMetaDataResolver
-        def state = Mock(ComponentGraphResolveState)
-
-        def metadata = Mock(ComponentGraphResolveMetadata)
-        _ * state.getMetadata() >> metadata
-        _ * state.prepareForArtifactResolution() >> Mock(ComponentArtifactResolveState)
-        _ * metadata.getModuleVersionId() >> Mock(ModuleVersionIdentifier)
-
         numberOfComponentsToResolve * componentMetaDataResolver.resolve(_, _, _) >> { ComponentIdentifier componentId, ComponentOverrideMetadata requestMetaData, BuildableComponentResolveResult resolveResult ->
-            resolveResult.resolved(state, Stub(ComponentGraphSpecificResolveState))
+            resolveResult.resolved(
+                Stub(ComponentGraphResolveState),
+                Stub(ComponentGraphSpecificResolveState)
+            )
         }
     }
 
     private DefaultArtifactResolutionQuery createArtifactResolutionQuery(ComponentTypeRegistry componentTypeRegistry) {
-        new DefaultArtifactResolutionQuery(resolutionStrategyFactory, { [] }, externalResolverFactory, globalDependencyResolutionRules, componentTypeRegistry)
+        new DefaultArtifactResolutionQuery(resolutionStrategyFactory, { [] }, externalResolverFactory, componentMetadataRulesSupplier, componentMetadataHandler, componentTypeRegistry)
     }
 
     private ComponentTypeRegistry createTestComponentTypeRegistry() {
@@ -176,4 +172,5 @@ class DefaultArtifactResolutionQueryTest extends Specification {
 
     private static interface UnknownArtifact extends Artifact {
     }
+
 }

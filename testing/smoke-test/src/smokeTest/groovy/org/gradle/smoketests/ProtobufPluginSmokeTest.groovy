@@ -16,12 +16,27 @@
 
 package org.gradle.smoketests
 
+
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.internal.os.OperatingSystem
 import spock.lang.Issue
 
 import static org.gradle.testkit.runner.TaskOutcome.SUCCESS
 import static org.gradle.testkit.runner.TaskOutcome.UP_TO_DATE
 
 class ProtobufPluginSmokeTest extends AbstractPluginValidatingSmokeTest {
+
+    // https://central.sonatype.com/artifact/com.google.protobuf/protobuf-java/versions
+    private static protobufToolsVersion = "4.31.1"
+
+    // The protobuf plugin calls the deprecated Configuration.setVisible(boolean) method.
+    // The deprecation warning is expected until https://github.com/google/protobuf-gradle-plugin/issues/815 is fixed
+    private static final String PROTOBUF_SET_VISIBLE_FOLLOWUP = "https://github.com/google/protobuf-gradle-plugin/issues/815"
+    private static final String SET_VISIBLE_DEPRECATION =
+        "The Configuration.setVisible(boolean) method has been deprecated. " +
+            "This is scheduled to be removed in Gradle 11. " +
+            "Consult the upgrading guide for further information: " +
+            "${DOCS.getDocumentationFor("upgrading_version_9", "deprecate-visible-property")}"
 
     @Issue("https://plugins.gradle.org/plugin/com.google.protobuf")
     def "protobuf plugin"() {
@@ -36,11 +51,11 @@ class ProtobufPluginSmokeTest extends AbstractPluginValidatingSmokeTest {
 
             protobuf {
                 protoc {
-                    artifact = "com.google.protobuf:protoc:${TestedVersions.protobufTools}"
+                    artifact = "com.google.protobuf:protoc:$protobufToolsVersion"
                 }
             }
             dependencies {
-                implementation "com.google.protobuf:protobuf-java:${TestedVersions.protobufTools}"
+                implementation "com.google.protobuf:protobuf-java:$protobufToolsVersion"
             }
         """
 
@@ -59,19 +74,40 @@ class ProtobufPluginSmokeTest extends AbstractPluginValidatingSmokeTest {
             public class Sample {}
         """
 
+        String classifier = getDeprecationClassifier()
+
         when:
-        def result = runner('compileJava').build()
+        def result = runner('compileJava')
+            .expectDeprecationWarning(SET_VISIBLE_DEPRECATION, PROTOBUF_SET_VISIBLE_FOLLOWUP)
+            .build()
 
         then:
         result.task(":generateProto").outcome == SUCCESS
         result.task(":compileJava").outcome == SUCCESS
 
         when:
-        result = runner('compileJava').build()
+        // The second invocation is a configuration cache hit, so configuration (and the nag) does not re-run
+        result = runner('compileJava')
+            .expectDeprecationWarningIf(GradleContextualExecuter.notConfigCache, SET_VISIBLE_DEPRECATION, PROTOBUF_SET_VISIBLE_FOLLOWUP)
+            .build()
 
         then:
         result.task(":generateProto").outcome == UP_TO_DATE
         result.task(":compileJava").outcome == UP_TO_DATE
+    }
+
+    private static String getDeprecationClassifier() {
+        String classifier
+        if (OperatingSystem.current().isWindows()) {
+            classifier = "windows-x86_64"
+        } else if (OperatingSystem.current().isLinux()) {
+            classifier = "linux-x86_64"
+        } else if (OperatingSystem.current().isMacOsX()) {
+            classifier = "osx-aarch_64"
+        } else {
+            throw new UnsupportedOperationException("Unsupported operating system: ${OperatingSystem.current().name}")
+        }
+        classifier
     }
 
     @Override
@@ -84,5 +120,15 @@ class ProtobufPluginSmokeTest extends AbstractPluginValidatingSmokeTest {
     @Override
     Map<String, String> getExtraPluginsRequiredForValidation() {
         ['java': '']
+    }
+
+    @Override
+    String getSubprojectExtensionAccess(String testedPluginId, String version) {
+        "protobuf {}"
+    }
+
+    @Override
+    List<String> getSubprojectExtensionDeprecations(String testedPluginId, String version) {
+        [parentMethodInvocationDeprecation('protobuf'), SET_VISIBLE_DEPRECATION]
     }
 }

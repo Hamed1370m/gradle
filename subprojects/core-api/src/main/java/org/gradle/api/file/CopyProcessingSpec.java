@@ -20,12 +20,13 @@ import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
 import org.gradle.api.Transformer;
 import org.gradle.api.provider.Property;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.regex.Pattern;
 
 /**
  * Specifies the destination of a copy.
+ * @since 0.8
  */
 public interface CopyProcessingSpec extends ContentFilterable {
     /**
@@ -34,6 +35,7 @@ public interface CopyProcessingSpec extends ContentFilterable {
      *
      * @param destPath Path to the destination directory for a Copy
      * @return this
+     * @since 0.8
      */
     CopyProcessingSpec into(Object destPath);
 
@@ -44,6 +46,7 @@ public interface CopyProcessingSpec extends ContentFilterable {
      *
      * @param closure rename closure
      * @return this
+     * @since 0.9
      */
     CopyProcessingSpec rename(Closure closure);
 
@@ -54,8 +57,9 @@ public interface CopyProcessingSpec extends ContentFilterable {
      *
      * @param renamer rename function
      * @return this
+     * @since 3.0
      */
-    CopyProcessingSpec rename(Transformer<@org.jetbrains.annotations.Nullable String, String> renamer);
+    CopyProcessingSpec rename(Transformer<@Nullable String, String> renamer);
 
     /**
      * Renames files based on a regular expression.  Uses java.util.regex type of regular expressions.  Note that the
@@ -71,6 +75,7 @@ public interface CopyProcessingSpec extends ContentFilterable {
      * @param sourceRegEx Source regular expression
      * @param replaceWith Replacement string (use $ syntax for capture groups)
      * @return this
+     * @since 0.8
      */
     CopyProcessingSpec rename(String sourceRegEx, String replaceWith);
 
@@ -80,60 +85,9 @@ public interface CopyProcessingSpec extends ContentFilterable {
      * @param sourceRegEx Source regular expression
      * @param replaceWith Replacement string (use $ syntax for capture groups)
      * @return this
+     * @since 0.9
      */
     CopyProcessingSpec rename(Pattern sourceRegEx, String replaceWith);
-
-    /**
-     * Returns the Unix permissions to use for the target files. {@code null} means that existing
-     * permissions are preserved. It is dependent on the copy action implementation whether these permissions
-     * will actually be applied.
-     *
-     * @return The file permissions, or {@code null} if existing permissions should be preserved.
-     *
-     * @deprecated Use {@link #getFilePermissions()} instead. This method is scheduled for removal in Gradle 9.0.
-     */
-    @Nullable
-    @Deprecated
-    Integer getFileMode();
-
-    /**
-     * Sets the Unix permissions to use for the target files. {@code null} means that existing
-     * permissions are preserved. It is dependent on the copy action implementation whether these permissions
-     * will actually be applied.
-     *
-     * @param mode The file permissions.
-     * @return this
-     *
-     * @deprecated Use {@link #filePermissions(Action)} instead. This method is scheduled for removal in Gradle 9.0.
-     */
-    @Deprecated
-    CopyProcessingSpec setFileMode(@Nullable Integer mode);
-
-    /**
-     * Returns the Unix permissions to use for the target directories. {@code null} means that existing
-     * permissions are preserved. It is dependent on the copy action implementation whether these permissions
-     * will actually be applied.
-     *
-     * @return The directory permissions, or {@code null} if existing permissions should be preserved.
-     *
-     * @deprecated Use {@link #getDirPermissions()} instead. This method is scheduled for removal in Gradle 9.0.
-     */
-    @Nullable
-    @Deprecated
-    Integer getDirMode();
-
-    /**
-     * Sets the Unix permissions to use for the target directories. {@code null} means that existing
-     * permissions are preserved. It is dependent on the copy action implementation whether these permissions
-     * will actually be applied.
-     *
-     * @param mode The directory permissions.
-     * @return this
-     *
-     * @deprecated Use {@link #dirPermissions(Action)} instead. This method is scheduled for removal in Gradle 9.0.
-     */
-    @Deprecated
-    CopyProcessingSpec setDirMode(@Nullable Integer mode);
 
     /**
      * Property for querying and configuring file access permissions.
@@ -180,6 +134,7 @@ public interface CopyProcessingSpec extends ContentFilterable {
      *
      * @param action The action to execute.
      * @return this
+     * @since 0.9
      */
     CopyProcessingSpec eachFile(Action<? super FileCopyDetails> action);
 
@@ -190,6 +145,7 @@ public interface CopyProcessingSpec extends ContentFilterable {
      *
      * @param closure The action to execute.
      * @return this
+     * @since 0.9
      */
     CopyProcessingSpec eachFile(@DelegatesTo(value=FileCopyDetails.class, strategy = Closure.DELEGATE_FIRST) Closure closure);
 }

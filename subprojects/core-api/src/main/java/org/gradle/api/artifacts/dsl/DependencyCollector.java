@@ -25,14 +25,25 @@ import org.gradle.api.artifacts.ExternalModuleDependency;
 import org.gradle.api.artifacts.FileCollectionDependency;
 import org.gradle.api.artifacts.MinimalExternalModuleDependency;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.model.ManagedType;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderConvertible;
+import org.gradle.declarative.dsl.model.annotations.internal.DeclarativeWithHiddenMembers;
 
 import java.util.Set;
 
 /**
  * A {@code DependencyCollector} is used as part of a dependencies block in the DSL. A collector implements
  * a single dependency scope and exposes the declared dependencies on {@link #getDependencies()}.
+ *
+ * <p>
+ * To use a {@code DependencyCollector} as a source of dependencies, wire it to the appropriate {@link org.gradle.api.artifacts.Configuration}
+ * with {@link org.gradle.api.artifacts.Configuration#fromDependencyCollector(DependencyCollector)}.
+ * Dependencies will be queried lazily.
+ * </p>
+ * <p>
+ *     Note: No mutations will be allowed after dependencies are read from a {@code DependencyCollector}.
+ * </p>
  *
  * @apiNote
  * Gradle has specific extensions to make explicit calls to {@code add(...)} unnecessary from the DSL.
@@ -48,9 +59,13 @@ import java.util.Set;
  * {@link org.gradle.kotlin.dsl.DependenciesExtensions extension functions for Kotlin DSL}.
  *
  * @since 8.6
+ *
+ * @see ManagedType Create an instance of this as a managed property (preferred).
+ *
  */
-@Incubating
+@ManagedType
 @NonExtensible
+@DeclarativeWithHiddenMembers
 @SuppressWarnings("JavadocReference")
 public interface DependencyCollector {
     /**
@@ -102,6 +117,7 @@ public interface DependencyCollector {
      *
      * @since 8.6
      */
+    @Incubating
     void add(ProviderConvertible<? extends MinimalExternalModuleDependency> externalModule);
 
     /**
@@ -112,6 +128,7 @@ public interface DependencyCollector {
      *
      * @since 8.6
      */
+    @Incubating
     void add(ProviderConvertible<? extends MinimalExternalModuleDependency> externalModule, Action<? super ExternalModuleDependency> configuration);
 
     /**
@@ -193,6 +210,7 @@ public interface DependencyCollector {
      *
      * @since 8.6
      */
+    @Incubating
     <D extends Dependency> void bundle(Iterable<? extends D> bundle);
 
     /**
@@ -203,6 +221,7 @@ public interface DependencyCollector {
      *
      * @since 8.6
      */
+    @Incubating
     <D extends Dependency> void bundle(Iterable<? extends D> bundle, Action<? super D> configuration);
 
     /**
@@ -212,6 +231,7 @@ public interface DependencyCollector {
      *
      * @since 8.6
      */
+    @Incubating
     <D extends Dependency> void bundle(Provider<? extends Iterable<? extends D>> bundle);
 
     /**
@@ -222,6 +242,7 @@ public interface DependencyCollector {
      *
      * @since 8.6
      */
+    @Incubating
     <D extends Dependency> void bundle(Provider<? extends Iterable<? extends D>> bundle, Action<? super D> configuration);
 
     /**
@@ -231,6 +252,7 @@ public interface DependencyCollector {
      *
      * @since 8.6
      */
+    @Incubating
     <D extends Dependency> void bundle(ProviderConvertible<? extends Iterable<? extends D>> bundle);
 
     /**
@@ -241,6 +263,7 @@ public interface DependencyCollector {
      *
      * @since 8.6
      */
+    @Incubating
     <D extends Dependency> void bundle(ProviderConvertible<? extends Iterable<? extends D>> bundle, Action<? super D> configuration);
 
     /**

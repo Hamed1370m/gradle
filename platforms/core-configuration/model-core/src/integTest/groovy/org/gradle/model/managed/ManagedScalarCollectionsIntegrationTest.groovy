@@ -17,7 +17,7 @@
 package org.gradle.model.managed
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 
 @UnsupportedWithConfigurationCache(because = "software model")
 class ManagedScalarCollectionsIntegrationTest extends AbstractIntegrationSpec {
@@ -54,6 +54,7 @@ class ManagedScalarCollectionsIntegrationTest extends AbstractIntegrationSpec {
         """
 
         expect:
+        expectSoftwareModelDeprecation("Rules")
         succeeds 'check'
 
         where:
@@ -96,6 +97,7 @@ class ManagedScalarCollectionsIntegrationTest extends AbstractIntegrationSpec {
         """
 
         expect:
+        expectSoftwareModelDeprecation("Rules")
         succeeds 'check'
 
         where:
@@ -137,6 +139,7 @@ class ManagedScalarCollectionsIntegrationTest extends AbstractIntegrationSpec {
         """
 
         expect:
+        expectSoftwareModelDeprecation("Rules")
         succeeds 'check'
 
         where:
@@ -180,6 +183,7 @@ class ManagedScalarCollectionsIntegrationTest extends AbstractIntegrationSpec {
         """
 
         expect:
+        expectSoftwareModelDeprecation("Rules")
         succeeds 'check'
 
         where:
@@ -222,6 +226,7 @@ class ManagedScalarCollectionsIntegrationTest extends AbstractIntegrationSpec {
         """
 
         expect:
+        expectSoftwareModelDeprecation("Rules")
         succeeds 'check'
 
         where:
@@ -256,6 +261,7 @@ class ManagedScalarCollectionsIntegrationTest extends AbstractIntegrationSpec {
         """
 
         then:
+        expectSoftwareModelDeprecation("Rules")
         fails 'tasks'
 
         and:
@@ -292,6 +298,7 @@ class ManagedScalarCollectionsIntegrationTest extends AbstractIntegrationSpec {
         """
 
         then:
+        expectSoftwareModelDeprecation("Rules")
         fails 'tasks'
 
         and:
@@ -331,6 +338,7 @@ class ManagedScalarCollectionsIntegrationTest extends AbstractIntegrationSpec {
         """
 
         then:
+        expectSoftwareModelDeprecation("Rules")
         fails 'tasks'
 
         and:
@@ -344,6 +352,8 @@ class ManagedScalarCollectionsIntegrationTest extends AbstractIntegrationSpec {
     def "reports problem when managed type declares a #type of managed type"() {
         when:
         buildFile """
+        apply plugin: 'model-reporting-tasks'
+
         @Managed
         interface Thing { }
 
@@ -358,10 +368,12 @@ class ManagedScalarCollectionsIntegrationTest extends AbstractIntegrationSpec {
         """
 
         then:
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         fails 'model'
 
         and:
-        failure.assertHasCause "Exception thrown while executing model rule: container(Container) @ build.gradle line 11, column 13"
+        failure.assertHasCause "Exception thrown while executing model rule: container(Container) @ build.gradle line 13, column 13"
         failure.assertHasCause("""A model element of type: 'Container' can not be constructed.
 Its property 'java.util.$type<Thing> items' is not a valid scalar collection
 A scalar collection can not contain 'Thing's
@@ -374,6 +386,8 @@ A valid scalar collection takes the form of List<T> or Set<T> where 'T' is one o
     def "reports problem when managed type declares a #type of subtype of scalar type"() {
         when:
         buildFile """
+        apply plugin: 'model-reporting-tasks'
+
         class Thing extends File {
             Thing(String s) { super(s) }
         }
@@ -389,10 +403,12 @@ A valid scalar collection takes the form of List<T> or Set<T> where 'T' is one o
         """
 
         then:
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         fails 'model'
 
         and:
-        failure.assertHasCause "Exception thrown while executing model rule: container(Container) @ build.gradle line 12, column 13"
+        failure.assertHasCause "Exception thrown while executing model rule: container(Container) @ build.gradle line 14, column 13"
         failure.assertHasCause("""A model element of type: 'Container' can not be constructed.
 Its property 'java.util.$type<Thing> items' is not a valid scalar collection
 A scalar collection can not contain 'Thing's
@@ -400,5 +416,17 @@ A valid scalar collection takes the form of List<T> or Set<T> where 'T' is one o
 
         where:
         type << MANAGED_SCALAR_COLLECTION_TYPES
+    }
+
+    private void expectSoftwareModelDeprecation(String pluginName) {
+        executer.expectDocumentedDeprecationWarning("The ${pluginName} plugin has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
+    }
+
+    private void expectModelDslDeprecation() {
+        executer.expectDocumentedDeprecationWarning("The model DSL has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
+    }
+
+    private void expectModelReportTaskDeprecation() {
+        executer.expectDocumentedDeprecationWarning("The task type org.gradle.api.reporting.model.ModelReport (used by the :model task) has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
     }
 }

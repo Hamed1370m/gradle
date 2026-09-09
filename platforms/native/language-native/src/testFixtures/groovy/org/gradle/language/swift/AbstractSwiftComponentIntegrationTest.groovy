@@ -26,7 +26,7 @@ import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 import org.gradle.test.fixtures.file.DoesNotSupportNonAsciiPaths
 import org.hamcrest.CoreMatchers
 
-@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5_OR_OLDER)
+@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC)
 @DoesNotSupportNonAsciiPaths(reason = "swiftc does not support these paths")
 abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLanguageComponentIntegrationTest {
 
@@ -38,7 +38,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
 
         expect:
         succeeds taskNameToAssembleDevelopmentBinary
-        result.assertTasksExecuted(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
+        result.assertTasksScheduled(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
         assertComponentUnderTestWasBuilt()
     }
 
@@ -93,7 +93,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
         succeeds taskNameToAssembleDevelopmentBinary
 
         then:
-        result.assertTasksExecuted(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
+        result.assertTasksScheduled(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
     }
 
     @RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5)
@@ -114,7 +114,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
         succeeds taskNameToAssembleDevelopmentBinary
 
         then:
-        result.assertTasksExecuted(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
+        result.assertTasksScheduled(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
     }
 
     @RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_3)
@@ -135,7 +135,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
         fails taskNameToAssembleDevelopmentBinary
 
         then:
-        failure.assertHasDescription("Execution failed for task '$developmentBinaryCompileTask'.")
+        failure.assertHasDescription("Execution failed for task '$developmentBinaryCompileTask' (registered by plugin class 'org.gradle.language.swift.plugins.SwiftBasePlugin').")
         failure.assertHasCause("Swift compiler version '${toolChain.version}' doesn't support Swift language version '${SwiftVersion.SWIFT4.version}'")
     }
 
@@ -157,7 +157,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
         fails taskNameToAssembleDevelopmentBinary
 
         then:
-        failure.assertHasDescription("Execution failed for task '$developmentBinaryCompileTask'.")
+        failure.assertHasDescription("Execution failed for task '$developmentBinaryCompileTask' (registered by plugin class 'org.gradle.language.swift.plugins.SwiftBasePlugin').")
         failure.assertHasCause("Swift compiler version '${toolChain.version}' doesn't support Swift language version '${SwiftVersion.SWIFT5.version}'")
     }
 
@@ -179,7 +179,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
         fails taskNameToAssembleDevelopmentBinary
 
         then:
-        failure.assertHasDescription("Execution failed for task '$developmentBinaryCompileTask'.")
+        failure.assertHasDescription("Execution failed for task '$developmentBinaryCompileTask' (registered by plugin class 'org.gradle.language.swift.plugins.SwiftBasePlugin').")
         failure.assertHasCause("Swift compiler version '${toolChain.version}' doesn't support Swift language version '${SwiftVersion.SWIFT5.version}'")
     }
 
@@ -201,7 +201,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
         fails taskNameToAssembleDevelopmentBinary
 
         then:
-        failure.assertHasDescription("Execution failed for task '$developmentBinaryCompileTask'.")
+        failure.assertHasDescription("Execution failed for task '$developmentBinaryCompileTask' (registered by plugin class 'org.gradle.language.swift.plugins.SwiftBasePlugin').")
         failure.assertHasCause("Swift compiler version '${toolChain.version}' doesn't support Swift language version '${SwiftVersion.SWIFT3.version}'")
     }
 
@@ -218,7 +218,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
         succeeds taskNameToAssembleDevelopmentBinary
 
         then:
-        result.assertTasksExecuted(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
+        result.assertTasksScheduled(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
     }
 
     @RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_4)
@@ -234,7 +234,7 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
         succeeds taskNameToAssembleDevelopmentBinary
 
         then:
-        result.assertTasksExecuted(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
+        result.assertTasksScheduled(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
     }
 
     @RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5)
@@ -250,7 +250,23 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
         succeeds taskNameToAssembleDevelopmentBinary
 
         then:
-        result.assertTasksExecuted(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
+        result.assertTasksScheduled(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
+    }
+
+    @RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_6)
+    def "can compile Swift 6 component on Swift 6 compiler"() {
+        given:
+        makeSingleProject()
+        swift6Component.writeToProject(testDirectory)
+        verifySwiftVersion(6)
+        settingsFile << "rootProject.name = '${swift6Component.projectName}'"
+
+        when:
+        succeeds "verifyBinariesSwiftVersion"
+        succeeds taskNameToAssembleDevelopmentBinary
+
+        then:
+        result.assertTasksScheduled(tasksToAssembleDevelopmentBinaryOfComponentUnderTest, ":$taskNameToAssembleDevelopmentBinary")
     }
 
     def "assemble task warns when current operating system family is excluded"() {
@@ -353,6 +369,8 @@ abstract class AbstractSwiftComponentIntegrationTest extends AbstractNativeLangu
     abstract SourceElement getSwift4Component()
 
     abstract SourceElement getSwift5Component()
+
+    abstract SourceElement getSwift6Component()
 
     abstract List<String> getTasksToAssembleDevelopmentBinaryOfComponentUnderTest()
 

@@ -6,9 +6,16 @@ description = "Provides plugins to create and configure integration, cross-versi
 
 gradlePlugin {
     plugins {
-        register("androidStudioProvisioning") {
-            id = "gradlebuild.android-studio-provisioning"
-            implementationClass = "gradlebuild.integrationtests.ide.AndroidStudioProvisioningPlugin"
+        register("ideProvisioning") {
+            id = "gradlebuild.ide-provisioning"
+            implementationClass = "gradlebuild.integrationtests.ide.IdeProvisioningPlugin"
+        }
+    }
+
+    plugins {
+        register("androidHomeWarmup") {
+            id = "gradlebuild.android-home-warmup"
+            implementationClass = "gradlebuild.integrationtests.androidhomewarmup.AndroidHomeWarmupPlugin"
         }
     }
 }
@@ -19,6 +26,7 @@ dependencies {
 
     implementation(projects.cleanup)
     implementation(projects.dependencyModules)
+    implementation(projects.jvm)
 
-    testImplementation("junit:junit")
+    implementation(testLibs.intellijPlatform)
 }

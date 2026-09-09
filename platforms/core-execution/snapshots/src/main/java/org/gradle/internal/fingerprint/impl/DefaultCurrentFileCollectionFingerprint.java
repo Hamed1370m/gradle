@@ -28,8 +28,8 @@ import org.gradle.internal.hash.Hasher;
 import org.gradle.internal.hash.Hashing;
 import org.gradle.internal.snapshot.FileSystemSnapshot;
 import org.gradle.internal.snapshot.SnapshotUtil;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Map;
 
 public class DefaultCurrentFileCollectionFingerprint implements CurrentFileCollectionFingerprint {
@@ -40,6 +40,7 @@ public class DefaultCurrentFileCollectionFingerprint implements CurrentFileColle
     private final FileSystemSnapshot roots;
     private final ImmutableMultimap<String, HashCode> rootHashes;
     private final HashCode strategyConfigurationHash;
+    @Nullable
     private HashCode hash;
 
     public static CurrentFileCollectionFingerprint from(FileSystemSnapshot roots, FingerprintingStrategy strategy, @Nullable  FileCollectionFingerprint candidate) {

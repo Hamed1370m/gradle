@@ -1,7 +1,10 @@
-import groovy.lang.GroovySystem
+import gradlebuild.nullaway.NullawayAttributes
+import gradlebuild.nullaway.NullawayCompatibilityRule
+import gradlebuild.nullaway.NullawayState
+import gradlebuild.nullaway.NullawayStatusTask
 import net.ltgt.gradle.errorprone.CheckSeverity
 import net.ltgt.gradle.errorprone.errorprone
-import org.gradle.util.internal.VersionNumber
+import net.ltgt.gradle.nullaway.nullaway
 
 /*
  * Copyright 2022 the original author or authors.
@@ -24,49 +27,124 @@ plugins {
     id("checkstyle")
     id("codenarc")
     id("net.ltgt.errorprone")
+    id("net.ltgt.nullaway")
 }
 
 open class ErrorProneProjectExtension(
-    val disabledChecks: ListProperty<String>
+    val disabledChecks: ListProperty<String>,
+    val nullawayEnabled: Property<Boolean>
 )
 
 open class ErrorProneSourceSetExtension(
     val enabled: Property<Boolean>
 )
 
-val errorproneExtension = project.extensions.create<ErrorProneProjectExtension>("errorprone", project.objects.listProperty<String>())
-errorproneExtension.disabledChecks.addAll(
-    // DISCUSS
-    "EnumOrdinal", // This violation is ubiquitous, though most are benign.
-    "EqualsGetClass", // Let's agree if we want to adopt Error Prone's idea of valid equals()
-    "JdkObsolete", // Most of the checks are good, but we do not want to replace all LinkedLists without a good reason
+val errorproneExtension = project.extensions.create<ErrorProneProjectExtension>(
+    "errorprone",
+    objects.listProperty<String>(),
+    objects.property<Boolean>()
+).apply {
+    disabledChecks.addAll(
+        // ENABLE
+        "PatternMatchingInstanceof", // We should enable this.
+        "StatementSwitchToExpressionSwitch", // We should enable this.
+        "StringConcatToTextBlock", // We should enable this.
+        "ClassCanBeStatic", // We should enable this.
 
-    // NEVER
-    "MissingSummary", // We have another mechanism to check Javadocs on public API
-    "InjectOnConstructorOfAbstractClass", // We use abstract injection as a pattern
-    "JavaxInjectOnAbstractMethod", // We use abstract injection as a pattern
-    "JavaUtilDate", // We are fine with using Date
-    "StringSplitter", // We are fine with using String.split() as is
-)
+        // DISCUSS
+        "EnumOrdinal", // This violation is ubiquitous, though most are benign.
+        "EqualsGetClass", // Let's agree if we want to adopt Error Prone's idea of valid equals()
+        "JdkObsolete", // Most of the checks are good, but we do not want to replace all LinkedLists without a good reason
+        "ReferenceEquality", // evaluate again in future EP versions https://github.com/gradle/gradle/pull/38269#pullrequestreview-4568989259
+
+        // NEVER
+        "AssignmentExpression", // Not using it is more a matter of taste.
+        "EffectivelyPrivate", // It is still useful to distinguish between public interface and implementation details of inner classes even though it isn't enforced.
+        "InjectOnConstructorOfAbstractClass", // We use abstract injection as a pattern
+        "InlineMeSuggester", // Only suppression seems to actually "fix" this, so make it global
+        "JavaUtilDate", // We are fine with using Date
+        "JavaxInjectOnAbstractMethod", // We use abstract injection as a pattern
+        "MissingSummary", // We have another mechanism to check Javadocs on public API
+        "StringSplitter", // We are fine with using String.split() as is
+    )
+
+    nullawayEnabled.convention(false)
+}
+
+nullaway {
+    // NullAway can use NullMarked instead, but for the adoption process it is more effective to assume that all gradle code is already annotated.
+    // This way we can catch discrepancies in modules easier. We should make all packages NullMarked eventually too, but this is a separate task.
+    annotatedPackages.add("org.gradle")
+}
+
+dependencies {
+    attributesSchema {
+        attribute(NullawayAttributes.nullawayAttribute) {
+            compatibilityRules.add(NullawayCompatibilityRule::class.java)
+        }
+    }
+}
 
 project.plugins.withType<JavaBasePlugin> {
     project.extensions.getByName<SourceSetContainer>("sourceSets").configureEach {
-        val extension = this.extensions.create<ErrorProneSourceSetExtension>("errorprone", project.objects.property<Boolean>())
-        // Enable it only for the main source set by default, as incremental Groovy
-        // joint-compilation doesn't work with the Error Prone annotation processor
-        extension.enabled.convention(this.name == "main")
+        val isMainSourceSet = (name == "main")
 
-        project.dependencies.addProvider(
-            annotationProcessorConfigurationName,
-            extension.enabled.filter { it }.map { "com.google.errorprone:error_prone_core:2.29.0" }
-        )
+        val extension = this.extensions.create<ErrorProneSourceSetExtension>(
+            "errorprone",
+            project.objects.property<Boolean>()
+        ).apply {
+            // Enable it only for the main source set by default, as incremental Groovy
+            // joint-compilation doesn't work with the Error Prone annotation processor
+            enabled.convention(isMainSourceSet)
+        }
+
+        if (isMainSourceSet) {
+            val nullawayAttributeValue = errorproneExtension.nullawayEnabled.map { if (it) NullawayState.ENABLED else NullawayState.DISABLED }
+
+            // We don't care about nullaway in test fixtures or tests, they're written in Groovy anyway.
+            NullawayAttributes.addToConfiguration(configurations.named(compileClasspathConfigurationName), nullawayAttributeValue)
+
+            project.plugins.withType<JavaLibraryPlugin> {
+                // Kotlin-only projects do not hit this, so they don't have nullaway attributes on the outgoing variants.
+                // Java project can in turn depend on Kotlin projects even if they have nullaway enabled.
+                NullawayAttributes.addToConfiguration(configurations.named(apiElementsConfigurationName), nullawayAttributeValue)
+                NullawayAttributes.addToConfiguration(configurations.named(runtimeElementsConfigurationName), nullawayAttributeValue)
+
+                tasks.register<NullawayStatusTask>("nullawayStatus") {
+                    nullawayEnabled = errorproneExtension.nullawayEnabled
+                    nullawayAwareDeps = configurations.named(compileClasspathConfigurationName).map {
+                        it.incoming.artifacts
+                    }
+                }
+            }
+        }
+
+        @Suppress("UnstableApiUsage")
+        fun addErrorProneDependency(dep: Provider<out ExternalModuleDependency>) {
+            project.dependencies.addProvider(
+                annotationProcessorConfigurationName,
+                extension.enabled.filter { it }.flatMap { dep }
+            )
+        }
+
+        if (project.name != "gradle-kotlin-dsl-accessors") {
+            val buildDeps = project.versionCatalogs.named("buildLibs")
+            addErrorProneDependency(buildDeps.findLibrary("errorProne").get())
+            addErrorProneDependency(buildDeps.findLibrary("nullaway").get())
+        }
 
         project.tasks.named<JavaCompile>(this.compileJavaTaskName) {
             options.errorprone {
-                isEnabled = extension.enabled
-                checks.set(errorproneExtension.disabledChecks.map {
+                enabled = extension.enabled
+                checks = errorproneExtension.disabledChecks.map {
                     it.associateWith { CheckSeverity.OFF }
-                })
+                }
+
+                nullaway {
+                    checkContracts = true
+                    isJSpecifyMode = true
+                    severity = errorproneExtension.nullawayEnabled.map { if (it) CheckSeverity.ERROR else CheckSeverity.OFF }
+                }
             }
         }
     }
@@ -92,8 +170,7 @@ tasks.check {
     dependsOn(codeQuality)
 }
 
-val rules by configurations.creating {
-    isVisible = false
+val rules = configurations.create("rules") {
     isCanBeConsumed = false
 
     attributes {
@@ -101,9 +178,11 @@ val rules by configurations.creating {
     }
 }
 
-val groovyVersion = GroovySystem.getVersion()
-val isAtLeastGroovy4 = VersionNumber.parse(groovyVersion).major >= 4
-val codenarcVersion = if (isAtLeastGroovy4) "3.1.0-groovy-4.0" else "3.1.0"
+val buildLibs = if (project.name != "gradle-kotlin-dsl-accessors") {
+    project.versionCatalogs.named("buildLibs")
+} else {
+    null
+}
 
 dependencies {
     rules("gradlebuild:code-quality-rules") {
@@ -112,12 +191,13 @@ dependencies {
     codenarc("gradlebuild:code-quality-rules") {
         because("Provides the IntegrationTestFixturesRule implementation")
     }
-    codenarc("org.codenarc:CodeNarc:$codenarcVersion")
-    codenarc(embeddedKotlin("stdlib"))
-
-    components {
-        withModule<CodeNarcRule>("org.codenarc:CodeNarc") {
-            params(groovyVersion)
+    buildLibs?.let {
+        codenarc(buildLibs.findLibrary("codenarc").get())
+        codenarc(buildLibs.findLibrary("kotlinCompilerEmbeddable").get())
+        constraints {
+            checkstyle(buildLibs.findLibrary("plexusUtils").get()) {
+                because("Checkstyle transitively pulls plexus-utils 3.3.0 which is vulnerable to CVE-2025-67030")
+            }
         }
     }
 }
@@ -125,7 +205,9 @@ dependencies {
 fun configFile(fileName: String) = resources.text.fromFile(rules.asFileTree.filter { it.name == fileName })
 
 checkstyle {
-    toolVersion = "8.12"
+    buildLibs?.let {
+        toolVersion = buildLibs.findVersion("checkstyle").get().requiredVersion
+    }
     config = configFile("checkstyle.xml")
     val projectDirectory = layout.projectDirectory
     configDirectory = rules.elements.map {
@@ -153,29 +235,8 @@ tasks.withType<CodeNarc>().configureEach {
     if (name.contains("IntegTest")) {
         config = configFile("codenarc-integtests.xml")
     }
+    logging.captureStandardOutput(LogLevel.INFO)
 }
 
 val SourceSet.allGroovy: SourceDirectorySet
     get() = the<GroovySourceDirectorySet>()
-
-abstract class CodeNarcRule @Inject constructor(
-    private val groovyVersion: String
-) : ComponentMetadataRule {
-    override fun execute(context: ComponentMetadataContext) {
-        context.details.allVariants {
-            withDependencies {
-                val isAtLeastGroovy4 = VersionNumber.parse(groovyVersion).major >= 4
-                val groovyGroup = if (isAtLeastGroovy4) "org.apache.groovy" else "org.codehaus.groovy"
-                removeAll { it.group == groovyGroup }
-                add("$groovyGroup:groovy") {
-                    version { prefer(groovyVersion) }
-                    because("We use the packaged groovy")
-                }
-                add("$groovyGroup:groovy-templates") {
-                    version { prefer(groovyVersion) }
-                    because("We use the packaged groovy")
-                }
-            }
-        }
-    }
-}

@@ -17,7 +17,6 @@
 package org.gradle.vcs.internal
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.plugin.PluginBuilder
 import org.gradle.util.internal.TextUtil
 import org.gradle.vcs.fixtures.GitFileRepository
@@ -46,17 +45,33 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
                 runtime "org.test:first:latest.integration"
             }
 
-            task resolve {
-                dependsOn configurations.runtime
-                ext.message = "hello world"
-                ext.dependencies = []
-                ext.assertions = []
-                doLast {
-                    def resolved = configurations.runtime.files
+            abstract class Resolve extends DefaultTask {
+                @InputFiles
+                abstract ConfigurableFileCollection getRuntimeFiles()
+
+                @Input
+                abstract ListProperty<String> getExpectedArtifacts()
+
+                @Input
+                abstract Property<String> getExpectedMessage()
+
+                @TaskAction
+                void resolve() {
+                    def resolved = runtimeFiles.files
+                    def message = expectedMessage.get()
                     println "Looking for " + message
-                    assert resolved.size() == dependencies.size()
-                    assertions.each { it.call(resolved, message) }
+                    assert resolved.size() == expectedArtifacts.get().size()
+                    expectedArtifacts.get().each { name ->
+                        def artifactFile = resolved.find { it.name == name + ".txt" }
+                        assert artifactFile != null
+                        assert artifactFile.text == message
+                    }
                 }
+            }
+
+            task resolve(type: Resolve) {
+                runtimeFiles.from(configurations.runtime)
+                expectedMessage.convention("hello world")
             }
         """
 
@@ -70,16 +85,29 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
                 }
             }
 
-            task generate {
-                dependsOn configurations.runtime
-                ext.outputFile = new File(temporaryDir, project.name + ".txt")
-                ext.message = "hello world"
-                doLast {
-                    // write to outputFile
-                    println "Generating " + message + " against " + configurations.runtime.files
-                    outputFile.parentFile.mkdirs()
-                    outputFile.text = message
+            abstract class Generate extends DefaultTask {
+                @InputFiles
+                abstract ConfigurableFileCollection getRuntimeFiles()
+
+                @Input
+                abstract Property<String> getMessage()
+
+                @OutputFile
+                abstract RegularFileProperty getOutputFile()
+
+                @TaskAction
+                void generate() {
+                    def output = outputFile.get().asFile
+                    println "Generating " + message.get() + " against " + runtimeFiles.files
+                    output.parentFile.mkdirs()
+                    output.text = message.get()
                 }
+            }
+
+            task generate(type: Generate) {
+                runtimeFiles.from(configurations.runtime)
+                message.convention("hello world")
+                outputFile.set(new File(temporaryDir, project.name + ".txt"))
             }
 
             artifacts {
@@ -111,7 +139,6 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         fourth.commit("initial commit")
     }
 
-    @ToBeFixedForConfigurationCache
     def "can use source mappings in nested builds"() {
         given:
         settingsFile << """
@@ -133,7 +160,7 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         when:
         succeeds("resolve")
         then:
-        result.assertTasksExecutedInOrder(":second:generate", ":first:generate", ":resolve")
+        result.assertTasksScheduledInOrder(":second:generate", ":first:generate", ":resolve")
 
         // Updating the remote repository causes changes downstream
         when:
@@ -143,7 +170,6 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         succeeds("resolve")
     }
 
-    @ToBeFixedForConfigurationCache
     def "can use source mappings defined in nested builds"() {
         given:
         vcsMapping('org.test:first', first)
@@ -154,7 +180,7 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         when:
         succeeds("resolve", "--info")
         then:
-        result.assertTasksExecutedInOrder(":second:generate", ":first:generate", ":resolve")
+        result.assertTasksScheduledInOrder(":second:generate", ":first:generate", ":resolve")
 
         // Updating the remote repository causes changes downstream
         when:
@@ -164,7 +190,6 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         succeeds("resolve")
     }
 
-    @ToBeFixedForConfigurationCache
     def "can use a source mapping defined in both the parent build and a nested build"() {
         given:
         settingsFile << """
@@ -187,7 +212,7 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         when:
         succeeds("resolve")
         then:
-        result.assertTasksExecutedInOrder(":second:generate", ":first:generate", ":resolve")
+        result.assertTasksScheduledInOrder(":second:generate", ":first:generate", ":resolve")
 
         // Updating the remote repository causes changes downstream
         when:
@@ -197,7 +222,6 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         succeeds("resolve")
     }
 
-    @ToBeFixedForConfigurationCache
     def "prefers a source mapping defined in the root build to one defined in a nested build"() {
         given:
         vcsMapping('org.test:first', first)
@@ -218,7 +242,7 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         succeeds("resolve")
 
         then:
-        result.assertTasksExecutedInOrder(":second:generate", ":first:generate", ":resolve")
+        result.assertTasksScheduledInOrder(":second:generate", ":first:generate", ":resolve")
 
         // Updating the remote repository causes changes downstream
         when:
@@ -228,7 +252,6 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         succeeds("resolve")
     }
 
-    @ToBeFixedForConfigurationCache
     def "prefers a source mapping defined in the root build to one defined in a nested build when they differ only by plugins"() {
         given:
         def pluginBuilder = new PluginBuilder(file("plugin"))
@@ -257,11 +280,10 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         succeeds("resolve")
 
         then:
-        result.assertTasksExecutedInOrder(":plugin:compileJava", ":plugin:compileGroovy", ":plugin:pluginDescriptors", ":plugin:processResources", ":plugin:classes", ":plugin:jar", ":second:generate", ":first:generate", ":resolve")
+        result.assertTasksScheduledInOrder(":plugin:compileJava", ":plugin:compileGroovy", ":plugin:pluginDescriptors", ":plugin:processResources", ":plugin:classes", ":plugin:jar", ":second:generate", ":first:generate", ":resolve")
         outputContains("Hello from root build's plugin")
     }
 
-    @ToBeFixedForConfigurationCache
     def "prefers a source mapping defined in the root build to one defined in a nested build when the nested build requests plugins"() {
         given:
         vcsMapping('org.test:first', first)
@@ -277,10 +299,9 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         succeeds("resolve")
 
         then:
-        result.assertTasksExecutedInOrder(":second:generate", ":first:generate", ":resolve")
+        result.assertTasksScheduledInOrder(":second:generate", ":first:generate", ":resolve")
     }
 
-    @ToBeFixedForConfigurationCache
     def "can use a source mapping defined similarly in two nested builds"() {
         given:
         vcsMapping('org.test:first', first)
@@ -296,7 +317,7 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         succeeds("resolve")
 
         then:
-        result.assertTasksExecutedInOrder(":third:generate", ":second:generate", ":first:generate", ":resolve")
+        result.assertTasksScheduledInOrder(":third:generate", ":second:generate", ":first:generate", ":resolve")
 
         // Updating the remote repository causes changes downstream
         when:
@@ -331,7 +352,6 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         failure.assertHasCause("Conflicting external source dependency rules were found in nested builds for org.test:third:latest.integration")
     }
 
-    @ToBeFixedForConfigurationCache
     def "can resolve a mapping conflict by defining a rule in the root build"() {
         given:
         vcsMapping('org.test:first', first)
@@ -356,7 +376,7 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         succeeds("resolve")
 
         then:
-        result.assertTasksExecutedInOrder(":third:generate", ":second:generate", ":first:generate", ":resolve")
+        result.assertTasksScheduledInOrder(":third:generate", ":second:generate", ":first:generate", ":resolve")
 
         // Updating the remote repository causes changes downstream
         when:
@@ -378,23 +398,18 @@ class NestedSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
     void shouldResolve(GitFileRepository... targets) {
         targets.each { target ->
             buildFile << """
-                resolve.dependencies << "${target.workTree.name}"
-                resolve.assertions << { resolved, message ->
-                    def artifactFile = resolved.find { it.name == "${target.workTree.name}.txt" }
-                    assert artifactFile != null
-                    assert artifactFile.text == message
-                }
+                resolve.expectedArtifacts.add("${target.workTree.name}")
             """
         }
     }
 
     void changeMessage(String message, GitFileRepository... repos) {
         buildFile << """
-            resolve.message = "$message"
+            resolve.expectedMessage.set("$message")
         """
         repos.each { repo ->
             repo.file("build.gradle") << """
-                generate.message = "$message"
+                generate.message.set("$message")
             """
             repo.commit("change message", "build.gradle")
         }

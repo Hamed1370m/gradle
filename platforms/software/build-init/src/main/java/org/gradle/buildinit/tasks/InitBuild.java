@@ -22,16 +22,19 @@ import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.Incubating;
 import org.gradle.api.file.Directory;
+import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.internal.tasks.userinput.NonInteractiveUserInputHandler;
 import org.gradle.api.internal.tasks.userinput.UserInputHandler;
 import org.gradle.api.internal.tasks.userinput.UserQuestions;
+import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.TaskAction;
+import org.gradle.api.tasks.UntrackedTask;
 import org.gradle.api.tasks.options.Option;
 import org.gradle.api.tasks.options.OptionValues;
 import org.gradle.api.tasks.wrapper.internal.WrapperDefaults;
@@ -49,18 +52,25 @@ import org.gradle.buildinit.plugins.internal.modifiers.BuildInitTestFramework;
 import org.gradle.buildinit.plugins.internal.modifiers.ComponentType;
 import org.gradle.buildinit.plugins.internal.modifiers.Language;
 import org.gradle.buildinit.plugins.internal.modifiers.ModularizationOption;
+import org.gradle.buildinit.specs.BuildInitConfig;
+import org.gradle.buildinit.specs.BuildInitGenerator;
+import org.gradle.buildinit.specs.BuildInitParameter;
+import org.gradle.buildinit.specs.BuildInitSpec;
+import org.gradle.buildinit.specs.internal.BuildInitSpecRegistry;
 import org.gradle.internal.instrumentation.api.annotations.NotToBeReplacedByLazyProperty;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 import org.gradle.internal.logging.text.TreeFormatter;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.util.GradleVersion;
 import org.gradle.work.DisableCachingByDefault;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.lang.model.SourceVersion;
 import java.io.File;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -70,25 +80,22 @@ import static com.google.common.base.Strings.isNullOrEmpty;
 
 /**
  * Generates a Gradle project structure.
+ * @since 1.9
  */
 @DisableCachingByDefault(because = "Not worth caching")
+@UntrackedTask(because = "This task will never be up-to-date")
 public abstract class InitBuild extends DefaultTask {
-
     private static final String SOURCE_PACKAGE_DEFAULT = "org.example";
     private static final String SOURCE_PACKAGE_PROPERTY = "org.gradle.buildinit.source.package";
-    static final int MINIMUM_VERSION_SUPPORTED_BY_FOOJAY_API = 7;
-    static final int DEFAULT_JAVA_VERSION = 21;
+    private static final int MINIMUM_VERSION_SUPPORTED_BY_FOOJAY_API = 7;
+    private static final int DEFAULT_JAVA_VERSION = 21;
 
-    private final Directory projectDir = getProject().getLayout().getProjectDirectory();
     private String type;
-    private final Property<Boolean> splitProject = getProject().getObjects().property(Boolean.class);
     private String dsl;
-    private final Property<Boolean> useIncubatingAPIs = getProject().getObjects().property(Boolean.class);
     private String testFramework;
     private String projectName;
     private String packageName;
-    private final Property<InsecureProtocolOption> insecureProtocol = getProject().getObjects().property(InsecureProtocolOption.class);
-    private final Property<String> javaVersion = getProject().getObjects().property(String.class);
+
     @Internal
     private ProjectLayoutSetupRegistry projectLayoutRegistry;
 
@@ -108,12 +115,12 @@ public abstract class InitBuild extends DefaultTask {
     public abstract Property<Boolean> getUseDefaults();
 
     /**
-    * Should we allow existing files in the build directory to be overwritten?
-    *
-    * This property can be set via command-line option '--overwrite'. Defaults to false.
-    *
-    * @since 8.9
-    */
+     * Should we allow existing files in the build directory to be overwritten?
+     *
+     * This property can be set via command-line option '--overwrite'. Defaults to false.
+     *
+     * @since 8.9
+     */
     @Incubating
     @Input
     @Optional
@@ -130,6 +137,7 @@ public abstract class InitBuild extends DefaultTask {
      * and the existing project is converted to Gradle.
      * <p>
      * Possible values for the option are provided by {@link #getAvailableBuildTypes()}.
+     * @since 1.9
      */
     @Input
     @ToBeReplacedByLazyProperty
@@ -148,9 +156,7 @@ public abstract class InitBuild extends DefaultTask {
     @Input
     @Optional
     @Option(option = "split-project", description = "Split functionality across multiple subprojects?")
-    public Property<Boolean> getSplitProject() {
-        return splitProject;
-    }
+    public abstract Property<Boolean> getSplitProject();
 
     /**
      * The desired DSL of build scripts to create, defaults to 'kotlin'.
@@ -180,9 +186,7 @@ public abstract class InitBuild extends DefaultTask {
     @Input
     @Optional
     @Option(option = "incubating", description = "Allow the generated build to use new features and APIs.")
-    public Property<Boolean> getUseIncubating() {
-        return useIncubatingAPIs;
-    }
+    public abstract Property<Boolean> getUseIncubating();
 
     /**
      * Java version to be used by generated Java projects.
@@ -198,9 +202,17 @@ public abstract class InitBuild extends DefaultTask {
     @Optional
     @Incubating
     @Option(option = "java-version", description = "Provides java version to use in the project.")
-    public Property<String> getJavaVersion() {
-        return javaVersion;
-    }
+    public abstract Property<String> getJavaVersion();
+
+    /**
+     * The directory of the generated project, defaults to the directory the project is generated in.
+     *
+     * @since 9.5.0
+     */
+    @Internal("Task outcome is decided early and should not rely on comparing file trees")
+    @Incubating
+    @Option(option = "into", description = "Set the directory where the project is generated.")
+    public abstract DirectoryProperty getProjectDirectory();
 
     /**
      * The name of the generated project, defaults to the name of the directory the project is generated in.
@@ -212,7 +224,7 @@ public abstract class InitBuild extends DefaultTask {
     @Input
     @ToBeReplacedByLazyProperty
     public String getProjectName() {
-        return projectName == null ? projectDir.getAsFile().getName() : projectName;
+        return projectName == null ? getProjectDirectory().get().getAsFile().getName() : projectName;
     }
 
     /**
@@ -232,6 +244,7 @@ public abstract class InitBuild extends DefaultTask {
      * The test framework to be used in the generated project.
      *
      * This property can be set via command-line option '--test-framework'
+     * @since 2.11
      */
     @Nullable
     @Optional
@@ -250,9 +263,7 @@ public abstract class InitBuild extends DefaultTask {
      */
     @Input
     @Option(option = "insecure-protocol", description = "How to handle insecure URLs used for Maven Repositories.")
-    public Property<InsecureProtocolOption> getInsecureProtocol() {
-        return insecureProtocol;
-    }
+    public abstract Property<InsecureProtocolOption> getInsecureProtocol();
 
     /**
      * Should clarifying comments be added to files?
@@ -267,6 +278,11 @@ public abstract class InitBuild extends DefaultTask {
     @Option(option = "comments", description = "Include clarifying comments in files.")
     public abstract Property<Boolean> getComments();
 
+    /**
+     * Returns the project layout registry.
+     *
+     * @since 1.9
+     */
     @NotToBeReplacedByLazyProperty(because = "Injected service")
     public ProjectLayoutSetupRegistry getProjectLayoutRegistry() {
         if (projectLayoutRegistry == null) {
@@ -276,9 +292,73 @@ public abstract class InitBuild extends DefaultTask {
         return projectLayoutRegistry;
     }
 
+    /**
+     * Setup project layout.
+     *
+     * @since 1.9
+     */
     @TaskAction
     public void setupProjectLayout() {
         UserInputHandler inputHandler = getEffectiveInputHandler();
+        if (shouldUseInitProjectSpec(inputHandler)) {
+            doInitSpecProjectGeneration(inputHandler);
+        } else {
+            doStandardProjectGeneration(inputHandler);
+        }
+    }
+
+    private boolean shouldUseInitProjectSpec(UserInputHandler inputHandler) {
+        boolean templatesAvailable = !getBuildInitSpecRegistry().isEmpty();
+        return templatesAvailable && inputHandler.askUser(uq -> uq.askBooleanQuestion("Additional project types were loaded.  Do you want to generate a project using a contributed project specification?", true)).get();
+    }
+
+    private void doInitSpecProjectGeneration(UserInputHandler inputHandler) {
+        BuildInitConfig config = inputHandler.askUser(this::selectAndConfigureSpec).get();
+        BuildInitGenerator generator = createGenerator(config);
+        boolean userInterrupted = inputHandler.interrupted();
+        if (userInterrupted) {
+            throw new BuildCancelledException();
+        }
+        getLogger().lifecycle("Generate '{}'", config.getBuildSpec().getDisplayName());
+        Directory projectDirectory = getProjectDirectory().get();
+        generator.generate(config, projectDirectory);
+        generateWrapper(projectDirectory);
+    }
+
+    private BuildInitConfig selectAndConfigureSpec(UserQuestions userQuestions) {
+        BuildInitSpecRegistry registry = getBuildInitSpecRegistry();
+
+        BuildInitSpec spec;
+        if (type == null) {
+            spec = userQuestions.choice("Select project type", registry.getAllSpecs())
+                .renderUsing(BuildInitSpec::getDisplayName)
+                .ask();
+        } else {
+            spec = registry.getSpecByType(type);
+        }
+
+        // TODO: Ask questions for each parameter, and return a configuration object with populated arguments
+        return new BuildInitConfig() {
+            @Override
+            @NonNull
+            public BuildInitSpec getBuildSpec() {
+                return spec;
+            }
+
+            @Override
+            @NonNull
+            public Map<BuildInitParameter<?>, Object> getArguments() {
+                return Collections.emptyMap();
+            }
+        };
+    }
+
+    private BuildInitGenerator createGenerator(BuildInitConfig config) {
+        Class<? extends BuildInitGenerator> generator = getBuildInitSpecRegistry().getGeneratorForSpec(config.getBuildSpec());
+        return getObjectFactory().newInstance(generator);
+    }
+
+    private void doStandardProjectGeneration(UserInputHandler inputHandler) {
         GenerationSettings settings = inputHandler.askUser(this::calculateGenerationSettings).get();
 
         boolean userInterrupted = inputHandler.interrupted();
@@ -287,7 +367,7 @@ public abstract class InitBuild extends DefaultTask {
         }
 
         settings.getInitializer().generate(settings.getSettings());
-        generateWrapper();
+        generateWrapper(settings.getSettings().getTarget());
 
         settings.getInitializer().getFurtherReading(settings.getSettings())
             .ifPresent(link -> getLogger().lifecycle(link));
@@ -326,16 +406,15 @@ public abstract class InitBuild extends DefaultTask {
             dsl,
             packageName,
             testFramework,
-            insecureProtocol.get(),
-            projectDir,
+            getInsecureProtocol().get(),
+            getProjectDirectory().get(),
             javaLanguageVersion,
             generateComments
         );
         return new GenerationSettings(initializer, initSettings);
     }
 
-    private void generateWrapper() {
-        Directory projectDirectory = getLayout().getProjectDirectory();
+    private void generateWrapper(Directory projectDirectory) {
         File unixScript = projectDirectory.file(WrapperDefaults.SCRIPT_PATH).getAsFile();
         File jarFile = projectDirectory.file(WrapperDefaults.JAR_FILE_PATH).getAsFile();
         String jarFileRelativePath = getRelativePath(projectDirectory.getAsFile(), jarFile);
@@ -350,7 +429,9 @@ public abstract class InitBuild extends DefaultTask {
             unixScript, WrapperGenerator.getBatchScript(unixScript),
             distributionUrl,
             true,
-            WrapperDefaults.NETWORK_TIMEOUT
+            WrapperDefaults.NETWORK_TIMEOUT,
+            WrapperDefaults.RETRIES,
+            WrapperDefaults.RETRY_BACK_OFF_MS
         );
     }
 
@@ -370,16 +451,18 @@ public abstract class InitBuild extends DefaultTask {
      * If not converting an existing Maven build, then validate the build directory is either
      * empty, or overwritable before generating the project.
      *
+     * A directory considered empty if it contains no files apart the {@code .gradle} directory.
+     *
      * @param userQuestions the user questions to ask if {@link #getAllowFileOverwrite()} is not set and the directory is non-empty
      * @throws BuildInitException if the build directory is non-empty, this isn't a POM conversion and the user does not allow overwriting
      */
     private void validateBuildDirectory(UserQuestions userQuestions) {
         if (!isPomConversion()) {
-            File projectDirFile = projectDir.getAsFile();
+            File projectDirFile = getProjectDirectory().get().getAsFile();
             File[] existingProjectFiles = projectDirFile.listFiles();
 
-            boolean isNotEmptyDirectory = existingProjectFiles != null && existingProjectFiles.length != 0;
-            if (isNotEmptyDirectory) {
+            boolean isEmptyDirectory = existingProjectFiles == null || existingProjectFiles.length == 0;
+            if (!isEmptyDirectory) {
                 boolean fileOverwriteAllowed = getAllowFileOverwrite().get();
                 if (!fileOverwriteAllowed) {
                     fileOverwriteAllowed = userQuestions.askBooleanQuestion("Found existing files in the project directory: '" + projectDirFile +
@@ -397,7 +480,7 @@ public abstract class InitBuild extends DefaultTask {
         return Objects.equals(getType(), "pom");
     }
 
-    private void abortBuildDueToExistingFiles(File projectDirFile) {
+    private static void abortBuildDueToExistingFiles(File projectDirFile) {
         List<String> resolutions = Arrays.asList("Remove any existing files in the project directory and run the init task again.", "Enable the --overwrite option to allow existing files to be overwritten.");
         throw new BuildInitException("Aborting build initialization due to existing files in the project directory: '" + projectDirFile + "'.", resolutions);
     }
@@ -415,7 +498,7 @@ public abstract class InitBuild extends DefaultTask {
             return null;
         }
 
-        String version = javaVersion.getOrNull();
+        String version = getJavaVersion().getOrNull();
         if (isNullOrEmpty(version)) {
             return JavaLanguageVersion.of(userQuestions.askIntQuestion("Enter target Java version", MINIMUM_VERSION_SUPPORTED_BY_FOOJAY_API, DEFAULT_JAVA_VERSION));
         }
@@ -445,8 +528,8 @@ public abstract class InitBuild extends DefaultTask {
     }
 
     private ModularizationOption getModularizationOption(UserQuestions userQuestions, BuildInitializer initializer) {
-        if (splitProject.isPresent()) {
-            return splitProject.get() ? ModularizationOption.WITH_LIBRARY_PROJECTS : ModularizationOption.SINGLE_PROJECT;
+        if (getSplitProject().isPresent()) {
+            return getSplitProject().get() ? ModularizationOption.WITH_LIBRARY_PROJECTS : ModularizationOption.SINGLE_PROJECT;
         }
         return userQuestions.choice("Select application structure", initializer.getModularizationOptions())
             .renderUsing(ModularizationOption::getDisplayName)
@@ -454,8 +537,8 @@ public abstract class InitBuild extends DefaultTask {
     }
 
     private boolean shouldUseIncubatingAPIs(UserQuestions userQuestions) {
-        if (this.useIncubatingAPIs.isPresent()) {
-            return this.useIncubatingAPIs.get();
+        if (this.getUseIncubating().isPresent()) {
+            return this.getUseIncubating().get();
         }
         return userQuestions.askBooleanQuestion("Generate build using new APIs and behavior (some features may change in the next minor release)?", false);
     }
@@ -515,7 +598,7 @@ public abstract class InitBuild extends DefaultTask {
         }
 
         BuildConverter converter = projectLayoutRegistry.getBuildConverter();
-        if (converter.canApplyToCurrentDirectory(projectDir)) {
+        if (converter.canApplyToCurrentDirectory(getProjectDirectory().get())) {
             if (userQuestions.askBooleanQuestion("Found a " + converter.getSourceBuildDescription() + " build. Generate a Gradle build from this?", true)) {
                 return converter;
             }
@@ -550,11 +633,21 @@ public abstract class InitBuild extends DefaultTask {
         return generatorsByLanguage.get(language);
     }
 
+    /**
+     * Sets the type.
+     *
+     * @since 1.9
+     */
     @Option(option = "type", description = "Set the type of project to generate.")
     public void setType(String type) {
         this.type = type;
     }
 
+    /**
+     * Returns the available build types.
+     *
+     * @since 1.10
+     */
     @OptionValues("type")
     @ToBeReplacedByLazyProperty(comment = "Not yet supported", issue = "https://github.com/gradle/gradle/issues/29341")
     public List<String> getAvailableBuildTypes() {
@@ -584,6 +677,7 @@ public abstract class InitBuild extends DefaultTask {
 
     /**
      * Set the test framework to be used.
+     * @since 2.11
      */
     @Option(option = "test-framework", description = "Set the test framework to be used.")
     public void setTestFramework(@Nullable String testFramework) {
@@ -592,6 +686,7 @@ public abstract class InitBuild extends DefaultTask {
 
     /**
      * Available test frameworks.
+     * @since 2.11
      */
     @OptionValues("test-framework")
     @ToBeReplacedByLazyProperty(comment = "Not yet supported", issue = "https://github.com/gradle/gradle/issues/29341")
@@ -619,6 +714,11 @@ public abstract class InitBuild extends DefaultTask {
         this.packageName = packageName;
     }
 
+    /**
+     * Sets the project layout registry.
+     *
+     * @since 1.9
+     */
     void setProjectLayoutRegistry(ProjectLayoutSetupRegistry projectLayoutRegistry) {
         this.projectLayoutRegistry = projectLayoutRegistry;
     }
@@ -626,7 +726,7 @@ public abstract class InitBuild extends DefaultTask {
     private String detectType() {
         ProjectLayoutSetupRegistry projectLayoutRegistry = getProjectLayoutRegistry();
         BuildConverter buildConverter = projectLayoutRegistry.getBuildConverter();
-        if (buildConverter.canApplyToCurrentDirectory(projectDir)) {
+        if (buildConverter.canApplyToCurrentDirectory(getProjectDirectory().get())) {
             return buildConverter.getId();
         }
         return projectLayoutRegistry.getDefault().getId();
@@ -640,4 +740,10 @@ public abstract class InitBuild extends DefaultTask {
 
     @Inject
     protected abstract ProjectLayout getLayout();
+
+    @Inject
+    protected abstract ObjectFactory getObjectFactory();
+
+    @Inject
+    protected abstract BuildInitSpecRegistry getBuildInitSpecRegistry();
 }

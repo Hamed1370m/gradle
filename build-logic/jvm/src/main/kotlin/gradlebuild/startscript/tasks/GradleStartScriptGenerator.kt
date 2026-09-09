@@ -21,6 +21,7 @@ import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.internal.file.temp.TemporaryFileProvider
 import org.gradle.api.internal.plugins.DefaultTemplateBasedStartScriptGenerator
+import org.gradle.api.internal.plugins.ExecutableJar
 import org.gradle.api.internal.plugins.StartScriptGenerator
 import org.gradle.api.internal.plugins.StartScriptTemplateBindingFactory
 import org.gradle.api.internal.resources.FileCollectionBackedTextResource
@@ -33,6 +34,7 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.gradle.api.provider.Property
 import org.gradle.util.internal.TextUtil
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -64,6 +66,9 @@ abstract class GradleStartScriptGenerator : DefaultTask() {
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val windowsScriptTemplate: ConfigurableFileCollection
 
+    @get:Input
+    abstract val scriptTemplateGitRef: Property<String>
+
     @get:OutputDirectory
     abstract val startScriptsDir: DirectoryProperty
 
@@ -76,11 +81,11 @@ abstract class GradleStartScriptGenerator : DefaultTask() {
         logging.captureStandardOutput(LogLevel.INFO)
         val generator = StartScriptGenerator(createUnixStartScriptGenerator(), createWindowsStartScriptGenerator())
         generator.setApplicationName("Gradle")
+        generator.setGitRef(scriptTemplateGitRef.get())
         generator.setOptsEnvironmentVar("GRADLE_OPTS")
-        generator.setExitEnvironmentVar("GRADLE_EXIT_CONSOLE")
-        generator.setMainClassName("org.gradle.launcher.GradleMain")
+        generator.setEntryPoint(ExecutableJar("lib/$launcherJarName"))
         generator.setScriptRelPath("bin/gradle")
-        generator.setClasspath(listOf("lib/$launcherJarName"))
+        generator.setClasspath(emptyList())
         generator.setAppNameSystemProperty("org.gradle.appname")
         generator.setDefaultJvmOpts(listOf("-Xmx64m", "-Xms64m"))
 

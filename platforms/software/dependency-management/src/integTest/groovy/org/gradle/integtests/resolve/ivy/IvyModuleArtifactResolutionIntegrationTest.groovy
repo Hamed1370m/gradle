@@ -17,7 +17,7 @@
 package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.resolve.MetadataArtifactResolveTestFixture
 import org.gradle.internal.resolve.ArtifactResolveException
 import org.gradle.test.fixtures.ivy.IvyRepository
@@ -36,12 +36,11 @@ class IvyModuleArtifactResolutionIntegrationTest extends AbstractHttpDependencyR
     def initBuild(IvyRepository repo) {
         buildFile << """
 repositories {
-    ivy { url '$repo.uri' }
+    ivy { url = '$repo.uri' }
 }
 """
     }
 
-    @ToBeFixedForConfigurationCache
     def "successfully resolve existing Ivy module artifact"() {
         given:
         IvyHttpModule module = publishModule()
@@ -57,7 +56,6 @@ repositories {
         checkArtifactsResolvedAndCached()
     }
 
-    @ToBeFixedForConfigurationCache
     def "invalid component type and artifact type (#reason)"() {
         given:
         IvyHttpModule module = publishModule()
@@ -78,14 +76,13 @@ repositories {
         'MavenModule' | 'MavenPomArtifact' | 'cannot retrieve Maven component and metadata artifact for Ivy module'    | new ArtifactResolveException("Could not determine artifacts for some.group:some-artifact:1.0: Cannot locate 'maven pom' artifacts for 'some.group:some-artifact:1.0' in repository 'ivy'")
     }
 
-    @ToBeFixedForConfigurationCache
     def "requesting IvyModule for a project component"() {
         given:
         IvyHttpModule module = publishModule()
 
         when:
         fixture.requestComponent('IvyModule').requestArtifact('IvyDescriptorArtifact')
-               .expectUnresolvedComponentResult(new IllegalArgumentException("Cannot query artifacts for a project component (root project :)."))
+               .expectUnresolvedComponentResult(new IllegalArgumentException("Cannot query artifacts for a project component (root project '${testDirectory.name}')."))
                .expectNoMetadataFiles()
                .createVerifyTaskForProjectComponentIdentifier()
 
@@ -95,7 +92,6 @@ repositories {
         checkArtifactsResolvedAndCached()
     }
 
-    @ToBeFixedForConfigurationCache
     def "request an ivy descriptor for an ivy module with no descriptor when artifact metadata source are configured"() {
         given:
         IvyHttpModule module = publishModuleWithoutMetadata()
@@ -124,7 +120,6 @@ repositories {
         checkArtifactsResolvedAndCached()
     }
 
-    @ToBeFixedForConfigurationCache
     def "request an ivy descriptor for an ivy module with a custom ivy pattern"() {
         given:
         httpRepo = server.getRemoteIvyRepo(true, "[module]/[revision]", "alternate-ivy.xml", "[artifact](.[ext])")
@@ -132,7 +127,7 @@ repositories {
         buildFile.text = """
 repositories {
     ivy {
-        url '${httpRepo.uri}'
+        url = "${httpRepo.uri}"
         patternLayout {
             artifact '[module]/[revision]/[artifact](.[ext])'
             ivy '[module]/[revision]/alternate-ivy.xml'
@@ -155,7 +150,6 @@ repositories {
         checkArtifactsResolvedAndCached()
     }
 
-    @ToBeFixedForConfigurationCache
     def "updates artifacts for module #condition"() {
         given:
         IvyHttpModule module = publishModule()
@@ -207,7 +201,9 @@ repositories {
 
     def checkArtifactsResolvedAndCached() {
         assert succeeds('verify')
-        server.resetExpectations()
+        if (!GradleContextualExecuter.isConfigCache()) {
+            server.resetExpectations()
+        }
         assert succeeds('verify')
         true
     }

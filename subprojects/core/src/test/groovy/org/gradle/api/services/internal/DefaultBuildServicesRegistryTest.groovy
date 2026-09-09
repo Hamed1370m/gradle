@@ -20,7 +20,6 @@ import org.gradle.BuildListener
 import org.gradle.BuildResult
 import org.gradle.api.Action
 import org.gradle.api.GradleException
-import org.gradle.api.artifacts.component.BuildIdentifier
 import org.gradle.api.internal.collections.DomainObjectCollectionFactory
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
@@ -29,9 +28,16 @@ import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.services.BuildServiceRegistry
 import org.gradle.api.services.BuildServiceSpec
 import org.gradle.api.services.ServiceReference
+import org.gradle.internal.build.BuildIdentity
 import org.gradle.internal.Actions
 import org.gradle.internal.Try
+import org.gradle.internal.buildtree.BuildModelParameters
+import org.gradle.internal.configuration.problems.DefaultIsolatedProjectsProblemsReporter
+import org.gradle.internal.configuration.problems.IsolatedProjectsProblemsListener
+import org.gradle.internal.configuration.problems.ProblemFactory
 import org.gradle.internal.event.DefaultListenerManager
+import org.gradle.internal.hash.ClassLoaderHierarchyHasher
+import org.gradle.internal.hash.TestHashCodes
 import org.gradle.internal.instantiation.InstantiatorFactory
 import org.gradle.internal.resources.SharedResourceLeaseRegistry
 import org.gradle.internal.service.Provides
@@ -39,28 +45,39 @@ import org.gradle.internal.service.ServiceRegistrationProvider
 import org.gradle.internal.service.scopes.Scope
 import org.gradle.internal.snapshot.impl.DefaultIsolatableFactory
 import org.gradle.util.TestUtil
+import org.gradle.util.Path
 import spock.lang.Specification
 
 import java.util.function.Consumer
 
 class DefaultBuildServicesRegistryTest extends Specification {
     def listenerManager = new DefaultListenerManager(Scope.Build)
-    def isolatableFactory = new DefaultIsolatableFactory(null, TestUtil.managedFactoryRegistry())
+    def classLoaderHasher = Stub(ClassLoaderHierarchyHasher) {
+        getClassLoaderHash(_) >> TestHashCodes.hashCodeFrom(123)
+    }
+    def isolatableFactory = new DefaultIsolatableFactory(classLoaderHasher, TestUtil.managedFactoryRegistry())
     def leaseRegistry = Stub(SharedResourceLeaseRegistry)
-    def buildIdentifier = Mock(BuildIdentifier)
+    def buildIdentity = new BuildIdentity(Path.ROOT)
+    def ipProblemsReporter = new DefaultIsolatedProjectsProblemsReporter(
+        Stub(ProblemFactory),
+        Stub(IsolatedProjectsProblemsListener)
+    )
+    def buildModelParameters = Stub(BuildModelParameters)
     def services = TestUtil.createTestServices { registrations ->
         registrations.addProvider(new ServiceRegistrationProvider() {
             @Provides
             BuildServiceRegistry createBuildServiceRegistry() {
                 return new DefaultBuildServicesRegistry(
-                    buildIdentifier,
+                    buildIdentity,
                     services.get(DomainObjectCollectionFactory),
                     services.get(InstantiatorFactory),
                     services,
                     listenerManager,
                     isolatableFactory,
                     leaseRegistry,
-                    BuildServiceProvider.Listener.EMPTY
+                    BuildServiceProvider.Listener.EMPTY,
+                    ipProblemsReporter,
+                    buildModelParameters
                 )
             }
         })
@@ -128,10 +145,12 @@ class DefaultBuildServicesRegistryTest extends Specification {
     }
 
     def "service has no max parallel usages by default"() {
-        expect:
+        given:
         registerService("service", ServiceImpl) {
             assert !it.maxParallelUsages.present
         }
+
+        expect:
         def registration = registry.registrations.getByName("service")
         !registration.maxParallelUsages.present
     }
@@ -215,7 +234,7 @@ class DefaultBuildServicesRegistryTest extends Specification {
 
     def "can tweak max parallel usage via the registration"() {
         when:
-        registerService("service", BuildService) {
+        registerService("service", NoParamsServiceImpl) {
             it.maxParallelUsages = 42
         }
         def registration = registry.registrations.getByName("service")
@@ -242,7 +261,7 @@ class DefaultBuildServicesRegistryTest extends Specification {
 
     def "can use base service type to create a service with no state"() {
         when:
-        def provider = registerService("service", BuildService)
+        def provider = registerService("service", NoParamsServiceImpl)
         def service = provider.get()
 
         then:
@@ -251,7 +270,7 @@ class DefaultBuildServicesRegistryTest extends Specification {
 
     def "registration for service with no state is visible"() {
         when:
-        registerService("service", BuildService)
+        registerService("service", NoParamsServiceImpl)
 
         then:
         registry.registrations.getByName("service") != null
@@ -325,7 +344,7 @@ class DefaultBuildServicesRegistryTest extends Specification {
 
     def "can locate resource corresponding to service registration"() {
         when:
-        def service1 = registerService("service", BuildService) {
+        def service1 = registerService("service", NoParamsServiceImpl) {
             it.maxParallelUsages = 42
         }
         def service2 = registerService("no-max", ServiceImpl)

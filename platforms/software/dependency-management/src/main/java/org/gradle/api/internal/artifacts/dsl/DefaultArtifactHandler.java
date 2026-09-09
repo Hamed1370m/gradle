@@ -24,27 +24,26 @@ import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.PublishArtifact;
 import org.gradle.api.artifacts.dsl.ArtifactHandler;
 import org.gradle.internal.Actions;
-import org.gradle.internal.deprecation.DeprecatableConfiguration;
-import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.metaobject.DynamicInvokeResult;
 import org.gradle.internal.metaobject.MethodAccess;
 import org.gradle.internal.metaobject.MethodMixIn;
-import org.gradle.internal.typeconversion.NotationParser;
 import org.gradle.util.internal.ConfigureUtil;
 import org.gradle.util.internal.GUtil;
 
+import javax.inject.Inject;
 import java.util.Arrays;
 import java.util.List;
 
 public class DefaultArtifactHandler implements ArtifactHandler, MethodMixIn {
 
     private final ConfigurationContainer configurationContainer;
-    private final NotationParser<Object, ConfigurablePublishArtifact> publishArtifactFactory;
+    private final PublishArtifactNotationParser publishArtifactNotationParser;
     private final DynamicMethods dynamicMethods;
 
-    public DefaultArtifactHandler(ConfigurationContainer configurationContainer, NotationParser<Object, ConfigurablePublishArtifact> publishArtifactFactory) {
+    @Inject
+    public DefaultArtifactHandler(ConfigurationContainer configurationContainer, PublishArtifactNotationParser publishArtifactNotationParser) {
         this.configurationContainer = configurationContainer;
-        this.publishArtifactFactory = publishArtifactFactory;
+        this.publishArtifactNotationParser = publishArtifactNotationParser;
         dynamicMethods = new DynamicMethods();
     }
 
@@ -55,33 +54,10 @@ public class DefaultArtifactHandler implements ArtifactHandler, MethodMixIn {
     }
 
     private PublishArtifact pushArtifact(Configuration configuration, Object notation, Action<? super ConfigurablePublishArtifact> configureAction) {
-        warnIfConfigurationIsDeprecated((DeprecatableConfiguration) configuration);
-        ConfigurablePublishArtifact publishArtifact = publishArtifactFactory.parseNotation(notation);
+        ConfigurablePublishArtifact publishArtifact = publishArtifactNotationParser.parseNotation(notation);
         configuration.getArtifacts().add(publishArtifact);
         configureAction.execute(publishArtifact);
         return publishArtifact;
-    }
-
-    // Update this with issue: https://github.com/gradle/gradle/issues/22339
-    private void warnIfConfigurationIsDeprecated(DeprecatableConfiguration configuration) {
-        // To avoid potentially adding new deprecation warnings in Gradle 8.0, we will maintain
-        // the existing fully deprecated logic here (migrating the method out of DefaultConfiguration
-        // so it isn't mistakenly used elsewhere)
-        if (isFullyDeprecated(configuration)) {
-            DeprecationLogger.deprecateConfiguration(configuration.getName()).forArtifactDeclaration()
-                .willBecomeAnErrorInGradle9()
-                .withUserManual("declaring_dependencies", "sec:deprecated-configurations")
-                .nagUser();
-        }
-    }
-
-    /**
-     * Exists only to maintain the existing fully deprecated logic in Gradle 8.0 - DO NOT USE.
-     */
-    private boolean isFullyDeprecated(DeprecatableConfiguration configuration) {
-        return configuration.isDeprecatedForDeclarationAgainst() &&
-            (!configuration.isCanBeConsumed() || configuration.isDeprecatedForConsumption()) &&
-            (!configuration.isCanBeResolved() || configuration.isDeprecatedForResolution());
     }
 
     @Override

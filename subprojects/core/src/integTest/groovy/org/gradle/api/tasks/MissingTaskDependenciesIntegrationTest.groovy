@@ -17,21 +17,25 @@
 package org.gradle.api.tasks
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.internal.reflect.validation.ValidationMessageChecker
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
+import org.gradle.util.internal.TextUtil
+import org.hamcrest.Matchers
 import org.junit.Rule
 import spock.lang.Issue
 
-import static org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache.Skip.FLAKY
-import static org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache.Skip.INVESTIGATE
-import static org.hamcrest.core.AnyOf.anyOf
 
 class MissingTaskDependenciesIntegrationTest extends AbstractIntegrationSpec implements ValidationMessageChecker {
 
     @Rule
     BlockingHttpServer server = new BlockingHttpServer()
+
+    def setup() {
+        enableProblemsApiCheck()
+    }
 
     def "detects missing dependency between two tasks and fails (#description)"() {
         buildFile """
@@ -299,7 +303,11 @@ class MissingTaskDependenciesIntegrationTest extends AbstractIntegrationSpec imp
         skipped(":producer", ":filteredConsumer")
     }
 
-    @ToBeFixedForConfigurationCache(skip = FLAKY, because = "Due to extra parallelism with cc missing dependencies detection can be flaky")
+    @ToBeFixedForConfigurationCache(
+        issue = "https://github.com/gradle/gradle/issues/27576",
+        because = "Due to extra parallelism with cc missing dependencies detection can be flaky",
+        skipBecause = "flaky"
+    )
     def "fails when missing dependencies using filtered inputs"() {
         file("src/main/java/MyClass.java").createFile()
         buildFile """
@@ -435,7 +443,7 @@ class MissingTaskDependenciesIntegrationTest extends AbstractIntegrationSpec imp
     }
 
     @Issue("https://github.com/gradle/gradle/issues/20391")
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
+    @UnsupportedWithConfigurationCache(because = "hard to reliably reproduce this corner case due to different evaluation order with CC")
     def "running tasks in parallel with exclusions does not cause incorrect builds"() {
         // This test is inspired by our build setup where we found this problem:
         // We zip the source distribution by using an archive task starting from the root project.
@@ -538,6 +546,7 @@ class MissingTaskDependenciesIntegrationTest extends AbstractIntegrationSpec imp
     }
 
     def "fails when an input file collection can't be resolved"() {
+        disableProblemsApiCheck()
         buildFile """
             task "broken" {
                 inputs.files(5).withPropertyName("invalidInputFileCollection")
@@ -547,7 +556,7 @@ class MissingTaskDependenciesIntegrationTest extends AbstractIntegrationSpec imp
                 }
             }
         """
-        def cause = """Cannot convert the provided notation to a File or URI: 5.
+        def cause = """Cannot convert the provided notation to a File: 5.
 The following types/formats are supported:
   - A String or CharSequence path, for example 'src/main/java' or '/usr/include'.
   - A String or CharSequence URI, for example 'file:/usr/include'.
@@ -555,41 +564,154 @@ The following types/formats are supported:
   - A Path instance.
   - A Directory instance.
   - A RegularFile instance.
-  - A URI or URL instance.
+  - A URI or URL instance of file.
   - A TextResource instance."""
 
         when:
         fails "broken"
         then:
-        executedAndNotSkipped ":broken"
-        failureDescriptionContains("Execution failed for task ':broken'.")
-        failureCauseContains(cause)
+        if (GradleContextualExecuter.configCache) {
+            failureDescriptionContains("Configuration cache state could not be cached")
+            failureCauseContains(cause)
+        } else {
+            executedAndNotSkipped ":broken"
+            failureDescriptionContains("Execution failed for task ':broken' (registered in build file 'build.gradle').")
+            failureCauseContains(cause)
+        }
+    }
+
+    def "detects missing dependency when executed in #firstTask -> #secondTask order"() {
+        def producerOutput = file("build/producerOutput.txt")
+
+        buildFile << """
+            def producerOutput = file("${TextUtil.normaliseFileSeparators(producerOutput.absolutePath)}")
+
+            task producer {
+                outputs.file(producerOutput)
+                doLast {
+                    producerOutput.text = "produced"
+                }
+            }
+
+            task consumer {
+                def consumerOutput = file("build/comsumer/consumerOutput.txt")
+                inputs.files(producerOutput)
+                outputs.file(consumerOutput)
+                doLast {
+                    consumerOutput.text = "consumed"
+                }
+            }
+        """
+
+        when:
+        // Using max-workers=1 to avoid parallel execution and re-ordering of tasks
+        runAndFail(firstTask, secondTask, "--max-workers=1")
+
+        then:
+        assertMissingDependency(":producer", ":consumer", producerOutput)
+
+        where:
+        firstTask  | secondTask
+        "producer" | "consumer"
+        "consumer" | "producer"
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/27576")
+    def "detects missing dependency when producer task has NO-SOURCE, executed in #firstTask -> #secondTask order"() {
+        def producerOutput = file("build/producerOutput.txt")
+
+        buildFile << """
+            def producerOutput = file("${TextUtil.normaliseFileSeparators(producerOutput.absolutePath)}")
+
+            task producer {
+                inputs.files("empty-input").skipWhenEmpty(true)
+                outputs.file(producerOutput)
+                doLast {
+                    producerOutput.text = "produced"
+                }
+            }
+
+            task consumer {
+                def consumerOutput = file("build/comsumer/consumerOutput.txt")
+                inputs.files(producerOutput)
+                outputs.file(consumerOutput)
+                doLast {
+                    consumerOutput.text = "consumed"
+                }
+            }
+        """
+
+        when:
+        // Using max-workers=1 to avoid parallel execution and re-ordering of tasks
+        runAndFail(firstTask, secondTask, "--max-workers=1")
+
+        then:
+        assertMissingDependency(":producer", ":consumer", producerOutput)
+
+        where:
+        firstTask  | secondTask
+        "producer" | "consumer"
+        "consumer" | "producer"
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/27576")
+    def "does not detect missing dependency when consumer task has NO-SOURCE, executed in #firstTask -> #secondTask order"() {
+        def producerOutput = file("build/producerOutput.txt")
+
+        buildFile << """
+            def producerOutput = file("${TextUtil.normaliseFileSeparators(producerOutput.absolutePath)}")
+
+            task producer {
+                outputs.file(producerOutput)
+                doLast {
+                    producerOutput.text = "produced"
+                }
+            }
+
+            task consumer {
+                inputs.files("empty-input").skipWhenEmpty(true)
+                def consumerOutput = file("build/comsumer/consumerOutput.txt")
+                inputs.files(producerOutput)
+                outputs.file(consumerOutput)
+                doLast {
+                    consumerOutput.text = "consumed"
+                }
+            }
+        """
+
+        expect:
+        // Using max-workers=1 to avoid parallel execution and re-ordering of tasks
+        succeeds(firstTask, secondTask, "--max-workers=1")
+
+        where:
+        firstTask  | secondTask
+        "producer" | "consumer"
+        "consumer" | "producer"
     }
 
     void assertMissingDependency(String producerTask, String consumerTask, File... producedConsumedLocations) {
-        expectReindentedValidationMessage()
-        if (GradleContextualExecuter.configCache) {
-            // TODO: Remove this workaround once https://github.com/gradle/gradle/issues/27576 is fixed
-            // Due to extra parallelism with configuration cache missing dependencies detection mechanism
-            // can report multiple errors instead of just one as is the case without configuration cache.
-            def messageMatchers = producedConsumedLocations.collect { producedConsumedLocation ->
-                def message = implicitDependency {
-                    at(producedConsumedLocation)
-                    consumer(consumerTask)
-                    producer(producerTask)
-                    includeLink()
+        // Under CC, producer and consumer can run in parallel and each emit its own validation
+        // failure. Mark every per-task failure description as checked so the cleanup hook does
+        // not flag them as unchecked.
+        failure.assertThatAllDescriptions(Matchers.anyOf(
+            Matchers.startsWith("A problem was found with the configuration of task '${producerTask}'"),
+            Matchers.startsWith("A problem was found with the configuration of task '${consumerTask}'")
+        ))
+
+        // Verify that an implicit-dependency problem was emitted matching the expected
+        // producer/consumer/location combination via the Problems API.
+        def expectedLocationPaths = producedConsumedLocations*.absolutePath
+        def matched = false
+        receivedProblems.size().times { i ->
+            def problem = receivedProblem(i)
+            if (problem.definition.id.fqid == 'validation:property-validation:implicit-dependency') {
+                def text = "${problem.contextualLabel ?: ''} ${problem.details ?: ''}"
+                if (text.contains("'${producerTask}'") && text.contains("'${consumerTask}'")
+                    && expectedLocationPaths.any { text.contains(it) }) {
+                    matched = true
                 }
-                containsNormalizedString(message)
             }
-            failure.assertThatAllDescriptions(anyOf(messageMatchers))
-        } else {
-            def expectedMessage = implicitDependency {
-                at(producedConsumedLocations[0])
-                consumer(consumerTask)
-                producer(producerTask)
-                includeLink()
-            }
-            failure.assertThatDescription(containsNormalizedString(expectedMessage))
         }
+        assert matched: "No implicit-dependency problem matched producer=${producerTask} consumer=${consumerTask} locations=${expectedLocationPaths}"
     }
 }

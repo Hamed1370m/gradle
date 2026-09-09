@@ -20,21 +20,23 @@ import com.google.common.collect.Comparators
 import com.google.common.collect.ImmutableSortedMultiset
 import com.google.common.collect.Iterables
 import com.google.common.collect.Multiset
-import groovy.test.NotYetImplemented
 import groovy.transform.Canonical
 import org.gradle.api.tasks.Classpath
 import org.gradle.api.tasks.CompileClasspath
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
+import org.gradle.util.internal.ToBeImplemented
 import org.hamcrest.CoreMatchers
 import spock.lang.Issue
 
 import javax.annotation.Nonnull
 import java.util.regex.Pattern
 
-@Requires(IntegTestPreconditions.NotParallelExecutor)
+@Requires(TestExecutionPreconditions.NotParallelExecutor)
+@ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
 class ArtifactTransformWithDependenciesIntegrationTest extends AbstractHttpDependencyResolutionTest implements ArtifactTransformTestFixture {
 
     def setup() {
@@ -375,7 +377,7 @@ project(':common') {
                     additional {
                         attributes {
                             attribute(color, 'purple')
-                            artifact(producer.output)
+                            artifact(tasks.producer.output)
                         }
                     }
                 }
@@ -557,7 +559,7 @@ project(':common') {
         setupBuildWithTransformOfExternalDependencyThatUsesDifferentTransformForUpstreamDependencies()
 
         buildFile << """
-            resolveArtifacts.collection = view
+            tasks.resolveArtifacts.collection = view
         """
 
         when:
@@ -583,8 +585,8 @@ project(':common') {
         setupBuildWithTransformOfExternalDependencyThatUsesDifferentTransformForUpstreamDependencies()
 
         buildFile << """
-            resolveArtifacts.collection = view
-            resolveArtifacts.dependsOn {
+            tasks.resolveArtifacts.collection = view
+            tasks.resolveArtifacts.dependsOn {
                 view.forEach { println("artifact = " + it) }
                 []
             }
@@ -676,16 +678,19 @@ project(':common') {
 
         buildFile << """
             def flavor = Attribute.of('flavor', String)
+            def selectable = Attribute.of('selectable', String)
 
             allprojects {
                 configurations {
                     outgoing.outgoing.variants {
                         one {
                             attributes.attribute(flavor, 'bland')
-                            artifact(producer.output)
+                            attributes.attribute(selectable, 'yes')
+                            artifact(tasks.producer.output)
                         }
                         two {
                             attributes.attribute(flavor, 'cloying')
+                            attributes.attribute(selectable, 'no')
                         }
                     }
                 }
@@ -705,6 +710,7 @@ project(':common') {
                     attributes {
                         it.attribute(color, 'green')
                         it.attribute(flavor, 'tasty')
+                        it.attribute(selectable, 'yes')
                     }
                 }.files
 
@@ -736,7 +742,7 @@ project(':common') {
         fails("app:broken")
 
         then:
-        failure.assertHasCause("The consumer was configured to find attribute 'color' with value 'blue'. However we cannot choose between the following variants of project :lib:")
+        failure.assertHasCause("The consumer was configured to find attribute 'color' with value 'blue'. However we cannot choose between the following variants of project ':lib':")
 
         when:
         run("app:resolveView")
@@ -747,6 +753,7 @@ project(':common') {
             singleStep("lib.jar", "common.jar")
         )
         outputContains("result = [app.txt, lib.jar.txt, common.jar.txt]")
+
 
         when:
         run("app:resolveView")
@@ -814,14 +821,14 @@ project(':common') {
         run ":app:resolveGreen"
 
         then: // no changes, should be up-to-date
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
         assertTransformationsExecuted()
 
         when:
         run ":app:resolveGreen", "-DcommonOutputDir=out"
 
         then: // new path, should re-run
-        result.assertTasksNotSkipped(":common:producer")
+        result.assertTasksExecuted(":common:producer")
         assertTransformationsExecuted(
             singleStep('common.jar'),
             singleStep('lib.jar', 'slf4j-api-1.7.25.jar', 'common.jar'),
@@ -831,14 +838,14 @@ project(':common') {
         run ":app:resolveGreen", "-DcommonOutputDir=out"
 
         then: // no changes, should be up-to-date
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
         assertTransformationsExecuted()
 
         when:
         run ":app:resolveGreen", "-DcommonOutputDir=out", "-DcommonFileName=common-blue.jar"
 
         then: // new name, should re-run
-        result.assertTasksNotSkipped(":common:producer", ":app:resolveGreen")
+        result.assertTasksExecuted(":common:producer", ":app:resolveGreen")
         assertTransformationsExecuted(
             singleStep('common-blue.jar'),
             singleStep('lib.jar', 'slf4j-api-1.7.25.jar', 'common-blue.jar'),
@@ -848,14 +855,14 @@ project(':common') {
         run ":app:resolveGreen", "-DcommonOutputDir=out", "-DcommonFileName=common-blue.jar"
 
         then: // no changes, should be up-to-date
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
         assertTransformationsExecuted()
 
         when:
         run ":app:resolveGreen", "-DcommonOutputDir=out", "-DcommonFileName=common-blue.jar", "-DcommonContent=new"
 
         then: // new content, should re-run
-        result.assertTasksNotSkipped(":common:producer", ":app:resolveGreen")
+        result.assertTasksExecuted(":common:producer", ":app:resolveGreen")
         assertTransformationsExecuted(
             singleStep('common-blue.jar'),
             singleStep('lib.jar', 'slf4j-api-1.7.25.jar', 'common-blue.jar'),
@@ -865,7 +872,7 @@ project(':common') {
         run ":app:resolveGreen"
 
         then: // have seen these inputs before
-        result.assertTasksNotSkipped(":common:producer", ":app:resolveGreen")
+        result.assertTasksExecuted(":common:producer", ":app:resolveGreen")
         assertTransformationsExecuted()
     }
 
@@ -917,14 +924,14 @@ abstract class NoneTransform implements TransformAction<TransformParameters.None
         run ":app:resolveGreen"
 
         then: // no changes, should be up-to-date
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
         assertTransformationsExecuted()
 
         when:
         run ":app:resolveGreen", "-DcommonOutputDir=out"
 
         then: // new path, should skip consumer
-        result.assertTasksNotSkipped(":common:producer")
+        result.assertTasksExecuted(":common:producer")
         assertTransformationsExecuted(
             singleStep('common.jar'),
         )
@@ -933,7 +940,7 @@ abstract class NoneTransform implements TransformAction<TransformParameters.None
         run ":app:resolveGreen", "-DcommonOutputDir=out", "-DcommonFileName=common-blue.jar"
 
         then: // new name, should skip consumer
-        result.assertTasksNotSkipped(":common:producer", ":app:resolveGreen")
+        result.assertTasksExecuted(":common:producer", ":app:resolveGreen")
         assertTransformationsExecuted(
             singleStep('common-blue.jar'),
         )
@@ -942,14 +949,14 @@ abstract class NoneTransform implements TransformAction<TransformParameters.None
         run ":app:resolveGreen", "-DcommonOutputDir=out", "-DcommonFileName=common-blue.jar"
 
         then: // no changes, should be up-to-date
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
         assertTransformationsExecuted()
 
         when:
         run ":app:resolveGreen", "-DcommonOutputDir=out", "-DcommonFileName=common-blue.jar", "-DcommonContent=new"
 
         then: // new content, should re-run
-        result.assertTasksNotSkipped(":common:producer", ":app:resolveGreen")
+        result.assertTasksExecuted(":common:producer", ":app:resolveGreen")
         assertTransformationsExecuted(
             singleStep('common-blue.jar'),
             singleStep('lib.jar', 'slf4j-api-1.7.25.jar', 'common-blue.jar'),
@@ -959,7 +966,7 @@ abstract class NoneTransform implements TransformAction<TransformParameters.None
         run ":app:resolveGreen"
 
         then: // have seen these inputs before
-        result.assertTasksNotSkipped(":common:producer", ":app:resolveGreen")
+        result.assertTasksExecuted(":common:producer", ":app:resolveGreen")
         assertTransformationsExecuted()
     }
 
@@ -1013,14 +1020,14 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
         run ":app:resolveGreen"
 
         then: // no changes, should be up-to-date
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
         assertTransformationsExecuted()
 
         when:
         run ":app:resolveGreen", "-DcommonOutputDir=out"
 
         then: // new path, should skip consumer
-        result.assertTasksNotSkipped(":common:producer")
+        result.assertTasksExecuted(":common:producer")
         assertTransformationsExecuted(
             singleStep('common.jar'),
         )
@@ -1029,7 +1036,7 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
         run ":app:resolveGreen", "-DcommonOutputDir=out", "-DcommonFileName=common-blue.jar"
 
         then: // new name, should skip consumer
-        result.assertTasksNotSkipped(":common:producer", ":app:resolveGreen")
+        result.assertTasksExecuted(":common:producer", ":app:resolveGreen")
         assertTransformationsExecuted(
             singleStep('common-blue.jar'),
         )
@@ -1038,14 +1045,14 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
         run ":app:resolveGreen", "-DcommonOutputDir=out", "-DcommonFileName=common-blue.jar"
 
         then: // no changes, should be up-to-date
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
         assertTransformationsExecuted()
 
         when:
         run ":app:resolveGreen", "-DcommonOutputDir=out", "-DcommonFileName=common-blue.jar", "-DcommonContent=new"
 
         then: // new content, should re-run
-        result.assertTasksNotSkipped(":common:producer", ":app:resolveGreen")
+        result.assertTasksExecuted(":common:producer", ":app:resolveGreen")
         assertTransformationsExecuted(
             singleStep('common-blue.jar'),
             singleStep('lib.jar', 'slf4j-api-1.7.25.jar', 'common-blue.jar')
@@ -1055,7 +1062,7 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
         run ":app:resolveGreen"
 
         then: // have seen these inputs before
-        result.assertTasksNotSkipped(":common:producer", ":app:resolveGreen")
+        result.assertTasksExecuted(":common:producer", ":app:resolveGreen")
         assertTransformationsExecuted()
 
         where:
@@ -1238,7 +1245,7 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
         )
     }
 
-    @NotYetImplemented
+    @ToBeImplemented
     def "transform dependencies include multiple artifacts for the same output"() {
         setupBuildWithSingleStep()
         buildFile("""
@@ -1261,8 +1268,8 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
             singleStep('slf4j-api-1.7.25.jar'),
             singleStep('hamcrest-core-1.3.jar'),
             singleStep('junit-4.11.jar', 'hamcrest-core-1.3.jar'),
-            singleStep('common.jar', 'common2.jar'), // Requested behavior: transforming common includes common2 as a dependency
-            singleStep('common2.jar', 'common.jar'), // Requested behavior: transforming common2 includes common as a dependency
+            singleStep('common.jar'),  // Requested behavior: transforming common includes common2 as a dependency
+            singleStep('common2.jar'), // Requested behavior: transforming common2 includes common as a dependency
             singleStep('lib.jar','slf4j-api-1.7.25.jar', 'common.jar', 'common2.jar'),
         )
     }
@@ -1308,7 +1315,6 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
         output.contains("result = [lib2-5.6.jar.txt, lib1-1.3.jar.txt]")
     }
 
-    @ToBeFixedForConfigurationCache(because = "treating file collection visit failures as a configuration cache problem adds an additional failure to the build summary")
     def "transform does not execute when dependencies cannot be found"() {
         given:
         mavenHttpRepo.module("unknown", "not-found", "4.3").allowAll().assertNotPublished()
@@ -1326,13 +1332,16 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
 
         then:
         assertTransformationsExecuted()
-        failure.assertHasDescription("Execution failed for task ':app:resolveGreen'") // failure is reported for task that takes the files as input
-        failure.assertResolutionFailure(":app:implementation")
+        if (GradleContextualExecuter.notConfigCache) {
+            failure.assertHasDescription("Execution failed for task ':app:resolveGreen' (registered in build file 'build.gradle').") // failure is reported for task that takes the files as input
+            failure.assertResolutionFailure(":app:implementation")
+        } else {
+            failure.assertHasDescription("Could not resolve all files for configuration ':app:implementation'.")
+        }
         failure.assertHasFailures(1)
         failure.assertThatCause(CoreMatchers.containsString("Could not find unknown:not-found:4.3"))
     }
 
-    @ToBeFixedForConfigurationCache(because = "treating file collection visit failures as a configuration cache problem adds an additional failure to the build summary")
     def "transform does not execute when dependencies cannot be downloaded"() {
         given:
         def cantBeDownloaded = withColorVariants(mavenHttpRepo.module("test", "cant-be-downloaded", "4.3")).publish()
@@ -1352,21 +1361,31 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
         fails ":app:resolveGreen"
 
         then:
-        failure.assertHasDescription("Execution failed for task ':app:resolveGreen'") // failure is reported for task that takes the files as input
-        failure.assertResolutionFailure(":app:implementation")
+        if (GradleContextualExecuter.notConfigCache) {
+            failure.assertHasDescription("Execution failed for task ':app:resolveGreen' (registered in build file 'build.gradle').") // failure is reported for task that takes the files as input
+            failure.assertResolutionFailure(":app:implementation")
+        } else {
+            failure.assertHasDescription("Could not resolve all files for configuration ':app:implementation'.")
+        }
         failure.assertHasFailures(1)
         failure.assertThatCause(CoreMatchers.containsString("Could not download cant-be-downloaded-4.3.jar (test:cant-be-downloaded:4.3)"))
 
-        assertTransformationsExecuted(
-            transformStep1('common.jar'),
-            transformStep1('slf4j-api-1.7.25.jar'),
-            transformStep1('hamcrest-core-1.3.jar'),
-            transformStep1('junit-4.11.jar': ['hamcrest-core-1.3.jar']),
-            transformStep2('common.jar'),
-            transformStep2('slf4j-api-1.7.25.jar'),
-            transformStep2('hamcrest-core-1.3.jar'),
-            transformStep2('junit-4.11.jar': ['hamcrest-core-1.3.jar'])
-        )
+        if (GradleContextualExecuter.notConfigCache) {
+            assertTransformationsExecuted(
+                transformStep1('common.jar'),
+                transformStep1('slf4j-api-1.7.25.jar'),
+                transformStep1('hamcrest-core-1.3.jar'),
+                transformStep1('junit-4.11.jar': ['hamcrest-core-1.3.jar']),
+                transformStep2('common.jar'),
+                transformStep2('slf4j-api-1.7.25.jar'),
+                transformStep2('hamcrest-core-1.3.jar'),
+                transformStep2('junit-4.11.jar': ['hamcrest-core-1.3.jar'])
+                // no transforms for lib.jar
+            )
+        } else {
+            // no transformations at all
+            assertTransformationsExecuted()
+        }
     }
 
     def "transform does not execute when dependencies cannot be transformed"() {
@@ -1377,7 +1396,7 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
         fails ":app:resolveGreen", '-DfailTransformOf=slf4j-api-1.7.25.jar'
 
         then:
-        failure.assertHasDescription("Execution failed for task ':app:resolveGreen'") // failure is reported for task that takes the files as input
+        failure.assertHasDescription("Execution failed for task ':app:resolveGreen' (registered in build file 'build.gradle').") // failure is reported for task that takes the files as input
         failure.assertResolutionFailure(":app:implementation")
         failure.assertHasFailures(1)
         failure.assertThatCause(CoreMatchers.containsString("Failed to transform slf4j-api-1.7.25.jar (org.slf4j:slf4j-api:1.7.25)"))
@@ -1400,7 +1419,7 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
         setupBuildWithTwoSteps()
         buildFile << """
             project(':common') {
-                producer.doLast {
+                tasks.producer.doLast {
                     throw new RuntimeException("broken")
                 }
             }
@@ -1411,7 +1430,7 @@ abstract class ClasspathTransform implements TransformAction<TransformParameters
 
         then:
         assertTransformationsExecuted()
-        failure.assertHasDescription("Execution failed for task ':common:producer'")
+        failure.assertHasDescription("Execution failed for task ':common:producer' (registered in build file 'build.gradle').")
         failure.assertHasFailures(1)
         failure.assertHasCause("broken")
     }

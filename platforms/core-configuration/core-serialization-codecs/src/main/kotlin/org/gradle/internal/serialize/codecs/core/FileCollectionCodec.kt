@@ -32,13 +32,17 @@ import org.gradle.api.internal.file.collections.FailingFileCollection
 import org.gradle.api.internal.file.collections.FileSystemMirroringFileTree
 import org.gradle.api.internal.file.collections.ProviderBackedFileCollection
 import org.gradle.api.internal.provider.ProviderInternal
+import org.gradle.api.internal.provider.ProviderResolutionStrategy
+import org.gradle.api.internal.tasks.TaskDependencyFactory
 import org.gradle.api.specs.Spec
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.util.PatternSet
+import org.gradle.internal.file.PathToFileResolver
 import org.gradle.internal.serialize.graph.Codec
 import org.gradle.internal.serialize.graph.ReadContext
 import org.gradle.internal.serialize.graph.WriteContext
 import org.gradle.internal.serialize.graph.codecs.BeanSpec
+import org.gradle.internal.serialize.graph.codecs.ValueObject
 import org.gradle.internal.serialize.graph.decodePreservingIdentity
 import org.gradle.internal.serialize.graph.encodePreservingIdentityOf
 import org.gradle.internal.serialize.graph.readList
@@ -50,11 +54,13 @@ import kotlin.jvm.optionals.getOrNull
 
 class FileCollectionCodec(
     private val fileCollectionFactory: FileCollectionFactory,
-    private val artifactSetConverter: ArtifactSetToFileCollectionFactory
+    private val artifactSetConverter: ArtifactSetToFileCollectionFactory,
+    private val taskDependencyFactory: TaskDependencyFactory
 ) : Codec<FileCollectionInternal> {
 
     override suspend fun WriteContext.encode(value: FileCollectionInternal) {
         encodePreservingIdentityOf(value) {
+            writeNullableString(value.displayName.takeIf { it != FileCollectionInternal.DEFAULT_COLLECTION_DISPLAY_NAME })
             encodeContents(value)
         }
     }
@@ -79,24 +85,39 @@ class FileCollectionCodec(
 
     override suspend fun ReadContext.decode(): FileCollectionInternal {
         return decodePreservingIdentity { id ->
-            val fileCollection = decodeContents()
+            val displayName = readNullableString() ?: FileCollectionInternal.DEFAULT_COLLECTION_DISPLAY_NAME
+            val fileCollection = decodeContents(displayName)
             isolate.identities.putInstance(id, fileCollection)
             fileCollection
         }
     }
 
-    suspend fun ReadContext.decodeContents(): FileCollectionInternal = if (readBoolean()) {
+    suspend fun ReadContext.decodeContents(
+        displayName: String = FileCollectionInternal.DEFAULT_COLLECTION_DISPLAY_NAME
+    ): FileCollectionInternal = if (readBoolean()) {
         readNonNull<FileCollectionExecutionTimeValue>().toFileCollection(fileCollectionFactory)
     } else {
         fileCollectionFactory.resolving(
+            displayName,
             readList().map { element ->
                 when (element) {
                     is File -> element
                     is SubtractingFileCollectionSpec -> element.left.minus(element.right)
                     is FilteredFileCollectionSpec -> element.collection.filter(element.filter)
-                    is ProviderBackedFileCollectionSpec -> element.provider
+                    is ProviderBackedFileCollectionSpec -> fileCollectionFactory.withResolver(element.resolver).run {
+                        val source = element.provider
+                        when (element.resolutionStrategy) {
+                            ProviderResolutionStrategy.ALLOW_ABSENT -> resolvingLeniently(source)
+                            ProviderResolutionStrategy.REQUIRE_PRESENT -> resolving(source)
+                        }
+                    }
                     is FileTree -> element
-                    is ResolutionBackedFileCollectionSpec -> artifactSetConverter.asFileCollection(element.displayName, element.lenient, element.elements)
+                    is ResolutionBackedFileCollectionSpec -> ResolutionBackedFileCollection(
+                        artifactSetConverter.getSelectedArtifacts(element.elements),
+                        element.lenient,
+                        artifactSetConverter.resolutionHost(element.displayName),
+                        taskDependencyFactory
+                    )
                     is BeanSpec -> element.bean
                     else -> throw IllegalArgumentException("Unexpected item $element in file collection contents")
                 }
@@ -107,19 +128,26 @@ class FileCollectionCodec(
 
 
 private
-class SubtractingFileCollectionSpec(val left: FileCollection, val right: FileCollection)
+class SubtractingFileCollectionSpec(val left: FileCollection, val right: FileCollection) :
+    ValueObject
 
 
 private
-class FilteredFileCollectionSpec(val collection: FileCollection, val filter: Spec<in File>)
+class FilteredFileCollectionSpec(val collection: FileCollection, val filter: Spec<in File>) :
+    ValueObject
 
 
 private
-class ProviderBackedFileCollectionSpec(val provider: ProviderInternal<*>)
+class ProviderBackedFileCollectionSpec(
+    val resolver: PathToFileResolver,
+    val resolutionStrategy: ProviderResolutionStrategy,
+    val provider: ProviderInternal<*>
+) : ValueObject
 
 
 private
-class ResolutionBackedFileCollectionSpec(val displayName: String, val lenient: Boolean, val elements: List<Any>)
+class ResolutionBackedFileCollectionSpec(val displayName: String, val lenient: Boolean, val elements: List<Any>) :
+    ValueObject
 
 
 private
@@ -161,7 +189,7 @@ class CollectingVisitor : AbstractVisitor() {
                 // being referenced from a different task.
                 val provider = fileCollection.provider
                 if (provider !is TaskProvider<*>) {
-                    elements.add(ProviderBackedFileCollectionSpec(provider))
+                    elements.add(ProviderBackedFileCollectionSpec(fileCollection.resolver, fileCollection.providerResolutionStrategy, provider))
                     false
                 } else {
                     true

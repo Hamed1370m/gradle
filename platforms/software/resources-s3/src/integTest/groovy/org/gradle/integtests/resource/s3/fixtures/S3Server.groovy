@@ -16,33 +16,27 @@
 
 package org.gradle.integtests.resource.s3.fixtures
 
+import org.gradle.test.fixtures.server.http.HttpRequest
+import org.gradle.test.fixtures.server.http.HttpResponse
 
 import groovy.xml.StreamingMarkupBuilder
-import org.eclipse.jetty.server.Request
-import org.eclipse.jetty.server.handler.AbstractHandler
 import org.gradle.integtests.resource.s3.fixtures.stub.HttpStub
 import org.gradle.integtests.resource.s3.fixtures.stub.StubRequest
 import org.gradle.test.fixtures.file.TestDirectoryProvider
 import org.gradle.test.fixtures.server.RepositoryServer
+import org.gradle.test.fixtures.server.http.HttpResourceHandler
 import org.gradle.test.fixtures.server.http.HttpServer
 import org.gradle.util.internal.TextUtil
-import org.joda.time.DateTimeZone
-import org.joda.time.format.DateTimeFormat
-import org.joda.time.format.DateTimeFormatter
-import org.joda.time.tz.FixedDateTimeZone
 
-import javax.servlet.ServletException
-import javax.servlet.http.HttpServletRequest
-import javax.servlet.http.HttpServletResponse
 import java.security.MessageDigest
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 class S3Server extends HttpServer implements RepositoryServer {
 
     public static final String BUCKET_NAME = "tests3bucket"
-    private static final DateTimeZone GMT = new FixedDateTimeZone("GMT", "GMT", 0, 0)
-    protected static final DateTimeFormatter RCF_822_DATE_FORMAT = DateTimeFormat.forPattern("EEE, dd MMM yyyy HH:mm:ss z")
-        .withLocale(Locale.US)
-        .withZone(GMT);
+    protected static final DateTimeFormatter RCF_822_DATE_FORMAT = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss z").withZone(ZoneId.of("GMT")).withLocale(Locale.ENGLISH)
 
     public static final String ETAG = 'd41d8cd98f00b204e9800998ecf8427e'
     public static final String X_AMZ_REQUEST_ID = '0A398F9A1BAD4027'
@@ -64,7 +58,7 @@ class S3Server extends HttpServer implements RepositoryServer {
         start()
     }
 
-    void assertRequest(HttpStub httpStub, HttpServletRequest request) {
+    void assertRequest(HttpStub httpStub, HttpRequest request) {
         StubRequest stubRequest = httpStub.request
         String path = stubRequest.path
         assert path.startsWith('/')
@@ -76,7 +70,7 @@ class S3Server extends HttpServer implements RepositoryServer {
         }
     }
 
-    boolean requestMatches(HttpStub httpStub, HttpServletRequest request) {
+    boolean requestMatches(HttpStub httpStub, HttpRequest request) {
         StubRequest stubRequest = httpStub.request
         String path = stubRequest.path
         assert path.startsWith('/')
@@ -110,8 +104,8 @@ class S3Server extends HttpServer implements RepositoryServer {
     String getValidCredentials() {
         return """
         credentials(AwsCredentials) {
-            accessKey "someKey"
-            secretKey "someSecret"
+            accessKey = "someKey"
+            secretKey = "someSecret"
         }"""
     }
 
@@ -178,7 +172,7 @@ class S3Server extends HttpServer implements RepositoryServer {
                     'Date': DATE_HEADER,
                     'Server': SERVER_AMAZON_S3,
                     'Content-Length': length,
-                    'Last-Modified': RCF_822_DATE_FORMAT.print(new Date().getTime())
+                    'Last-Modified': ZonedDateTime.now().format(RCF_822_DATE_FORMAT)
                 ]
                 body = { xml.toString() }
             }
@@ -216,7 +210,7 @@ class S3Server extends HttpServer implements RepositoryServer {
                     'Server': SERVER_AMAZON_S3,
                     'ETag': calculateEtag(file),
                     'Content-Length': 0,
-                    'Last-Modified': RCF_822_DATE_FORMAT.print(new Date().getTime())
+                    'Last-Modified': ZonedDateTime.now().format(RCF_822_DATE_FORMAT)
                 ]
             }
         }
@@ -259,7 +253,7 @@ class S3Server extends HttpServer implements RepositoryServer {
                     'x-amz-request-id': X_AMZ_REQUEST_ID,
                     'Date': DATE_HEADER,
                     'Server': SERVER_AMAZON_S3,
-                    'Last-Modified': RCF_822_DATE_FORMAT.print(new Date().getTime())
+                    'Last-Modified': ZonedDateTime.now().format(RCF_822_DATE_FORMAT)
                 ]
                 body = { responseXml.toString() }
             }
@@ -288,7 +282,7 @@ class S3Server extends HttpServer implements RepositoryServer {
                     'Accept-Ranges': 'bytes',
                     'Content-Type': 'application/octet-stream',
                     'Content-Length': "0",
-                    'Last-Modified': RCF_822_DATE_FORMAT.print(new Date().getTime())
+                    'Last-Modified': ZonedDateTime.now().format(RCF_822_DATE_FORMAT)
                 ]
             }
         }
@@ -348,7 +342,7 @@ class S3Server extends HttpServer implements RepositoryServer {
                     'Accept-Ranges': 'bytes',
                     'Content-Type': 'application/octet-stream',
                     'Content-Length': { file.length() },
-                    'Last-Modified': RCF_822_DATE_FORMAT.print(new Date().getTime())
+                    'Last-Modified': ZonedDateTime.now().format(RCF_822_DATE_FORMAT)
                 ]
                 body = { file.bytes }
             }
@@ -582,7 +576,7 @@ class S3Server extends HttpServer implements RepositoryServer {
 
     private HttpServer.ActionSupport stubAction(HttpStub httpStub) {
         new HttpServer.ActionSupport("Generic stub handler") {
-            void handle(HttpServletRequest request, HttpServletResponse response) {
+            void handle(HttpRequest request, HttpResponse response) {
                 if (httpStub.request.body) {
                     httpStub.request.body.call(request.getInputStream())
                 }
@@ -600,9 +594,9 @@ class S3Server extends HttpServer implements RepositoryServer {
     private void add(HttpStub httpStub, HttpServer.ActionSupport action) {
         HttpServer.HttpExpectOne expectation = new HttpServer.HttpExpectOne(action, [httpStub.request.method], httpStub.request.path)
         expectations << expectation
-        addHandler(new AbstractHandler() {
+        addHandler(new HttpResourceHandler() {
             @Override
-            void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+            void handle(String target, HttpRequest request, HttpResponse response) throws IOException {
 
                 if (requestMatches(httpStub, request)) {
                     assertRequest(httpStub, request)
@@ -610,10 +604,10 @@ class S3Server extends HttpServer implements RepositoryServer {
                         println("This expectation for the request [${request.method} :${request.pathInfo}] was already handled - skipping")
                         return
                     }
-                    if (!((Request) request).isHandled()) {
+                    if (!isHandled(request)) {
                         expectation.atomicRun.set(true)
                         action.handle(request, response)
-                        ((Request) request).setHandled(true)
+                        markHandled(request)
                     }
                 }
             }

@@ -25,8 +25,8 @@ import org.gradle.internal.resources.ResourceLock;
 import org.gradle.internal.resources.SharedResource;
 import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceScope;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Set;
 
@@ -35,14 +35,14 @@ public interface BuildServiceRegistryInternal extends BuildServiceRegistry {
     /**
      * @param maxUsages Same semantics as {@link SharedResource#getMaxUsages()}.
      */
-    BuildServiceProvider<?, ?> register(String name, Class<? extends BuildService<?>> implementationType, @Nullable BuildServiceParameters parameters, int maxUsages);
+    BuildServiceProvider<?, ?> register(String name, Class<? extends BuildService<?>> implementationType, BuildServiceParameters parameters, int maxUsages);
 
     /**
      * Same as #register(name, implementationType, parameters, maxUsages), but conditional.
      *
      * @return the registered or already existing provider
      */
-    BuildServiceProvider<?, ?> registerIfAbsent(String name, Class<? extends BuildService<?>> implementationType, @Nullable BuildServiceParameters parameters, int maxUsages);
+    BuildServiceProvider<?, ?> registerIfAbsent(String name, Class<? extends BuildService<?>> implementationType, BuildServiceParameters parameters, int maxUsages);
 
     /**
      * Returns a shared build service provider that can lazily resolve to the service named and typed as given.

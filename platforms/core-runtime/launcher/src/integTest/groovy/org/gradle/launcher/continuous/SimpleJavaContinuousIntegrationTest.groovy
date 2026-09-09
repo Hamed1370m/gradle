@@ -19,7 +19,9 @@ package org.gradle.launcher.continuous
 import org.gradle.integtests.fixtures.AbstractContinuousIntegrationTest
 import org.gradle.test.precondition.Requires
 import org.gradle.test.precondition.TestPrecondition
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+import org.gradle.test.preconditions.TestEnvironmentPreconditions
+
 
 // NB: there's nothing specific about Java support and continuous.
 //     this spec just lays out some more practical use cases than the other targeted tests.
@@ -28,6 +30,13 @@ class SimpleJavaContinuousIntegrationTest extends AbstractContinuousIntegrationT
     def setup() {
         buildFile << """
             apply plugin: 'java'
+
+            repositories {
+                mavenCentral()
+            }
+            dependencies {
+                implementation "junit:junit:4.13.2"
+            }
         """
     }
 
@@ -50,7 +59,7 @@ class SimpleJavaContinuousIntegrationTest extends AbstractContinuousIntegrationT
         executedAndNotSkipped ":compileJava", ":build"
 
         when:
-        if (TestPrecondition.satisfied(UnitTestPreconditions.Windows)) {
+        if (TestPrecondition.satisfied(OsTestPreconditions.Windows)) {
             //the main src dir might be locked, only delete children
             file("src/main/java").listFiles().each {
                 assert !it.deleteDir().exists()
@@ -97,7 +106,9 @@ class SimpleJavaContinuousIntegrationTest extends AbstractContinuousIntegrationT
     def "can run tests"() {
         when:
         def sourceFile = file("src/main/java/Thing.java") << "class Thing {}"
-        def testFile = file("src/test/java/TestThing.java") << "class TestThing extends Thing{}"
+        def testFile = file("src/test/java/TestThing.java") << "public class TestThing extends Thing { @org.junit.Test public void test() {} }"
+
+        then:
         def resourceFile = file("src/main/resources/thing.text") << "thing"
 
         then:
@@ -113,7 +124,7 @@ class SimpleJavaContinuousIntegrationTest extends AbstractContinuousIntegrationT
         skipped(":processResources")
 
         when:
-        testFile.text = "class TestThing extends Thing { static public int FLAG = 1; }"
+        testFile.text = "public class TestThing extends Thing { static public int FLAG = 1; @org.junit.Test public void test() {} }"
 
         then:
         buildTriggeredAndSucceeded()
@@ -132,7 +143,7 @@ class SimpleJavaContinuousIntegrationTest extends AbstractContinuousIntegrationT
     def "failing main source build ignores changes to test source"() {
         when:
         def sourceFile = file("src/main/java/Thing.java") << "class Thing {}"
-        def testSourceFile = file("src/test/java/ThingTest.java") << "class ThingTest {}"
+        def testSourceFile = file("src/test/java/ThingTest.java") << "public class ThingTest { @org.junit.Test public void test() {} }"
 
         then:
         succeeds("test")
@@ -142,17 +153,17 @@ class SimpleJavaContinuousIntegrationTest extends AbstractContinuousIntegrationT
 
         then:
         buildTriggeredAndFailed()
-        failureDescriptionStartsWith("Execution failed for task ':compileTestJava'.")
+        failureDescriptionStartsWith("Execution failed for task ':compileTestJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
 
         when:
         sourceFile << " broken "
 
         then:
         buildTriggeredAndFailed()
-        failureDescriptionStartsWith("Execution failed for task ':compileJava'.")
+        failureDescriptionStartsWith("Execution failed for task ':compileJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
 
         when:
-        testSourceFile.text = "class ThingTest {}"
+        testSourceFile.text = "public class ThingTest { @org.junit.Test public void test() {} }"
 
         then:
         noBuildTriggered()
@@ -165,7 +176,7 @@ class SimpleJavaContinuousIntegrationTest extends AbstractContinuousIntegrationT
     }
 
     // Just exercises the dependency management layers to shake out any weirdness
-    @Requires(UnitTestPreconditions.Online)
+    @Requires(TestEnvironmentPreconditions.Online)
     def "can resolve dependencies from remote repository"() {
         when:
         def sourceFile = file("src/main/java/Thing.java") << "class Thing {}"
@@ -253,7 +264,7 @@ class SimpleJavaContinuousIntegrationTest extends AbstractContinuousIntegrationT
         executedAndNotSkipped ":compileJava"
     }
 
-    @Requires(UnitTestPreconditions.NotLinux)
+    @Requires(OsTestPreconditions.NotLinux)
     def "creation of initial source file triggers build for hierarchical watchers"() {
         expect:
         succeeds("build")
@@ -268,7 +279,7 @@ class SimpleJavaContinuousIntegrationTest extends AbstractContinuousIntegrationT
         executedAndNotSkipped ":compileJava"
     }
 
-    @Requires(UnitTestPreconditions.Linux)
+    @Requires(OsTestPreconditions.Linux)
     def "creation of initial source file does not trigger build for non-hierarchical watchers"() {
         expect:
         succeeds("build")

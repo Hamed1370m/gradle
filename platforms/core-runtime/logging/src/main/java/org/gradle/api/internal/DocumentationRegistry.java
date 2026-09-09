@@ -16,7 +16,7 @@
 
 package org.gradle.api.internal;
 
-import org.gradle.api.problems.internal.DocLink;
+import org.gradle.api.problems.DocLink;
 import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.util.GradleVersion;
@@ -36,7 +36,19 @@ public class DocumentationRegistry {
      * Returns the location of the documentation for the given feature, referenced by id. The location may be local or remote.
      */
     public String getDocumentationFor(String id) {
+        validateId(id);
         return String.format("%s/userguide/%s.html", BASE_URL, id);
+    }
+
+    private void validateId(String id) {
+        if (id.endsWith(".html") || id.endsWith(".adoc")) {
+            throw new IllegalArgumentException("The id '" + id + "' should not end with '.html' or '.adoc'. " +
+                "Provide an id without its file extension to reference documentation.");
+        }
+        if (id.contains("#")) {
+            throw new IllegalArgumentException("The id '" + id + "' should not contain a '#' character. " +
+                "Use getDocumentationFor(id, section) to reference a section anchor in documentation.");
+        }
     }
 
 
@@ -44,7 +56,15 @@ public class DocumentationRegistry {
      * Returns the location of the documentation for the given feature, referenced by id and section. The location may be local or remote.
      */
     public String getDocumentationFor(String id, String section) {
+        validateSection(section);
         return getDocumentationFor(id) + "#" + section;
+    }
+
+    private void validateSection(String section) {
+        if (section.contains("#")) {
+            throw new IllegalArgumentException("The section '" + section + "' should not contain a '#' character. " +
+                "Provide only the section name without a leading '#'.");
+        }
     }
 
     public String getDslRefForProperty(Class<?> clazz, String property) {
@@ -70,7 +90,7 @@ public class DocumentationRegistry {
     }
 
     public String getSampleFor(String id) {
-        return String.format(getSampleIndex() + "/sample_%s.html", id);
+        return String.format("%s/sample_%s.html", getSampleIndex(), id);
     }
 
     public String getSampleForMessage(String id) {

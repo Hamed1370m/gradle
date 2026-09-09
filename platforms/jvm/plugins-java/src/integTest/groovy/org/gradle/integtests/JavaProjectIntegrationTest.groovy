@@ -18,8 +18,8 @@ package org.gradle.integtests
 
 import org.gradle.api.internal.tasks.compile.CompilationFailedException
 import org.gradle.integtests.fixtures.AbstractIntegrationTest
-import org.gradle.integtests.fixtures.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.executer.ExecutionFailure
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.test.fixtures.Flaky
 import org.gradle.test.fixtures.file.TestFile
 import org.junit.Test
@@ -35,7 +35,7 @@ class JavaProjectIntegrationTest extends AbstractIntegrationTest {
 
         ExecutionFailure failure = executer.withTasks("build").runWithFailure()
 
-        failure.assertHasDescription("Execution failed for task ':compileJava'.")
+        failure.assertHasDescription("Execution failed for task ':compileJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
         failure.assertHasCause(CompilationFailedException.COMPILATION_FAILED_DETAILS_BELOW)
         failure.assertHasResolution(CompilationFailedException.RESOLUTION_MESSAGE)
     }
@@ -49,33 +49,9 @@ class JavaProjectIntegrationTest extends AbstractIntegrationTest {
 
         ExecutionFailure failure = executer.withTasks("build").runWithFailure()
 
-        failure.assertHasDescription("Execution failed for task ':compileTestJava'.")
+        failure.assertHasDescription("Execution failed for task ':compileTestJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
         failure.assertHasCause(CompilationFailedException.COMPILATION_FAILED_DETAILS_BELOW)
         failure.assertHasResolution(CompilationFailedException.RESOLUTION_MESSAGE)
-    }
-
-    @Test
-    void handlesTestSrcWhichDoesNotContainAnyTestCases() {
-        given:
-        testFile("build.gradle") << """
-            plugins {
-                id("java")
-            }
-
-            ${mavenCentralRepository()}
-
-            testing.suites.test.useJUnit()
-        """
-        testFile("src/test/java/org/gradle/NotATest.java") << """
-            package org.gradle;
-            public class NotATest {}
-        """
-
-        expect:
-        executer.expectDocumentedDeprecationWarning("No test executed. This behavior has been deprecated. " +
-            "This will fail with an error in Gradle 9.0. There are test sources present but no test was executed. Please check your test configuration. " +
-            "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#test_task_fail_on_no_test_executed")
-        executer.withTasks("build").run()
     }
 
     @Test
@@ -86,7 +62,7 @@ class JavaProjectIntegrationTest extends AbstractIntegrationTest {
 
         ExecutionFailure failure = executer.withTasks("javadoc").runWithFailure()
 
-        failure.assertHasDescription("Execution failed for task ':javadoc'.")
+        failure.assertHasDescription("Execution failed for task ':javadoc' (registered by plugin 'org.gradle.java').")
         failure.assertHasCause("Javadoc generation failed.")
     }
 
@@ -170,7 +146,7 @@ class JavaProjectIntegrationTest extends AbstractIntegrationTest {
         //when
         def result = executer.withTasks("classes").run()
         //then
-        result.assertTasksExecuted(":compileJava", ":generateResource", ":processResources", ":classes")
+        result.assertTasksScheduled(":compileJava", ":generateResource", ":processResources", ":classes")
 
         //when
         result = executer.withTasks("testClasses").run()
@@ -199,58 +175,70 @@ class JavaProjectIntegrationTest extends AbstractIntegrationTest {
             }
         """
 
-        def result = inTestDirectory().withTasks('c:buildDependents').run()
+        def result = inTestDirectory().withTasks('c:buildDependents')
+            .expectDocumentedDeprecationWarning("The buildDependents task has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecate_build_needed_build_dependents_tasks")
+            .run()
 
-        assert result.assertTaskExecuted(':a:build')
-        assert result.assertTaskExecuted(':a:jar')
-        assert result.assertTaskExecuted(':b:build')
-        assert result.assertTaskExecuted(':b:jar')
-        assert result.assertTaskExecuted(':c:build')
-        assert result.assertTaskExecuted(':c:jar')
+        assert result.assertTaskScheduled(':a:build')
+        assert result.assertTaskScheduled(':a:jar')
+        assert result.assertTaskScheduled(':b:build')
+        assert result.assertTaskScheduled(':b:jar')
+        assert result.assertTaskScheduled(':c:build')
+        assert result.assertTaskScheduled(':c:jar')
 
-        result = inTestDirectory().withTasks('b:buildDependents').run()
+        result = inTestDirectory().withTasks('b:buildDependents')
+            .expectDocumentedDeprecationWarning("The buildDependents task has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecate_build_needed_build_dependents_tasks")
+            .run()
 
-        assert result.assertTaskExecuted(':a:build')
-        assert result.assertTaskExecuted(':a:jar')
-        assert result.assertTaskExecuted(':b:build')
-        assert result.assertTaskExecuted(':b:jar')
-        assert result.assertTaskNotExecuted(':c:build')
-        assert result.assertTaskExecuted(':c:jar')
+        assert result.assertTaskScheduled(':a:build')
+        assert result.assertTaskScheduled(':a:jar')
+        assert result.assertTaskScheduled(':b:build')
+        assert result.assertTaskScheduled(':b:jar')
+        assert result.assertTasksNotScheduled(':c:build')
+        assert result.assertTaskScheduled(':c:jar')
 
-        result = inTestDirectory().withTasks('a:buildDependents').run()
+        result = inTestDirectory().withTasks('a:buildDependents')
+            .expectDocumentedDeprecationWarning("The buildDependents task has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecate_build_needed_build_dependents_tasks")
+            .run()
 
-        assert result.assertTaskExecuted(':a:build')
-        assert result.assertTaskExecuted(':a:jar')
-        assert result.assertTaskNotExecuted(':b:build')
-        assert result.assertTaskExecuted(':b:jar')
-        assert result.assertTaskNotExecuted(':c:build')
-        assert result.assertTaskExecuted(':c:jar')
+        assert result.assertTaskScheduled(':a:build')
+        assert result.assertTaskScheduled(':a:jar')
+        assert result.assertTasksNotScheduled(':b:build')
+        assert result.assertTaskScheduled(':b:jar')
+        assert result.assertTasksNotScheduled(':c:build')
+        assert result.assertTaskScheduled(':c:jar')
 
-        result = inTestDirectory().withTasks('a:buildNeeded').run()
+        result = inTestDirectory().withTasks('a:buildNeeded')
+            .expectDocumentedDeprecationWarning("The buildNeeded task has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecate_build_needed_build_dependents_tasks")
+            .run()
 
-        assert result.assertTaskExecuted(':a:build')
-        assert result.assertTaskExecuted(':a:jar')
-        assert result.assertTaskExecuted(':b:build')
-        assert result.assertTaskExecuted(':b:jar')
-        assert result.assertTaskExecuted(':c:build')
-        assert result.assertTaskExecuted(':c:jar')
+        assert result.assertTaskScheduled(':a:build')
+        assert result.assertTaskScheduled(':a:jar')
+        assert result.assertTaskScheduled(':b:build')
+        assert result.assertTaskScheduled(':b:jar')
+        assert result.assertTaskScheduled(':c:build')
+        assert result.assertTaskScheduled(':c:jar')
 
-        result = inTestDirectory().withTasks('b:buildNeeded').run()
+        result = inTestDirectory().withTasks('b:buildNeeded')
+            .expectDocumentedDeprecationWarning("The buildNeeded task has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecate_build_needed_build_dependents_tasks")
+            .run()
 
-        assert result.assertTaskNotExecuted(':a:build')
-        assert result.assertTaskNotExecuted(':a:jar')
-        assert result.assertTaskExecuted(':b:build')
-        assert result.assertTaskExecuted(':b:jar')
-        assert result.assertTaskExecuted(':c:build')
-        assert result.assertTaskExecuted(':c:jar')
+        assert result.assertTasksNotScheduled(':a:build')
+        assert result.assertTasksNotScheduled(':a:jar')
+        assert result.assertTaskScheduled(':b:build')
+        assert result.assertTaskScheduled(':b:jar')
+        assert result.assertTaskScheduled(':c:build')
+        assert result.assertTaskScheduled(':c:jar')
 
-        result = inTestDirectory().withTasks(':c:buildNeeded').run()
+        result = inTestDirectory().withTasks(':c:buildNeeded')
+            .expectDocumentedDeprecationWarning("The buildNeeded task has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecate_build_needed_build_dependents_tasks")
+            .run()
 
-        assert result.assertTaskNotExecuted(':a:build')
-        assert result.assertTaskNotExecuted(':a:jar')
-        assert result.assertTaskNotExecuted(':b:build')
-        assert result.assertTaskNotExecuted(':b:jar')
-        assert result.assertTaskExecuted(':c:build')
+        assert result.assertTasksNotScheduled(':a:build')
+        assert result.assertTasksNotScheduled(':a:jar')
+        assert result.assertTasksNotScheduled(':b:build')
+        assert result.assertTasksNotScheduled(':b:jar')
+        assert result.assertTaskScheduled(':c:build')
     }
 
     @Test
@@ -286,7 +274,7 @@ class JavaProjectIntegrationTest extends AbstractIntegrationTest {
         """
 
         def result = inTestDirectory().withTasks("a:classes").run()
-        result.assertTasksExecuted(":b:compileJava", ":a:compileJava", ":a:processResources", ":a:classes")
+        result.assertTasksScheduled(":b:compileJava", ":a:compileJava", ":a:processResources", ":a:classes")
     }
 
 }

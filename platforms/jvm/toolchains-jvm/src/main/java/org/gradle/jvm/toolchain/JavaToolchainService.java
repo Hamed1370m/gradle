@@ -18,6 +18,8 @@ package org.gradle.jvm.toolchain;
 
 import org.gradle.api.Action;
 import org.gradle.api.provider.Provider;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 
 /**
  * Allows to query for toolchain managed tools, like {@link JavaCompiler}, {@link JavaLauncher} and {@link JavadocTool}.
@@ -26,6 +28,7 @@ import org.gradle.api.provider.Provider;
  *
  * @since 6.7
  */
+@ServiceScope(Scope.Project.class)
 public interface JavaToolchainService {
 
     /**
@@ -33,6 +36,7 @@ public interface JavaToolchainService {
      *
      * @param config The configuration of the {@code JavaToolchainSpec}
      * @return A {@code Provider<JavaCompiler>}
+     * @since 6.7
      */
     Provider<JavaCompiler> compilerFor(Action<? super JavaToolchainSpec> config);
 
@@ -41,6 +45,7 @@ public interface JavaToolchainService {
      *
      * @param spec The {@code JavaToolchainSpec}
      * @return A {@code Provider<JavaCompiler>}
+     * @since 6.7
      */
     Provider<JavaCompiler> compilerFor(JavaToolchainSpec spec);
 
@@ -49,6 +54,7 @@ public interface JavaToolchainService {
      *
      * @param config The configuration of the {@code JavaToolchainSpec}
      * @return A {@code Provider<JavaLauncher>}
+     * @since 6.7
      */
     Provider<JavaLauncher> launcherFor(Action<? super JavaToolchainSpec> config);
 
@@ -57,6 +63,7 @@ public interface JavaToolchainService {
      *
      * @param spec The {@code JavaToolchainSpec}
      * @return A {@code Provider<JavaLauncher>}
+     * @since 6.7
      */
     Provider<JavaLauncher> launcherFor(JavaToolchainSpec spec);
 
@@ -65,6 +72,7 @@ public interface JavaToolchainService {
      *
      * @param config The configuration of the {@code JavaToolchainSpec}
      * @return A {@code Provider<JavadocTool>}
+     * @since 6.7
      */
     Provider<JavadocTool> javadocToolFor(Action<? super JavaToolchainSpec> config);
 
@@ -73,6 +81,7 @@ public interface JavaToolchainService {
      *
      * @param spec The {@code JavaToolchainSpec}
      * @return A {@code Provider<JavadocTool>}
+     * @since 6.7
      */
     Provider<JavadocTool> javadocToolFor(JavaToolchainSpec spec);
 }

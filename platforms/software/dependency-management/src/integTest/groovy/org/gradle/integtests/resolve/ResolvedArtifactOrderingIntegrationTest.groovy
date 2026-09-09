@@ -26,26 +26,39 @@ class ResolvedArtifactOrderingIntegrationTest extends AbstractHttpDependencyReso
     def setup() {
         settingsFile << """
             rootProject.name = 'root'
-"""
-        buildFile << """
-            allprojects {
+            dependencyResolutionManagement {
                 repositories {
-                    maven { url '$mavenRepo.uri' }
+                    maven {
+                        url = "${mavenRepo.uri}"
+                    }
                 }
-                configurations {
-                    common
-                    create("default") { extendsFrom common }
-                    unordered { extendsFrom common }
-                    consumerFirst { extendsFrom common }
-                    dependencyFirst { extendsFrom common }
-                }
+            }
+        """
+        buildFile << """
+            $header
+            configurations {
+                unordered { extendsFrom common }
+                consumerFirst { extendsFrom common }
+                dependencyFirst { extendsFrom common }
             }
             dependencies {
                 common "org.test:A:1.0"
             }
             configurations.consumerFirst.resolutionStrategy.sortArtifacts(ResolutionStrategy.SortOrder.CONSUMER_FIRST)
             configurations.dependencyFirst.resolutionStrategy.sortArtifacts(ResolutionStrategy.SortOrder.DEPENDENCY_FIRST)
-"""
+        """
+    }
+
+    String getHeader() {
+        """
+            configurations {
+                common
+                create("default") { extendsFrom common }
+            }
+            artifacts {
+                common file("\${project.name}.jar")
+            }
+        """
     }
 
     private void checkOrdered(List<?> ordered) {
@@ -54,61 +67,33 @@ class ResolvedArtifactOrderingIntegrationTest extends AbstractHttpDependencyReso
         checkArtifacts("unordered", ordered)
     }
 
-    private void checkLegacyOrder(List<?> ordered) {
-        checkLegacyArtifacts("unordered", ordered)
-        checkLegacyArtifacts("consumerFirst", ordered)
-        checkLegacyArtifacts("dependencyFirst", ordered)
-
-        3.times { executer.expectDocumentedDeprecationWarning("The Configuration.files(Closure) method has been deprecated. This is scheduled to be removed in Gradle 9.0. Use Configuration.getIncoming().artifactView(Action) with a componentFilter instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_filtered_configuration_file_and_filecollection_methods") }
-        if (!GradleContextualExecuter.configCache) {
-            3.times { executer.expectDocumentedDeprecationWarning("The ResolvedConfiguration.getFiles(Spec) method has been deprecated. This is scheduled to be removed in Gradle 9.0. Use an ArtifactView with a componentFilter instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_filtered_configuration_file_and_filecollection_methods") }
-        }
-
-        assert succeeds("checkLegacyunordered", "checkLegacyconsumerFirst", "checkLegacydependencyFirst")
-    }
-
-    private void checkLegacyArtifacts(String name, List<?> modules) {
-        def fileNames = toFileNames(modules).join(',')
-        buildFile << """
-            task checkLegacy${name} {
-                def filteredFiles = configurations.${name}.files { true }
-                doLast {
-                    assert filteredFiles.collect { it.name } == [${fileNames}]
-                    if (${!GradleContextualExecuter.configCache}) {
-                        // Don't check eager methods when CC is enabled
-                        assert configurations.${name}.resolvedConfiguration.getFiles { true }.collect { it.name } == [${fileNames}]
-                    }
-                }
-            }
-        """
-    }
-
     private void checkArtifacts(String name, List<?> modules) {
         def fileNames = toFileNames(modules).join(',')
         buildFile << """
             task check${name} {
-                def files = configurations.${name}
-                def incomingFiles = files.incoming.files
-                def artifactFiles = files.incoming.artifactView{}.files
-                def artifacts = files.incoming.artifactView{}.artifacts
+                def conf = configurations.${name}
+                def files = conf
+                def incomingFiles = conf.files
+                def artifactFiles = conf.incoming.artifactView { }.files
+                def artifacts = conf.incoming.artifactView { }.artifacts
+                def filteredArtifactFiles = conf.incoming.artifactView { componentFilter { true } }.files
+                def filteredArtifacts = conf.incoming.artifactView { componentFilter { true } }.artifacts
                 doLast {
                     assert files.collect { it.name } == [${fileNames}]
                     assert incomingFiles.collect { it.name } == [${fileNames}]
                     assert artifactFiles.collect { it.name } == [${fileNames}]
                     assert artifacts.collect { it.file.name } == [${fileNames}]
+                    assert filteredArtifactFiles.collect { it.name } == [${fileNames}]
+                    assert filteredArtifacts.collect { it.file.name } == [${fileNames}]
                     if (${!GradleContextualExecuter.configCache}) {
                         // Don't check eager methods when CC is enabled
                         assert configurations.${name}.resolve().collect { it.name } == [${fileNames}]
                         assert configurations.${name}.files.collect { it.name } == [${fileNames}]
-                        assert configurations.${name}.resolvedConfiguration.files.collect { it.name } == [${fileNames}]
                     }
                 }
             }
-"""
+        """
 
-        if (!GradleContextualExecuter.configCache) {
-            executer.expectDocumentedDeprecationWarning("The ResolvedConfiguration.getFiles() method has been deprecated. This is scheduled to be removed in Gradle 9.0. Use Configuration#getFiles instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_legacy_configuration_get_files")
-        }
         assert succeeds("check${name}")
     }
 
@@ -125,7 +110,6 @@ class ResolvedArtifactOrderingIntegrationTest extends AbstractHttpDependencyReso
 
         then:
         checkOrdered([modA, modB, modC, modD])
-        checkLegacyOrder([modA, modC, modD, modB])
     }
 
     def "artifact collection has resolved artifact files and metadata 2"() {
@@ -137,7 +121,6 @@ class ResolvedArtifactOrderingIntegrationTest extends AbstractHttpDependencyReso
 
         then:
         checkOrdered([modA, modB, modC, modD])
-        checkLegacyOrder([modA, modD, modB, modC])
     }
 
     def "artifact collection has resolved artifact files and metadata 3"() {
@@ -149,7 +132,6 @@ class ResolvedArtifactOrderingIntegrationTest extends AbstractHttpDependencyReso
 
         then:
         checkOrdered([modA, modB, modC, modD])
-        checkLegacyOrder([modA, modD, modB, modC])
     }
 
     def "artifact collection has resolved artifact files and metadata 4"() {
@@ -161,7 +143,6 @@ class ResolvedArtifactOrderingIntegrationTest extends AbstractHttpDependencyReso
 
         then:
         checkOrdered([modA, modB, modC, modD])
-        checkLegacyOrder([modA, modD, modC, modB])
     }
 
     def "artifact collection has resolved artifact files and metadata 5"() {
@@ -173,7 +154,6 @@ class ResolvedArtifactOrderingIntegrationTest extends AbstractHttpDependencyReso
 
         then:
         checkOrdered([modA, modB, modC, modD])
-        checkLegacyOrder([modA, modD, modC, modB])
     }
 
     def "artifact collection has resolved artifact files and metadata 6"() {
@@ -185,7 +165,6 @@ class ResolvedArtifactOrderingIntegrationTest extends AbstractHttpDependencyReso
 
         then:
         checkOrdered([modA, modB, modC, modD])
-        checkLegacyOrder([modA, modD, modC, modB])
     }
 
     def "artifact collection has resolved artifact files and metadata cycle"() {
@@ -198,7 +177,6 @@ class ResolvedArtifactOrderingIntegrationTest extends AbstractHttpDependencyReso
 
         then:
         checkOrdered([modA, modC, modD, modB])
-        checkLegacyOrder([modA, modB, modC, modD])
     }
 
     def "project and external and file dependencies are ordered"() {
@@ -208,41 +186,108 @@ class ResolvedArtifactOrderingIntegrationTest extends AbstractHttpDependencyReso
         def modB = mavenRepo.module("org.test", "B").dependsOn(modC).publish()
         def modA = mavenRepo.module("org.test", "A").dependsOn(modC).publish()
 
-        createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
         buildFile << """
-            allprojects {
-                artifacts {
-                    common file("\${project.name}.jar")
-                }
-            }
             dependencies {
                 common files("root-lib.jar")
                 common project(":a")
             }
-            project(":a") {
-                dependencies {
-                    common files("a-lib.jar")
-                    common project(":b")
-                    common "org.test:B:1.0"
-                }
+        """
+
+        file("a/build.gradle") << """
+            $header
+            dependencies {
+                common files("a-lib.jar")
+                common project(":b")
+                common "org.test:B:1.0"
             }
-            project(":b") {
-                dependencies {
-                    common project(":c")
-                    common files("b-lib.jar")
-                }
+        """
+
+        file("b/build.gradle") << """
+            $header
+            dependencies {
+                common project(":c")
+                common files("b-lib.jar")
             }
-            project(":c") {
-                dependencies {
-                    common "org.test:C:1.0"
-                    common files("c-lib.jar")
-                }
+        """
+
+        file("c/build.gradle") << """
+            $header
+            dependencies {
+                common "org.test:C:1.0"
+                common files("c-lib.jar")
             }
-"""
+        """
 
         then:
-        checkOrdered(['root-lib.jar', modA, 'a.jar', 'a-lib.jar', modB, 'b.jar', 'b-lib.jar', 'c.jar', 'c-lib.jar', modC, modD])
-        checkLegacyOrder(['root-lib.jar', modA, modC, modD, 'a.jar', 'a-lib.jar', 'b.jar', 'b-lib.jar', 'c.jar', 'c-lib.jar', modB])
+        checkArtifacts("unordered", ['root-lib.jar', modA, 'a.jar', 'a-lib.jar', modB, 'b.jar', 'b-lib.jar', 'c.jar', 'c-lib.jar', modC, modD])
+        checkArtifacts("consumerFirst", ['root-lib.jar', modA, 'a.jar', 'a-lib.jar', modB, 'b.jar', 'b-lib.jar', 'c.jar', 'c-lib.jar', modC, modD])
+        checkArtifacts("dependencyFirst", [modD, modC, 'c.jar', 'c-lib.jar', 'b.jar', 'b-lib.jar', modB, 'a.jar', 'a-lib.jar', modA, 'root-lib.jar'])
     }
+
+    def "enhanced ordering produces BFS for default and topological for consumer-first"() {
+        when:
+        enableEnhancedOrdering()
+        def modD = mavenRepo.module("org.test", "D").publish()
+        def modC = mavenRepo.module("org.test", "C").dependsOn(modD).publish()
+        def modB = mavenRepo.module("org.test", "B").dependsOn(modC).publish()
+        def modA = mavenRepo.module("org.test", "A").dependsOn(modB).dependsOn(modD).publish()
+
+        then:
+        checkArtifacts("unordered", [modA, modB, modD, modC])
+        checkArtifacts("consumerFirst", [modA, modB, modC, modD])
+        checkArtifacts("dependencyFirst", [modD, modC, modB, modA])
+    }
+
+    def "enhanced ordering BFS differs from topological with two shortcut edges"() {
+        when:
+        enableEnhancedOrdering()
+        def modE = mavenRepo.module("org.test", "E").publish()
+        def modD = mavenRepo.module("org.test", "D").dependsOn(modE).publish()
+        def modC = mavenRepo.module("org.test", "C").dependsOn(modD).publish()
+        def modB = mavenRepo.module("org.test", "B").dependsOn(modC).publish()
+        def modA = mavenRepo.module("org.test", "A").dependsOn(modB).dependsOn(modC).dependsOn(modE).publish()
+
+        then:
+        checkArtifacts("unordered", [modA, modB, modC, modE, modD])
+        checkArtifacts("consumerFirst", [modA, modB, modC, modD, modE])
+        checkArtifacts("dependencyFirst", [modE, modD, modC, modB, modA])
+    }
+
+    def "enhanced ordering handles cycles"() {
+        when:
+        enableEnhancedOrdering()
+        def modD = mavenRepo.module("org.test", "D")
+        def modC = mavenRepo.module("org.test", "C").dependsOn(modD).publish()
+        def modB = mavenRepo.module("org.test", "B").dependsOn(modC).publish()
+        modD.dependsOn(modB).publish()
+        def modA = mavenRepo.module("org.test", "A").dependsOn(modB).publish()
+
+        then:
+        checkArtifacts("unordered", [modA, modB, modC, modD])
+        checkArtifacts("consumerFirst", [modA, modB, modC, modD])
+        checkArtifacts("dependencyFirst", [modD, modC, modB, modA])
+    }
+
+    def "enhanced ordering ignores constraint edges"() {
+        when:
+        enableEnhancedOrdering()
+        def modC = mavenRepo.module("org.test", "C").publish()
+        def modE = mavenRepo.module("org.test", "E").dependsOn(modC).publish()
+        def modD = mavenRepo.module("org.test", "D").dependsOn(modE).publish()
+        def modB = mavenRepo.module("org.test", "B").withModuleMetadata().dependencyConstraint(modC).publish()
+        def modA = mavenRepo.module("org.test", "A").dependsOn(modB).dependsOn(modD).publish()
+
+        then:
+        checkArtifacts("unordered", [modA, modB, modD, modE, modC])
+        checkArtifacts("consumerFirst", [modA, modB, modD, modE, modC])
+        checkArtifacts("dependencyFirst", [modC, modE, modD, modB, modA])
+    }
+
+    private void enableEnhancedOrdering() {
+        settingsFile << """
+            enableFeaturePreview("ENHANCED_GRAPH_ORDERING")
+        """
+    }
+
 }

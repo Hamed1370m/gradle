@@ -15,25 +15,27 @@
  */
 package org.gradle.api.services.internal;
 
-import org.gradle.api.artifacts.component.BuildIdentifier;
+import org.gradle.internal.build.BuildIdentity;
 import org.gradle.api.services.BuildService;
 import org.gradle.api.services.BuildServiceParameters;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Details about a service registration.
  */
 public class BuildServiceDetails<T extends BuildService<P>, P extends BuildServiceParameters> {
-    private final BuildIdentifier buildIdentifier;
+    private final BuildIdentity buildIdentity;
     private final String name;
     private final Class<T> implementationType;
+    @Nullable
     private final P parameters;
     private final int maxUsages;
     private final boolean resolved;
 
-    public BuildServiceDetails(BuildIdentifier buildIdentifier, String name, Class<T> implementationType, @Nullable P parameters, @Nullable Integer maxUsages) {
-        this.buildIdentifier = buildIdentifier;
+    public BuildServiceDetails(BuildIdentity buildIdentity, String name, Class<T> implementationType, P parameters, @Nullable Integer maxUsages) {
+        this.buildIdentity = buildIdentity;
         this.name = name;
         this.implementationType = implementationType;
         this.parameters = parameters;
@@ -41,8 +43,8 @@ public class BuildServiceDetails<T extends BuildService<P>, P extends BuildServi
         this.resolved = true;
     }
 
-    public BuildServiceDetails(BuildIdentifier buildIdentifier, String name, Class<T> implementationType) {
-        this.buildIdentifier = buildIdentifier;
+    public BuildServiceDetails(BuildIdentity buildIdentity, String name, Class<T> implementationType) {
+        this.buildIdentity = buildIdentity;
         this.name = name;
         this.implementationType = implementationType;
         this.parameters = null;
@@ -50,8 +52,8 @@ public class BuildServiceDetails<T extends BuildService<P>, P extends BuildServi
         this.resolved = false;
     }
 
-    public BuildIdentifier getBuildIdentifier() {
-        return buildIdentifier;
+    public BuildIdentity getBuildIdentity() {
+        return buildIdentity;
     }
 
     public String getName() {
@@ -63,7 +65,7 @@ public class BuildServiceDetails<T extends BuildService<P>, P extends BuildServi
     }
 
     public P getParameters() {
-        return parameters;
+        return requireNonNull(parameters, "parameters are not available for an unresolved service");
     }
 
     public int getMaxUsages() {

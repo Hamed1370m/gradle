@@ -21,9 +21,9 @@ import org.gradle.internal.Factory;
 import org.gradle.internal.featurelifecycle.LoggingDeprecatedFeatureHandler;
 import org.gradle.internal.operations.BuildOperationProgressEventEmitter;
 import org.gradle.problems.buildtree.ProblemStream;
+import org.jspecify.annotations.Nullable;
 
 import javax.annotation.CheckReturnValue;
-import javax.annotation.Nullable;
 import javax.annotation.concurrent.ThreadSafe;
 
 
@@ -39,8 +39,8 @@ import javax.annotation.concurrent.ThreadSafe;
  * <p>
  * DeprecationTimeline is mandatory and is added using one of:
  * <ul>
- *   <li>{@link DeprecationMessageBuilder#willBeRemovedInGradle9()}
- *   <li>{@link DeprecationMessageBuilder#willBecomeAnErrorInGradle9()}
+ *   <li>{@link DeprecationMessageBuilder#willBeRemovedInGradle10()}
+ *   <li>{@link DeprecationMessageBuilder#willBecomeAnErrorInGradle10()}
  * </ul>
  * <p>
  * After DeprecationTimeline is set, Documentation reference must be added using one of:
@@ -58,17 +58,15 @@ public class DeprecationLogger {
     /**
      * Counts the levels of nested {@code whileDisabled} invocations.
      */
-    private static final ThreadLocal<Integer> DISABLE_COUNT = new ThreadLocal<Integer>() {
-        @Override
-        protected Integer initialValue() {
-            return 0;
-        }
-    };
+    private static final ThreadLocal<int[]> DISABLE_COUNT = ThreadLocal.withInitial(() -> new int[]{0});
 
     private static final LoggingDeprecatedFeatureHandler DEPRECATED_FEATURE_HANDLER = new LoggingDeprecatedFeatureHandler();
 
+    private static boolean initialized = false;
+
     public synchronized static void init(WarningMode warningMode, BuildOperationProgressEventEmitter buildOperationProgressEventEmitter, Problems problemsService, ProblemStream problemStream) {
         DEPRECATED_FEATURE_HANDLER.init(warningMode, buildOperationProgressEventEmitter, problemsService, problemStream);
+        initialized = true;
     }
 
     public synchronized static void reset() {
@@ -124,20 +122,6 @@ public class DeprecationLogger {
     @CheckReturnValue
     public static DeprecationMessageBuilder.DeprecateBehaviour deprecateBehaviour(String behaviour) {
         return new DeprecationMessageBuilder.DeprecateBehaviour(behaviour);
-    }
-
-    /**
-     * Output: ${behaviour}. This behavior is deprecated. ${advice}
-     */
-    @CheckReturnValue
-    @SuppressWarnings("rawtypes")
-    public static DeprecationMessageBuilder.WithDeprecationTimeline warnOfChangedBehaviour(final String behaviour, final String advice) {
-        return new DeprecationMessageBuilder.WithDeprecationTimeline(new DeprecationMessageBuilder() {
-            @Override
-            DeprecationMessage build() {
-                return new DeprecationMessage(behaviour + ". This behavior is deprecated.", "", advice, null, null, DeprecatedFeatureUsage.Type.USER_CODE_INDIRECT, problemIdDisplayName, problemId);
-            }
-        }); // TODO: it is not ok that NO_DOCUMENTATION is hardcoded here
     }
 
     /**
@@ -236,6 +220,19 @@ public class DeprecationLogger {
 
     static void nagUserWith(DeprecationMessageBuilder<?> deprecationMessageBuilder, Class<?> calledFrom) {
         if (isEnabled()) {
+            // ideally, it should be checked outside of this condition, but that would fail a lot of unit tests that use suppressed deprecations
+            if (!initialized) {
+                throw new IllegalStateException(
+                    "DeprecationLogger has not been initialized. " +
+                        "Most probably, it's because you are trying to use it from the launcher/wrapper. " +
+                        "It's not available there. Move the deprecation logging to the daemon or use LOGGER.warn() instead. " +
+                        "Another reason could be that you are trying to use it from a unit test. " +
+                        "In that case, either fix the test to not use deprecated features, or mark it with @ExpectDeprecation. " +
+                        "If you hit this error as a user of Gradle, please report it as a bug. " +
+                        "The original deprecation message was: " +
+                        deprecationMessageBuilder.build().toDeprecatedFeatureUsage(calledFrom).formattedMessage()
+                );
+            }
             DeprecationMessage deprecationMessage = deprecationMessageBuilder.build();
             DeprecatedFeatureUsage featureUsage = deprecationMessage.toDeprecatedFeatureUsage(calledFrom);
             nagUserWith(featureUsage);
@@ -246,8 +243,7 @@ public class DeprecationLogger {
         }
     }
 
-    @Nullable
-    public static <T> T whileDisabled(Factory<T> factory) {
+    public static <T extends @Nullable Object> T whileDisabled(Factory<T> factory) {
         disable();
         try {
             return factory.create();
@@ -284,16 +280,16 @@ public class DeprecationLogger {
     }
 
     private static void disable() {
-        DISABLE_COUNT.set(DISABLE_COUNT.get() + 1);
+        DISABLE_COUNT.get()[0]++;
     }
 
     private static void maybeEnable() {
-        DISABLE_COUNT.set(DISABLE_COUNT.get() - 1);
+        DISABLE_COUNT.get()[0]--;
     }
 
     private static boolean isEnabled() {
         // log deprecation messages only after the outermost whileDisabled finished execution
-        return DISABLE_COUNT.get() == 0;
+        return DISABLE_COUNT.get()[0] == 0;
     }
 
     public interface ThrowingFactory<T, E extends Exception> {
@@ -311,7 +307,6 @@ public class DeprecationLogger {
      */
     private static <T, E extends Exception> Factory<T> toUncheckedThrowingFactory(final ThrowingFactory<T, E> throwingFactory) {
         return new Factory<T>() {
-            @Nullable
             @Override
             public T create() {
                 @SuppressWarnings("unchecked")

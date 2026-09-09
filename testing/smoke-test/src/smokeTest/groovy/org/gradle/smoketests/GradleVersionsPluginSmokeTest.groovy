@@ -16,36 +16,40 @@
 
 package org.gradle.smoketests
 
-import org.gradle.util.GradleVersion
-import org.gradle.util.internal.VersionNumber
-import org.junit.Assume
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 import static org.gradle.testkit.runner.TaskOutcome.SUCCESS
 
 class GradleVersionsPluginSmokeTest extends AbstractPluginValidatingSmokeTest {
 
+    @ToBeFixedForIsolatedProjects(because = "Plugin has IP incompatible logic")
     def 'can check for updated versions'() {
-        Assume.assumeTrue('Incompatible with Groovy 4: Execution failed for task \':dependencyUpdates\'. > groovy/util/XmlSlurper', VersionNumber.parse(GroovySystem.version).major < 4) // TODO Watch for merge and release of https://github.com/ben-manes/gradle-versions-plugin/pull/656
         given:
         buildFile << """
             plugins {
-                id "com.github.ben-manes.versions" version "$TestedVersions.gradleVersions"
-            }
-
-            subprojects {
-                apply plugin: 'java'
-
-                ${mavenCentralRepository()}
+                id "io.github.ben-manes.versions" version "$TestedVersions.gradleVersions"
             }
         """
         file("sub1/build.gradle") << """
+            plugins {
+                id("java-library")
+            }
+
+            ${mavenCentralRepository()}
+
             dependencies {
-                implementation group: 'log4j', name: 'log4j', version: '1.2.14'
+                implementation("log4j:log4j:1.2.14")
             }
         """
         file("sub2/build.gradle") << """
+            plugins {
+                id("java-library")
+            }
+
+            ${mavenCentralRepository()}
+
             dependencies {
-                implementation group: 'junit', name: 'junit', version: '4.10'
+                implementation("junit:junit:4.10")
             }
         """
         settingsFile << """
@@ -53,16 +57,7 @@ class GradleVersionsPluginSmokeTest extends AbstractPluginValidatingSmokeTest {
         """
 
         when:
-        def runner = runner('dependencyUpdates', '-DoutputFormatter=txt')
-            // TODO: com.github.benmanes.gradle.versions.updates.DependencyUpdates plugin triggers dependency resolution at execution time
-            .withJvmArguments("-Dorg.gradle.configuration-cache.internal.task-execution-access-pre-stable=true")
-
-        runner.expectDeprecationWarning(
-            "The LenientConfiguration.getFirstLevelModuleDependencies(Spec) method has been deprecated. This is scheduled to be removed in Gradle 9.0. Use getFirstLevelModuleDependencies() instead. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_8.html#deprecate_filtered_configuration_file_and_filecollection_methods",
-            "https://github.com/ben-manes/gradle-versions-plugin/pull/856"
-        )
-
-        def result = runner.build()
+        def result = runner('dependencyUpdates', '-DoutputFormatter=txt').build()
 
         then:
         result.task(':dependencyUpdates').outcome == SUCCESS
@@ -75,7 +70,7 @@ class GradleVersionsPluginSmokeTest extends AbstractPluginValidatingSmokeTest {
     @Override
     Map<String, Versions> getPluginsToValidate() {
         [
-            'com.github.ben-manes.versions': Versions.of(TestedVersions.gradleVersions)
+            'io.github.ben-manes.versions': Versions.of(TestedVersions.gradleVersions)
         ]
     }
 }

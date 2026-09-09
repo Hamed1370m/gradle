@@ -23,6 +23,7 @@ import org.gradle.api.artifacts.dsl.ComponentModuleMetadataHandler;
 import org.gradle.api.internal.initialization.ClassLoaderScope;
 import org.gradle.api.internal.initialization.ScriptHandlerInternal;
 import org.gradle.api.internal.plugins.ClassloaderBackedPluginDescriptorLocator;
+import org.gradle.api.internal.plugins.CorePluginRegistryProvider;
 import org.gradle.api.internal.plugins.PluginDescriptorLocator;
 import org.gradle.api.internal.plugins.PluginInspector;
 import org.gradle.api.internal.plugins.PluginManagerInternal;
@@ -43,14 +44,18 @@ import org.gradle.plugin.use.resolve.internal.PluginResolutionResult;
 import org.gradle.plugin.use.resolve.internal.PluginResolutionVisitor;
 import org.gradle.plugin.use.resolve.internal.PluginResolver;
 import org.gradle.plugin.use.tracker.internal.PluginVersionTracker;
+import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 public class DefaultPluginRequestApplicator implements PluginRequestApplicator {
-    private final PluginRegistry pluginRegistry;
+    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultPluginRequestApplicator.class);
+
+    private final PluginRegistry corePluginRegistry;
     private final PluginResolverFactory pluginResolverFactory;
     private final PluginArtifactRepositoriesProvider pluginRepositoriesProvider;
     private final PluginResolutionStrategyInternal pluginResolutionStrategy;
@@ -59,7 +64,7 @@ public class DefaultPluginRequestApplicator implements PluginRequestApplicator {
     private final PluginApplicationListener pluginApplicationListenerBroadcaster;
 
     public DefaultPluginRequestApplicator(
-        PluginRegistry pluginRegistry,
+        CorePluginRegistryProvider corePluginRegistryProvider,
         PluginResolverFactory pluginResolverFactory,
         PluginArtifactRepositoriesProvider pluginRepositoriesProvider,
         PluginResolutionStrategyInternal pluginResolutionStrategy,
@@ -67,7 +72,7 @@ public class DefaultPluginRequestApplicator implements PluginRequestApplicator {
         PluginVersionTracker pluginVersionTracker,
         ListenerManager listenerManager
     ) {
-        this.pluginRegistry = pluginRegistry;
+        this.corePluginRegistry = corePluginRegistryProvider.getCorePluginRegistry();
         this.pluginResolverFactory = pluginResolverFactory;
         this.pluginRepositoriesProvider = pluginRepositoriesProvider;
         this.pluginResolutionStrategy = pluginResolutionStrategy;
@@ -134,7 +139,7 @@ public class DefaultPluginRequestApplicator implements PluginRequestApplicator {
         ClassLoaderScope parentLoaderScope = classLoaderScope.getParent();
         PluginDescriptorLocator scriptClasspathPluginDescriptorLocator = new ClassloaderBackedPluginDescriptorLocator(parentLoaderScope.getExportClassLoader());
         PluginResolver pluginResolver = pluginResolverFactory.create(resolveContext);
-        return new AlreadyOnClasspathPluginResolver(pluginResolver, pluginRegistry, parentLoaderScope, scriptClasspathPluginDescriptorLocator, pluginInspector, pluginVersionTracker);
+        return new AlreadyOnClasspathPluginResolver(pluginResolver, corePluginRegistry, parentLoaderScope, scriptClasspathPluginDescriptorLocator, pluginInspector, pluginVersionTracker);
     }
 
     /**
@@ -183,6 +188,7 @@ public class DefaultPluginRequestApplicator implements PluginRequestApplicator {
         PluginResolutionResult result;
         try {
             result = resolver.resolve(request);
+            LOGGER.info("Resolved plugin {}", request.getDisplayName());
         } catch (Exception e) {
             throw new LocationAwareException(
                 new GradleException(String.format("Error resolving plugin %s", request.getDisplayName()), e),

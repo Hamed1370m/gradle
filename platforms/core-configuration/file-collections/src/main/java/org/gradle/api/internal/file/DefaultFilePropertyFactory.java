@@ -34,18 +34,14 @@ import org.gradle.api.internal.provider.Providers;
 import org.gradle.api.provider.Provider;
 import org.gradle.internal.Cast;
 import org.gradle.internal.file.PathToFileResolver;
-import org.gradle.internal.service.scopes.Scope;
-import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.internal.state.Managed;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.gradle.api.internal.lambdas.SerializableLambdas.bifunction;
-import static org.gradle.api.internal.lambdas.SerializableLambdas.transformer;
 
-@ServiceScope({Scope.Global.class, Scope.Project.class})
 public class DefaultFilePropertyFactory implements FilePropertyFactory, FileFactory {
     private final PropertyHost host;
     private final FileResolver fileResolver;
@@ -65,6 +61,16 @@ public class DefaultFilePropertyFactory implements FilePropertyFactory, FileFact
     @Override
     public RegularFileProperty newFileProperty() {
         return new DefaultRegularFileVar(host, fileResolver);
+    }
+
+    @Override
+    public FilePropertyFactory withResolvers(FileResolver fileResolver, PathToFileResolver fileCollectionResolver) {
+        return new DefaultFilePropertyFactory(host, fileResolver, fileCollectionFactory.withResolver(fileCollectionResolver));
+    }
+
+    @Override
+    public FilePropertyFactory withResolver(FileResolver fileResolver) {
+        return new DefaultFilePropertyFactory(host, fileResolver, fileCollectionFactory);
     }
 
     @Override
@@ -181,7 +187,7 @@ public class DefaultFilePropertyFactory implements FilePropertyFactory, FileFact
         }
     }
 
-    private static abstract class AbstractFileVar<T extends FileSystemLocation, THIS extends FileSystemLocationProperty<T>> extends DefaultProperty<T> implements FileSystemLocationPropertyInternal<T> {
+    public static abstract class AbstractFileVar<T extends FileSystemLocation, THIS extends FileSystemLocationProperty<T>> extends DefaultProperty<T> implements FileSystemLocationPropertyInternal<T> {
 
         public AbstractFileVar(PropertyHost host, Class<T> type) {
             super(host, type);
@@ -211,6 +217,8 @@ public class DefaultFilePropertyFactory implements FilePropertyFactory, FileFact
         public void setFromAnyValue(Object object) {
             if (object instanceof File) {
                 set((File) object);
+            } else if (object instanceof CharSequence) {
+                set((CharSequence) object);
             } else {
                 super.setFromAnyValue(object);
             }
@@ -235,6 +243,19 @@ public class DefaultFilePropertyFactory implements FilePropertyFactory, FileFact
                 return;
             }
             set(fromFile(file));
+        }
+
+        /**
+         * Sets the location of this property using a path string. Relative paths are resolved against the project directory of the owning project.
+         *
+         * <p>Mirrors {@link FileSystemLocationProperty#set(java.io.File)} for path strings — kept implementation-only as this is meant for Groovy DSL backwards source compatibility only.</p>
+         */
+        public void set(@Nullable CharSequence path) {
+            if (path == null) {
+                set((T) null);
+                return;
+            }
+            set(getFileResolver().resolve(path));
         }
 
         @Override
@@ -281,14 +302,21 @@ public class DefaultFilePropertyFactory implements FilePropertyFactory, FileFact
                 }
             };
         }
+
+        public abstract FileResolver getFileResolver();
     }
 
     public static class DefaultRegularFileVar extends AbstractFileVar<RegularFile, RegularFileProperty> implements RegularFileProperty, Managed {
-        private final PathToFileResolver fileResolver;
+        private final FileResolver fileResolver;
 
-        DefaultRegularFileVar(PropertyHost host, PathToFileResolver fileResolver) {
+        DefaultRegularFileVar(PropertyHost host, FileResolver fileResolver) {
             super(host, RegularFile.class);
             this.fileResolver = fileResolver;
+        }
+
+        @Override
+        public FileResolver getFileResolver() {
+            return fileResolver;
         }
 
         @Override
@@ -347,6 +375,15 @@ public class DefaultFilePropertyFactory implements FilePropertyFactory, FileFact
         @Override
         public FileTree getAsFileTree() {
             return fileCollectionFactory.resolving(this).getAsFileTree();
+        }
+
+        @Override
+        public FileResolver getFileResolver() {
+            return resolver;
+        }
+
+        public PathToFileResolver getFileCollectionResolver() {
+            return fileCollectionFactory.getResolver();
         }
 
         @Override
@@ -416,36 +453,4 @@ public class DefaultFilePropertyFactory implements FilePropertyFactory, FileFact
         }
     }
 
-    private static class DirectoryProviderPathToFileResolver implements PathToFileResolver {
-        private final Provider<Directory> directoryProvider;
-        private final PathToFileResolver parentResolver;
-
-        public DirectoryProviderPathToFileResolver(Provider<Directory> directoryProvider, PathToFileResolver parentResolver) {
-            this.directoryProvider = directoryProvider;
-            this.parentResolver = parentResolver;
-        }
-
-        private PathToFileResolver createResolver() {
-            File resolved = directoryProvider.get().getAsFile();
-            return parentResolver.newResolver(resolved);
-        }
-
-        @Override
-        public File resolve(Object path) {
-            return createResolver().resolve(path);
-        }
-
-        @Override
-        public PathToFileResolver newResolver(File baseDir) {
-            return new DirectoryProviderPathToFileResolver(
-                directoryProvider.map(transformer(dir -> dir.dir(baseDir.getPath()))),
-                parentResolver
-            );
-        }
-
-        @Override
-        public boolean canResolveRelativePath() {
-            return true;
-        }
-    }
 }

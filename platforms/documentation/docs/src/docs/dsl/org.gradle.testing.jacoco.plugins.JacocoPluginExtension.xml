@@ -26,11 +26,14 @@
             </thead>
             <tr>
                 <td>toolVersion</td>
-                <td><literal>0.8.11</literal></td>
+                <td><literal>0.8.13</literal></td>
             </tr>
             <tr>
                 <td>reportsDirectory</td>
-                <td><literal><replaceable>${project.reporting.baseDir}</replaceable>/jacoco</literal></td>
+                <td>
+                    <literal><replaceable>${project.reporting.baseDirectory}</replaceable>/jacoco
+                    </literal>
+                </td>
             </tr>
         </table>
     </section>

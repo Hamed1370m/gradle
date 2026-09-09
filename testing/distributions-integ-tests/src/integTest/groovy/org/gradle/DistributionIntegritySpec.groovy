@@ -17,10 +17,13 @@
 package org.gradle
 
 import org.gradle.test.fixtures.file.TestFile
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import spock.lang.Issue
 
 import java.util.zip.ZipFile
 
+@Requires(TestExecutionPreconditions.NotEmbeddedExecutor)
 class DistributionIntegritySpec extends DistributionIntegrationSpec {
 
     /*
@@ -34,8 +37,8 @@ class DistributionIntegritySpec extends DistributionIntegrationSpec {
     }
 
     @Override
-    int getMaxDistributionSizeBytes() {
-        return 135 * 1024 * 1024
+    int getDistributionSizeMiB() {
+        return 128
     }
 
     /**
@@ -54,11 +57,15 @@ class DistributionIntegritySpec extends DistributionIntegrationSpec {
         def jarsWithDuplicateFiles = [:]
         def classesIndex = [:] as HashMap<String, List<String>> // class name -> list of containing jars
         jars.each { jar ->
+            // The ABI jars (signature stubs) purposely duplicate class entries that also live in other distro jars.
+            // They are excluded from the cross-jar duplicate-class check below.
+            // They are checked for intra-jar duplicate entries.
+            def skipCrossJarCheck = jar.name.startsWith("gradle-public-api-")
             new ZipFile(jar).withCloseable {
                 def names = it.entries()*.name
                 def groupedNames = names.groupBy { it }
                 groupedNames.each { name, all ->
-                    if (name.endsWith(".class") && !name.endsWith("module-info.class") && !name.endsWith("package-info.class")) {
+                    if (!skipCrossJarCheck && name.endsWith(".class") && !name.endsWith("module-info.class") && !name.endsWith("package-info.class")) {
                         def containingJars = classesIndex.computeIfAbsent(name, k -> [])
                         containingJars.add(jar.name)
                     }
@@ -77,6 +84,53 @@ class DistributionIntegritySpec extends DistributionIntegrationSpec {
         and:
         def duplicateClasses = classesIndex.findAll { it.value.size() > 1 }
         duplicateClasses.isEmpty()
+    }
+
+    /**
+     * Every jar that Gradle itself produces for the distribution must carry a Maven-style
+     * pom.properties at the canonical path, so Maven-aware tooling can identify the artifact.
+     * Gradle jars are recognised by their file name carrying the distribution base version;
+     * externally published jars bundled in the distribution (such as gradle-fileevents) keep
+     * their own version and are not expected to gain a Gradle-generated pom.properties here.
+     *
+     * The recorded version is the full Gradle version (so permanently published milestones and
+     * RCs stay identifiable), except that the per-build timestamp of nightly/snapshot builds is
+     * replaced with "SNAPSHOT" (the Maven convention) to keep the file reproducible. The jar file
+     * name itself always uses the base version.
+     */
+    def "all Gradle module jars contain a Maven pom.properties"() {
+        when:
+        def gradleJars = collectJars(unpackDistribution()).findAll {
+            it.name.startsWith("gradle-") && it.name.endsWith("-${baseVersion}.jar")
+        }
+
+        then:
+        !gradleJars.isEmpty()
+
+        when:
+        def problems = [:]
+        gradleJars.each { jar ->
+            def artifactId = jar.name - "-${baseVersion}.jar"
+            def groupId = expectedGroupFor(artifactId)
+            def entryName = "META-INF/maven/${groupId}/${artifactId}/pom.properties"
+            new ZipFile(jar).withCloseable { zip ->
+                def entry = zip.getEntry(entryName)
+                if (entry == null) {
+                    problems[jar.name] = "missing $entryName"
+                    return
+                }
+                def properties = new Properties()
+                zip.getInputStream(entry).withCloseable { properties.load(it) }
+                def actual = [properties.groupId, properties.artifactId, properties.version]
+                def expected = [groupId, artifactId, jarMetadataVersion]
+                if (actual != expected) {
+                    problems[jar.name] = "expected $expected but was $actual"
+                }
+            }
+        }
+
+        then:
+        problems == [:]
     }
 
     private static def collectJars(TestFile file, Collection<File> acc = []) {

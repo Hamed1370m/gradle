@@ -16,19 +16,19 @@
 
 package org.gradle.api.internal.notations
 
-import org.gradle.api.InvalidUserCodeException
+import org.gradle.api.InvalidUserDataException
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.DependencyArtifact
 import org.gradle.api.artifacts.ExternalModuleDependency
-import org.gradle.api.internal.artifacts.dependencies.DefaultClientModule
 import org.gradle.api.internal.artifacts.dependencies.DefaultExternalModuleDependency
+import org.gradle.api.problems.Severity
 import org.gradle.internal.typeconversion.NotationParserBuilder
 import org.gradle.util.TestUtil
 import org.gradle.util.internal.SimpleMapInterner
 import spock.lang.Specification
 
 class DependencyStringNotationConverterTest extends Specification {
-    def parser = new DependencyStringNotationConverter(TestUtil.instantiatorFactory().decorateLenient(), DefaultExternalModuleDependency.class, SimpleMapInterner.notThreadSafe());
+    def parser = new DependencyStringNotationConverter(TestUtil.instantiatorFactory().decorateLenient(), DefaultExternalModuleDependency.class, SimpleMapInterner.notThreadSafe(), TestUtil.problemsService());
 
     def "with artifact"() {
         when:
@@ -81,6 +81,30 @@ class DependencyStringNotationConverterTest extends Specification {
         d.group == 'org.gradle'
         d.version == '10'
         d.versionConstraint.requiredVersion == '10'
+        d.versionConstraint.preferredVersion == ''
+        d.versionConstraint.strictVersion == ''
+        d.versionConstraint.rejectedVersions == []
+        d.transitive
+
+        !d.force
+        !d.changing
+
+        d.artifacts.size() == 1
+        d.artifacts.find {
+            it.name == 'gradle-core' && it.classifier == 'jdk-1.4' &&
+                it.type == DependencyArtifact.DEFAULT_TYPE && it.extension == DependencyArtifact.DEFAULT_TYPE
+        }
+    }
+
+    def "with classifier and no version"() {
+        when:
+        def d = parse(parser, 'org.gradle:gradle-core::jdk-1.4')
+
+        then:
+        d.name == 'gradle-core'
+        d.group == 'org.gradle'
+        d.version == null
+        d.versionConstraint.requiredVersion == ''
         d.versionConstraint.preferredVersion == ''
         d.versionConstraint.strictVersion == ''
         d.versionConstraint.rejectedVersions == []
@@ -170,49 +194,8 @@ class DependencyStringNotationConverterTest extends Specification {
         !d.changing
     }
 
-    def "can create client module"() {
-        def parser = new DependencyStringNotationConverter(TestUtil.instantiatorFactory().decorateLenient(), DefaultClientModule, SimpleMapInterner.notThreadSafe());
-
-        when:
-        def d = parse(parser, 'org.gradle:gradle-core:10')
-
-        then:
-        d instanceof DefaultClientModule
-        d.name == 'gradle-core'
-        d.group == 'org.gradle'
-        d.version == '10'
-        d.versionConstraint.requiredVersion == '10'
-        d.versionConstraint.preferredVersion == ''
-        d.versionConstraint.strictVersion == ''
-        d.versionConstraint.rejectedVersions == []
-        d.transitive
-
-        !d.force
-    }
-
-    def "client module ignores the artifact only notation"() {
-        def parser = new DependencyStringNotationConverter(TestUtil.instantiatorFactory().decorateLenient(), DefaultClientModule, SimpleMapInterner.notThreadSafe());
-
-        when:
-        def d = parse(parser, 'org.gradle:gradle-core:10@jar')
-
-        then:
-        d instanceof DefaultClientModule
-        d.name == 'gradle-core'
-        d.group == 'org.gradle'
-        d.version == '10@jar'
-        d.versionConstraint.requiredVersion == '10@jar'
-        d.versionConstraint.preferredVersion == ''
-        d.versionConstraint.strictVersion == ''
-        d.versionConstraint.rejectedVersions == []
-        d.transitive
-
-        !d.force
-        d.artifacts.size() == 0
-    }
-
     def "parses short hand-notation #notation for strict dependencies"() {
-        def parser = new DependencyStringNotationConverter(TestUtil.instantiatorFactory().decorateLenient(), DefaultClientModule, SimpleMapInterner.notThreadSafe());
+        def parser = new DependencyStringNotationConverter(TestUtil.instantiatorFactory().decorateLenient(), DefaultExternalModuleDependency, SimpleMapInterner.notThreadSafe(), TestUtil.problemsService());
 
         when:
         def d = parse(parser, "org.foo:bar:$notation")
@@ -233,14 +216,22 @@ class DependencyStringNotationConverterTest extends Specification {
     }
 
     def "rejects short hand notation for strict if it starts with double-bang"() {
-        def parser = new DependencyStringNotationConverter(TestUtil.instantiatorFactory().decorateLenient(), DefaultClientModule, SimpleMapInterner.notThreadSafe());
+        def problems = TestUtil.problemsService()
+        def parser = new DependencyStringNotationConverter(TestUtil.instantiatorFactory().decorateLenient(), DefaultExternalModuleDependency, SimpleMapInterner.notThreadSafe(), problems);
 
         when:
         parse(parser, "org.foo:bar:!!1.0")
 
         then:
-        def t = thrown(InvalidUserCodeException)
-        t.message == 'The strict version modifier (!!) must be appended to a valid version number'
+        thrown(InvalidUserDataException)
+        problems.assertProblemEmittedOnce {
+            it.definition.id.displayName == 'Invalid version notation'
+            it.definition.severity == Severity.ERROR
+            it.contextualLabel == 'The strict version modifier (!!) must be appended to a valid version number'
+            it.details == "The strict version modifier syntax expects a base version before '!!'"
+            it.solutions == ["Place a valid version number before '!!', e.g. '1.0!!'"]
+            it.definition.documentationLink.url.endsWith('userguide/version_catalog_problems.html#invalid_version_notation')
+        }
     }
 
     def parse(def parser, def value) {

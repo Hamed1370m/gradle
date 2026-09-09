@@ -19,8 +19,8 @@ import groovy.lang.Closure;
 import org.gradle.api.Action;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTree;
-import org.gradle.api.plugins.quality.internal.CodeNarcAction;
 import org.gradle.api.plugins.quality.internal.CodeNarcActionParameters;
+import org.gradle.api.plugins.quality.internal.CodeNarcInvoker;
 import org.gradle.api.plugins.quality.internal.CodeNarcReportsImpl;
 import org.gradle.api.reporting.Reporting;
 import org.gradle.api.resources.TextResource;
@@ -42,6 +42,7 @@ import java.util.stream.Collectors;
 
 /**
  * Runs CodeNarc against some source files.
+ * @since 0.8
  */
 @CacheableTask
 public abstract class CodeNarc extends AbstractCodeQualityTask implements Reporting<CodeNarcReports> {
@@ -60,6 +61,12 @@ public abstract class CodeNarc extends AbstractCodeQualityTask implements Report
 
     private final CodeNarcReports reports;
 
+    /**
+     * Creates a new {@code CodeNarc}.
+     *
+     * @since 0.8
+     */
+    @SuppressWarnings("this-escape")
     public CodeNarc() {
         super();
         reports = getObjectFactory().newInstance(CodeNarcReportsImpl.class, Describables.quoted("Task", getIdentityPath()));
@@ -70,6 +77,7 @@ public abstract class CodeNarc extends AbstractCodeQualityTask implements Report
 
     /**
      * The CodeNarc configuration file to use.
+     * @since 0.8
      */
     @Internal
     @ToBeReplacedByLazyProperty
@@ -89,15 +97,21 @@ public abstract class CodeNarc extends AbstractCodeQualityTask implements Report
 
     /**
      * The CodeNarc configuration file to use.
+     * @since 0.8
      */
     public void setConfigFile(File configFile) {
         setConfig(getProject().getResources().getText().fromFile(configFile));
     }
 
+    /**
+     * Run.
+     *
+     * @since 1.0
+     */
     @TaskAction
     public void run() {
         WorkQueue workQueue = getWorkerExecutor().processIsolation(spec -> configureForkOptions(spec.getForkOptions()));
-        workQueue.submit(CodeNarcAction.class, this::setupParameters);
+        workQueue.submit(CodeNarcInvoker.class, this::setupParameters);
     }
 
     private void setupParameters(CodeNarcActionParameters parameters) {
@@ -136,6 +150,7 @@ public abstract class CodeNarc extends AbstractCodeQualityTask implements Report
 
     /**
      * The class path containing the CodeNarc library to be used.
+     * @since 1.0
      */
     @Classpath
     @ToBeReplacedByLazyProperty
@@ -145,6 +160,7 @@ public abstract class CodeNarc extends AbstractCodeQualityTask implements Report
 
     /**
      * The class path containing the CodeNarc library to be used.
+     * @since 1.0
      */
     public void setCodenarcClasspath(FileCollection codenarcClasspath) {
         this.codenarcClasspath = codenarcClasspath;
@@ -191,6 +207,7 @@ public abstract class CodeNarc extends AbstractCodeQualityTask implements Report
 
     /**
      * The maximum number of priority 1 violations allowed before failing the build.
+     * @since 1.7
      */
     @Input
     @ToBeReplacedByLazyProperty
@@ -200,6 +217,7 @@ public abstract class CodeNarc extends AbstractCodeQualityTask implements Report
 
     /**
      * The maximum number of priority 1 violations allowed before failing the build.
+     * @since 1.7
      */
     public void setMaxPriority1Violations(int maxPriority1Violations) {
         this.maxPriority1Violations = maxPriority1Violations;
@@ -207,6 +225,7 @@ public abstract class CodeNarc extends AbstractCodeQualityTask implements Report
 
     /**
      * The maximum number of priority 2 violations allowed before failing the build.
+     * @since 1.7
      */
     @Input
     @ToBeReplacedByLazyProperty
@@ -216,6 +235,7 @@ public abstract class CodeNarc extends AbstractCodeQualityTask implements Report
 
     /**
      * The maximum number of priority 2 violations allowed before failing the build.
+     * @since 1.7
      */
     public void setMaxPriority2Violations(int maxPriority2Violations) {
         this.maxPriority2Violations = maxPriority2Violations;
@@ -223,6 +243,7 @@ public abstract class CodeNarc extends AbstractCodeQualityTask implements Report
 
     /**
      * The maximum number of priority 3 violations allowed before failing the build.
+     * @since 1.7
      */
     @Input
     @ToBeReplacedByLazyProperty
@@ -232,6 +253,7 @@ public abstract class CodeNarc extends AbstractCodeQualityTask implements Report
 
     /**
      * The maximum number of priority 3 violations allowed before failing the build.
+     * @since 1.7
      */
     public void setMaxPriority3Violations(int maxPriority3Violations) {
         this.maxPriority3Violations = maxPriority3Violations;

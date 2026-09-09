@@ -18,12 +18,15 @@ package org.gradle.buildinit.plugins
 
 import groovy.io.FileType
 import org.gradle.api.JavaVersion
+import org.gradle.api.internal.tasks.testing.report.generic.GenericHtmlTestExecutionResult
+import org.gradle.api.internal.tasks.testing.report.generic.GenericTestExecutionResult
+import org.gradle.api.tasks.testing.TestResult
 import org.gradle.buildinit.plugins.internal.modifiers.BuildInitDsl
 import org.gradle.buildinit.plugins.internal.modifiers.Language
-import org.gradle.integtests.fixtures.DefaultTestExecutionResult
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 
 import static org.gradle.buildinit.plugins.internal.modifiers.Language.GROOVY
 import static org.gradle.buildinit.plugins.internal.modifiers.Language.JAVA
@@ -108,10 +111,9 @@ abstract class AbstractMultiProjectJvmApplicationInitIntegrationTest extends Abs
         targetDir.file("utilities").assertHasDescendants(utilFiles)
     }
 
-    void assertTestPassed(String subprojectName, String className, String name) {
-        def result = new DefaultTestExecutionResult(targetDir.file(subprojectName))
-        result.assertTestClassesExecuted(className)
-        result.testClass(className).assertTestPassed(name)
+    protected void assertTestPassed(String projectName, String className, String name) {
+        GenericTestExecutionResult testResults = new GenericHtmlTestExecutionResult(targetDir.file(projectName), "build/reports/tests/test")
+        testResults.testPath(className, name).onlyRoot().assertHasResult(TestResult.ResultType.SUCCESS)
     }
 
     String packageToDir(String packageName) {
@@ -120,6 +122,7 @@ abstract class AbstractMultiProjectJvmApplicationInitIntegrationTest extends Abs
 }
 
 abstract class AbstractMultiProjectJvmApplicationInitIntegrationTest1 extends AbstractMultiProjectJvmApplicationInitIntegrationTest {
+
     def "creates multi-project application sample when incubating flag = #incubating"() {
         given:
         def dsl = buildDsl
@@ -302,42 +305,42 @@ class GroovyDslMultiProjectGroovyApplicationInitIntegrationTest3 extends Abstrac
     }
 }
 
-@Requires(value = UnitTestPreconditions.KotlinOnlySupportsJdk21Earlier.class, reason = "Kotlin cannot compile on Java 22 yet")
+@Requires(value = JdkVersionTestPreconditions.KotlinSupportedJdk.class)
 class GroovyDslMultiProjectKotlinApplicationInitIntegrationTest1 extends AbstractMultiProjectJvmApplicationInitIntegrationTest1 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.GROOVY, KOTLIN)
     }
 }
 
-@Requires(value = UnitTestPreconditions.KotlinOnlySupportsJdk21Earlier.class, reason = "Kotlin cannot compile on Java 22 yet")
+@Requires(value = JdkVersionTestPreconditions.KotlinSupportedJdk.class)
 class GroovyDslMultiProjectKotlinApplicationInitIntegrationTest2 extends AbstractMultiProjectJvmApplicationInitIntegrationTest2 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.GROOVY, KOTLIN)
     }
 }
 
-@Requires(value = UnitTestPreconditions.KotlinOnlySupportsJdk21Earlier.class, reason = "Kotlin cannot compile on Java 22 yet")
+@Requires(value = JdkVersionTestPreconditions.KotlinSupportedJdk.class)
 class GroovyDslMultiProjectKotlinApplicationInitIntegrationTest3 extends AbstractMultiProjectJvmApplicationInitIntegrationTest3 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.GROOVY, KOTLIN)
     }
 }
 
-@Requires(value = UnitTestPreconditions.Jdk22OrEarlier, reason = "Scala cannot compile on Java 23 yet")
+@Requires(value = JdkVersionTestPreconditions.Jdk23OrEarlier, reason = "Scala cannot compile on Java 24 yet")
 class GroovyDslMultiProjectScalaApplicationInitIntegrationTest1 extends AbstractMultiProjectJvmApplicationInitIntegrationTest1 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.GROOVY, SCALA)
     }
 }
 
-@Requires(value = UnitTestPreconditions.Jdk22OrEarlier, reason = "Scala cannot compile on Java 23 yet")
+@Requires(value = JdkVersionTestPreconditions.Jdk23OrEarlier, reason = "Scala cannot compile on Java 24 yet")
 class GroovyDslMultiProjectScalaApplicationInitIntegrationTest2 extends AbstractMultiProjectJvmApplicationInitIntegrationTest2 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.GROOVY, SCALA)
     }
 }
 
-@Requires(value = UnitTestPreconditions.Jdk22OrEarlier, reason = "Scala cannot compile on Java 23 yet")
+@Requires(value = JdkVersionTestPreconditions.Jdk23OrEarlier, reason = "Scala cannot compile on Java 24 yet")
 class GroovyDslMultiProjectScalaApplicationInitIntegrationTest3 extends AbstractMultiProjectJvmApplicationInitIntegrationTest3 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.GROOVY, SCALA)
@@ -380,42 +383,42 @@ class KotlinDslMultiProjectGroovyApplicationInitIntegrationTest3 extends Abstrac
     }
 }
 
-@Requires(value = UnitTestPreconditions.KotlinOnlySupportsJdk21Earlier.class, reason = "Kotlin cannot compile on Java 22 yet")
+@Requires(value = JdkVersionTestPreconditions.KotlinSupportedJdk.class)
 class KotlinDslMultiProjectKotlinApplicationInitIntegrationTest1 extends AbstractMultiProjectJvmApplicationInitIntegrationTest1 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.KOTLIN, KOTLIN)
     }
 }
 
-@Requires(value = UnitTestPreconditions.KotlinOnlySupportsJdk21Earlier.class, reason = "Kotlin cannot compile on Java 22 yet")
+@Requires(value = JdkVersionTestPreconditions.KotlinSupportedJdk.class)
 class KotlinDslMultiProjectKotlinApplicationInitIntegrationTest2 extends AbstractMultiProjectJvmApplicationInitIntegrationTest2 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.KOTLIN, KOTLIN)
     }
 }
 
-@Requires(value = UnitTestPreconditions.KotlinOnlySupportsJdk21Earlier.class, reason = "Kotlin cannot compile on Java 22 yet")
+@Requires(value = JdkVersionTestPreconditions.KotlinSupportedJdk.class)
 class KotlinDslMultiProjectKotlinApplicationInitIntegrationTest3 extends AbstractMultiProjectJvmApplicationInitIntegrationTest3 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.KOTLIN, KOTLIN)
     }
 }
 
-@Requires(value = UnitTestPreconditions.Jdk22OrEarlier, reason = "Scala cannot compile on Java 22 yet")
+@Requires(value = JdkVersionTestPreconditions.Jdk23OrEarlier, reason = "Scala cannot compile on Java 24 yet")
 class KotlinDslMultiProjectScalaApplicationInitIntegrationTest1 extends AbstractMultiProjectJvmApplicationInitIntegrationTest1 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.KOTLIN, SCALA)
     }
 }
 
-@Requires(value = UnitTestPreconditions.Jdk22OrEarlier, reason = "Scala cannot compile on Java 22 yet")
+@Requires(value = JdkVersionTestPreconditions.Jdk23OrEarlier, reason = "Scala cannot compile on Java 24 yet")
 class KotlinDslMultiProjectScalaApplicationInitIntegrationTest2 extends AbstractMultiProjectJvmApplicationInitIntegrationTest2 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.KOTLIN, SCALA)
     }
 }
 
-@Requires(value = UnitTestPreconditions.Jdk22OrEarlier, reason = "Scala cannot compile on Java 22 yet")
+@Requires(value = JdkVersionTestPreconditions.Jdk23OrEarlier, reason = "Scala cannot compile on Java 24 yet")
 class KotlinDslMultiProjectScalaApplicationInitIntegrationTest3 extends AbstractMultiProjectJvmApplicationInitIntegrationTest3 {
     def setup() {
         setupDslAndLanguage(BuildInitDsl.KOTLIN, SCALA)

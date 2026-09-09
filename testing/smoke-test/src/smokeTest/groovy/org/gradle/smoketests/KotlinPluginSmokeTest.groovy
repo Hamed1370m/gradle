@@ -16,15 +16,13 @@
 
 package org.gradle.smoketests
 
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.fixtures.versions.KotlinGradlePluginVersions
 import org.gradle.util.GradleVersion
 import org.gradle.util.internal.VersionNumber
 
-import static org.gradle.integtests.fixtures.versions.KotlinGradlePluginVersions.hasConfigurationCacheWarnings
 import static org.gradle.testkit.runner.TaskOutcome.SUCCESS
 import static org.gradle.testkit.runner.TaskOutcome.UP_TO_DATE
-import static org.junit.Assume.assumeFalse
-import static org.junit.Assume.assumeTrue
 
 /**
  * Smoke test for the Kotlin plugins.
@@ -40,36 +38,31 @@ class KotlinPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
         kotlinPluginVersion = VersionNumber.parse(version)
     }
 
-    def 'kotlin jvm (kotlin=#version, workers=#parallelTasksInProject)'() {
+    def 'kotlin jvm (kotlin=#version)'() {
         given:
         setupForKotlinVersion(version)
         useSample("kotlin-example")
         replaceVariablesInBuildFile(kotlinVersion: version)
         when:
-        def result = kgpRunner(parallelTasksInProject, kotlinPluginVersion, 'run').build()
+        def result = kgpRunner(kotlinPluginVersion, 'run').build()
 
         then:
         result.task(':compileKotlin').outcome == SUCCESS
         assert result.output.contains("Hello world!")
 
         when:
-        result = kgpRunner(parallelTasksInProject, kotlinPluginVersion, 'run').build()
+        result = kgpRunner(kotlinPluginVersion, 'run').build()
 
         then:
         result.task(':compileKotlin').outcome == UP_TO_DATE
         assert result.output.contains("Hello world!")
 
         where:
-        [version, parallelTasksInProject] << [
-            TestedVersions.kotlin.versions,
-            [true, false]
-        ].combinations()
+        version << TestedVersions.kotlin.versions
     }
 
     def 'kotlin jvm and test suites (kotlin=#version)'() {
 
-        assumeFalse(version.startsWith("1.6."))
-        assumeFalse(version.startsWith("1.7."))
         setupForKotlinVersion(version)
 
         given:
@@ -96,6 +89,8 @@ class KotlinPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
                     implementation("org.jetbrains.kotlin:kotlin-test-junit5")
                 }
             }
+
+            $SKIP_METADATA_VERSION_CHECK
         """
 
         ["test", "integTest"].each {
@@ -110,15 +105,11 @@ class KotlinPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
         }
 
         when:
-        def result = kgpRunner(false, kotlinPluginVersion, 'test', 'integTest')
+        def result = kgpRunner(kotlinPluginVersion, 'test', 'integTest')
             .deprecations(KotlinDeprecations) {
                 runner.expectLegacyDeprecationWarningIf(
-                    kotlinPluginVersion.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_0_0,
-                    "Mutating dependency DefaultExternalModuleDependency{group='org.jetbrains.kotlin', name='kotlin-test-junit5', version='null', configuration='default'} after it has been finalized has been deprecated. This will fail with an error in Gradle 9.0. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_8.html#dependency_mutate_dependency_collector_after_finalize"
-                )
-                runner.expectLegacyDeprecationWarningIf(
                     kotlinPluginVersion.baseVersion == KotlinGradlePluginVersions.KOTLIN_2_0_0,
-                    "Mutating dependency org.jetbrains.kotlin:kotlin-test-junit5: after it has been finalized has been deprecated. This will fail with an error in Gradle 9.0. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_8.html#dependency_mutate_dependency_collector_after_finalize"
+                    "Mutating dependency org.jetbrains.kotlin:kotlin-test-junit5: after it has been finalized has been deprecated. This will fail with an error in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_8.html#dependency_mutate_dependency_collector_after_finalize"
                 )
             }.build()
 
@@ -130,35 +121,9 @@ class KotlinPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
         version << TestedVersions.kotlin.versions
     }
 
-    def 'kotlin javascript (kotlin=#version, workers=#parallelTasksInProject)'() {
-
-        setupForKotlinVersion(version)
-
-        // kotlinjs has been removed in Kotlin 1.7 in favor of kotlin-mpp
-        assumeTrue(kotlinPluginVersion.baseVersion < VersionNumber.version(1, 7))
-
-        given:
-        useSample("kotlin-js-sample")
-        withKotlinBuildFile()
-        replaceVariablesInBuildFile(kotlinVersion: version)
-        when:
-        def result = kgpRunner(parallelTasksInProject, kotlinPluginVersion, 'compileKotlin2Js').build()
-
-        then:
-        result.task(':compileKotlin2Js').outcome == SUCCESS
-
-        where:
-        [version, parallelTasksInProject] << [
-            TestedVersions.kotlin.versions,
-            [true, false]
-        ].combinations()
-    }
-
     def 'kotlin jvm and groovy plugins combined (kotlin=#kotlinVersion)'() {
 
         setupForKotlinVersion(kotlinVersion)
-
-        def kotlinCompileClasspathPropertyName = kotlinPluginVersion >= VersionNumber.parse("1.7.0") ? 'libraries' : 'classpath'
 
         given:
         buildFile << """
@@ -175,27 +140,34 @@ class KotlinPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
                 classpath = sourceSets.main.compileClasspath
             }
             tasks.named('compileKotlin') {
-                ${kotlinCompileClasspathPropertyName}.from(files(sourceSets.main.groovy.classesDirectory))
+                libraries.from(files(sourceSets.main.groovy.classesDirectory))
             }
 
             dependencies {
                 implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
                 implementation localGroovy()
             }
+
+            $SKIP_METADATA_VERSION_CHECK
         """
         file("src/main/groovy/Groovy.groovy") << "class Groovy { }"
         file("src/main/kotlin/Kotlin.kt") << "class Kotlin { val groovy = Groovy() }"
         file("src/main/java/Java.java") << "class Java { private Kotlin kotlin = new Kotlin(); }" // dependency to compileJava->compileKotlin is added by Kotlin plugin
 
         when:
-        def result = kgpRunner(false, kotlinPluginVersion, 'compileJava').build()
+        def result = kgpRunner(kotlinPluginVersion, 'compileJava').build()
 
         then:
         result.task(':compileJava').outcome == SUCCESS
-        if (VersionNumber.parse(kotlinVersion).baseVersion >= VersionNumber.parse("1.9.20")) {
-            result.tasks.collect { it.path } == [':checkKotlinGradlePluginConfigurationErrors', ':compileGroovy', ':compileKotlin', ':compileJava']
+
+        // With config cache enabled, for some reason, the `checkKotlinGradlePluginConfigurationErrors`
+        // task may appear out of order in the task list
+        def tasks = result.tasks.collect { it.path }
+        if (GradleContextualExecuter.isConfigCache()) {
+            assert tasks.contains(":checkKotlinGradlePluginConfigurationErrors")
+            assert tasks.findAll { it != ":checkKotlinGradlePluginConfigurationErrors" } == [':compileGroovy', ':compileKotlin', ':compileJava']
         } else {
-            result.tasks.collect { it.path } == [':compileGroovy', ':compileKotlin', ':compileJava']
+            assert tasks == [':checkKotlinGradlePluginConfigurationErrors', ':compileGroovy', ':compileKotlin', ':compileJava']
         }
 
         where:
@@ -205,9 +177,6 @@ class KotlinPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
     def 'kotlin jvm and java-gradle-plugin plugins combined (kotlin=#kotlinVersion)'() {
 
         setupForKotlinVersion(kotlinVersion)
-
-        assumeFalse(kotlinVersion.startsWith("1.6."))
-        assumeFalse(kotlinVersion.startsWith("1.7."))
 
         given:
         buildFile << """
@@ -223,16 +192,18 @@ class KotlinPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
             dependencies {
                 implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
             }
+
+            $SKIP_METADATA_VERSION_CHECK
         """
         file("src/main/kotlin/Kotlin.kt") << "class Kotlin { }"
         when:
-        def result = kgpRunner(false, kotlinPluginVersion, 'build').build()
+        def result = kgpRunner(kotlinPluginVersion, 'build').build()
 
         then:
         result.task(':compileKotlin').outcome == SUCCESS
 
         when:
-        result = kgpRunner(false, kotlinPluginVersion, 'build').build()
+        result = kgpRunner(kotlinPluginVersion, 'build').build()
 
         then:
         result.task(':compileKotlin').outcome == UP_TO_DATE
@@ -241,13 +212,19 @@ class KotlinPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
         kotlinVersion << TestedVersions.kotlin.versions
     }
 
+    private static final String SKIP_METADATA_VERSION_CHECK =
+        """
+        tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+            kotlinOptions {
+                freeCompilerArgs += "-Xskip-metadata-version-check"
+            }
+        }
+        """
+
     @Override
     Map<String, Versions> getPluginsToValidate() {
         [
             'org.jetbrains.kotlin.jvm': TestedVersions.kotlin,
-            'org.jetbrains.kotlin.js': TestedVersions.kotlin,
-            'org.jetbrains.kotlin.android': TestedVersions.kotlin,
-            'org.jetbrains.kotlin.android.extensions': TestedVersions.kotlin,
             'org.jetbrains.kotlin.kapt': TestedVersions.kotlin,
             'org.jetbrains.kotlin.plugin.scripting': TestedVersions.kotlin,
             'org.jetbrains.kotlin.native.cocoapods': TestedVersions.kotlin,
@@ -256,23 +233,39 @@ class KotlinPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
 
     @Override
     Map<String, String> getExtraPluginsRequiredForValidation(String testedPluginId, String version) {
-        def androidVersion = AGP_VERSIONS.latestStable
         if (testedPluginId in ['org.jetbrains.kotlin.kapt', 'org.jetbrains.kotlin.plugin.scripting']) {
             return ['org.jetbrains.kotlin.jvm': version]
-        }
-        if (isAndroidKotlinPlugin(testedPluginId)) {
-            AGP_VERSIONS.assumeAgpSupportsCurrentJavaVersionAndKotlinVersion(androidVersion, version)
-            def extraPlugins = ['com.android.application': androidVersion]
-            if (testedPluginId == 'org.jetbrains.kotlin.android.extensions') {
-                extraPlugins.put('org.jetbrains.kotlin.android', version)
-            }
-            return extraPlugins
         }
         return [:]
     }
 
     @Override
-    protected int maxConfigurationCacheProblems() {
-        return kotlinPluginVersion == null ? 0 : (hasConfigurationCacheWarnings(kotlinPluginVersion) ? 1 : 0)
+    String getSubprojectExtensionAccess(String testedPluginId, String version) {
+        testedPluginId == 'org.jetbrains.kotlin.native.cocoapods' ? null : "kotlin {}"
+    }
+
+    @Override
+    List<String> getSubprojectExtensionDeprecations(String testedPluginId, String version) {
+        if (testedPluginId == 'org.jetbrains.kotlin.native.cocoapods') {
+            return []
+        }
+        def kotlinVersionNumber = VersionNumber.parse(version)
+        def deprecations = [parentMethodInvocationDeprecation('kotlin')]
+        if (kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_3_20) {
+            // The Kotlin plugin calls the deprecated Configuration.setVisible(boolean) method until KT-78754 was fixed in Kotlin 2.3.20 / 2.4.0
+            deprecations << "The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#deprecate-visible-property".toString()
+        }
+        if (kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_1_20) {
+            deprecations << "Declaring a Usage attribute with a legacy value has been deprecated. This will fail with an error in Gradle 10. A Usage attribute was declared with value 'java-api-jars'. Declare a Usage attribute with value 'java-api' and a LibraryElements attribute with value 'jar' instead. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#deprecate_legacy_usage_values".toString()
+            deprecations << "Declaring a Usage attribute with a legacy value has been deprecated. This will fail with an error in Gradle 10. A Usage attribute was declared with value 'java-runtime-jars'. Declare a Usage attribute with value 'java-runtime' and a LibraryElements attribute with value 'jar' instead. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#deprecate_legacy_usage_values".toString()
+        }
+        // The KGP 2.0.x line declares an attribute of type KotlinNativeBundleArtifactsTypes,
+        // a plain enum that does not implement Named. Attribute.of allows this via a targeted
+        // compatibility exception and emits a KGP-specific deprecation warning. KGP 2.1.0+ no
+        // longer uses the plain enum, so the deprecation is expected only for the 2.0.x range.
+        if (kotlinVersionNumber.baseVersion >= KotlinGradlePluginVersions.KOTLIN_2_0_0 && kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_1_0) {
+            deprecations << "Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum".toString()
+        }
+        return deprecations
     }
 }

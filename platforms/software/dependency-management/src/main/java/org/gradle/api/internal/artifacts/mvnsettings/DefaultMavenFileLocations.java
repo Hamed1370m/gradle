@@ -17,8 +17,8 @@
 package org.gradle.api.internal.artifacts.mvnsettings;
 
 import org.gradle.util.internal.MavenUtil;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 
 public class DefaultMavenFileLocations implements MavenFileLocations {
@@ -36,6 +36,11 @@ public class DefaultMavenFileLocations implements MavenFileLocations {
     @Override
     public File getUserSettingsFile() {
         return new File(getUserMavenDir(), "settings.xml");
+    }
+
+    @Override
+    public File getUserSecuritySettingsFile() {
+        return new File(getUserMavenDir(), "settings-security.xml");
     }
 
     @Override

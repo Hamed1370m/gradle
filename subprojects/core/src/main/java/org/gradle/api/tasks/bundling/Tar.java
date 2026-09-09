@@ -28,18 +28,25 @@ import org.gradle.work.DisableCachingByDefault;
 
 /**
  * Assembles a TAR archive.
+ * @since 0.7
  */
 @DisableCachingByDefault(because = "Not worth caching")
 public abstract class Tar extends AbstractArchiveTask {
     private Compression compression = Compression.NONE;
 
+    /**
+     * Creates a new {@code Tar}.
+     *
+     * @since 0.8
+     */
+    @SuppressWarnings("this-escape")
     public Tar() {
         getArchiveExtension().set(getProject().provider(() -> getCompression().getDefaultExtension()));
     }
 
     @Override
     protected CopyAction createCopyAction() {
-        return new TarCopyAction(getArchiveFile().get().getAsFile(), getCompressor(), isPreserveFileTimestamps());
+        return new TarCopyAction(getArchiveFile().get().getAsFile(), getCompressor(), isPreserveFileTimestamps(), getReproducibleFileTimestamp());
     }
 
     private ArchiveOutputStreamFactory getCompressor() {
@@ -54,6 +61,7 @@ public abstract class Tar extends AbstractArchiveTask {
      * Returns the compression that is used for this archive.
      *
      * @return The compression. Never returns null.
+     * @since 0.7
      */
     @Input
     @ToBeReplacedByLazyProperty
@@ -65,6 +73,7 @@ public abstract class Tar extends AbstractArchiveTask {
      * Configures the compressor based on passed in compression.
      *
      * @param compression The compression. Should not be null.
+     * @since 0.7
      */
     public void setCompression(Compression compression) {
         this.compression = compression;

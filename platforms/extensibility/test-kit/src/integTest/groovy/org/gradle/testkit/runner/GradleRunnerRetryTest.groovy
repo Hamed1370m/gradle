@@ -18,7 +18,8 @@ package org.gradle.testkit.runner
 
 import org.gradle.integtests.fixtures.daemon.FakeDaemonLog
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.gradle.tooling.GradleConnectionException
 import org.gradle.util.GradleVersion
 
@@ -46,11 +47,7 @@ class GradleRunnerRetryTest extends BaseGradleRunnerIntegrationTest {
         true
     }
 
-    @Requires([
-        UnitTestPreconditions.Windows,
-        UnitTestPreconditions.Jdk7OrLater,
-        UnitTestPreconditions.Jdk8OrEarlier
-    ])
+    @Requires(value = OsTestPreconditions.IsKnownWindowsSocketDisappearanceIssue, reason = "https://github.com/gradle/gradle/issues/1111")
     def "retries if expected socket exception occurs"() {
         given:
         iteration++
@@ -65,7 +62,7 @@ class GradleRunnerRetryTest extends BaseGradleRunnerIntegrationTest {
         true
     }
 
-    @Requires(UnitTestPreconditions.NotWindowsJavaBefore9)
+    @Requires(value = OsTestPreconditions.IsNotKnownWindowsSocketDisappearanceIssue, reason = "https://github.com/gradle/gradle/issues/1111")
     def "does not retry on non-windows and non-java environments"() {
         given:
         iteration++
@@ -79,11 +76,7 @@ class GradleRunnerRetryTest extends BaseGradleRunnerIntegrationTest {
         ioe.cause?.message == "An existing connection was forcibly closed by the remote host"
     }
 
-    @Requires([
-        UnitTestPreconditions.Windows,
-        UnitTestPreconditions.Jdk7OrLater,
-        UnitTestPreconditions.Jdk8OrEarlier
-    ])
+    @Requires(value = OsTestPreconditions.IsKnownWindowsSocketDisappearanceIssue, reason = "https://github.com/gradle/gradle/issues/1111")
     def "should fail for unexpected cause on client side"() {
         given:
         iteration++
@@ -97,11 +90,7 @@ class GradleRunnerRetryTest extends BaseGradleRunnerIntegrationTest {
         ioe.cause?.message == "A different cause"
     }
 
-    @Requires([
-        UnitTestPreconditions.Windows,
-        UnitTestPreconditions.Jdk7OrLater,
-        UnitTestPreconditions.Jdk8OrEarlier
-    ])
+    @Requires(value = OsTestPreconditions.IsKnownWindowsSocketDisappearanceIssue, reason = "https://github.com/gradle/gradle/issues/1111")
     def "should fail for unexpected cause on daemon side"() {
         given:
         iteration++

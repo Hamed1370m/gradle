@@ -22,8 +22,8 @@ import org.gradle.api.Incubating;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTree;
-import org.gradle.api.plugins.quality.internal.CheckstyleAction;
 import org.gradle.api.plugins.quality.internal.CheckstyleActionParameters;
+import org.gradle.api.plugins.quality.internal.CheckstyleInvoker;
 import org.gradle.api.plugins.quality.internal.CheckstyleReportsImpl;
 import org.gradle.api.provider.Property;
 import org.gradle.api.reporting.Reporting;
@@ -43,14 +43,18 @@ import org.gradle.internal.Describables;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 import org.gradle.util.internal.ClosureBackedAction;
 import org.gradle.workers.WorkQueue;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
  * Runs Checkstyle against some source files.
+ *
+ * @see CheckstylePlugin
+ * @see CheckstyleExtension
+ * @since 0.8
  */
 @CacheableTask
 public abstract class Checkstyle extends AbstractCodeQualityTask implements Reporting<CheckstyleReports> {
@@ -62,18 +66,22 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
     private int maxErrors;
     private int maxWarnings = Integer.MAX_VALUE;
     private boolean showViolations = true;
-    private final DirectoryProperty configDirectory;
-    private final Property<Boolean> enableExternalDtdLoad;
 
+    /**
+     * Creates a new {@code Checkstyle}.
+     *
+     * @since 0.8
+     */
+    @SuppressWarnings("this-escape")
     public Checkstyle() {
         super();
-        this.configDirectory = getObjectFactory().directoryProperty();
         this.reports = getObjectFactory().newInstance(CheckstyleReportsImpl.class, Describables.quoted("Task", getIdentityPath()));
-        this.enableExternalDtdLoad = getObjectFactory().property(Boolean.class).convention(false);
+        getEnableExternalDtdLoad().convention(false);
     }
 
     /**
      * The Checkstyle configuration file to use.
+     * @since 0.8
      */
     @Internal
     @ToBeReplacedByLazyProperty
@@ -83,6 +91,7 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
 
     /**
      * The Checkstyle configuration file to use.
+     * @since 0.8
      */
     public void setConfigFile(File configFile) {
         setConfig(getProject().getResources().getText().fromFile(configFile));
@@ -137,6 +146,11 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
         return reports;
     }
 
+    /**
+     * Run.
+     *
+     * @since 1.0
+     */
     @TaskAction
     public void run() {
         runWithProcessIsolation();
@@ -145,9 +159,9 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
     private void runWithProcessIsolation() {
         WorkQueue workQueue = getWorkerExecutor().processIsolation(spec -> {
             configureForkOptions(spec.getForkOptions());
-            spec.getForkOptions().getSystemProperties().put("checkstyle.enableExternalDtdLoad", enableExternalDtdLoad.get().toString());
+            spec.getForkOptions().getSystemProperties().put("checkstyle.enableExternalDtdLoad", getEnableExternalDtdLoad().get().toString());
         });
-        workQueue.submit(CheckstyleAction.class, this::setupParameters);
+        workQueue.submit(CheckstyleInvoker.class, this::setupParameters);
     }
 
     private void setupParameters(CheckstyleActionParameters parameters) {
@@ -191,6 +205,7 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
 
     /**
      * The class path containing the Checkstyle library to be used.
+     * @since 1.0
      */
     @Classpath
     @ToBeReplacedByLazyProperty
@@ -200,6 +215,7 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
 
     /**
      * The class path containing the Checkstyle library to be used.
+     * @since 1.0
      */
     public void setCheckstyleClasspath(FileCollection checkstyleClasspath) {
         this.checkstyleClasspath = checkstyleClasspath;
@@ -207,6 +223,7 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
 
     /**
      * The class path containing the compiled classes for the source files to be analyzed.
+     * @since 0.8
      */
     @Classpath
     @ToBeReplacedByLazyProperty
@@ -216,6 +233,7 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
 
     /**
      * The class path containing the compiled classes for the source files to be analyzed.
+     * @since 0.8
      */
     public void setClasspath(FileCollection classpath) {
         this.classpath = classpath;
@@ -242,6 +260,7 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
 
     /**
      * The properties available for use in the configuration file. These are substituted into the configuration file.
+     * @since 1.0
      */
     @Nullable
     @Optional
@@ -253,6 +272,7 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
 
     /**
      * The properties available for use in the configuration file. These are substituted into the configuration file.
+     * @since 1.0
      */
     public void setConfigProperties(@Nullable Map<String, Object> configProperties) {
         this.configProperties = configProperties;
@@ -269,9 +289,7 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
      */
     @PathSensitive(PathSensitivity.RELATIVE)
     @InputFiles
-    public DirectoryProperty getConfigDirectory() {
-        return configDirectory;
-    }
+    public abstract DirectoryProperty getConfigDirectory();
 
     /**
      * The reports to be generated by this task.
@@ -332,6 +350,7 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
      * Whether rule violations are to be displayed on the console.
      *
      * @return true if violations should be displayed on console
+     * @since 1.4
      */
     @Console
     @ToBeReplacedByLazyProperty
@@ -341,6 +360,7 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
 
     /**
      * Whether rule violations are to be displayed on the console.
+     * @since 1.4
      */
     public void setShowViolations(boolean showViolations) {
         this.showViolations = showViolations;
@@ -357,14 +377,13 @@ public abstract class Checkstyle extends AbstractCodeQualityTask implements Repo
      */
     @Incubating
     @Input
-    public Property<Boolean> getEnableExternalDtdLoad() {
-        return enableExternalDtdLoad;
-    }
+    public abstract Property<Boolean> getEnableExternalDtdLoad();
 
     /**
      * Whether the build should break when the verifications performed by this task fail.
      *
      * @return true if failures should be ignored
+     * @since 0.9
      */
     @Internal
     @ToBeReplacedByLazyProperty

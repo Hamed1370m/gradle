@@ -19,15 +19,18 @@ package org.gradle.api.internal.project;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
 import org.gradle.api.internal.initialization.ClassLoaderScope;
+import org.gradle.api.project.IsolatedProject;
 import org.gradle.internal.DisplayName;
 import org.gradle.internal.build.BuildState;
 import org.gradle.internal.model.ModelContainer;
+import org.gradle.internal.project.ImmutableProjectDescriptor;
 import org.gradle.internal.resources.ResourceLock;
 import org.gradle.util.Path;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.annotation.concurrent.ThreadSafe;
 import java.io.File;
+import java.util.Collection;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -37,40 +40,13 @@ import java.util.function.Function;
  */
 @ThreadSafe
 public interface ProjectState extends ModelContainer<ProjectInternal> {
-    DisplayName getDisplayName();
 
     /**
      * Returns the containing build of this project.
      */
     BuildState getOwner();
 
-    /**
-     * Returns the parent of this project in the project tree. Note that this is not the same as {@link Project#getParent()}, use {@link #getBuildParent()} for that.
-     */
-    @Nullable
-    ProjectState getParent();
-
-    /**
-     * Returns the parent of this project, as per {@link Project#getParent()}. This will be null for the root project of a build in the tree, even if the project is not
-     * at the root of the project tree.
-     */
-    @Nullable
-    ProjectState getBuildParent();
-
-    /**
-     * Returns the direct children of this project, in public iteration order.
-     */
-    Set<ProjectState> getChildProjects();
-
-    /**
-     * Returns the name of this project (which may not necessarily be unique).
-     */
-    String getName();
-
-    /**
-     * Returns an identifying path for this project in the build tree.
-     */
-    Path getIdentityPath();
+    // region About this project
 
     /**
      * Gets the identity of this project, containing the identity within the build tree and the owning build.
@@ -78,9 +54,29 @@ public interface ProjectState extends ModelContainer<ProjectInternal> {
     ProjectIdentity getIdentity();
 
     /**
+     * Returns an identifying path for this project in the build tree.
+     */
+    default Path getIdentityPath() {
+        return getIdentity().getBuildTreePath();
+    }
+
+    /**
      * Returns a path for this project within its containing build. These are not unique within a build tree. Use instead {@link #getIdentityPath()} to uniquely this project.
      */
-    Path getProjectPath();
+    default Path getProjectPath() {
+        return getIdentity().getProjectPath();
+    }
+
+    /**
+     * Returns the name of this project (which may not necessarily be unique).
+     */
+    default String getName() {
+        return getIdentity().getProjectName();
+    }
+
+    default DisplayName getDisplayName() {
+        return getIdentity();
+    }
 
     /**
      * Returns the project directory.
@@ -88,15 +84,55 @@ public interface ProjectState extends ModelContainer<ProjectInternal> {
     File getProjectDir();
 
     /**
-     * Returns the nesting level of a project in a multi-project hierarchy. For single project builds this is always
-     * 0. In a multi-project hierarchy 0 is returned for the root project.
-     */
-    int getDepth();
-
-    /**
      * Returns the identifier of the default component produced by this project.
      */
     ProjectComponentIdentifier getComponentIdentifier();
+
+    /**
+     * Returns the descriptor for this project.
+     * <p>
+     * Prefer the direct methods on this class, such as {@link #getIdentity()}, {@link #getParent()}, {@link #getChildProjects()}, etc.
+     */
+    ImmutableProjectDescriptor getDescriptor();
+
+    IsolatedProject getIsolated();
+
+    // endregion
+
+    // region Project hierarchy
+
+    default boolean isRootProject() {
+        return getParent() == null;
+    }
+
+    /**
+     * Returns the parent of this project, as per {@link Project#getParent()}.
+     * <p>
+     * This will be null for the root project of any build in the build tree.
+     */
+    @Nullable
+    ProjectState getParent();
+
+    /**
+     * Returns the direct children of this project, in public iteration order.
+     */
+    Set<ProjectState> getChildProjects();
+
+    /**
+     * Returns the direct children of this project in no particular order.
+     */
+    Collection<ProjectState> getUnorderedChildProjects();
+
+    /**
+     * Checks whether this project has child projects.
+     *
+     * @return true when this project has child projects.
+     */
+    boolean hasChildren();
+
+    // endregion
+
+    // region Lifecycle management
 
     /**
      * Is the mutable model for this project available?
@@ -116,14 +152,32 @@ public interface ProjectState extends ModelContainer<ProjectInternal> {
     void ensureConfigured();
 
     /**
+     * Configures the mutable model for this project, if not already.
+     *
+     * @throws IllegalStateException when the parent of this model is not already configured.
+     */
+    void ensureSelfConfigured();
+
+    /**
      * Configure the mutable model for this project and discovers any registered tasks, if not already done.
      */
     void ensureTasksDiscovered();
 
+    // endregion
+
     /**
      * Returns the mutable model for this project. This should not be used directly. This property is here to help with migration away from direct usage.
+     * If you are using the mutable state of many projects, consider using one of the methods from {@link org.gradle.internal.build.BuildProjectRegistry}
+     * that provide {@link org.gradle.internal.build.AllProjectsAccess} instead, which checks the lock state.
      */
     ProjectInternal getMutableModel();
+
+    /**
+     * Returns the mutable model for this project, just as {@link #getMutableModel()}, but works even in the presence of failures, for example when the project failed to configure.
+     *
+     * Should not be used in general, it's specific to obtaining partial TAPI models in the presence of failures.
+     */
+    ProjectInternal getMutableModelEvenAfterFailure();
 
     /**
      * Returns the lock that will be acquired when accessing the mutable state of this project via {@link #applyToMutableState(Consumer)} and {@link #fromMutableState(Function)}.

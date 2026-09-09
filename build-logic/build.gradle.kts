@@ -1,6 +1,7 @@
 plugins {
     id("gradlebuild.collect-failed-tasks")
     id("gradlebuild.cache-miss-monitor")
+    id("gradlebuild.ci-reporting")
 }
 
 description = "Provides plugins that are used by Gradle subprojects"
@@ -9,7 +10,11 @@ tasks.register("check") {
     dependsOn(subprojects.map { "${it.name}:check" })
 }
 
-val clean by tasks.registering {
+tasks.register("test") {
+    dependsOn(subprojects.map { "${it.name}:test" })
+}
+
+tasks.register("clean") {
     val buildLogicPropertiesFile = layout.projectDirectory.file("gradle.properties")
     val rootPropertiesFile = layout.projectDirectory.file("../gradle.properties")
     doLast {

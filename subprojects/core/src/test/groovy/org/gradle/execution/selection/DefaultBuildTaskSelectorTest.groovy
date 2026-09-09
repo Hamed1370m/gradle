@@ -18,11 +18,8 @@ package org.gradle.execution.selection
 
 import org.gradle.api.Task
 import org.gradle.api.internal.GradleInternal
-import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.api.internal.project.ProjectState
 import org.gradle.api.plugins.internal.HelpBuiltInCommand
-import org.gradle.api.problems.internal.DefaultProblems
-import org.gradle.api.problems.internal.NoOpProblemEmitter
 import org.gradle.api.specs.Spec
 import org.gradle.execution.ProjectSelectionException
 import org.gradle.execution.TaskSelectionException
@@ -32,8 +29,8 @@ import org.gradle.internal.build.BuildProjectRegistry
 import org.gradle.internal.build.BuildStateRegistry
 import org.gradle.internal.build.IncludedBuildState
 import org.gradle.internal.build.RootBuildState
-import org.gradle.internal.operations.CurrentBuildOperationRef
 import org.gradle.util.Path
+import org.gradle.util.TestUtil
 import spock.lang.Specification
 
 import java.util.function.Consumer
@@ -41,7 +38,12 @@ import java.util.function.Consumer
 class DefaultBuildTaskSelectorTest extends Specification {
     def buildRegistry = Mock(BuildStateRegistry)
     def taskSelector = Mock(TaskSelector)
-    def selector = new DefaultBuildTaskSelector(buildRegistry, taskSelector, [new HelpBuiltInCommand()], new DefaultProblems([new NoOpProblemEmitter()], Mock(CurrentBuildOperationRef)))
+    def selector = new DefaultBuildTaskSelector(
+        buildRegistry,
+        taskSelector,
+        [new HelpBuiltInCommand()],
+        TestUtil.problemsService()
+    )
     def root = rootBuild()
     def target = root.state
 
@@ -273,14 +275,12 @@ class DefaultBuildTaskSelectorTest extends Specification {
         def build = Mock(RootBuildState)
         def projects = Mock(BuildProjectRegistry)
         def gradle = Mock(GradleInternal)
-        def defaultProject = Mock(ProjectInternal)
         def defaultProjectState = Mock(ProjectState)
         def rootProjectState = Mock(ProjectState)
 
         build.projectsCreated >> true
         build.mutableModel >> gradle
-        gradle.defaultProject >> defaultProject
-        defaultProject.owner >> defaultProjectState
+        gradle.defaultProjectState >> defaultProjectState
         defaultProjectState.name >> "proj"
         defaultProjectState.displayName >> Describables.of("<default project>")
         defaultProjectState.projectPath >> Path.path(":proj")

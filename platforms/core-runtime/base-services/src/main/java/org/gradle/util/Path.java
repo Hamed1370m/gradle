@@ -17,30 +17,48 @@
 package org.gradle.util;
 
 import com.google.common.base.Strings;
-import org.apache.commons.lang.StringUtils;
+import com.google.common.collect.AbstractIterator;
+import org.apache.commons.lang3.StringUtils;
 import org.gradle.api.Incubating;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.util.internal.GUtil;
+import org.jetbrains.annotations.Contract;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 
 import static java.util.Arrays.asList;
-import static org.apache.commons.lang.StringUtils.join;
 
 /**
  * Represents a path in Gradle.
+ * @since 0.9
  */
 public class Path implements Comparable<Path> {
+    /**
+     * Path.
+     *
+     * @since 0.9
+     */
     public static final Path ROOT = new Path(new String[0], true);
 
     private static final Comparator<String> STRING_COMPARATOR = GUtil.caseInsensitive();
+    /**
+     * The separator.
+     *
+     * @since 4.2
+     */
     public static final String SEPARATOR = ":";
 
+    /**
+     * Path.
+     *
+     * @since 0.9
+     */
     public static Path path(@Nullable String path) {
-        validatePath(path);
+        validatePathInternal(path);
         if (SEPARATOR.equals(path)) {
             return ROOT;
         } else {
@@ -55,6 +73,11 @@ public class Path implements Comparable<Path> {
      */
     @Incubating
     public static void validatePath(@Nullable String path) {
+        validatePathInternal(path);
+    }
+
+    @Contract("null -> fail")
+    private static void validatePathInternal(@Nullable String path) {
         if (Strings.isNullOrEmpty(path)) {
             throw new InvalidUserDataException("A path must be specified!");
         }
@@ -68,16 +91,21 @@ public class Path implements Comparable<Path> {
 
     private final String[] segments;
     private final boolean absolute;
-    private volatile String fullPath;
+    private final int hashCode;
+    private volatile @Nullable String fullPath;
 
     private Path(String[] segments, boolean absolute) {
+        assert !(segments.length == 0 && !absolute) : "Empty relative paths are forbidden";
+
         this.segments = segments;
         this.absolute = absolute;
+
+        this.hashCode = computeHashCode(absolute, segments);
     }
 
     @Override
     public String toString() {
-        return getPath();
+       return asString();
     }
 
     /**
@@ -91,18 +119,46 @@ public class Path implements Comparable<Path> {
      * path('a:b').append(path(':c:d')) == path('a:b:c:d')
      * path('a:b').append(path('c:d')) == path('a:b:c:d')
      * </pre>
+     * @since 4.0
      */
     public Path append(Path path) {
+        if (segments.length == 0) {
+            if (absolute == path.absolute) {
+                return path;
+            } else {
+                return new Path(path.segments, absolute);
+            }
+        }
+
         if (path.segments.length == 0) {
             return this;
         }
+
         String[] concat = new String[segments.length + path.segments.length];
         System.arraycopy(segments, 0, concat, 0, segments.length);
         System.arraycopy(path.segments, 0, concat, segments.length, path.segments.length);
         return new Path(concat, absolute);
     }
 
+    /**
+     * Returns string representation of this path.
+     *
+     * @deprecated use {@link #asString()} instead
+     *
+     * @return string representation of this path
+     * @since 0.9
+     */
+    @Deprecated
     public String getPath() {
+        return asString();
+    }
+
+    /**
+     * Returns the full path as a string.
+     *
+     * @since 9.2.0
+     */
+    public String asString() {
         if (fullPath == null) {
             fullPath = createFullPath();
         }
@@ -114,7 +170,14 @@ public class Path implements Comparable<Path> {
         if (absolute) {
             path.append(SEPARATOR);
         }
-        return path.append(join(segments, SEPARATOR)).toString();
+        for (int i = 0; i < segments.length; i++) {
+            String segment = segments[i];
+            if (i > 0) {
+                path.append(SEPARATOR);
+            }
+            path.append(segment);
+        }
+        return path.toString();
     }
 
     /**
@@ -146,7 +209,14 @@ public class Path implements Comparable<Path> {
 
     @Override
     public int hashCode() {
-        int result = Arrays.hashCode(segments);
+        return hashCode;
+    }
+
+    private static int computeHashCode(boolean absolute, String[] segments) {
+        int result = 0;
+        for (Object element : segments) {
+            result = 31 * result + element.hashCode();
+        }
         result = 31 * result + (absolute ? 1 : 0);
         return result;
     }
@@ -179,6 +249,7 @@ public class Path implements Comparable<Path> {
      * Returns the parent of this path, or null if this path has no parent.
      *
      * @return The parent of this path.
+     * @since 0.9
      */
     @Nullable
     public Path getParent() {
@@ -197,6 +268,7 @@ public class Path implements Comparable<Path> {
      * Returns the base name of this path, or null if this path is the root path.
      *
      * @return The base name,
+     * @since 0.9
      */
     @Nullable
     public String getName() {
@@ -208,6 +280,7 @@ public class Path implements Comparable<Path> {
 
     /**
      * Creates a child of this path with the given name.
+     * @since 3.3
      */
     public Path child(String name) {
         String[] childSegments = new String[segments.length + 1];
@@ -218,11 +291,17 @@ public class Path implements Comparable<Path> {
 
     /**
      * Resolves the given name relative to this path. If an absolute path is provided, it is returned.
+     * @since 0.9
      */
     public String absolutePath(String path) {
-        return absolutePath(path(path)).getPath();
+        return absolutePath(path(path)).asString();
     }
 
+    /**
+     * Absolute path.
+     *
+     * @since 4.0
+     */
     public Path absolutePath(Path path) {
         if (path.absolute) {
             return path;
@@ -231,17 +310,28 @@ public class Path implements Comparable<Path> {
     }
 
 
+    /**
+     * Returns whether absolute is set.
+     *
+     * @since 6.8
+     */
     public boolean isAbsolute() {
         return absolute;
     }
 
     /**
      * Calculates a path relative to this path. If the given path is not a child of this path, it is returned unmodified.
+     * @since 0.9
      */
     public String relativePath(String path) {
-        return relativePath(path(path)).getPath();
+        return relativePath(path(path)).asString();
     }
 
+    /**
+     * Relative path.
+     *
+     * @since 4.0
+     */
     public Path relativePath(Path path) {
         if (path.absolute != absolute) {
             return path;
@@ -260,25 +350,40 @@ public class Path implements Comparable<Path> {
         return new Path(Arrays.copyOfRange(path.segments, segments.length, path.segments.length), false);
     }
 
+    /**
+     * Segment count.
+     *
+     * @since 6.8
+     */
     public int segmentCount() {
         return segments.length;
     }
 
+    /**
+     * Remove first segments.
+     *
+     * @since 6.8
+     */
     public Path removeFirstSegments(int n) {
         if (n == 0) {
             return this;
         } else if (n == segments.length && absolute) {
             return ROOT;
         } else if (n < 0 || n >= segments.length) {
-            throw new IllegalArgumentException("Cannot remove " + n + " segments from path " + getPath());
+            throw new IllegalArgumentException("Cannot remove " + n + " segments from path " + asString());
         }
 
         return new Path(Arrays.copyOfRange(segments, n, segments.length), absolute);
     }
 
+    /**
+     * Segment.
+     *
+     * @since 6.8
+     */
     public String segment(int index) {
         if (index < 0 || index >= segments.length) {
-            throw new IllegalArgumentException("Segment index " + index + " is invalid for path " + getPath());
+            throw new IllegalArgumentException("Segment index " + index + " is invalid for path " + asString());
         }
 
         return segments[index];
@@ -301,5 +406,71 @@ public class Path implements Comparable<Path> {
             return this;
         }
         return new Path(Arrays.copyOfRange(segments, 0, Math.min(n, segmentCount())), absolute);
+    }
+
+    /**
+     * Iterate over all ancestors of this path, starting with the root path (if absolute) or the first segment (if relative) and not including this path.
+     *
+     * <p>
+     * For example, the path {@code :a:b:c} has the ancestors {@code :}, {@code :a}, and {@code :a:b}.
+     * The path {@code a:b:c} has the ancestors {@code a}, and {@code a:b}.
+     * </p>
+     *
+     * @since 8.13
+     */
+    @Incubating
+    public Iterable<Path> ancestors() {
+        return new Iterable<Path>() {
+            @Override
+            public Iterator<Path> iterator() {
+                return new AbstractIterator<Path>() {
+                    private int segmentsToInclude = absolute ? 0 : 1;
+
+                    @Nullable
+                    @Override
+                    protected Path computeNext() {
+                        if (segmentsToInclude >= segments.length) {
+                            return endOfData();
+                        }
+                        if (segmentsToInclude == 0) {
+                            segmentsToInclude++;
+                            return Path.ROOT;
+                        }
+                        int segments = segmentsToInclude;
+                        segmentsToInclude++;
+                        return takeFirstSegments(segments);
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Determines if this path starts with the given path.
+     *
+     * @param other The path to check if this path starts with.
+     *
+     * @return True if this path starts with the given path, false otherwise. Returns
+     *         false if one path is absolute and the other is not.
+     *
+     * @since 9.1.0
+     */
+    @Incubating
+    public boolean startsWith(Path other) {
+        if (other.absolute != absolute) {
+            return false;
+        }
+
+        if (other.segments.length > segments.length) {
+            return false;
+        }
+
+        for (int i = 0; i < other.segments.length; i++) {
+            if (!other.segments[i].equals(segments[i])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

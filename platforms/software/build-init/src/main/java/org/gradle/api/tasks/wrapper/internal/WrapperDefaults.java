@@ -16,11 +16,11 @@
 
 package org.gradle.api.tasks.wrapper.internal;
 
-import org.gradle.api.NonNullApi;
 import org.gradle.api.tasks.wrapper.Wrapper;
 import org.gradle.wrapper.Install;
+import org.jspecify.annotations.NullMarked;
 
-@NonNullApi
+@NullMarked
 public class WrapperDefaults {
     public static final String SCRIPT_PATH = "gradlew";
     public static final String JAR_FILE_PATH = "gradle/wrapper/gradle-wrapper.jar";
@@ -33,4 +33,7 @@ public class WrapperDefaults {
 
     public static final int NETWORK_TIMEOUT = 10000;
     public static final boolean VALIDATE_DISTRIBUTION_URL = true;
+
+    public static final int RETRIES = Install.DEFAULT_NETWORK_RETRIES;
+    public static final int RETRY_BACK_OFF_MS = Install.DEFAULT_NETWORK_RETRY_BACK_OFF_MS;
 }

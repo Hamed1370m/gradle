@@ -20,16 +20,18 @@ import groovy.lang.Closure;
 import groovy.lang.DelegatesTo;
 import org.gradle.StartParameter;
 import org.gradle.api.Action;
+import org.gradle.api.GradleException;
 import org.gradle.api.Incubating;
 import org.gradle.api.JavaVersion;
-import org.gradle.api.NonNullApi;
 import org.gradle.api.Transformer;
 import org.gradle.api.file.ConfigurableFileCollection;
+import org.gradle.api.file.ConfigurableFileTree;
+import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTree;
 import org.gradle.api.file.FileTreeElement;
-import org.gradle.api.internal.DocumentationRegistry;
 import org.gradle.api.internal.classpath.ModuleRegistry;
+import org.gradle.api.internal.provider.PropertyFactory;
 import org.gradle.api.internal.tasks.testing.JvmTestExecutionSpec;
 import org.gradle.api.internal.tasks.testing.TestExecutableUtils;
 import org.gradle.api.internal.tasks.testing.TestExecuter;
@@ -37,9 +39,8 @@ import org.gradle.api.internal.tasks.testing.TestFramework;
 import org.gradle.api.internal.tasks.testing.detection.DefaultTestExecuter;
 import org.gradle.api.internal.tasks.testing.filter.DefaultTestFilter;
 import org.gradle.api.internal.tasks.testing.junit.JUnitTestFramework;
-import org.gradle.api.internal.tasks.testing.junit.result.TestClassResult;
-import org.gradle.api.internal.tasks.testing.junit.result.TestResultSerializer;
 import org.gradle.api.internal.tasks.testing.junitplatform.JUnitPlatformTestFramework;
+import org.gradle.api.internal.tasks.testing.results.serializable.SerializableTestResultStore;
 import org.gradle.api.internal.tasks.testing.testng.TestNGTestFramework;
 import org.gradle.api.internal.tasks.testing.worker.TestWorker;
 import org.gradle.api.jvm.ModularitySpec;
@@ -64,16 +65,18 @@ import org.gradle.api.tasks.testing.junit.JUnitOptions;
 import org.gradle.api.tasks.testing.junitplatform.JUnitPlatformOptions;
 import org.gradle.api.tasks.testing.testng.TestNGOptions;
 import org.gradle.api.tasks.util.PatternFilterable;
-import org.gradle.api.tasks.util.PatternSet;
+import org.gradle.api.tasks.util.internal.PatternSetFactory;
 import org.gradle.internal.Actions;
 import org.gradle.internal.Cast;
-import org.gradle.internal.Factory;
+import org.gradle.internal.UncheckedException;
 import org.gradle.internal.actor.ActorFactory;
 import org.gradle.internal.concurrent.CompositeStoppable;
 import org.gradle.internal.deprecation.DeprecationLogger;
+import org.gradle.internal.instrumentation.api.annotations.NotToBeReplacedByLazyProperty;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 import org.gradle.internal.jvm.DefaultModularitySpec;
 import org.gradle.internal.jvm.JavaModuleDetector;
+import org.gradle.internal.jvm.SupportedJavaVersions;
 import org.gradle.internal.jvm.UnsupportedJavaRuntimeException;
 import org.gradle.internal.scan.UsedByScanPlugin;
 import org.gradle.internal.time.Clock;
@@ -89,8 +92,11 @@ import org.gradle.process.ProcessForkOptions;
 import org.gradle.process.internal.JavaForkOptionsFactory;
 import org.gradle.process.internal.worker.WorkerProcessFactory;
 import org.gradle.util.internal.ConfigureUtil;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.io.File;
 import java.util.ArrayList;
@@ -100,6 +106,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 import static org.gradle.util.internal.ConfigureUtil.configureUsing;
 
@@ -111,7 +118,7 @@ import static org.gradle.util.internal.ConfigureUtil.configureUsing;
  *
  * <pre class='autoTested'>
  * plugins {
- *     id 'java' // adds 'test' task
+ *     id("java-library") // adds 'test' task
  * }
  *
  * test {
@@ -139,12 +146,14 @@ import static org.gradle.util.internal.ConfigureUtil.configureUsing;
  *   maxHeapSize = "512m"
  *
  *   // set JVM arguments for the test JVM(s)
- *   jvmArgs '-XX:MaxPermSize=256m'
+ *   jvmArgs('-XX:MaxPermSize=256m')
  *
  *   // listen to events in the test execution lifecycle
- *   beforeTest { descriptor -&gt;
- *      logger.lifecycle("Running test: " + descriptor)
- *   }
+ *   addTestListener(new TestListener() {
+ *      void beforeTest(TestDescriptor descriptor) {
+ *          logger.lifecycle("Running test: " + descriptor)
+ *      }
+ *   })
  *
  *   // fail the 'test' task on the first test failure
  *   failFast = true
@@ -153,7 +162,7 @@ import static org.gradle.util.internal.ConfigureUtil.configureUsing;
  *   dryRun = true
  *
  *   // listen to standard out and standard error of the test JVM(s)
- *   onOutput { descriptor, event -&gt;
+ *   addTestOutputListener { descriptor, event -&gt;
  *      logger.lifecycle("Test: " + descriptor + " produced standard out/err: " + event.message )
  *   }
  * }
@@ -163,14 +172,15 @@ import static org.gradle.util.internal.ConfigureUtil.configureUsing;
  * <pre>
  * gradle someTestTask --debug-jvm
  * </pre>
+ * @since 0.7
  */
-@NonNullApi
+@NullMarked
 @CacheableTask
 public abstract class Test extends AbstractTestTask implements JavaForkOptions, PatternFilterable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(Test.class);
 
     private final JavaForkOptions forkOptions;
     private final ModularitySpec modularity;
-    private final Property<JavaLauncher> javaLauncher;
 
     private FileCollection testClassesDirs;
     private final PatternFilterable patternSet;
@@ -180,51 +190,42 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
     private boolean scanForTestClasses = true;
     private long forkEvery;
     private int maxParallelForks = 1;
+
+    @Nullable
     private TestExecuter<JvmTestExecutionSpec> testExecuter;
 
+    /**
+     * Creates a new {@code Test}.
+     *
+     * @since 0.8
+     */
+    @SuppressWarnings("this-escape")
     public Test() {
         ObjectFactory objectFactory = getObjectFactory();
-        patternSet = getPatternSetFactory().create();
+        patternSet = getPatternSetFactory().createPatternSet();
+        testClassesDirs = objectFactory.fileCollection();
         classpath = objectFactory.fileCollection();
         // Create a stable instance to represent the classpath, that takes care of conventions and mutations applied to the property
         stableClasspath = objectFactory.fileCollection();
-        stableClasspath.from(new Callable<Object>() {
-            @Override
-            public Object call() {
-                return getClasspath();
-            }
-        });
+        stableClasspath.from((Callable<Object>) this::getClasspath);
         forkOptions = getForkOptionsFactory().newDecoratedJavaForkOptions();
         forkOptions.setEnableAssertions(true);
         forkOptions.setExecutable(null);
         modularity = objectFactory.newInstance(DefaultModularitySpec.class);
-        javaLauncher = objectFactory.property(JavaLauncher.class).convention(createJavaLauncherConvention());
-        javaLauncher.finalizeValueOnRead();
+        getJavaLauncher().convention(createJavaLauncherConvention());
+        getJavaLauncher().finalizeValueOnRead();
         getDryRun().convention(false);
-        testFramework = objectFactory.property(TestFramework.class).convention(new JUnitTestFramework(this, (DefaultTestFilter) getFilter(), true));
+        testFramework = objectFactory.property(TestFramework.class).convention(objectFactory.newInstance(JUnitTestFramework.class, this.getFilter(), this.getTemporaryDirFactory(), this.getDryRun()));
     }
 
     private Provider<JavaLauncher> createJavaLauncherConvention() {
-        final ObjectFactory objectFactory = getObjectFactory();
         final JavaToolchainService javaToolchainService = getJavaToolchainService();
-        Provider<JavaToolchainSpec> executableOverrideToolchainSpec = getProviderFactory().provider(new Callable<JavaToolchainSpec>() {
-            @Override
-            public JavaToolchainSpec call() {
-                return TestExecutableUtils.getExecutableToolchainSpec(Test.this, objectFactory);
-            }
-        });
+        PropertyFactory propertyFactory = getPropertyFactory();
+        Provider<JavaToolchainSpec> executableOverrideToolchainSpec = getProviderFactory().provider(() -> TestExecutableUtils.getExecutableToolchainSpec(Test.this, propertyFactory));
 
         return executableOverrideToolchainSpec
-            .flatMap(new Transformer<Provider<JavaLauncher>, JavaToolchainSpec>() {
-                @Override
-                public Provider<JavaLauncher> transform(JavaToolchainSpec spec) {
-                    return javaToolchainService.launcherFor(spec);
-                }
-            })
-            .orElse(javaToolchainService.launcherFor(new Action<JavaToolchainSpec>() {
-                @Override
-                public void execute(JavaToolchainSpec javaToolchainSpec) {}
-            }));
+            .flatMap((Transformer<Provider<JavaLauncher>, JavaToolchainSpec>) javaToolchainService::launcherFor)
+            .orElse(javaToolchainService.launcherFor(javaToolchainSpec -> {}));
     }
 
     /**
@@ -232,7 +233,16 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      */
     @Override
     @Internal
-    @ToBeReplacedByLazyProperty
+    public DirectoryProperty getWorkingDirectory() {
+        return forkOptions.getWorkingDirectory();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    @Internal
+    @NotToBeReplacedByLazyProperty(because = "Bridge for backward compatibility, use getWorkingDirectory() instead", willBeDeprecated = true)
     public File getWorkingDir() {
         return forkOptions.getWorkingDir();
     }
@@ -314,7 +324,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      */
     @Override
     @ToBeReplacedByLazyProperty
-    public Map<String, Object> getSystemProperties() {
+    public Map<String, @Nullable Object> getSystemProperties() {
         return forkOptions.getSystemProperties();
     }
 
@@ -322,7 +332,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * {@inheritDoc}
      */
     @Override
-    public void setSystemProperties(Map<String, ?> properties) {
+    public void setSystemProperties(Map<String, ? extends @Nullable Object> properties) {
         forkOptions.setSystemProperties(properties);
     }
 
@@ -330,7 +340,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * {@inheritDoc}
      */
     @Override
-    public Test systemProperties(Map<String, ?> properties) {
+    public Test systemProperties(Map<String, ? extends @Nullable Object> properties) {
         forkOptions.systemProperties(properties);
         return this;
     }
@@ -339,7 +349,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * {@inheritDoc}
      */
     @Override
-    public Test systemProperty(String name, Object value) {
+    public Test systemProperty(String name, @Nullable Object value) {
         forkOptions.systemProperty(name, value);
         return this;
     }
@@ -365,7 +375,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * {@inheritDoc}
      */
     @Override
-    public Test bootstrapClasspath(Object... classpath) {
+    public Test bootstrapClasspath(@Nullable Object... classpath) {
         forkOptions.bootstrapClasspath(classpath);
         return this;
     }
@@ -375,6 +385,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      */
     @Override
     @ToBeReplacedByLazyProperty
+    @Nullable
     public String getMinHeapSize() {
         return forkOptions.getMinHeapSize();
     }
@@ -384,6 +395,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      */
     @Override
     @ToBeReplacedByLazyProperty
+    @Nullable
     public String getDefaultCharacterEncoding() {
         return forkOptions.getDefaultCharacterEncoding();
     }
@@ -392,7 +404,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * {@inheritDoc}
      */
     @Override
-    public void setDefaultCharacterEncoding(String defaultCharacterEncoding) {
+    public void setDefaultCharacterEncoding(@Nullable String defaultCharacterEncoding) {
         forkOptions.setDefaultCharacterEncoding(defaultCharacterEncoding);
     }
 
@@ -400,7 +412,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * {@inheritDoc}
      */
     @Override
-    public void setMinHeapSize(String heapSize) {
+    public void setMinHeapSize(@Nullable String heapSize) {
         forkOptions.setMinHeapSize(heapSize);
     }
 
@@ -409,6 +421,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      */
     @Override
     @ToBeReplacedByLazyProperty
+    @Nullable
     public String getMaxHeapSize() {
         return forkOptions.getMaxHeapSize();
     }
@@ -417,7 +430,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * {@inheritDoc}
      */
     @Override
-    public void setMaxHeapSize(String heapSize) {
+    public void setMaxHeapSize(@Nullable String heapSize) {
         forkOptions.setMaxHeapSize(heapSize);
     }
 
@@ -549,12 +562,12 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * Indicates if this task will skip individual test execution.
      *
      * <p>
-     *     For JUnit 4 and 5, this will report tests that would have executed as skipped.
-     *     For TestNG, this will report tests that would have executed as passed.
+     * For JUnit 4 and 5, this will report tests that would have executed as skipped.
+     * For TestNG, this will report tests that would have executed as passed.
      * </p>
      *
      * <p>
-     *     Only versions of TestNG which support native dry-running are supported, i.e. TestNG 6.14 or later.
+     * Only versions of TestNG which support native dry-running are supported, i.e. TestNG 6.14 or later.
      * </p>
      *
      * @return property for whether this task will skip individual test execution
@@ -668,6 +681,10 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      */
     @Override
     protected JvmTestExecutionSpec createTestExecutionSpec() {
+        if (!getTestFramework().supportsNonClassBasedTesting() && !getTestDefinitionDirs().isEmpty()) {
+            throw new GradleException("The " + getTestFramework().getDisplayName() + " test framework does not support resource-based testing.");
+        }
+
         validateExecutableMatchesToolchain();
         JavaForkOptions javaForkOptions = getForkOptionsFactory().newJavaForkOptions();
         copyTo(javaForkOptions);
@@ -676,29 +693,64 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
         boolean testIsModule = javaModuleDetector.isModule(modularity.getInferModulePath().get(), getTestClassesDirs());
         FileCollection classpath = javaModuleDetector.inferClasspath(testIsModule, stableClasspath);
         FileCollection modulePath = javaModuleDetector.inferModulePath(testIsModule, stableClasspath);
-        return new JvmTestExecutionSpec(getTestFramework(), classpath, modulePath, getCandidateClassFiles(), isScanForTestClasses(), getTestClassesDirs(), getPath(), getIdentityPath(), getForkEvery(), javaForkOptions, getMaxParallelForks(), getPreviousFailedTestClasses(), testIsModule);
+        Set<File> candidateTestDefinitionDirs = determineCandidateTestDefinitionDirs();
+        return new JvmTestExecutionSpec(getTestFramework(), classpath, modulePath,
+            getCandidateClassFiles(), isScanForTestClasses(), candidateTestDefinitionDirs,
+            getTestClassesDirs(), getPath(), getIdentityPath(), getForkEvery(), javaForkOptions, getMaxParallelForks(), getPreviousFailedTestClasses(), testIsModule);
+    }
+
+    private Set<File> determineCandidateTestDefinitionDirs() {
+        return getTestDefinitionDirs().getFiles().stream()
+            .filter(this::isValidDefinitionDir)
+            .filter(this::matchesPatternSet)
+            .collect(Collectors.toSet());
+    }
+
+    private boolean isValidDefinitionDir(File dir) {
+        if (!dir.exists()) {
+            LOGGER.warn("Test definitions directory does not exist: " + dir.getAbsolutePath());
+            return false;
+        } else if (!dir.isDirectory()) {
+            LOGGER.warn("Test definitions directory is not a directory: " + dir.getAbsolutePath());
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    private boolean matchesPatternSet(File dir) {
+        ConfigurableFileTree fileTree = getObjectFactory().fileTree();
+        fileTree.from(dir);
+        fileTree.include(patternSet.getIncludes());
+        fileTree.exclude(patternSet.getExcludes());
+        return !fileTree.isEmpty();
     }
 
     private void validateExecutableMatchesToolchain() {
         File toolchainExecutable = getJavaLauncher().get().getExecutablePath().getAsFile();
         String customExecutable = getExecutable();
         JavaExecutableUtils.validateExecutable(
-                customExecutable, "Toolchain from `executable` property",
-                toolchainExecutable, "toolchain from `javaLauncher` property");
+            customExecutable, "Toolchain from `executable` property",
+            toolchainExecutable, "toolchain from `javaLauncher` property");
     }
 
     private Set<String> getPreviousFailedTestClasses() {
-        TestResultSerializer serializer = new TestResultSerializer(getBinaryResultsDirectory().getAsFile().get());
-        if (serializer.isHasResults()) {
-            final Set<String> previousFailedTestClasses = new HashSet<String>();
-            serializer.read(new Action<TestClassResult>() {
-                @Override
-                public void execute(TestClassResult testClassResult) {
-                    if (testClassResult.getFailuresCount() > 0) {
-                        previousFailedTestClasses.add(testClassResult.getClassName());
+        SerializableTestResultStore store = new SerializableTestResultStore(getBinaryResultsDirectory().getAsFile().get().toPath());
+        // We ignore if we can't read the old results file, as this is just an optimization.
+        if (store.hasResultsSafe()) {
+            final Set<String> previousFailedTestClasses = new HashSet<>();
+            try {
+                store.forEachResult((id, parentId, result, ranges) -> {
+                    // Test class descriptors set both name and class name to the test class name
+                    if (result.getName().equals(result.getClassName())) {
+                        if (result.getResultType() == TestResult.ResultType.FAILURE) {
+                            previousFailedTestClasses.add(result.getClassName());
+                        }
                     }
-                }
-            });
+                });
+            } catch (Exception e) {
+                throw UncheckedException.throwAsUncheckedException(e);
+            }
             return previousFailedTestClasses;
         } else {
             return Collections.emptySet();
@@ -709,19 +761,14 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
     @TaskAction
     public void executeTests() {
         JavaVersion javaVersion = getJavaVersion();
-        if (!javaVersion.isJava6Compatible()) {
-            throw new UnsupportedJavaRuntimeException("Support for test execution using Java 5 or earlier was removed in Gradle 3.0.");
+        if (!javaVersion.isCompatibleWith(JavaVersion.toVersion(SupportedJavaVersions.MINIMUM_WORKER_JAVA_VERSION))) {
+            throw new UnsupportedJavaRuntimeException(String.format(
+                "Gradle does not support executing tests using JVM %s or earlier.",
+                SupportedJavaVersions.MINIMUM_WORKER_JAVA_VERSION - 1
+            ));
         }
-        if (!javaVersion.isJava8Compatible()) {
-            if (testFramework.get() instanceof JUnitPlatformTestFramework) {
-                throw new UnsupportedJavaRuntimeException("Running tests with JUnit platform requires a Java 8+ toolchain.");
-            } else {
-                DeprecationLogger.deprecate("Running tests on Java versions earlier than 8")
-                    .willBecomeAnErrorInGradle9()
-                    .withUpgradeGuideSection(8, "minimum_test_jvm_version")
-                    .nagUser();
-            }
-        }
+        // TODO: JUnit6 requires Java 17+
+        // Gradle should produce a better error message when using JUnit 6 with incompatible JVMs.
 
         if (getDebug()) {
             getLogger().info("Running tests for remote debugging.");
@@ -730,7 +777,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
         try {
             super.executeTests();
         } finally {
-            CompositeStoppable.stoppable(getTestFramework());
+            CompositeStoppable.stoppable(getTestFramework()).stop();
         }
     }
 
@@ -741,7 +788,6 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
                 getServices().get(WorkerLeaseService.class),
                 getServices().get(StartParameter.class).getMaxWorkerCount(),
                 getServices().get(Clock.class),
-                getServices().get(DocumentationRegistry.class),
                 (DefaultTestFilter) getFilter());
         } else {
             return testExecuter;
@@ -759,6 +805,12 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
         }
         reasons.addAll(super.getNoMatchingTestErrorReasons());
         return reasons;
+    }
+
+    @Override
+    protected int getReportEntrySkipLevels() {
+        // Add 1 for the workers, plus any additional levels required by the test framework
+        return super.getReportEntrySkipLevels() + 1 + getTestFramework().getAdditionalReportEntrySkipLevels();
     }
 
     /**
@@ -863,6 +915,19 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
     }
 
     /**
+     * Returns directories to scan for non-class-based test definition files.
+     *
+     * @return The directories holding non-class-based test definition files.
+     * @since 9.4.0
+     */
+    @Incubating
+    @InputFiles
+    @SkipWhenEmpty
+    @IgnoreEmptyDirectories
+    @PathSensitive(PathSensitivity.RELATIVE)
+    public abstract ConfigurableFileCollection getTestDefinitionDirs();
+
+    /**
      * Sets the directories to scan for compiled test sources.
      *
      * Typically, this would be configured to use the output of a source set:
@@ -950,6 +1015,11 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
         return testFramework;
     }
 
+    /**
+     * Returns the test framework.
+     *
+     * @since 0.7
+     */
     @Internal
     @ToBeReplacedByLazyProperty(comment = "This will be removed")
     public TestFramework getTestFramework() {
@@ -957,8 +1027,17 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
         return testFramework.get();
     }
 
+    /**
+     * Do not call this method.
+     * @deprecated This will be removed in Gradle 10
+     * @since 0.7
+     */
+    @Deprecated
     public TestFramework testFramework(@Nullable Closure testFrameworkConfigure) {
-        // TODO: Deprecate and remove this method
+        DeprecationLogger.deprecateMethod(Test.class, "testFramework(Closure)")
+            .willBeRemovedInGradle10()
+            .withUpgradeGuideSection(9, "deprecated_test_methods")
+            .nagUser();
         options(testFrameworkConfigure);
         return getTestFramework();
     }
@@ -967,6 +1046,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * Returns test framework specific options. Make sure to call {@link #useJUnit()}, {@link #useJUnitPlatform()} or {@link #useTestNG()} before using this method.
      *
      * @return The test framework options.
+     * @since 0.7
      */
     @Nested
     public TestFrameworkOptions getOptions() {
@@ -980,6 +1060,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * If no test framework has been set, the task will assume JUnit4.
      *
      * @return The test framework options.
+     * @since 0.7
      */
     public TestFrameworkOptions options(@DelegatesTo(TestFrameworkOptions.class) Closure testFrameworkConfigure) {
         return ConfigureUtil.configure(testFrameworkConfigure, getOptions());
@@ -1001,27 +1082,29 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
     /**
      * Specifies that JUnit4 should be used to discover and execute the tests.
      *
-     * @see #useJUnit(org.gradle.api.Action) Configure JUnit4 specific options.
+     * @see #useJUnit(Action) Configure JUnit4 specific options.
+     * @since 0.7
      */
     public void useJUnit() {
-        useTestFramework(new JUnitTestFramework(this, (DefaultTestFilter) getFilter(), true));
+        useTestFramework(getObjectFactory().newInstance(JUnitTestFramework.class, this.getFilter(), this.getTemporaryDirFactory(), this.getDryRun()));
     }
 
     /**
      * Specifies that JUnit4 should be used to discover and execute the tests with additional configuration.
      * <p>
-     * The supplied action configures an instance of {@link org.gradle.api.tasks.testing.junit.JUnitOptions JUnit4 specific options}.
+     * The supplied action configures an instance of {@link JUnitOptions JUnit4 specific options}.
      *
      * @param testFrameworkConfigure A closure used to configure JUnit4 options.
+     * @since 0.7
      */
     public void useJUnit(@Nullable @DelegatesTo(JUnitOptions.class) Closure testFrameworkConfigure) {
-        useJUnit(ConfigureUtil.<JUnitOptions>configureUsing(testFrameworkConfigure));
+        useJUnit(configureUsing(testFrameworkConfigure));
     }
 
     /**
      * Specifies that JUnit4 should be used to discover and execute the tests with additional configuration.
      * <p>
-     * The supplied action configures an instance of {@link org.gradle.api.tasks.testing.junit.JUnitOptions JUnit4 specific options}.
+     * The supplied action configures an instance of {@link JUnitOptions JUnit4 specific options}.
      *
      * @param testFrameworkConfigure An action used to configure JUnit4 options.
      * @since 3.5
@@ -1039,11 +1122,11 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * JUnit Platform supports multiple test engines, which allows other testing frameworks to be built on top of it.
      * You may need to use this option even if you are not using JUnit directly.
      *
-     * @see #useJUnitPlatform(org.gradle.api.Action) Configure JUnit Platform specific options.
+     * @see #useJUnitPlatform(Action) Configure JUnit Platform specific options.
      * @since 4.6
      */
     public void useJUnitPlatform() {
-        useTestFramework(new JUnitPlatformTestFramework((DefaultTestFilter) getFilter(), true, getDryRun()));
+        useTestFramework(getObjectFactory().newInstance(JUnitPlatformTestFramework.class, getFilter(), getDryRun()));
     }
 
     /**
@@ -1054,7 +1137,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * JUnit Platform supports multiple test engines, which allows other testing frameworks to be built on top of it.
      * You may need to use this option even if you are not using JUnit directly.
      * <p>
-     * The supplied action configures an instance of {@link org.gradle.api.tasks.testing.junitplatform.JUnitPlatformOptions JUnit Platform specific options}.
+     * The supplied action configures an instance of {@link JUnitPlatformOptions JUnit Platform specific options}.
      *
      * @param testFrameworkConfigure A closure used to configure JUnit platform options.
      * @since 4.6
@@ -1067,19 +1150,21 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
     /**
      * Specifies that TestNG should be used to discover and execute the tests.
      *
-     * @see #useTestNG(org.gradle.api.Action) Configure TestNG specific options.
+     * @see #useTestNG(Action) Configure TestNG specific options.
+     * @since 0.7
      */
     public void useTestNG() {
-        useTestFramework(new TestNGTestFramework(this, (DefaultTestFilter) getFilter(), getObjectFactory()));
+        useTestFramework(getObjectFactory().newInstance(TestNGTestFramework.class, this.getFilter(), this.getTemporaryDirFactory(), this.getDryRun(), this.getReports().getHtml()));
 
     }
 
     /**
      * Specifies that TestNG should be used to discover and execute the tests with additional configuration.
      * <p>
-     * The supplied action configures an instance of {@link org.gradle.api.tasks.testing.testng.TestNGOptions TestNG specific options}.
+     * The supplied action configures an instance of {@link TestNGOptions TestNG specific options}.
      *
      * @param testFrameworkConfigure A closure used to configure TestNG options.
+     * @since 0.7
      */
     public void useTestNG(@DelegatesTo(TestNGOptions.class) Closure testFrameworkConfigure) {
         useTestNG(configureUsing(testFrameworkConfigure));
@@ -1088,7 +1173,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
     /**
      * Specifies that TestNG should be used to discover and execute the tests with additional configuration.
      * <p>
-     * The supplied action configures an instance of {@link org.gradle.api.tasks.testing.testng.TestNGOptions TestNG specific options}.
+     * The supplied action configures an instance of {@link TestNGOptions TestNG specific options}.
      *
      * @param testFrameworkConfigure An action used to configure TestNG options.
      * @since 3.5
@@ -1104,6 +1189,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * If we are setting a framework to its existing value, no-op so as not to overwrite existing options here.
      * We need to allow this especially for the default test task, so that existing builds that configure options and
      * then call useJunit() don't clear out their options.
+     * @since 0.7
      */
     void useTestFramework(TestFramework testFramework) {
         Class<?> currentFramework = this.testFramework.get().getClass();
@@ -1131,6 +1217,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
 
     /**
      * Returns the classpath to use to execute the tests.
+     * @since 0.7
      */
     @Internal("captured by stableClasspath")
     @ToBeReplacedByLazyProperty
@@ -1138,6 +1225,11 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
         return classpath;
     }
 
+    /**
+     * Sets the classpath.
+     *
+     * @since 0.8
+     */
     public void setClasspath(FileCollection classpath) {
         this.classpath = classpath;
     }
@@ -1145,6 +1237,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
     /**
      * Specifies whether test classes should be detected. When {@code true} the classes which match the include and exclude patterns are scanned for test classes, and any found are executed. When
      * {@code false} the classes which match the include and exclude patterns are executed.
+     * @since 0.7
      */
     @Input
     @ToBeReplacedByLazyProperty
@@ -1152,6 +1245,11 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
         return scanForTestClasses;
     }
 
+    /**
+     * Sets the scan for test classes.
+     *
+     * @since 0.7
+     */
     public void setScanForTestClasses(boolean scanForTestClasses) {
         this.scanForTestClasses = scanForTestClasses;
     }
@@ -1169,6 +1267,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * This property can have a large impact on performance due to the cost of stopping and starting each test process. It is unusual for this property to be changed from the default.
      *
      * @return The maximum number of test classes to execute in a test process. Returns 0 when there is no maximum.
+     * @since 0.9
      */
     @Internal
     @ToBeReplacedByLazyProperty
@@ -1193,34 +1292,6 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
     }
 
     /**
-     * Sets the maximum number of test classes to execute in a forked test process.
-     * <p>
-     * By default, Gradle automatically uses a separate JVM when executing tests, so changing this property is usually not necessary.
-     * </p>
-     *
-     * @param forkEvery The maximum number of test classes. Use null or 0 to specify no maximum.
-     * @deprecated Use {@link #setForkEvery(long)} instead.
-     */
-    @Deprecated
-    public void setForkEvery(@Nullable Long forkEvery) {
-        if (forkEvery == null) {
-            DeprecationLogger.deprecateBehaviour("Setting Test.forkEvery to null.")
-                .withAdvice("Set Test.forkEvery to 0 instead.")
-                .willBecomeAnErrorInGradle9()
-                .withDslReference(Test.class, "forkEvery")
-                .nagUser();
-            setForkEvery(0);
-        } else {
-            DeprecationLogger.deprecateMethod(Test.class, "setForkEvery(Long)")
-                .replaceWith("Test.setForkEvery(long)")
-                .willBeRemovedInGradle9()
-                .withDslReference(Test.class, "forkEvery")
-                .nagUser();
-            setForkEvery(forkEvery.longValue());
-        }
-    }
-
-    /**
      * Returns the maximum number of test processes to start in parallel.
      *
      * <p>
@@ -1233,6 +1304,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * This property cannot exceed the value of {@literal max-workers} for the current build. Gradle will also limit the number of started test processes across all {@link Test} tasks.
      *
      * @return The maximum number of forked test processes.
+     * @since 0.9
      */
     @Internal
     @ToBeReplacedByLazyProperty
@@ -1247,6 +1319,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * </p>
      *
      * @param maxParallelForks The maximum number of forked test processes. Use 1 to disable parallel test execution for this task.
+     * @since 0.9
      */
     public void setMaxParallelForks(int maxParallelForks) {
         if (maxParallelForks < 1) {
@@ -1259,6 +1332,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * Returns the classes files to scan for test classes.
      *
      * @return The candidate class files.
+     * @since 0.9
      */
     @InputFiles
     @SkipWhenEmpty
@@ -1273,7 +1347,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * Executes the action against the {@link #getFilter()}.
      *
      * @param action configuration of the test filter
-     * @since 1.10
+     * @since 1.12
      */
     public void filter(Action<TestFilter> action) {
         action.execute(getFilter());
@@ -1295,9 +1369,7 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
      * @since 6.7
      */
     @Nested
-    public Property<JavaLauncher> getJavaLauncher() {
-        return javaLauncher;
-    }
+    public abstract Property<JavaLauncher> getJavaLauncher();
 
     @Override
     boolean testsAreNotFiltered() {
@@ -1329,47 +1401,29 @@ public abstract class Test extends AbstractTestTask implements JavaForkOptions, 
     }
 
     @Inject
-    protected ObjectFactory getObjectFactory() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract PropertyFactory getPropertyFactory();
 
     @Inject
-    protected JavaToolchainService getJavaToolchainService() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract JavaToolchainService getJavaToolchainService();
 
     @Inject
-    protected ProviderFactory getProviderFactory() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract ProviderFactory getProviderFactory();
 
     @Inject
-    protected ActorFactory getActorFactory() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract ActorFactory getActorFactory();
 
     @Inject
-    protected WorkerProcessFactory getProcessBuilderFactory() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract WorkerProcessFactory getProcessBuilderFactory();
 
     @Inject
-    protected Factory<PatternSet> getPatternSetFactory() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract PatternSetFactory getPatternSetFactory();
 
     @Inject
-    protected JavaForkOptionsFactory getForkOptionsFactory() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract JavaForkOptionsFactory getForkOptionsFactory();
 
     @Inject
-    protected ModuleRegistry getModuleRegistry() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract ModuleRegistry getModuleRegistry();
 
     @Inject
-    protected JavaModuleDetector getJavaModuleDetector() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract JavaModuleDetector getJavaModuleDetector();
 }

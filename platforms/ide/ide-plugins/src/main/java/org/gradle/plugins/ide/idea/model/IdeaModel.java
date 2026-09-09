@@ -18,7 +18,11 @@ package org.gradle.plugins.ide.idea.model;
 import com.google.common.base.Preconditions;
 import groovy.lang.Closure;
 import groovy.lang.DelegatesTo;
+import groovy.transform.stc.ClosureParams;
+import groovy.transform.stc.SimpleType;
 import org.gradle.api.Action;
+import org.gradle.internal.deprecation.DeprecationLogger;
+import org.gradle.plugins.ide.internal.IdeDeprecations;
 
 import java.io.File;
 import java.util.Map;
@@ -30,32 +34,46 @@ import static org.gradle.util.internal.ConfigureUtil.configure;
  * First point of entry when it comes to customizing the IDEA generation.
  * <p>
  * See the examples in docs for {@link IdeaModule} or {@link IdeaProject}.
+ * @since 1.0
  */
 public abstract class IdeaModel {
 
     private IdeaModule module;
     private IdeaProject project;
+    @SuppressWarnings("deprecation")
     private IdeaWorkspace workspace;
     private String targetVersion;
 
     /**
      * Configures IDEA module information. <p> For examples see docs for {@link IdeaModule}.
+     * @since 1.0
      */
     public IdeaModule getModule() {
         return module;
     }
 
+    /**
+     * Sets the module.
+     *
+     * @since 1.0
+     */
     public void setModule(IdeaModule module) {
         this.module = module;
     }
 
     /**
      * Configures IDEA project information. <p> For examples see docs for {@link IdeaProject}.
+     * @since 1.0
      */
     public IdeaProject getProject() {
         return project;
     }
 
+    /**
+     * Sets the project.
+     *
+     * @since 1.0
+     */
     public void setProject(IdeaProject project) {
         this.project = project;
     }
@@ -64,30 +82,59 @@ public abstract class IdeaModel {
      * Configures IDEA workspace information.
      * <p>
      * For examples see docs for {@link IdeaWorkspace}.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
      */
+    @Deprecated
     public IdeaWorkspace getWorkspace() {
+        IdeDeprecations.nagDeprecatedType(IdeaWorkspace.class);
         return workspace;
     }
 
+    /**
+     * Set workspace.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
+     */
+    @Deprecated
     public void setWorkspace(IdeaWorkspace workspace) {
+        IdeDeprecations.nagDeprecatedType(IdeaWorkspace.class);
         this.workspace = workspace;
     }
 
     /**
      * Configures the target IDEA version.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 2.12
      */
+    @Deprecated
     public String getTargetVersion() {
+        IdeDeprecations.nagDeprecatedProperty(IdeaModel.class, "targetVersion");
         return targetVersion;
     }
 
+    /**
+     * Sets the target IDEA version.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 2.12
+     */
+    @Deprecated
     public void setTargetVersion(String targetVersion) {
+        IdeDeprecations.nagDeprecatedProperty(IdeaModel.class, "targetVersion");
         this.targetVersion = targetVersion;
     }
 
     /**
      * Configures IDEA module information. <p> For examples see docs for {@link IdeaModule}.
+     * @since 1.0
      */
-    public void module(@SuppressWarnings("rawtypes") @DelegatesTo(IdeaModule.class) Closure closure) {
+    public void module(@DelegatesTo(IdeaModule.class)
+                       @ClosureParams(value = SimpleType.class, options = "org.gradle.plugins.ide.idea.model.IdeaModule")
+                       @SuppressWarnings("rawtypes") Closure closure) {
         configure(closure, getModule());
     }
 
@@ -101,6 +148,7 @@ public abstract class IdeaModel {
 
     /**
      * Configures IDEA project information. <p> For examples see docs for {@link IdeaProject}.
+     * @since 1.0
      */
     public void project(@SuppressWarnings("rawtypes") @DelegatesTo(IdeaProject.class) Closure closure) {
         configure(closure, getProject());
@@ -116,7 +164,11 @@ public abstract class IdeaModel {
 
     /**
      * Configures IDEA workspace information. <p> For examples see docs for {@link IdeaWorkspace}.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
      */
+    @Deprecated
     public void workspace(@SuppressWarnings("rawtypes") @DelegatesTo(IdeaWorkspace.class) Closure closure) {
         configure(closure, getWorkspace());
     }
@@ -124,7 +176,9 @@ public abstract class IdeaModel {
     /**
      * Configures IDEA workspace information. <p> For examples see docs for {@link IdeaWorkspace}.
      * @since 3.5
+     * @deprecated Will be removed in Gradle 10.
      */
+    @Deprecated
     public void workspace(Action<? super IdeaWorkspace> action) {
         action.execute(getWorkspace());
     }
@@ -133,9 +187,13 @@ public abstract class IdeaModel {
      * Adds path variables to be used for replacing absolute paths in resulting files (*.iml, etc.). <p> For example see docs for {@link IdeaModule}.
      *
      * @param pathVariables A map with String-&gt;File pairs.
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
      */
+    @Deprecated
     public void pathVariables(Map<String, File> pathVariables) {
+        IdeDeprecations.nagDeprecatedProperty(IdeaModel.class, "pathVariables");
         Preconditions.checkNotNull(pathVariables);
-        module.getPathVariables().putAll(pathVariables);
+        DeprecationLogger.whileDisabled(() -> module.getPathVariables()).putAll(pathVariables);
     }
 }

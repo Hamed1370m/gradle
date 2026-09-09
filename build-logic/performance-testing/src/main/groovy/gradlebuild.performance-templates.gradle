@@ -56,7 +56,7 @@ performanceTest.registerTestProject("largeEmptyMultiProjectDeclarativeDsl", Java
 
 
 // === Java ===
-['largeMonolithicJavaProject', 'largeJavaMultiProject', 'smallJavaMultiProjectManyExternalDependencies', 'largeJavaMultiProjectHierarchy', 'largeMonolithicGroovyProject', 'largeGroovyMultiProject', 'largeJavaMultiProjectNoBuildSrc', 'largeJavaMultiProjectKotlinDsl',
+['largeMonolithicJavaProject', 'largeJavaMultiProject', 'largeJavaMultiProjectDeprecations', 'smallJavaMultiProjectManyExternalDependencies', 'largeJavaMultiProjectHierarchy', 'largeMonolithicGroovyProject', 'largeGroovyMultiProject', 'largeJavaMultiProjectNoBuildSrc', 'largeJavaMultiProjectKotlinDsl',
  'mediumMonolithicJavaProject', 'mediumJavaMultiProject', 'mediumJavaMultiProjectWithTestNG', 'mediumJavaCompositeBuild', 'mediumJavaPredefinedCompositeBuild',
  'smallJavaMultiProject', 'smallJavaMultiProjectNoBuildSrc'].each { template ->
     performanceTest.registerTestProject(template, JavaExecProjectGeneratorTask) {
@@ -107,6 +107,11 @@ performanceTest.registerTestProject("generateLotsOfDeprecationWarnings", Copy) {
     from "src/templates/$name"
 }
 
+performanceTest.registerTestProject("generateDiverseDeprecationWarnings", Copy) {
+    into "build/$name"
+    from "src/templates/$name"
+}
+
 
 // === Gradle Kotlin DSL ===
 performanceTest.registerTestProject("ktsManyProjects", KtsProjectGeneratorTask) {
@@ -117,6 +122,23 @@ performanceTest.registerTestProject("ktsManyProjects", KtsProjectGeneratorTask) 
 
 performanceTest.registerTestProject("ktsSmall", KtsProjectGeneratorTask) {
     daemonMemory = '512m'
+}
+
+// A single Kotlin DSL project whose build script applies a plugin that creates a large number of
+// Java source sets. Each source set contributes several configurations, and each configuration
+// becomes its own generated type-safe accessor class, so a great number of accessor classes are
+// generated for this single project. The number of source sets is the size parameter.
+performanceTest.registerTestProject("kotlinDslManyAccessors", KtsProjectGeneratorTask) {
+    projects = 1
+    sourceFiles = 0
+    createTestComponent = false
+    subProjectTemplates = ['kts-many-accessors']
+    additionalProjectFiles = [
+        'buildSrc/src/main/java/org/gradle/performance/kotlindsl/ManySourceSetsPlugin.java',
+        'buildSrc/src/main/resources/META-INF/gradle-plugins/many-source-sets.properties',
+    ]
+    templateArgs = [sourceSetCount: 500]
+    daemonMemory = '1536m'
 }
 
 // === Native Software Model ===
@@ -357,9 +379,7 @@ performanceTest.registerTestProject("bigCppMulti", CppMultiProjectGeneratorTask)
 
 // Build-builder projects
 tasks.register("buildBuilder", RemoteProject) {
-    remoteUri = 'https://github.com/gradle/build-builder.git'
-    // From master branch
-    ref = '39037ebf30b9eab5bdceff259ce50126f94a5561'
+    setRemoteUriAndRefFromGradleProperty("buildBuilderProjectRef")
 }
 
 tasks.register("installBuildBuilder", GradleBuild) {
@@ -409,33 +429,35 @@ performanceTest.registerTestProject("bigSwiftApp", BuildBuilderGenerator) {
 }
 
 // === Android ===
-performanceTest.registerAndroidTestProject("largeAndroidBuild", RemoteProject) {
-    remoteUri = 'https://github.com/gradle/perf-android-large.git'
-    // From android-73 branch
-    ref = "6f56fcdbaade0a9ce43777cf91ab8bf79cd14dd0"
+performanceTest.registerAndroidTestProject("largeAndroidBuild", ["-Xms8g", "-Xmx8g"], RemoteProject) {
+    setRemoteUriAndRefFromGradleProperty("largeAndroidBuildProjectRef")
 }
 
-performanceTest.registerAndroidTestProject("largeAndroidBuild2", RemoteProject) {
-    remoteUri = 'https://github.com/gradle/perf-android-large-2.git'
-    // Pinned from android-73-kotlin-16 branch
-    ref = "16d64faa6055a281874329ff95fbcdd6861b7248"
+performanceTest.registerAndroidTestProject("largeAndroidBuild2", ["-Xms8g", "-Xmx8g"], RemoteProject) {
+    setRemoteUriAndRefFromGradleProperty("largeAndroidBuild2ProjectRef")
 }
 
-performanceTest.registerAndroidTestProject("nowInAndroidBuild", RemoteProject) {
-    remoteUri = 'https://github.com/android/nowinandroid.git'
-    // Pinned from main branch
-    ref = "b85cf7d4766ca84a424700f86a96f5eab0a3cfbd" // latest of May 14th, 2024
+performanceTest.registerAndroidTestProject("nowInAndroidBuild", ["-Xms4g", "-Xmx4g"], RemoteProject) {
+    setRemoteUriAndRefFromGradleProperty("nowInAndroidBuildProjectRef")
     doLast {
         setMaxWorkers(outputDirectory, 8)
     }
 }
 
-performanceTest.registerAndroidTestProject("santaTrackerAndroidBuild", RemoteProject) {
-    remoteUri = 'https://github.com/gradle/santa-tracker-android.git'
-    // Pinned from main branch
-    ref = 'e9419cad3583427caca97958301ff98fc8e9a1c3'
+performanceTest.registerAndroidTestProject("android100Kts", ["-Xms4g", "-Xmx4g"], RemoteProject) {
+    setRemoteUriAndRefFromGradleProperty("isolatedProjectsTestbedRef")
+    subdirectory = 'android-100-kts'
     doLast {
-        addGoogleServicesJson(outputDirectory)
+        setMaxWorkers(outputDirectory, 8)
+    }
+}
+
+// When manually opening the project in Android Studio 2025.3, it recommends this max memory based on the project size
+performanceTest.registerAndroidTestProject("android500Kts", ["-Xms8g", "-Xmx8g"], RemoteProject) {
+    setRemoteUriAndRefFromGradleProperty("isolatedProjectsTestbedRef")
+    subdirectory = 'android-500-kts'
+    doLast {
+        setMaxWorkers(outputDirectory, 8)
     }
 }
 
@@ -473,107 +495,22 @@ private void setParallel(File projectDirectory, boolean parallel) {
 
 }
 
-private void addGoogleServicesJson(File outputDirectory) {
-    new File(outputDirectory, 'santa-tracker/google-services.json').text = """
-{
-  "project_info": {
-    "project_number": "012345678912",
-    "firebase_url": "https://example.com",
-    "project_id": "example",
-    "storage_bucket": "example.example.com"
-  },
-  "client": [
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:012345678912:android:0123456789abcdef",
-        "android_client_info": {
-          "package_name": "com.google.android.apps.santatracker.debug"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "foo.example.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "012345678901234567890123456789012345678"
-        }
-      ],
-      "services": {
-        "analytics_service": {
-          "status": 1
-        },
-        "appinvite_service": {
-          "status": 1,
-          "other_platform_oauth_client": []
-        },
-        "ads_service": {
-          "status": 2
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:012345678912:android:0123456789abcdef",
-        "android_client_info": {
-          "package_name": "com.google.android.apps.santatracker.debug"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "foo.example.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "012345678901234567890123456789012345678"
-        }
-      ],
-      "services": {
-        "analytics_service": {
-          "status": 1
-        },
-        "appinvite_service": {
-          "status": 1,
-          "other_platform_oauth_client": []
-        },
-        "ads_service": {
-          "status": 2
-        }
-      }
-    }
-  ],
-  "configuration_version": "1"
-}
-"""
-}
-
 performanceTest.registerTestProject("excludeRuleMergingBuild", RemoteProject) {
-    remoteUri = 'https://github.com/gradle/performance-comparisons.git'
-    // From master branch
-    ref = "b0eb05ab058e55e3aad5935d499c9079284c2592"
+    setRemoteUriAndRefFromGradleProperty("excludeRuleMergingBuildProjectRef")
     subdirectory = 'exclude-merging'
 }
 
 performanceTest.registerTestProject("springBootApp", RemoteProject) {
-    remoteUri = 'https://github.com/gradle/performance-comparisons.git'
-    // From master branch
-    ref = "e53dc7182fafcf9fedf07920cbbea8b40ee4eef4"
+    setRemoteUriAndRefFromGradleProperty("springBootAppProjectRef")
     subdirectory = 'parallel-downloads'
 }
 
 performanceTest.registerTestProject("largeNativeBuild", RemoteProject) {
-    remoteUri = 'https://github.com/gradle/perf-native-large'
-    // From master branch
-    ref = "08a06b5f4943a5a892a178baddc27e1884e7c03c"
+    setRemoteUriAndRefFromGradleProperty("largeNativeBuildProjectRef")
     finalizedBy 'largeNativeBuildPrebuilt'
 }
 
 performanceTest.registerTestProject("largeNativeBuildPrebuilt", GradleBuild) {
-    buildFile = file("$largeNativeBuild.outputDirectory/prebuilt/util/build.gradle")
     dir = file("$largeNativeBuild.outputDirectory/prebuilt/util")
     tasks = ['build']
 }
@@ -589,8 +526,9 @@ performanceTest.registerTestProject("workerApiProject", Copy) {
 }
 
 tasks.withType(JvmProjectGeneratorTask).configureEach {
-    if (project.hasProperty("springDmPluginVersion")) {
-        templateArgs['springDmPluginVersion'] = springDmPluginVersion
+    def springDmPluginVersion = providers.gradleProperty("springDmPluginVersion")
+    if (springDmPluginVersion.isPresent()) {
+        templateArgs['springDmPluginVersion'] = springDmPluginVersion.get()
     }
     templateArgs['projectDependencies'] = true
 }

@@ -21,12 +21,13 @@ import org.gradle.api.Action;
 import org.gradle.api.InvalidUserCodeException;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.JavaVersion;
+import org.gradle.api.NamedDomainObjectProvider;
 import org.gradle.api.NamedDomainObjectSet;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
+import org.gradle.api.artifacts.ConsumableConfiguration;
 import org.gradle.api.component.AdhocComponentWithVariants;
 import org.gradle.api.component.SoftwareComponentContainer;
-import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.java.archives.Manifest;
 import org.gradle.api.java.archives.internal.DefaultManifest;
@@ -48,14 +49,11 @@ import org.gradle.jvm.toolchain.internal.DefaultToolchainSpec;
 import org.gradle.jvm.toolchain.internal.JavaToolchainSpecInternal;
 import org.gradle.testing.base.plugins.TestingBasePlugin;
 import org.gradle.util.internal.CollectionUtils;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
-import java.util.Collections;
 import java.util.regex.Pattern;
 
-import static org.gradle.api.attributes.DocsType.JAVADOC;
-import static org.gradle.api.attributes.DocsType.SOURCES;
 import static org.gradle.util.internal.ConfigureUtil.configure;
 
 /**
@@ -71,7 +69,7 @@ import static org.gradle.util.internal.ConfigureUtil.configure;
  * multiple components may be created by JVM language plugins in the future.
  */
 @SuppressWarnings("JavadocReference")
-public class DefaultJavaPluginExtension implements JavaPluginExtension {
+abstract public class DefaultJavaPluginExtension implements JavaPluginExtensionInternal {
     private static final Pattern VALID_FEATURE_NAME = Pattern.compile("[a-zA-Z0-9]+");
     private final SourceSetContainer sourceSets;
 
@@ -81,18 +79,12 @@ public class DefaultJavaPluginExtension implements JavaPluginExtension {
     private final JavaToolchainSpec toolchain;
     private final ProjectInternal project;
 
-    private final DirectoryProperty docsDir;
-    private final DirectoryProperty testResultsDir;
-    private final DirectoryProperty testReportDir;
     private JavaVersion srcCompat;
     private JavaVersion targetCompat;
-    private boolean autoTargetJvm = true;
 
+    @SuppressWarnings("this-escape")
     @Inject
     public DefaultJavaPluginExtension(ProjectInternal project, SourceSetContainer sourceSets, DefaultToolchainSpec toolchainSpec) {
-        this.docsDir = project.getObjects().directoryProperty();
-        this.testResultsDir = project.getObjects().directoryProperty();
-        this.testReportDir = project.getObjects().directoryProperty(); //TestingBasePlugin.TESTS_DIR_NAME;
         this.project = project;
         this.sourceSets = sourceSets;
         this.toolchainSpec = toolchainSpec;
@@ -103,9 +95,10 @@ public class DefaultJavaPluginExtension implements JavaPluginExtension {
     }
 
     private void configureDefaults() {
-        docsDir.convention(project.getLayout().getBuildDirectory().dir("docs"));
-        testResultsDir.convention(project.getLayout().getBuildDirectory().dir(TestingBasePlugin.TEST_RESULTS_DIR_NAME));
-        testReportDir.convention(project.getExtensions().getByType(ReportingExtension.class).getBaseDirectory().dir(TestingBasePlugin.TESTS_DIR_NAME));
+        getAutoTargetJvm().convention(true);
+        getDocsDir().convention(project.getLayout().getBuildDirectory().dir("docs"));
+        getTestResultsDir().convention(project.getLayout().getBuildDirectory().dir(TestingBasePlugin.TEST_RESULTS_DIR_NAME));
+        getTestReportDir().convention(project.getExtensions().getByType(ReportingExtension.class).getBaseDirectory().dir(TestingBasePlugin.TESTS_DIR_NAME));
     }
 
     @Override
@@ -114,18 +107,8 @@ public class DefaultJavaPluginExtension implements JavaPluginExtension {
     }
 
     @Override
-    public DirectoryProperty getDocsDir() {
-        return docsDir;
-    }
-
-    @Override
-    public DirectoryProperty getTestResultsDir() {
-        return testResultsDir;
-    }
-
-    @Override
-    public DirectoryProperty getTestReportDir() {
-        return testReportDir;
+    public void sourceSets(Action<? super SourceSetContainer> action) {
+        action.execute(getSourceSets());
     }
 
     @Override
@@ -200,12 +183,12 @@ public class DefaultJavaPluginExtension implements JavaPluginExtension {
 
     @Override
     public void disableAutoTargetJvm() {
-        this.autoTargetJvm = false;
+        this.getAutoTargetJvm().set(false);
     }
 
     @Override
     public boolean getAutoTargetJvmDisabled() {
-        return !autoTargetJvm;
+        return !getAutoTargetJvm().get();
     }
 
     /**
@@ -217,6 +200,14 @@ public class DefaultJavaPluginExtension implements JavaPluginExtension {
         configureAction.execute(spec);
         JvmFeatureInternal feature = spec.create();
 
+        // TODO: In Gradle 10 when we can guarantee that there is a Java component, we can remove these side-effects.
+        if (spec.hasJavadocJar()) {
+            feature.maybeRegisterJavadocElements();
+        }
+        if (spec.hasSourcesJar()) {
+            feature.maybeRegisterSourcesElements();
+        }
+
         JvmSoftwareComponentInternal component = getSingleJavaComponent();
         if (component != null) {
             component.getFeatures().add(feature);
@@ -226,13 +217,13 @@ public class DefaultJavaPluginExtension implements JavaPluginExtension {
             // without needing to explicitly know about each variant.
 
             AdhocComponentWithVariants adhocComponent = (AdhocComponentWithVariants) component;
-            Configuration javadocElements = feature.getJavadocElementsConfiguration();
-            if (javadocElements != null) {
+            if (spec.hasJavadocJar()) {
+                NamedDomainObjectProvider<ConsumableConfiguration> javadocElements = feature.maybeRegisterJavadocElements();
                 adhocComponent.addVariantsFromConfiguration(javadocElements, new JavaConfigurationVariantMapping("runtime", true));
             }
 
-            Configuration sourcesElements = feature.getSourcesElementsConfiguration();
-            if (sourcesElements != null) {
+            if (spec.hasSourcesJar()) {
+                NamedDomainObjectProvider<ConsumableConfiguration> sourcesElements = feature.maybeRegisterSourcesElements();
                 adhocComponent.addVariantsFromConfiguration(sourcesElements, new JavaConfigurationVariantMapping("runtime", true));
             }
 
@@ -253,49 +244,24 @@ public class DefaultJavaPluginExtension implements JavaPluginExtension {
             return jvmComponents.iterator().next();
         }
 
-        // TODO: This case should be deprecated.
-        // Users should not be able to create detached features with `registerFeature`
+        DeprecationLogger.deprecateBehaviour("The `registerFeature` method was called, but the Java plugin has not yet been applied.")
+            .withContext("`registerFeature` should only be called in projects where the Java plugin has been applied.")
+            .withAdvice("Apply the `java`, `java-library`, `application`, `groovy`, or any other plugin that applies the Java plugin.")
+            .willBecomeAnErrorInGradle10()
+            .withUpgradeGuideSection(8, "deprecate_register_feature_no_java_plugin")
+            .nagUser();
+
         return null;
     }
 
     @Override
     public void withJavadocJar() {
-        maybeEmitMissingJavaComponentDeprecation("withJavadocJar()");
-
-        if (isJavaComponentPresent(project)) {
-            project.getComponents().withType(JvmSoftwareComponentInternal.class).configureEach(JvmSoftwareComponentInternal::withJavadocJar);
-        } else {
-            SourceSet main = getSourceSets().getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-            JvmPluginsHelper.createDocumentationVariantWithArtifact(
-                main.getJavadocElementsConfigurationName(),
-                null,
-                JAVADOC,
-                Collections.emptySet(),
-                main.getJavadocJarTaskName(),
-                project.getTasks().named(main.getJavadocTaskName()),
-                project
-            );
-        }
+        project.getComponents().withType(JvmSoftwareComponentInternal.class).configureEach(JvmSoftwareComponentInternal::withJavadocJar);
     }
 
     @Override
     public void withSourcesJar() {
-        maybeEmitMissingJavaComponentDeprecation("withSourcesJar()");
-
-        if (isJavaComponentPresent(project)) {
-            project.getComponents().withType(JvmSoftwareComponentInternal.class).configureEach(JvmSoftwareComponentInternal::withSourcesJar);
-        } else {
-            SourceSet main = getSourceSets().getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-            JvmPluginsHelper.createDocumentationVariantWithArtifact(
-                main.getSourcesElementsConfigurationName(),
-                null,
-                SOURCES,
-                Collections.emptySet(),
-                main.getSourcesJarTaskName(),
-                main.getAllSource(),
-                project
-            );
-        }
+       project.getComponents().withType(JvmSoftwareComponentInternal.class).configureEach(JvmSoftwareComponentInternal::withSourcesJar);
     }
 
     @Override
@@ -316,8 +282,6 @@ public class DefaultJavaPluginExtension implements JavaPluginExtension {
 
     @Override
     public void consistentResolution(Action<? super JavaResolutionConsistency> action) {
-        maybeEmitMissingJavaComponentDeprecation("consistentResolution(Action)");
-
         final SoftwareComponentContainer components = project.getComponents();
         final ConfigurationContainer configurations = project.getConfigurations();
         final SourceSetContainer sourceSets = getSourceSets();
@@ -331,62 +295,28 @@ public class DefaultJavaPluginExtension implements JavaPluginExtension {
         return name;
     }
 
-    private static boolean isJavaComponentPresent(ProjectInternal project) {
-        return project.getComponents().stream().anyMatch(JvmSoftwareComponentInternal.class::isInstance);
-    }
-
-    private void maybeEmitMissingJavaComponentDeprecation(String name) {
-        if (!isJavaComponentPresent(project)) {
-            DeprecationLogger.deprecateBehaviour(name + " was called without the presence of the java component.")
-                .withAdvice("Apply a JVM component plugin such as: java-library, application, groovy, or scala")
-                .willBeRemovedInGradle9()
-                .withUpgradeGuideSection(8, "java_extension_without_java_component")
-                .nagUser();
-        }
-    }
-
     public static class DefaultJavaResolutionConsistency implements JavaResolutionConsistency {
         private final SoftwareComponentContainer components;
         private final SourceSetContainer sourceSets;
         private final ConfigurationContainer configurations;
-        private final ProjectInternal project;
 
         @Inject
-        public DefaultJavaResolutionConsistency(SoftwareComponentContainer components, SourceSetContainer sourceSets, ConfigurationContainer configurations, ProjectInternal project) {
+        public DefaultJavaResolutionConsistency(SoftwareComponentContainer components, SourceSetContainer sourceSets, ConfigurationContainer configurations) {
             this.components = components;
             this.sourceSets = sourceSets;
             this.configurations = configurations;
-            this.project = project;
         }
 
         @Override
         public void useCompileClasspathVersions() {
             sourceSets.configureEach(this::applyCompileClasspathConsistency);
             components.withType(JvmSoftwareComponentInternal.class).configureEach(JvmSoftwareComponentInternal::useCompileClasspathConsistency);
-
-            if (!isJavaComponentPresent(project)) {
-                SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-                SourceSet testSourceSet = sourceSets.getByName(SourceSet.TEST_SOURCE_SET_NAME);
-                Configuration mainCompileClasspath = findConfiguration(mainSourceSet.getCompileClasspathConfigurationName());
-                Configuration testCompileClasspath = findConfiguration(testSourceSet.getCompileClasspathConfigurationName());
-
-                testCompileClasspath.shouldResolveConsistentlyWith(mainCompileClasspath);
-            }
         }
 
         @Override
         public void useRuntimeClasspathVersions() {
             sourceSets.configureEach(this::applyRuntimeClasspathConsistency);
             components.withType(JvmSoftwareComponentInternal.class).configureEach(JvmSoftwareComponentInternal::useRuntimeClasspathConsistency);
-
-            if (!isJavaComponentPresent(project)) {
-                SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-                SourceSet testSourceSet = sourceSets.getByName(SourceSet.TEST_SOURCE_SET_NAME);
-                Configuration mainRuntimeClasspath = findConfiguration(mainSourceSet.getRuntimeClasspathConfigurationName());
-                Configuration testRuntimeClasspath = findConfiguration(testSourceSet.getRuntimeClasspathConfigurationName());
-
-                testRuntimeClasspath.shouldResolveConsistentlyWith(mainRuntimeClasspath);
-            }
         }
 
         private void applyCompileClasspathConsistency(SourceSet sourceSet) {

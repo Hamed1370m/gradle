@@ -16,15 +16,17 @@
 
 package org.gradle.internal.logging.services;
 
+import org.gradle.api.internal.file.temp.GradleUserHomeTemporaryFileProvider;
+import org.gradle.api.internal.file.temp.TemporaryFileProvider;
 import org.gradle.api.logging.LogLevel;
+import org.gradle.internal.logging.LoggingManagerFactory;
 import org.gradle.internal.logging.LoggingManagerInternal;
 import org.gradle.internal.logging.config.LoggingSourceSystem;
-import org.gradle.internal.logging.config.LoggingSystemAdapter;
 import org.gradle.internal.logging.console.DefaultUserInputReceiver;
 import org.gradle.internal.logging.events.OutputEventListener;
 import org.gradle.internal.logging.sink.OutputEventListenerManager;
 import org.gradle.internal.logging.sink.OutputEventRenderer;
-import org.gradle.internal.logging.slf4j.Slf4jLoggingConfigurer;
+import org.gradle.internal.logging.slf4j.Slf4jLoggingSystem;
 import org.gradle.internal.logging.source.DefaultStdErrLoggingSystem;
 import org.gradle.internal.logging.source.DefaultStdOutLoggingSystem;
 import org.gradle.internal.logging.source.JavaUtilLoggingSystem;
@@ -36,6 +38,7 @@ import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.service.ServiceRegistryBuilder;
 import org.gradle.internal.time.Clock;
 import org.gradle.internal.time.Time;
+import org.gradle.wrapper.GradleUserHomeLookup;
 
 /**
  * A {@link org.gradle.internal.service.ServiceRegistry} implementation that provides the logging services. To use this:
@@ -60,6 +63,7 @@ public abstract class LoggingServiceRegistry implements ServiceRegistrationProvi
     private TextStreamOutputEventListener stdoutListener;
 
     private final DefaultUserInputReceiver userInput = new DefaultUserInputReceiver();
+    @SuppressWarnings("this-escape")
     protected final OutputEventRenderer renderer = makeOutputEventRenderer();
     protected final OutputEventListenerManager outputEventListenerManager = new OutputEventListenerManager(renderer);
 
@@ -75,11 +79,11 @@ public abstract class LoggingServiceRegistry implements ServiceRegistrationProvi
      *
      * <p>Does nothing until started.</p>
      *
-     * <p>Allows dynamic and colored output to be written to the console. Use {@link LoggingManagerInternal#attachProcessConsole(org.gradle.api.logging.configuration.ConsoleOutput)} to enable this.</p>
+     * <p>Allows dynamic and colored output to be written to the console. Use {@link LoggingManagerInternal#attachProcessConsole} to enable this.</p>
      */
     public static ServiceRegistry newCommandLineProcessLogging() {
         ServiceRegistry loggingServices = createCommandLineLogging();
-        LoggingManagerInternal rootLoggingManager = loggingServices.get(DefaultLoggingManagerFactory.class).getRoot();
+        LoggingManagerInternal rootLoggingManager = loggingServices.get(LoggingManagerFactory.class).getRoot();
         rootLoggingManager.captureSystemSources();
         rootLoggingManager.attachSystemOutAndErr();
         return loggingServices;
@@ -145,7 +149,7 @@ public abstract class LoggingServiceRegistry implements ServiceRegistrationProvi
     }
 
     @Provides
-    protected DefaultLoggingManagerFactory createLoggingManagerFactory(Clock clock) {
+    protected LoggingManagerFactory createLoggingManagerFactory(Clock clock) {
         OutputEventListener outputEventBroadcaster = outputEventListenerManager.getBroadcaster();
 
         LoggingSourceSystem stdout = new DefaultStdOutLoggingSystem(getStdoutListener(), clock);
@@ -154,10 +158,11 @@ public abstract class LoggingServiceRegistry implements ServiceRegistrationProvi
         stderr.setLevel(LogLevel.ERROR);
         return new DefaultLoggingManagerFactory(
             renderer,
-            new LoggingSystemAdapter(new Slf4jLoggingConfigurer(outputEventBroadcaster)),
+            new Slf4jLoggingSystem(outputEventBroadcaster),
             new JavaUtilLoggingSystem(),
             stdout,
-            stderr);
+            stderr
+        );
     }
 
     @Provides
@@ -175,9 +180,10 @@ public abstract class LoggingServiceRegistry implements ServiceRegistrationProvi
         return userInput;
     }
 
-    // Intentionally not a “create” method as this should not be exposed as a service
+    // Intentionally not a "create" method as this should not be exposed as a service
     protected OutputEventRenderer makeOutputEventRenderer() {
-        OutputEventRenderer eventRenderer = new OutputEventRenderer(Time.clock(), userInput);
+        TemporaryFileProvider temporaryFileProvider = new GradleUserHomeTemporaryFileProvider(GradleUserHomeLookup::gradleUserHome);
+        OutputEventRenderer eventRenderer = new OutputEventRenderer(Time.clock(), userInput, temporaryFileProvider);
         userInput.attachConsole(eventRenderer);
         return eventRenderer;
     }
@@ -189,7 +195,7 @@ public abstract class LoggingServiceRegistry implements ServiceRegistrationProvi
 
         @Provides
         @Override
-        protected DefaultLoggingManagerFactory createLoggingManagerFactory(Clock clock) {
+        protected LoggingManagerFactory createLoggingManagerFactory(Clock clock) {
             // Don't configure anything
             return new DefaultLoggingManagerFactory(
                 renderer,

@@ -16,13 +16,11 @@
 
 package org.gradle.internal.cc.impl
 
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.mock
-import com.nhaarman.mockitokotlin2.verify
-import org.gradle.configurationcache.LoadResult
-import org.gradle.configurationcache.StoreResult
-import org.gradle.configurationcache.withLoadOperation
-import org.gradle.configurationcache.withStoreOperation
+import org.gradle.internal.cc.operations.WorkGraphLoadResult
+import org.gradle.internal.cc.operations.WorkGraphStoreResult
+import org.gradle.internal.cc.operations.withWorkGraphLoadOperation
+import org.gradle.internal.cc.operations.withWorkGraphStoreOperation
+import org.gradle.internal.buildtree.BuildTreeWorkGraph
 import org.gradle.internal.operations.BuildOperationRunner
 import org.gradle.internal.operations.CallableBuildOperation
 import org.gradle.internal.operations.RunnableBuildOperation
@@ -33,6 +31,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import java.util.UUID
 
 
@@ -50,8 +51,8 @@ class ConfigurationCacheBuildOperationsTest {
         val stateFile = testDirectoryProvider.file("stateFile")
 
         // when:
-        buildOperationRunner.withStoreOperation("key") {
-            StoreResult(listOf(stateFile), null)
+        buildOperationRunner.withWorkGraphStoreOperation("key") {
+            WorkGraphStoreResult(listOf(stateFile), null)
         }
 
         // then:
@@ -68,14 +69,15 @@ class ConfigurationCacheBuildOperationsTest {
     @Test
     fun `sets progress display name on load`() {
         // given:
+        val workGraph = mock<BuildTreeWorkGraph.FinalizedGraph>()
         val buildOperationRunner = mock<BuildOperationRunner> {
-            on { call<Unit>(any()) } doReturn Unit
+            on { call<Any>(any()) } doReturn workGraph
         }
         val stateFile = testDirectoryProvider.file("stateFile")
 
         // when:
-        buildOperationRunner.withLoadOperation {
-            LoadResult(listOf(stateFile), UUID.randomUUID().toString()) to Unit
+        buildOperationRunner.withWorkGraphLoadOperation {
+            WorkGraphLoadResult(listOf(stateFile), UUID.randomUUID().toString()) to workGraph
         }
 
         // then:

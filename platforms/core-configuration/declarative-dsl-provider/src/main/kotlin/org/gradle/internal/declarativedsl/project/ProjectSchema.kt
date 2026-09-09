@@ -17,30 +17,30 @@
 package org.gradle.internal.declarativedsl.project
 
 import org.gradle.internal.declarativedsl.analysis.analyzeEverything
-import org.gradle.internal.declarativedsl.common.dependencyCollectors
+import org.gradle.internal.declarativedsl.dependencycollectors.dependencyCollectors
 import org.gradle.internal.declarativedsl.common.gradleDslGeneralSchema
 import org.gradle.internal.declarativedsl.evaluationSchema.DefaultInterpretationSequence
 import org.gradle.internal.declarativedsl.evaluationSchema.buildEvaluationAndConversionSchema
+import org.gradle.internal.declarativedsl.evaluationSchema.ifConversionSupported
 import org.gradle.internal.declarativedsl.evaluator.conversion.EvaluationAndConversionSchema
-import org.gradle.internal.declarativedsl.software.softwareTypesWithPluginApplication
-import org.gradle.plugin.software.internal.SoftwareFeatureApplicator
-import org.gradle.plugin.software.internal.SoftwareTypeRegistry
+import org.gradle.internal.declarativedsl.features.projectFeaturesComponent
+import org.gradle.features.internal.binding.ProjectFeatureDeclarations
 
 
 internal
 fun projectInterpretationSequence(
-    softwareTypeRegistry: SoftwareTypeRegistry,
-    softwareFeatureApplicator: SoftwareFeatureApplicator
-) = DefaultInterpretationSequence(listOf(projectInterpretationSequenceStep(softwareTypeRegistry, softwareFeatureApplicator)))
+    projectFeatureDeclarations: ProjectFeatureDeclarations
+) = DefaultInterpretationSequence(listOf(projectInterpretationSequenceStep(projectFeatureDeclarations)))
 
 
 fun projectEvaluationSchema(
-    softwareTypeRegistry: SoftwareTypeRegistry,
-    softwareFeatureApplicator: SoftwareFeatureApplicator
+    projectFeatureDeclarations: ProjectFeatureDeclarations,
 ): EvaluationAndConversionSchema {
     return buildEvaluationAndConversionSchema(ProjectTopLevelReceiver::class, analyzeEverything) {
         gradleDslGeneralSchema()
         dependencyCollectors()
-        softwareTypesWithPluginApplication(ProjectTopLevelReceiver::class, softwareTypeRegistry, softwareFeatureApplicator)
+        ifConversionSupported {
+            projectFeaturesComponent(ProjectTopLevelReceiver::class, projectFeatureDeclarations, withDefaultsApplication = true)
+        }
     }
 }

@@ -20,6 +20,8 @@ import org.gradle.cache.internal.BuildScopeCacheDir
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.internal.scripts.ScriptFileUtil
 import org.gradle.test.fixtures.file.TestFile
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
 
 import static org.gradle.integtests.fixtures.SuggestionsMessages.GET_HELP
 import static org.gradle.integtests.fixtures.SuggestionsMessages.INFO_DEBUG
@@ -95,7 +97,7 @@ class UndefinedBuildExecutionIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         assertNoProjectCaches(dir)
-        failure.assertHasDescription("Execution failed for task ':build'.")
+        failure.assertHasDescription("Execution failed for task ':build' (registered in build file 'build.gradle').")
         failure.assertHasCause("Directory '$dir' does not contain a Gradle build.")
     }
 
@@ -203,7 +205,7 @@ class UndefinedBuildExecutionIntegrationTest extends AbstractIntegrationSpec {
         when:
         succeeds("tasks") // without deprecation warning
         then:
-        result.assertTaskExecuted(":buildSrc:jar")
+        result.assertTaskScheduled(":buildSrc:jar")
         file("buildSrc/.gradle").assertIsDir()
 
         when:
@@ -241,6 +243,7 @@ class UndefinedBuildExecutionIntegrationTest extends AbstractIntegrationSpec {
         executer.gradleUserHomeDir.file(BuildScopeCacheDir.UNDEFINED_BUILD).assertDoesNotExist()
     }
 
+    @Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = "explicitly requires a daemon")
     def "does not fail when executing #flag in undefined build"() {
         when:
         executer.requireDaemon().requireIsolatedDaemons()

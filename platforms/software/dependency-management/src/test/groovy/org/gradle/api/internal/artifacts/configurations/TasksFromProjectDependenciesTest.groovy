@@ -20,6 +20,7 @@ package org.gradle.api.internal.artifacts.configurations
 import org.gradle.api.internal.TaskInternal
 import org.gradle.api.internal.artifacts.dependencies.ProjectDependencyInternal
 import org.gradle.api.internal.file.TestFiles
+import org.gradle.api.internal.project.ProjectIdentity
 import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.api.internal.project.ProjectState
 import org.gradle.api.internal.project.ProjectStateRegistry
@@ -38,10 +39,12 @@ class TasksFromProjectDependenciesTest extends AbstractProjectBuilderSpec {
     def project2State = Mock(ProjectState)
     def project1 = Mock(ProjectInternal)
     def project2 = Mock(ProjectInternal)
-    def projectId1 = Path.path("project1")
-    def projectId2 = Path.path("project2")
-    def projectDep1 = Mock(ProjectDependencyInternal) { getIdentityPath() >> projectId1 }
-    def projectDep2 = Mock(ProjectDependencyInternal) { getIdentityPath() >> projectId2 }
+    def projectPath1 = Path.path(":project1")
+    def projectPath2 = Path.path(":project2")
+    def projectId1 = ProjectIdentity.forSubproject(Path.ROOT, projectPath1)
+    def projectId2 = ProjectIdentity.forSubproject(Path.ROOT, projectPath2)
+    def projectDep1 = Mock(ProjectDependencyInternal) { getTargetProjectIdentity() >> projectId1 }
+    def projectDep2 = Mock(ProjectDependencyInternal) { getTargetProjectIdentity() >> projectId2 }
     def tasks1 = Mock(TaskContainerInternal)
     def tasks2 = Mock(TaskContainerInternal)
     ProjectStateRegistry projectStateRegistry
@@ -52,8 +55,8 @@ class TasksFromProjectDependenciesTest extends AbstractProjectBuilderSpec {
         _ * project1State.getMutableModel() >> project1
         _ * project2State.getMutableModel() >> project2
         projectStateRegistry = Mock(ProjectStateRegistry) {
-            stateFor(projectId1) >> project1State
-            stateFor(projectId2) >> project2State
+            stateFor(projectPath1) >> project1State
+            stateFor(projectPath2) >> project2State
         }
     }
 

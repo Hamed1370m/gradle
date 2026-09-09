@@ -16,12 +16,12 @@
 
 package org.gradle.ide.sync
 
+import org.gradle.test.fixtures.Flaky
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
 import org.junit.Rule
-import spock.lang.Ignore
 
-@Ignore("https://github.com/gradle/gradle-private/issues/4438")
-class IsolatedProjectsParallelSyncTest extends AbstractIdeaSyncTest {
+@Flaky(because = "https://github.com/gradle/gradle-private/issues/5093")
+class IsolatedProjectsParallelSyncTest extends AbstractIdeSyncTest {
 
     @Rule
     BlockingHttpServer server = new BlockingHttpServer(5_000)
@@ -37,30 +37,29 @@ class IsolatedProjectsParallelSyncTest extends AbstractIdeaSyncTest {
         server.expectConcurrent("configure-a", "configure-b")
 
         expect:
-        ideaSync(IDEA_VERSION)
+        ideaSync()
     }
 
     private void simpleProject() {
-        file("settings.gradle") << """
+        projectFile("settings.gradle") << """
             rootProject.name = 'project-under-test'
             include ':a'
             include ':b'
         """
 
-        file("gradle.properties") << """
-            org.gradle.configuration-cache.problems=warn
-            org.gradle.unsafe.isolated-projects=true
+        projectFile("gradle.properties") << """
+            org.gradle.isolated-projects=true
         """
 
-        file("build.gradle") << """
+        projectFile("build.gradle") << """
             ${server.callFromBuildUsingExpression("'configure-root'")}
         """
 
-        file("a/build.gradle") << """
+        projectFile("a/build.gradle") << """
             ${server.callFromBuildUsingExpression("'configure-a'")}
         """
 
-        file("b/build.gradle") << """
+        projectFile("b/build.gradle") << """
             ${server.callFromBuildUsingExpression("'configure-b'")}
         """
     }

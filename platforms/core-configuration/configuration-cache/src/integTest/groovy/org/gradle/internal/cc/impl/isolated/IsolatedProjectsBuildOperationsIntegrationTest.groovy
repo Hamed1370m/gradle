@@ -18,7 +18,6 @@ package org.gradle.internal.cc.impl.isolated
 
 import org.gradle.integtests.fixtures.BuildOperationsFixture
 import org.gradle.operations.configuration.ConfigurationCacheCheckFingerprintBuildOperationType
-import org.gradle.test.fixtures.file.TestFile
 
 class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedProjectsToolingApiIntegrationTest {
     def operations = new BuildOperationsFixture(executer, temporaryFolder)
@@ -45,6 +44,7 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
             status == "NOT_FOUND"
             buildInvalidationReasons == []
             projectInvalidationReasons == []
+            originBuildInvocationId == null
         }
     }
 
@@ -66,6 +66,7 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
             status == "VALID"
             buildInvalidationReasons == []
             projectInvalidationReasons == []
+            originBuildInvocationId != null
         }
     }
 
@@ -97,6 +98,7 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
                 ]
             ]
             projectInvalidationReasons == []
+            originBuildInvocationId != null
         }
         outputContains("file 'settings.gradle' has changed")
     }
@@ -130,6 +132,7 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
                     ]
                 ]
             ]
+            originBuildInvocationId != null
         }
         outputContains("file 'build.gradle' has changed")
     }
@@ -168,12 +171,13 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
                     buildPath: ":",
                     projectPath: ":a",
                     invalidationReasons: [
-                        [message: "file '${relpath(buildFileA)}' has changed"]
+                        [message: "file '${buildFileA.relativePathFromBase}' has changed"]
                     ]
                 ]
             ]
+            originBuildInvocationId != null
         }
-        outputContains("file '${relpath(buildFileA)}' has changed")
+        outputContains("file '${buildFileA.relativePathFromBase}' has changed")
     }
 
     def "emits fingerprint check operation when invalidating multiple subprojects"() {
@@ -213,20 +217,21 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
                     buildPath: ":",
                     projectPath: ":a",
                     invalidationReasons: [
-                        [message: "file '${relpath(buildFileA)}' has changed"]
+                        [message: "file '${buildFileA.relativePathFromBase}' has changed"]
                     ]
                 ],
                 [
                     buildPath: ":",
                     projectPath: ":b",
                     invalidationReasons: [
-                        [message: "file '${relpath(buildFileB)}' has changed"]
+                        [message: "file '${buildFileB.relativePathFromBase}' has changed"]
                     ]
                 ]
             ]
+            originBuildInvocationId != null
         }
-        outputContains("file '${relpath(buildFileA)}' has changed")
-        outputDoesNotContain("file '${relpath(buildFileB)}' has changed")
+        outputContains("file '${buildFileA.relativePathFromBase}' has changed")
+        outputDoesNotContain("file '${buildFileB.relativePathFromBase}' has changed")
     }
 
     def "emits fingerprint check operation when invalidating dependency"() {
@@ -266,7 +271,7 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
                     buildPath: ":",
                     projectPath: ":a",
                     invalidationReasons: [
-                        [message: "file '${relpath(buildFileA)}' has changed"]
+                        [message: "file '${buildFileA.relativePathFromBase}' has changed"]
                     ]
                 ],
                 [
@@ -277,8 +282,9 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
                     ]
                 ]
             ]
+            originBuildInvocationId != null
         }
-        outputContains("file '${relpath(buildFileA)}' has changed")
+        outputContains("file '${buildFileA.relativePathFromBase}' has changed")
         outputDoesNotContain("project dependency ':a' has changed")
     }
 
@@ -319,7 +325,7 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
                     buildPath: ":",
                     projectPath: ":b",
                     invalidationReasons: [
-                        [message: "file '${relpath(buildFileB)}' has changed"]
+                        [message: "file '${buildFileB.relativePathFromBase}' has changed"]
                     ]
                 ],
                 [
@@ -330,8 +336,9 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
                     ]
                 ],
             ]
+            originBuildInvocationId != null
         }
-        outputContains("file '${relpath(buildFileB)}' has changed")
+        outputContains("file '${buildFileB.relativePathFromBase}' has changed")
         outputDoesNotContain("project dependency ':b' has changed")
     }
 
@@ -368,16 +375,17 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
                     buildPath: ":a",
                     projectPath: ":",
                     invalidationReasons: [
-                        [message: "file '${relpath(buildFileA)}' has changed"]
+                        [message: "file '${buildFileA.relativePathFromBase}' has changed"]
                     ]
                 ]
             ]
+            originBuildInvocationId != null
         }
-        outputContains("file '${relpath(buildFileA)}' has changed")
+        outputContains("file '${buildFileA.relativePathFromBase}' has changed")
     }
 
     private def fetchAllModels() {
-        executer.withArguments(ENABLE_CLI)
+        withIsolatedProjects()
         return runBuildAction(new FetchCustomModelForEachProject())
     }
 
@@ -385,7 +393,4 @@ class IsolatedProjectsBuildOperationsIntegrationTest extends AbstractIsolatedPro
         fetchAllModels()
     }
 
-    private String relpath(TestFile file) {
-        return file.relativePathFromBase
-    }
 }

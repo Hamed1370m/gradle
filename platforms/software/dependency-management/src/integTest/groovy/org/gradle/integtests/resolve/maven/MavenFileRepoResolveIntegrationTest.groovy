@@ -33,7 +33,7 @@ class MavenFileRepoResolveIntegrationTest extends AbstractDependencyResolutionTe
         and:
         buildFile << """
 configurations { compile }
-repositories { maven { url "${mavenRepo().uri}" } }
+repositories { maven { url = "${mavenRepo().uri}" } }
 dependencies { compile 'group:projectA:1.2-SNAPSHOT' }
 task retrieve(type: Sync) {
     from configurations.compile
@@ -71,7 +71,7 @@ task retrieve(type: Sync) {
         and:
         buildFile << """
 configurations { compile }
-repositories { maven { url "${mavenRepo().uri}" } }
+repositories { maven { url = "${mavenRepo().uri}" } }
 dependencies { compile 'group:projectA:1.2' }
 task retrieve(type: Sync) {
     from configurations.compile
@@ -115,7 +115,7 @@ task retrieve(type: Sync) {
         buildFile << """
 repositories {
     maven {
-        url "${mavenRepo().uri}"
+        url = "${mavenRepo().uri}"
         artifactUrls "${artifactsRepo.uri}"
     }
 }
@@ -132,6 +132,7 @@ task retrieve(type: Sync) {
 """
 
         when:
+        executer.expectDocumentedDeprecationWarning("The MavenArtifactRepository.artifactUrls(Object...) method has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_maven_artifact_urls")
         runRetrieveTask()
 
         then:
@@ -150,7 +151,7 @@ task retrieve(type: Sync) {
         buildFile << """
 repositories {
     maven {
-        url "${repo.uri}"
+        url = "${repo.uri}"
         authentication {
             auth(BasicAuthentication)
         }

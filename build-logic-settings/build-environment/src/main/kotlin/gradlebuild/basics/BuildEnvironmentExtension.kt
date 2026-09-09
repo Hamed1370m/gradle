@@ -23,6 +23,14 @@ import org.gradle.api.provider.Property
 interface BuildEnvironmentExtension {
     val gitCommitId: Property<String>
     val gitBranch: Property<String>
+    val scriptTemplateCommitId: Property<String>
+
+    /**
+     * The build timestamp, computed once per build and identical in every project.
+     *
+     * @see BuildEnvironmentService.buildTimestamp
+     */
+    val buildTimestamp: Property<String>
     val repoRoot: DirectoryProperty
     val rootProjectBuildDir: DirectoryProperty
 }

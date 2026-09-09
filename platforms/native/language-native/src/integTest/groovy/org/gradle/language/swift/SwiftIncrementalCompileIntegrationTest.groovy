@@ -22,21 +22,19 @@ import org.gradle.nativeplatform.fixtures.AvailableToolChains
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 import org.gradle.nativeplatform.fixtures.ToolChainRequirement
 import org.gradle.nativeplatform.fixtures.app.SwiftApp
+import org.gradle.test.fixtures.Flaky
 import org.gradle.test.fixtures.file.DoesNotSupportNonAsciiPaths
 import org.junit.Assume
-import spock.lang.Ignore
 
-@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5_OR_OLDER)
+@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC)
 @DoesNotSupportNonAsciiPaths(reason = "swiftc does not support these paths")
-@Ignore("Inconsistent Swift SDK and tooling discovered on our Intel Macs")
+@Flaky(because = "https://github.com/gradle/gradle-private/issues/4825")
 class SwiftIncrementalCompileIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
     def setup() {
         // Useful for diagnosing swiftc incremental compile failures
         buildFile << """
-            allprojects {
-                tasks.withType(SwiftCompile) {
-                    compilerArgs.add('-driver-show-incremental')
-                }
+            tasks.withType(SwiftCompile).configureEach {
+                compilerArgs.add('-driver-show-incremental')
             }
         """
     }
@@ -64,10 +62,11 @@ class SwiftIncrementalCompileIntegrationTest extends AbstractInstalledToolChainI
 
         when:
         outputs.snapshot()
-        main.replace("a: 21, b: 21", "a: 5, b: 7")
+        main.replace("a: 21, b: 21", "a: 22, b: 22")
         succeeds("compileDebugSwift")
 
         then:
+        Thread.sleep(5000) // https://github.com/gradle/gradle-private/issues/4653
         outputs.recompiledFile(main)
     }
 
@@ -210,10 +209,9 @@ class SwiftIncrementalCompileIntegrationTest extends AbstractInstalledToolChainI
         """
         buildFile << """
             apply plugin: 'swift-application'
-
-            project(":unused") {
-                apply plugin: 'swift-library'
-            }
+        """
+        file("unused/build.gradle") << """
+            apply plugin: 'swift-library'
         """
         file("unused/src/main/swift/Library.swift") << """
             public class Library {
@@ -288,13 +286,11 @@ class SwiftIncrementalCompileIntegrationTest extends AbstractInstalledToolChainI
         Assume.assumeNotNull(swiftc3, swiftc4)
 
         initScript.text = """
-            allprojects { p ->
-                apply plugin: ${swiftc3.pluginClass}
+            gradle.lifecycle.beforeProject { p ->
+                p.apply plugin: ${swiftc3.pluginClass}
 
-                model {
-                      toolChains {
-                        ${swiftc3.buildScriptConfig}
-                      }
+                p.toolChains {
+                    ${swiftc3.buildScriptConfig}
                 }
             }
         """
@@ -311,13 +307,11 @@ class SwiftIncrementalCompileIntegrationTest extends AbstractInstalledToolChainI
         outputs.snapshot { succeeds("compileDebugSwift") }
 
         initScript.text = """
-            allprojects { p ->
-                apply plugin: ${swiftc4.pluginClass}
+            gradle.lifecycle.beforeProject { p ->
+                p.apply plugin: ${swiftc4.pluginClass}
 
-                model {
-                      toolChains {
-                        ${swiftc4.buildScriptConfig}
-                      }
+                p.toolChains {
+                    ${swiftc4.buildScriptConfig}
                 }
             }
         """

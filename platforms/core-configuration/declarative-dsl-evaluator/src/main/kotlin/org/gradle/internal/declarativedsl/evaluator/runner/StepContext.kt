@@ -22,7 +22,7 @@ import org.gradle.internal.declarativedsl.analysis.ResolutionTrace
 import org.gradle.internal.declarativedsl.evaluator.checks.DocumentCheck
 import org.gradle.internal.declarativedsl.evaluator.features.ResolutionResultHandler
 import org.gradle.internal.declarativedsl.language.LanguageTreeResult
-import org.gradle.internal.declarativedsl.objectGraph.AssignmentTrace
+import org.gradle.internal.declarativedsl.objectGraph.PropertyLinkTrace
 
 
 interface StepContext
@@ -33,14 +33,20 @@ data class AnalysisStepContext(
     val supportedResolutionResultHandlers: Iterable<ResolutionResultHandler>
 ) : StepContext
 
+typealias AnalysisEvaluationResult = EvaluationResult<AnalysisStepResult.PassedAnalysisStepResult, AnalysisStepResult>
 
-data class AnalysisStepResult(
-    val evaluationSchema: EvaluationSchema,
-    val languageTreeResult: LanguageTreeResult,
-    val resolutionResult: ResolutionResult,
-    val resolutionTrace: ResolutionTrace,
-    val assignmentTrace: AssignmentTrace
-) : StepResult
+sealed interface AnalysisStepResult : StepResult {
+
+    data object FailedSchemaBuilding : AnalysisStepResult
+
+    data class PassedAnalysisStepResult(
+        val evaluationSchema: EvaluationSchema,
+        val languageTreeResult: LanguageTreeResult,
+        val resolutionResult: ResolutionResult,
+        val resolutionTrace: ResolutionTrace,
+        val propertyLinkTrace: PropertyLinkTrace
+    ) : AnalysisStepResult
+}
 
 
 interface StepResult

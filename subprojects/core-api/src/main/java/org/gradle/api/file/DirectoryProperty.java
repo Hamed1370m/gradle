@@ -16,26 +16,29 @@
 
 package org.gradle.api.file;
 
-import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.model.ManagedType;
 import org.gradle.api.provider.Provider;
+import org.gradle.declarative.dsl.model.annotations.internal.DeclarativeWithHiddenMembers;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 
 /**
  * Represents some configurable directory location, whose value is mutable.
  *
- * <p>
- * You can create a {@link DirectoryProperty} using {@link ObjectFactory#directoryProperty()}.
- * </p>
- *
  * <p><b>Note:</b> This interface is not intended for implementation by build script or plugin authors.</p>
  *
  * @since 4.3
+ *
+ * @see ManagedType Create an instance of this as a managed property (preferred).
+ * @see org.gradle.api.model.ObjectFactory#directoryProperty() Create an instance of this manually.
  */
+@ManagedType
+@DeclarativeWithHiddenMembers
 public interface DirectoryProperty extends FileSystemLocationProperty<Directory> {
     /**
      * Returns a {@link FileTree} that allows the files and directories contained in this directory to be queried.
+     * @since 4.3
      */
     FileTree getAsFileTree();
 
@@ -80,6 +83,7 @@ public interface DirectoryProperty extends FileSystemLocationProperty<Directory>
      *
      * @param path The path. Can be absolute.
      * @return The directory.
+     * @since 4.3
      */
     Provider<Directory> dir(String path);
 
@@ -88,6 +92,7 @@ public interface DirectoryProperty extends FileSystemLocationProperty<Directory>
      *
      * @param path The path. Can have a value that is an absolute path.
      * @return The directory.
+     * @since 4.3
      */
     Provider<Directory> dir(Provider<? extends CharSequence> path);
 
@@ -96,6 +101,7 @@ public interface DirectoryProperty extends FileSystemLocationProperty<Directory>
      *
      * @param path The path. Can be absolute.
      * @return The file.
+     * @since 4.3
      */
     Provider<RegularFile> file(String path);
 
@@ -104,6 +110,7 @@ public interface DirectoryProperty extends FileSystemLocationProperty<Directory>
      *
      * @param path The path. Can have a value that is an absolute path.
      * @return The file.
+     * @since 4.3
      */
     Provider<RegularFile> file(Provider<? extends CharSequence> path);
 
@@ -118,5 +125,5 @@ public interface DirectoryProperty extends FileSystemLocationProperty<Directory>
      * @return The file collection.
      * @since 6.0
      */
-    FileCollection files(Object... paths);
+    FileCollection files(@Nullable Object... paths);
 }

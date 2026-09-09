@@ -18,6 +18,7 @@ package org.gradle.workers.internal;
 
 import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.internal.ClassPathRegistry;
+import org.gradle.api.problems.internal.ProblemsInternal;
 import org.gradle.initialization.BuildCancellationToken;
 import org.gradle.initialization.ClassLoaderRegistry;
 import org.gradle.initialization.GradleUserHomeDirProvider;
@@ -35,6 +36,7 @@ import org.gradle.internal.service.ServiceRegistration;
 import org.gradle.internal.service.ServiceRegistrationProvider;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.service.scopes.AbstractGradleModuleServices;
+import org.gradle.internal.snapshot.impl.IsolatableSerializerRegistry;
 import org.gradle.internal.state.ManagedFactoryRegistry;
 import org.gradle.internal.work.AsyncWorkTracker;
 import org.gradle.internal.work.ConditionalExecutionQueueFactory;
@@ -50,7 +52,6 @@ import org.gradle.process.internal.worker.child.DefaultWorkerDirectoryProvider;
 import org.gradle.process.internal.worker.child.WorkerDirectoryProvider;
 import org.gradle.workers.WorkerExecutor;
 
-@SuppressWarnings("UnusedMethod")
 public class WorkersServices extends AbstractGradleModuleServices {
     @Override
     public void registerGradleUserHomeServices(ServiceRegistration registration) {
@@ -160,8 +161,8 @@ public class WorkersServices extends AbstractGradleModuleServices {
         }
 
         @Provides
-        WorkerDaemonFactory createWorkerDaemonFactory(WorkerDaemonClientsManager workerDaemonClientsManager, BuildOperationRunner buildOperationRunner, WorkerDaemonClientCancellationHandler workerDaemonClientCancellationHandler) {
-            return new WorkerDaemonFactory(workerDaemonClientsManager, buildOperationRunner, workerDaemonClientCancellationHandler);
+        WorkerDaemonFactory createWorkerDaemonFactory(WorkerDaemonClientsManager workerDaemonClientsManager, BuildOperationRunner buildOperationRunner, WorkerDaemonClientCancellationHandler workerDaemonClientCancellationHandler, ProblemsInternal problems) {
+            return new WorkerDaemonFactory(workerDaemonClientsManager, buildOperationRunner, workerDaemonClientCancellationHandler, problems);
         }
     }
 }

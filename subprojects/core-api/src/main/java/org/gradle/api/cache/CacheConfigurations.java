@@ -35,44 +35,52 @@ public interface CacheConfigurations {
     /**
      * Configures caching for wrapper distributions that are released Gradle versions.  By default, released
      * distributions are removed after 30 days of not being used.
+     * @since 8.0
      */
     void releasedWrappers(Action<? super CacheResourceConfiguration> cacheConfiguration);
 
     /**
      * Returns the cache configuration for wrapper distributions that are released Gradle versions.
+     * @since 8.0
      */
     CacheResourceConfiguration getReleasedWrappers();
 
     /**
      * Configures caching for wrapper distributions that are snapshot Gradle versions.  By default, snapshot
      * distributions are removed after 7 days of not being used.
+     * @since 8.0
      */
     void snapshotWrappers(Action<? super CacheResourceConfiguration> cacheConfiguration);
 
     /**
      * Returns the cache configuration for wrapper distributions that are released Gradle versions.
+     * @since 8.0
      */
     CacheResourceConfiguration getSnapshotWrappers();
 
     /**
      * Configures caching for resources that are downloaded during Gradle builds.  By default, downloaded
      * resources are removed after 30 days of not being used.
+     * @since 8.0
      */
     void downloadedResources(Action<? super CacheResourceConfiguration> cacheConfiguration);
 
     /**
      * Returns the cache configuration for downloaded resources.
+     * @since 8.0
      */
     CacheResourceConfiguration getDownloadedResources();
 
     /**
      * Configures caching for resources that are created by Gradle during the course of a build.  By default, created
      * resources are removed after 7 days of not being used.
+     * @since 8.0
      */
     void createdResources(Action<? super CacheResourceConfiguration> cacheConfiguration);
 
     /**
      * Returns the cache configuration for created resources.
+     * @since 8.0
      */
     CacheResourceConfiguration getCreatedResources();
 
@@ -93,6 +101,7 @@ public interface CacheConfigurations {
 
     /**
      * Returns the cache cleanup settings that apply to all caches.
+     * @since 8.0
      */
     Property<Cleanup> getCleanup();
 
@@ -107,4 +116,23 @@ public interface CacheConfigurations {
      */
     Property<MarkingStrategy> getMarkingStrategy();
 
+    /**
+     * Returns the daemon log settings.
+     *
+     * @since 9.4.0
+     */
+    @Incubating
+    CacheResourceConfiguration getDaemonLogs();
+
+    /**
+     * Configures retention time for daemon logs.
+     *
+     * <p>
+     * By default, daemon logs are removed after 14 days of not being used."
+     * </p>
+     *
+     * @since 9.4.0
+     */
+    @Incubating
+    void daemonLogs(Action<? super CacheResourceConfiguration> cacheConfiguration);
 }

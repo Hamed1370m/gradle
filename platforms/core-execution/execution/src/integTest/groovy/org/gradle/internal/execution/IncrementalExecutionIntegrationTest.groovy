@@ -19,6 +19,7 @@ package org.gradle.internal.execution
 import com.google.common.collect.ImmutableList
 import com.google.common.collect.Iterables
 import org.gradle.api.internal.file.TestFiles
+import org.gradle.api.problems.ProblemId
 import org.gradle.api.problems.Severity
 import org.gradle.api.problems.internal.GradleCoreProblemGroup
 import org.gradle.cache.Cache
@@ -49,11 +50,12 @@ import org.gradle.internal.snapshot.impl.DefaultValueSnapshotter
 import org.gradle.internal.snapshot.impl.ImplementationSnapshot
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
+import org.gradle.util.TestUtil
 import org.junit.Rule
 import spock.lang.Specification
 
-import static org.gradle.internal.execution.ExecutionEngine.ExecutionOutcome.EXECUTED_NON_INCREMENTALLY
-import static org.gradle.internal.execution.ExecutionEngine.ExecutionOutcome.UP_TO_DATE
+import static org.gradle.internal.execution.Execution.ExecutionOutcome.EXECUTED_NON_INCREMENTALLY
+import static org.gradle.internal.execution.Execution.ExecutionOutcome.UP_TO_DATE
 
 class IncrementalExecutionIntegrationTest extends Specification implements ValidationMessageChecker {
     @Rule
@@ -62,7 +64,7 @@ class IncrementalExecutionIntegrationTest extends Specification implements Valid
     def virtualFileSystem = TestFiles.virtualFileSystem()
     def fileSystemAccess = TestFiles.fileSystemAccess(virtualFileSystem)
     def snapshotter = new DefaultFileCollectionSnapshotter(fileSystemAccess, TestFiles.fileSystem())
-    def fingerprinter = new AbsolutePathFileCollectionFingerprinter(DirectorySensitivity.DEFAULT, snapshotter, FileSystemLocationSnapshotHasher.DEFAULT)
+    def fingerprinter = new AbsolutePathFileCollectionFingerprinter(DirectorySensitivity.DEFAULT, FileSystemLocationSnapshotHasher.DEFAULT)
     def executionHistoryStore = new TestExecutionHistoryStore()
     def outputChangeListener = new OutputChangeListener() {
         @Override
@@ -106,6 +108,7 @@ class IncrementalExecutionIntegrationTest extends Specification implements Valid
     def changeDetector = new DefaultExecutionStateChangeDetector()
     def overlappingOutputDetector = new DefaultOverlappingOutputDetector()
     def deleter = TestFiles.deleter()
+    def problems = TestUtil.problemsService()
 
     ExecutionEngine createExecutor() {
         TestExecutionEngineFactory.createExecutionEngine(
@@ -119,8 +122,13 @@ class IncrementalExecutionIntegrationTest extends Specification implements Valid
             outputSnapshotter,
             overlappingOutputDetector,
             validationWarningReporter,
-            virtualFileSystem
+            virtualFileSystem,
+            problems
         )
+    }
+
+    def setup() {
+        problems.resetRecordedProblems()
     }
 
     def "outputs are created"() {
@@ -131,7 +139,7 @@ class IncrementalExecutionIntegrationTest extends Specification implements Valid
             "file1": file("parent1/outFile"),
             "file2": file("parent2/outFile")
         ).withWork { ->
-            UnitOfWork.WorkResult.DID_WORK
+            WorkOutput.WorkResult.DID_WORK
         }.build()
 
         when:
@@ -242,9 +250,8 @@ class IncrementalExecutionIntegrationTest extends Specification implements Valid
             .withValidator { context ->
                 context
                     .forType(UnitOfWork, false)
-                    .visitPropertyProblem {
-                        it.id("test-problem", "Validation problem", GradleCoreProblemGroup.validation())
-                            .severity(Severity.WARNING)
+                    .visitPropertyWarning {
+                        it.id(ProblemId.create("test-problem", "Validation problem", GradleCoreProblemGroup.validation().type()))
                             .documentedAt(Documentation.userManual("id", "section"))
                             .details("Test")
                     }
@@ -367,12 +374,23 @@ class IncrementalExecutionIntegrationTest extends Specification implements Valid
         result.executionReasons == ["Output property 'file' has been removed for ${outputFilesRemovedUnitOfWork.displayName}"]
     }
 
+    interface DifferentType {}
+
     def "out-of-date when implementation changes"() {
         expect:
         execute(unitOfWork)
         outOfDate(
-            builder.withImplementation(ImplementationSnapshot.of("DifferentType", TestHashCodes.hashCodeFrom(1234))).build(),
-            "The type of ${unitOfWork.displayName} has changed from 'org.gradle.internal.execution.UnitOfWork' to 'DifferentType'."
+            builder.withImplementation(DifferentType).build(),
+            "The type of ${unitOfWork.displayName} has changed from '$UnitOfWork.name' to '$DifferentType.name'."
+        )
+    }
+
+    def "out-of-date when additional implementation is added"() {
+        expect:
+        execute(unitOfWork)
+        outOfDate(
+            builder.withAdditionalImplementation(ImplementationSnapshot.of("AdditionalType", TestHashCodes.hashCodeFrom(1234))).build(),
+            "One or more additional actions for ${unitOfWork.displayName} have changed."
         )
     }
 
@@ -549,13 +567,11 @@ class IncrementalExecutionIntegrationTest extends Specification implements Valid
     def "invalid work is not executed"() {
         def invalidWork = builder
             .withValidator { validationContext ->
-                validationContext.forType(Object, true).visitTypeProblem {
-                    it
-                        .withAnnotationType(Object)
-                        .id("test-problem", "Validation error", GradleCoreProblemGroup.validation())
+                validationContext.forType(Object, true).visitTypeError {
+                    it.withAnnotationType(Object)
+                        .id(ProblemId.create("test-problem", "Validation error", GradleCoreProblemGroup.validation().type()))
                         .documentedAt(Documentation.userManual("id", "section"))
                         .details("Test")
-                        .severity(Severity.ERROR)
                 }
             }
             .withWork({ throw new RuntimeException("Should not get executed") })
@@ -565,15 +581,22 @@ class IncrementalExecutionIntegrationTest extends Specification implements Valid
         execute(invalidWork)
 
         then:
-        def ex = thrown WorkValidationException
-        WorkValidationExceptionChecker.check(ex) {
-            hasProblem dummyValidationProblemWithLink('java.lang.Object', null, 'Validation error', 'Test').trim()
-        }
+        thrown WorkValidationException
+        problems.assertProblemEmittedOnce({
+            it.definition.severity == Severity.ERROR
+            it.definition.id.name == 'test-problem'
+            it.definition.id.displayName == 'Validation error'
+            it.contextualLabel == null
+            it.details == 'Test'
+            it.definition.documentationLink.url.endsWith('/userguide/id.html#section')
+            it.solutions == []
+            it.originLocations == []
+        })
     }
 
     def "results are loaded from identity cache"() {
         def work = builder.build()
-        def cache = new ManualEvictionInMemoryCache<UnitOfWork.Identity, Try<Object>>()
+        def cache = new ManualEvictionInMemoryCache<Identity, Try<Object>>()
 
         when:
         def executedResult = executeDeferred(work, cache)
@@ -590,28 +613,33 @@ class IncrementalExecutionIntegrationTest extends Specification implements Valid
 
     def "reports max three file changes"() {
         given:
+        def outputDir = file("parent")
         def files = [
-            "file1": file("parent1/outFile"),
-            "file2": file("parent2/outFile"),
-            "file3": file("parent3/outFile"),
-            "file4": file("parent4/outFile")
+            outputDir.createFile("outFile1"),
+            outputDir.createFile("outFile2"),
+            outputDir.createFile("outFile3"),
+            outputDir.createFile("outFile4"),
+            outputDir.createFile("outFile5"),
+            outputDir.createFile("outFile6")
         ]
-        def unitOfWork = builder.withOutputFiles(files).withWork { ->
-            UnitOfWork.WorkResult.DID_WORK
+        def unitOfWork = builder.withOutputDirs(outputDir).withWork { ->
+            files.each { it.createFile() }
+            WorkOutput.WorkResult.DID_WORK
         }.build()
         execute(unitOfWork)
 
         when:
-        files.each {
-            it.value.createFile()
-        }
+        outputDir.deleteDir()
         def result = execute(unitOfWork)
 
         then:
-        def executionReasons = files.take(3).collect {
-            "Output property '${it.key}' file ${it.value.absolutePath} has been added.".toString()
-        } + ["and more..."]
-        result.executionReasons == executionReasons
+        def executionReasons = [
+            "Output property 'defaultDir0' file ${outputDir.absolutePath} has been removed.",
+            "Output property 'defaultDir0' file ${files[0].absolutePath} has been removed.",
+            "Output property 'defaultDir0' file ${files[1].absolutePath} has been removed.",
+            "and more..."
+        ]
+        result.executionReasons as List<String> == executionReasons
     }
 
     List<String> inputFilesRemoved(Map<String, List<File>> removedFiles) {
@@ -677,7 +705,7 @@ class IncrementalExecutionIntegrationTest extends Specification implements Valid
         createExecutor().createRequest(unitOfWork).execute()
     }
 
-    String executeDeferred(UnitOfWork unitOfWork, Cache<UnitOfWork.Identity, Try<Object>> cache) {
+    String executeDeferred(UnitOfWork unitOfWork, Cache<Identity, Try<Object>> cache) {
         virtualFileSystem.invalidateAll()
         def result = createExecutor().createRequest(unitOfWork)
             .executeDeferred(cache)

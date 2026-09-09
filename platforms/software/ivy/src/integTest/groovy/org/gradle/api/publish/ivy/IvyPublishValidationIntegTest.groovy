@@ -47,7 +47,7 @@ class IvyPublishValidationIntegTest extends AbstractIvyPublishIntegTest {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -108,7 +108,7 @@ class IvyPublishValidationIntegTest extends AbstractIvyPublishIntegTest {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -149,7 +149,7 @@ class IvyPublishValidationIntegTest extends AbstractIvyPublishIntegTest {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication)
@@ -160,7 +160,7 @@ class IvyPublishValidationIntegTest extends AbstractIvyPublishIntegTest {
         fails 'publish'
 
         then:
-        failure.assertHasDescription "Execution failed for task ':publishIvyPublicationToIvyRepository'."
+        failure.assertHasDescription "Execution failed for task ':publishIvyPublicationToIvyRepository' (registered by plugin 'org.gradle.ivy-publish')."
         failure.assertHasCause "Failed to publish publication 'ivy' to repository 'ivy'"
         failure.assertHasCause "Invalid publication 'ivy': organisation cannot be empty."
     }
@@ -175,7 +175,7 @@ class IvyPublishValidationIntegTest extends AbstractIvyPublishIntegTest {
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -189,17 +189,17 @@ class IvyPublishValidationIntegTest extends AbstractIvyPublishIntegTest {
         fails 'publish'
 
         then:
-        failure.assertHasDescription("Execution failed for task ':publishIvyPublicationToIvyRepository'.")
+        failure.assertHasDescription("Execution failed for task ':publishIvyPublicationToIvyRepository' (registered by plugin 'org.gradle.ivy-publish').")
         failure.assertHasCause("Failed to publish publication 'ivy' to repository 'ivy'")
         failure.assertHasCause(message)
 
         where:
         metadata        | message
-        "branch ''"     | "Invalid publication 'ivy': branch cannot be an empty string. Use null instead"
-        "branch 'a\tb'" | "Invalid publication 'ivy': branch cannot contain ISO control character '\\u0009'"
-        "status ''"     | "Invalid publication 'ivy': status cannot be an empty string. Use null instead"
-        "status 'a\tb'" | "Invalid publication 'ivy': status cannot contain ISO control character '\\u0009'"
-        "status 'a/b'"  | "Invalid publication 'ivy': status cannot contain '/'"
+        "branch = ''"     | "Invalid publication 'ivy': branch cannot be an empty string. Use null instead"
+        "branch = 'a\tb'" | "Invalid publication 'ivy': branch cannot contain ISO control character '\\u0009'"
+        "status = ''"     | "Invalid publication 'ivy': status cannot be an empty string. Use null instead"
+        "status = 'a\tb'" | "Invalid publication 'ivy': status cannot contain ISO control character '\\u0009'"
+        "status = 'a/b'"  | "Invalid publication 'ivy': status cannot contain '/'"
     }
 
     def "fails with reasonable error message for invalid #invalidComponent name"() {
@@ -213,8 +213,8 @@ class IvyPublishValidationIntegTest extends AbstractIvyPublishIntegTest {
             publishing {
                 repositories {
                     ivy {
-                        name '${repoName}'
-                        url "${ivyRepo.uri}"
+                        name = '${repoName}'
+                        url = "${ivyRepo.uri}"
                     }
                 }
                 publications {

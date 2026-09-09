@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,18 +22,40 @@ import com.google.common.collect.ObjectArrays;
  * true. Uses lazy evaluation.
  *
  * @param <T> The target type for this Spec
+ * @since 0.7
  */
 public class OrSpec<T> extends CompositeSpec<T> {
+    /**
+     * The empty.
+     *
+     * @since 3.2
+     */
     public static final OrSpec<?> EMPTY = new OrSpec<Object>();
 
+    /**
+     * Creates a new {@code OrSpec}.
+     *
+     * @since 3.0
+     */
     public OrSpec() {
         super();
     }
 
+    /**
+     * Creates a new {@code OrSpec}.
+     *
+     * @since 0.7
+     */
+    @SuppressWarnings("unchecked")
     public OrSpec(Spec<? super T>... specs) {
         super(specs);
     }
 
+    /**
+     * Creates a new {@code OrSpec}.
+     *
+     * @since 1.3
+     */
     public OrSpec(Iterable<? extends Spec<? super T>> specs) {
         super(specs);
     }
@@ -52,6 +74,12 @@ public class OrSpec<T> extends CompositeSpec<T> {
         return false;
     }
 
+    /**
+     * Or.
+     *
+     * @since 3.2
+     */
+    @SuppressWarnings("unchecked")
     public OrSpec<T> or(Spec<? super T>... specs) {
         if (specs.length == 0) {
             return this;
@@ -67,6 +95,11 @@ public class OrSpec<T> extends CompositeSpec<T> {
         return new OrSpec<T>(combinedSpecs);
     }
 
+    /**
+     * Empty.
+     *
+     * @since 3.2
+     */
     public static <T> OrSpec<T> empty() {
         return uncheckedCast(EMPTY);
     }

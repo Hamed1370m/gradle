@@ -15,112 +15,148 @@
  */
 package org.gradle.api.internal.attributes;
 
+import com.google.common.collect.ImmutableList;
+import org.gradle.api.Describable;
 import org.gradle.api.attributes.Attribute;
-import org.gradle.api.attributes.Usage;
 import org.gradle.api.internal.model.NamedObjectInstantiator;
-import org.gradle.internal.Cast;
+import org.gradle.api.internal.provider.PropertyFactory;
 import org.gradle.internal.isolation.Isolatable;
 import org.gradle.internal.isolation.IsolatableFactory;
-import org.gradle.internal.service.scopes.Scope;
-import org.gradle.internal.service.scopes.ServiceScope;
-import org.gradle.internal.snapshot.impl.CoercingStringValueSnapshot;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 
-@ServiceScope(Scope.BuildSession.class)
-public class DefaultAttributesFactory extends AbstractAttributesFactory {
-    private final ImmutableAttributes root;
-    private final Map<ImmutableAttributes, List<DefaultImmutableAttributesContainer>> children;
-    private final IsolatableFactory isolatableFactory;
+public final class DefaultAttributesFactory implements AttributesFactory {
+
+    private static final ImmutableAttributes ROOT = ImmutableAttributes.EMPTY;
+
+    private final AttributeValueIsolator attributeValueIsolator;
+    private final PropertyFactory propertyFactory;
     private final UsageCompatibilityHandler usageCompatibilityHandler;
     private final NamedObjectInstantiator instantiator;
 
-    public DefaultAttributesFactory(IsolatableFactory isolatableFactory, NamedObjectInstantiator instantiator) {
-        this.isolatableFactory = isolatableFactory;
-        this.instantiator = instantiator;
-        this.root = ImmutableAttributes.EMPTY;
-        this.children = new ConcurrentHashMap<>();
+    /**
+     * A map from parent attribute containers to the set of containers that have
+     * been produced by appending a single entry to it.
+     */
+    private final Map<ImmutableAttributes, ImmutableList<ImmutableAttributes>> concatCache;
+
+    public DefaultAttributesFactory(
+        AttributeValueIsolator attributeValueIsolator,
+        IsolatableFactory isolatableFactory,
+        NamedObjectInstantiator instantiator,
+        PropertyFactory propertyFactory
+    ) {
+        this.attributeValueIsolator = attributeValueIsolator;
+        this.propertyFactory = propertyFactory;
         this.usageCompatibilityHandler = new UsageCompatibilityHandler(isolatableFactory, instantiator);
-    }
 
-    public int size() {
-        return children.size();
-    }
-
-    @Override
-    public DefaultMutableAttributeContainer mutable() {
-        return new DefaultMutableAttributeContainer(this);
+        this.concatCache = new ConcurrentHashMap<>();
+        this.instantiator = instantiator;
     }
 
     @Override
-    public HierarchicalMutableAttributeContainer mutable(AttributeContainerInternal fallback) {
-        return join(fallback, new DefaultMutableAttributeContainer(this));
+    public AttributeContainerInternal mutable() {
+        return new DefaultMutableAttributeContainer(this, attributeValueIsolator, instantiator, propertyFactory);
     }
 
     @Override
-    public HierarchicalMutableAttributeContainer join(AttributeContainerInternal fallback, AttributeContainerInternal primary) {
+    public AttributeContainerInternal mutable(AttributeContainerInternal fallback) {
+        return join(fallback, mutable());
+    }
+
+    @Override
+    public FreezableAttributeContainer freezable(AttributeContainerInternal fallback, Describable owner) {
+        return new FreezableAttributeContainer(fallback, owner, propertyFactory);
+    }
+
+    @Override
+    public AttributeContainerInternal join(AttributeContainerInternal fallback, AttributeContainerInternal primary) {
         return new HierarchicalMutableAttributeContainer(this, fallback, primary);
     }
 
     @Override
     public <T> ImmutableAttributes of(Attribute<T> key, T value) {
-        return concat(root, key, value);
+        return concat(ROOT, key, value);
     }
 
     @Override
-    public <T> ImmutableAttributes concat(ImmutableAttributes node, Attribute<T> key, @Nullable T value) {
-        return concat(node, key, isolate(value));
-    }
-
-    public <T> Isolatable<T> isolate(@Nullable T value) {
-        if (value instanceof String) {
-            return Cast.uncheckedNonnullCast(new CoercingStringValueSnapshot((String) value, instantiator));
-        } else {
-            return isolatableFactory.isolate(value);
-        }
+    public <T> ImmutableAttributes concat(ImmutableAttributes node, Attribute<T> key, T value) {
+        return concat(node, key, attributeValueIsolator.isolate(value));
     }
 
     @Override
     public <T> ImmutableAttributes concat(ImmutableAttributes node, Attribute<T> key, Isolatable<T> value) {
-        if (key.equals(Usage.USAGE_ATTRIBUTE) || key.getName().equals(Usage.USAGE_ATTRIBUTE.getName())) {
-            return usageCompatibilityHandler.doConcat(this, node, key, value);
-        } else {
-            return doConcatIsolatable(node, key, value);
-        }
+        return doConcatEntry(node, new DefaultImmutableAttributesEntry<>(key, value));
     }
 
-    ImmutableAttributes doConcatIsolatable(ImmutableAttributes node, Attribute<?> key, Isolatable<?> value) {
+    @Override
+    @Deprecated
+    public <T> ImmutableAttributes concatUsageAttribute(ImmutableAttributes node, Attribute<T> key, Isolatable<T> value) {
+        return usageCompatibilityHandler.doConcat(this, node, key, value);
+    }
 
-        // We use an atomic reference to capture the result, as we cannot return it from
-        // `compute`, which handles locking and concurrent access to the node child cache.
-        AtomicReference<ImmutableAttributes> result = new AtomicReference<>();
+    private <T> ImmutableAttributes doConcatEntry(ImmutableAttributes node, ImmutableAttributesEntry<T> entry) {
+        assertAttributeNotAlreadyPresent(node, entry.getKey());
 
-        children.compute(node, (k, nodeChildren) -> {
+        // Try to retrieve a cached value without locking
+        ImmutableList<ImmutableAttributes> cachedChildren = concatCache.get(node);
+        if (cachedChildren != null) {
+            ImmutableAttributes child = findChild(cachedChildren, entry);
+            if (child != null) {
+                return child;
+            }
+        }
+
+        // If we didn't find a cached value, we need to lock and update the cache
+        cachedChildren = concatCache.compute(node, (k, nodeChildren) -> {
             if (nodeChildren != null) {
-                // Find if someone already tried to concat this value to this node
-                for (DefaultImmutableAttributesContainer child : nodeChildren) {
-                    if (child.attribute.equals(key) && child.value.equals(value)) {
-                        result.set(child);
-                        return nodeChildren;
-                    }
+                // Check if the value is already present again, now that we have the lock.
+                ImmutableAttributes child = findChild(nodeChildren, entry);
+                if (child != null) {
+                    // Somebody updated the cache before we could. Return the cache unchanged.
+                    return nodeChildren;
                 }
             } else {
-                nodeChildren = new ArrayList<>();
+                nodeChildren = ImmutableList.of();
             }
 
-            // Nobody has tried to concat this value yet
-            DefaultImmutableAttributesContainer child = new DefaultImmutableAttributesContainer((DefaultImmutableAttributesContainer) node, key, value);
-            nodeChildren.add(child);
-            result.set(child);
-            return nodeChildren;
+            // Nobody has tried to concat this value yet.
+            // Calculate it and add it to the children.
+            ImmutableAttributes child = new DefaultImmutableAttributesContainer(node, entry);
+            return concatChild(nodeChildren, child);
         });
 
-        return result.get();
+        return Objects.requireNonNull(findChild(cachedChildren, entry));
+    }
+
+    private static @Nullable ImmutableAttributes findChild(
+        ImmutableList<ImmutableAttributes> nodeChildren,
+        ImmutableAttributesEntry<?> entry
+    ) {
+        for (ImmutableAttributes child : nodeChildren) {
+            ImmutableAttributesEntry<?> headEntry = child.getHead();
+
+            if (headEntry.getKey().equals(entry.getKey()) &&
+                headEntry.getValue().equals(entry.getValue())
+            ) {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static ImmutableList<ImmutableAttributes> concatChild(
+        ImmutableList<ImmutableAttributes> nodeChildren,
+        ImmutableAttributes child
+    ) {
+        return ImmutableList.<ImmutableAttributes>builderWithExpectedSize(nodeChildren.size() + 1)
+            .addAll(nodeChildren)
+            .add(child)
+            .build();
     }
 
     @Override
@@ -131,16 +167,14 @@ public class DefaultAttributesFactory extends AbstractAttributesFactory {
         if (primary == ImmutableAttributes.EMPTY) {
             return fallback;
         }
+
         ImmutableAttributes current = primary;
-        for (Attribute<?> attribute : fallback.keySet()) {
-            if (!current.findEntry(attribute.getName()).isPresent()) {
-                if (fallback instanceof DefaultImmutableAttributesContainer) {
-                    current = doConcatIsolatable(current, attribute, ((DefaultImmutableAttributesContainer) fallback).getIsolatableAttribute(attribute));
-                } else {
-                    current = concat(current, Cast.uncheckedNonnullCast(attribute), fallback.getAttribute(attribute));
-                }
+        for (ImmutableAttributesEntry<?> toConcat : fallback.getEntries()) {
+            if (current.findEntry(toConcat.getKey().getName()) == null) {
+                current = doConcatEntry(current, toConcat);
             }
         }
+
         return current;
     }
 
@@ -152,22 +186,41 @@ public class DefaultAttributesFactory extends AbstractAttributesFactory {
         if (attributes2 == ImmutableAttributes.EMPTY) {
             return attributes1;
         }
+
         ImmutableAttributes current = attributes2;
-        for (Attribute<?> attribute : attributes1.keySet()) {
-            AttributeValue<?> entry = current.findEntry(attribute.getName());
-            if (entry.isPresent()) {
-                Object currentAttribute = entry.get();
-                Object existingAttribute = attributes1.getAttribute(attribute);
-                if (!currentAttribute.equals(existingAttribute)) {
-                    throw new AttributeMergingException(attribute, existingAttribute, currentAttribute);
-                }
+        for (ImmutableAttributesEntry<?> toConcat : attributes1.getEntries()) {
+            ImmutableAttributesEntry<?> existing = current.findEntry(toConcat.getKey().getName());
+            if (existing != null && !toConcat.getIsolatedValue().equals(existing.getIsolatedValue())) {
+                Attribute<?> attribute = toConcat.getKey();
+                String message = "An attribute named '" + attribute.getName() + "' of type '" + attribute.getType().getName() + "' already exists in this container";
+                throw new AttributeMergingException(attribute, toConcat.getIsolatedValue(), existing.getIsolatedValue(), message);
             }
-            if (attributes1 instanceof DefaultImmutableAttributesContainer) {
-                current = doConcatIsolatable(current, attribute, ((DefaultImmutableAttributesContainer) attributes1).getIsolatableAttribute(attribute));
-            } else {
-                current = concat(current, Cast.uncheckedNonnullCast(attribute), attributes1.getAttribute(attribute));
-            }
+            current = doConcatEntry(current, toConcat);
         }
+
         return current;
     }
+
+    /**
+     * Verifies that an attribute with the same name but different types as the given key is not
+     * already present in the given container.
+     *
+     * @param container the container to check
+     * @param key the attribute to check for
+     *
+     * @throws IllegalArgumentException if attribute with same name and different type already exists
+     */
+    void assertAttributeNotAlreadyPresent(ImmutableAttributes container, Attribute<?> key) {
+        ImmutableAttributesEntry<?> entry = container.findEntry(key.getName());
+        if (entry != null && entry.getKey().getType() != key.getType()) {
+            throw new IllegalArgumentException(buildSameNameDifferentTypeErrorMsg(key, entry.getKey()));
+        }
+    }
+
+    private String buildSameNameDifferentTypeErrorMsg(Attribute<?> newAttribute, Attribute<?> oldAttribute) {
+        return "Cannot have two attributes with the same name but different types. "
+            + "This container already has an attribute named '" + newAttribute.getName() + "' of type '" + oldAttribute.getType().getName()
+            + "' and you are trying to store another one of type '" + newAttribute.getType().getName() + "'";
+    }
+
 }

@@ -21,16 +21,12 @@ import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.base.HasDescription;
 import com.tngtech.archunit.core.domain.JavaAnnotation;
 import com.tngtech.archunit.core.domain.JavaClass;
-import com.tngtech.archunit.core.domain.JavaGenericArrayType;
 import com.tngtech.archunit.core.domain.JavaMember;
 import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.core.domain.JavaParameter;
-import com.tngtech.archunit.core.domain.JavaParameterizedType;
-import com.tngtech.archunit.core.domain.JavaType;
-import com.tngtech.archunit.core.domain.JavaTypeVariable;
-import com.tngtech.archunit.core.domain.JavaWildcardType;
 import com.tngtech.archunit.core.domain.PackageMatchers;
+import com.tngtech.archunit.core.domain.properties.CanBeAnnotated;
 import com.tngtech.archunit.core.domain.properties.HasType;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
@@ -38,6 +34,11 @@ import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.lang.conditions.ArchConditions;
 import com.tngtech.archunit.library.freeze.FreezingArchRule;
+import groovy.lang.Closure;
+import org.gradle.api.Action;
+import org.gradle.api.Transformer;
+import org.gradle.api.specs.Spec;
+import org.gradle.internal.reflect.PropertyAccessorType;
 import org.gradle.test.precondition.Requires;
 import org.gradle.test.precondition.TestPrecondition;
 import org.gradle.util.EmptyStatement;
@@ -46,16 +47,25 @@ import org.gradle.util.SetSystemProperties;
 import org.gradle.util.TestClassLoader;
 import org.gradle.util.UsesNativeServices;
 import org.gradle.util.UsesNativeServicesExtension;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Member;
+import java.lang.reflect.Method;
+import java.net.URISyntaxException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.CodeSource;
 import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -66,39 +76,44 @@ import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyP
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideOutsideOfPackages;
 import static com.tngtech.archunit.core.domain.JavaMember.Predicates.declaredIn;
 import static com.tngtech.archunit.core.domain.JavaModifier.PUBLIC;
+import static com.tngtech.archunit.core.domain.properties.CanBeAnnotated.Predicates.annotatedWith;
 import static com.tngtech.archunit.core.domain.properties.HasModifiers.Predicates.modifier;
 import static com.tngtech.archunit.core.domain.properties.HasName.Functions.GET_NAME;
 import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.nameMatching;
 import static com.tngtech.archunit.core.domain.properties.HasType.Functions.GET_RAW_TYPE;
+import static com.tngtech.archunit.lang.conditions.ArchConditions.beAnnotatedWith;
+import static com.tngtech.archunit.lang.conditions.ArchConditions.not;
 import static java.util.stream.Collectors.toSet;
 
+@NullMarked
 public interface ArchUnitFixture {
-    DescribedPredicate<JavaClass> classes_not_written_in_kotlin = resideOutsideOfPackages(
-        "org.gradle.internal.cc..",
-        "org.gradle.configurationcache..",
-        "org.gradle.internal.configuration.problems..",
-        "org.gradle.internal.encryption..",
-        "org.gradle.internal.extensions.core..",
-        "org.gradle.internal.extensions.stdlib..",
-        "org.gradle.internal.flow.services..",
-        "org.gradle.internal.serialize.beans..",
-        "org.gradle.internal.serialize.codecs..",
-        "org.gradle.internal.serialize.graph..",
-        "org.gradle.kotlin..",
-        "org.gradle.internal.declarativedsl..",
-        "org.gradle.declarative.dsl..",
-        "org.gradle.problems.internal.impl.."
-    ).as("classes written in Java or Groovy");
+    DescribedPredicate<JavaClass> classes_not_written_in_kotlin =
+        not(annotatedOrInPackageAnnotatedWith(kotlin.Metadata.class))
+            .and(resideOutsideOfPackages("org.gradle.kotlin..")) // a few relocated kotlinx-metadata classes violate the nullability annotation rules
+            .as("classes written in Java or Groovy");
 
-    DescribedPredicate<JavaClass> not_synthetic_classes = new DescribedPredicate<JavaClass>("not synthetic classes") {
+    DescribedPredicate<JavaClass> not_synthetic_classes = new DescribedPredicate<>("not synthetic classes") {
         @Override
         public boolean test(JavaClass javaClass) {
             return !javaClass.getModifiers().contains(JavaModifier.SYNTHETIC);
         }
     };
 
+    DescribedPredicate<JavaClass> not_anonymous_classes = new DescribedPredicate<>("not anonymous classes") {
+        @Override
+        public boolean test(JavaClass javaClass) {
+            return !javaClass.isAnonymousClass();
+        }
+    };
+
     DescribedPredicate<JavaMember> not_written_in_kotlin = declaredIn(classes_not_written_in_kotlin)
         .as("written in Java or Groovy");
+
+    DescribedPredicate<JavaMember> not_from_fileevents = declaredIn(resideOutsideOfPackages("org.gradle.fileevents.."))
+        .as("not from fileevents");
+
+    DescribedPredicate<JavaClass> not_from_fileevents_classes = resideOutsideOfPackages("org.gradle.fileevents..")
+        .as("not from fileevents");
 
     DescribedPredicate<JavaMember> kotlin_internal_methods = declaredIn(gradlePublicApi())
         .and(not(not_written_in_kotlin))
@@ -110,6 +125,19 @@ public interface ArchUnitFixture {
         .and(modifier(PUBLIC))
         .and(not(kotlin_internal_methods))
         .as("public API methods");
+
+    DescribedPredicate<JavaMethod> getters = new DescribedPredicate<JavaMethod>("getters") {
+        @Override
+        public boolean test(JavaMethod input) {
+            PropertyAccessorType accessorType = PropertyAccessorType.fromName(input.getName());
+            if (accessorType == PropertyAccessorType.IS_GETTER) {
+                // PropertyAccessorType.IS_GETTER doesn't handle names that start with is
+                // but are not getters, e.g. issueManagement is detected as IS_GETTER
+                return !Character.isLowerCase(input.getName().charAt(2));
+            }
+            return accessorType == PropertyAccessorType.GET_GETTER;
+        }
+    };
 
     static ArchRule freeze(ArchRule rule) {
         return new FreezeInstructionsPrintingArchRule(FreezingArchRule.freeze(rule));
@@ -131,6 +159,11 @@ public interface ArchUnitFixture {
             .and(not(gradlePublicApi()))
             .and(not(gradleMaintainedExternalDependency()))
             .as("Gradle Internal API");
+    }
+
+    static DescribedPredicate<JavaClass> groovyApi() {
+        return resideInAnyPackage("org.apache.groovy..", "groovy..", "org.codehaus.groovy..")
+            .as("Groovy API");
     }
 
     static DescribedPredicate<JavaClass> inGradlePublicApiPackages() {
@@ -157,16 +190,7 @@ public interface ArchUnitFixture {
         }
     };
 
-    static <T> DescribedPredicate<Collection<T>> thatAll(DescribedPredicate<T> predicate) {
-        return new DescribedPredicate<Collection<T>>("that all %s", predicate.getDescription()) {
-            @Override
-            public boolean test(Collection<T> input) {
-                return input.stream().allMatch(predicate);
-            }
-        };
-    }
-
-    static ArchCondition<JavaClass> beAbstract() {
+    static ArchCondition<JavaClass> beAbstractClass() {
         return new ArchCondition<JavaClass>("be abstract") {
             @Override
             public void check(JavaClass input, ConditionEvents events) {
@@ -179,11 +203,24 @@ public interface ArchUnitFixture {
         };
     }
 
+    static ArchCondition<JavaMethod> beAbstractMethod() {
+        return new ArchCondition<JavaMethod>("be abstract") {
+            @Override
+            public void check(JavaMethod method, ConditionEvents events) {
+                if (method.getModifiers().contains(JavaModifier.ABSTRACT)) {
+                    events.add(new SimpleConditionEvent(method, true, method.getDescription() + " is abstract"));
+                } else {
+                    events.add(new SimpleConditionEvent(method, false, method.getDescription() + " is not abstract"));
+                }
+            }
+        };
+    }
+
     static ArchCondition<JavaClass> haveDirectSuperclassOrInterfaceThatAre(DescribedPredicate<JavaClass> types) {
         return new HaveDirectSuperclassOrInterfaceThatAre(types);
     }
 
-    static ArchCondition<JavaMethod> haveOnlyArgumentsOrReturnTypesThatAre(DescribedPredicate<JavaClass> types) {
+    static ArchCondition<JavaMember> haveOnlyArgumentsOrReturnTypesThatAre(DescribedPredicate<JavaClass> types) {
         return new HaveOnlyArgumentsOrReturnTypesThatAre(types);
     }
 
@@ -224,12 +261,17 @@ public interface ArchUnitFixture {
         return name + "(" + Arrays.stream(parameterTypes).map(Class::getSimpleName).collect(Collectors.joining()) + ")";
     }
 
-    static ArchCondition<JavaMethod> useJavaxAnnotationNullable() {
-        return new ArchCondition<JavaMethod>("use javax.annotation.Nullable") {
+    static ArchCondition<JavaMethod> useJSpecifyNullable() {
+        return new ArchCondition<JavaMethod>("use org.jspecify.annotations.Nullable") {
             @Override
             public void check(JavaMethod method, ConditionEvents events) {
+                Method reflected = safeReflect(method);
+
                 // Check if method return type is annotated with the wrong Nullable
-                if (!method.isAnnotatedWith(Nullable.class)) {
+                if (
+                    !method.isAnnotatedWith(Nullable.class) &&
+                        (reflected == null || reflected.getAnnotatedReturnType().getAnnotation(Nullable.class) == null)
+                ) {
                     Set<JavaAnnotation<JavaMethod>> annotations = method.getAnnotations();
                     Set<JavaAnnotation<JavaMethod>> nullableAnnotations = extractPossibleNullable(annotations);
                     if (!nullableAnnotations.isEmpty()) {
@@ -240,8 +282,12 @@ public interface ArchUnitFixture {
                 }
 
                 // Check if the method's parameters are annotated with the wrong Nullable
-                for (JavaParameter parameter : method.getParameters()) {
-                    if (!parameter.isAnnotatedWith(Nullable.class)) {
+                for (int idx = 0; idx < method.getParameters().size(); idx++) {
+                    JavaParameter parameter = method.getParameters().get(idx);
+                    if (
+                        !parameter.isAnnotatedWith(Nullable.class) &&
+                            (reflected == null || reflected.getAnnotatedParameterTypes()[idx].getAnnotation(Nullable.class) == null)
+                    ) {
                         Set<JavaAnnotation<JavaParameter>> annotations = parameter.getAnnotations();
                         Set<JavaAnnotation<JavaParameter>> nullableAnnotations = extractPossibleNullable(annotations);
                         if (!nullableAnnotations.isEmpty()) {
@@ -272,8 +318,26 @@ public interface ArchUnitFixture {
         return new AnnotatedMaybeInSupertypePredicate(predicate);
     }
 
-    static ArchCondition<JavaClass> beAnnotatedOrInPackageAnnotatedWith(Class<? extends Annotation> annotationType) {
-        return ArchConditions.be(annotatedOrInPackageAnnotatedWith(annotationType));
+    static ArchCondition<JavaClass> beNullMarkedClass() {
+        return ArchConditions.be(annotatedWithOrEnclosedByElementAnnotatedWith(NullMarked.class)).and(not(beAnnotatedWith(NullUnmarked.class)));
+    }
+
+    static ArchCondition<JavaClass> notBeUnnecessarilyAnnotatedWithNullMarked() {
+        // We can't forbid @NullMarked on top-level classes that are in a @NullMarked package yet
+        // because some of our split packages are not consistently annotated across subprojects.
+        DescribedPredicate<JavaClass> notEnclosedByNullMarkedExceptPackages =
+            inPackageAnnotatedWith(NullMarked.class).or(not(enclosedByElementAnnotatedWith(NullMarked.class)));
+        DescribedPredicate<JavaClass> notUnnecessarilyAnnotatedWithNullMarked =
+            notEnclosedByNullMarkedExceptPackages.or(not(annotatedWith(NullMarked.class)));
+        return ArchConditions.be(notUnnecessarilyAnnotatedWithNullMarked)
+            .as("not be unnecessarily annotated with @" + NullMarked.class.getName())
+            .describeEventsBy((predicateDescription, satisfied) ->
+                (satisfied ? "is not " : "is ") + "unnecessarily annotated with @" + NullMarked.class.getName()
+            );
+    }
+
+    static ArchCondition<JavaMethod> beNullUnmarkedMethod() {
+        return beAnnotatedWith(NullUnmarked.class);
     }
 
     /**
@@ -283,7 +347,74 @@ public interface ArchUnitFixture {
         return new AnnotatedOrInPackageAnnotatedPredicate(annotationType);
     }
 
-    class HaveOnlyArgumentsOrReturnTypesThatAre extends ArchCondition<JavaMethod> {
+    /**
+     * Either the class is directly annotated with the given annotation type or the class is in an element that is annotated with the given annotation type.
+     */
+    static DescribedPredicate<JavaClass> annotatedWithOrEnclosedByElementAnnotatedWith(Class<? extends Annotation> annotationType) {
+        return new AnnotatedOrEnclosedByElementAnnotatedPredicate(annotationType);
+    }
+
+    /**
+     * The class is in an element that is annotated with the given annotation type.
+     */
+    static DescribedPredicate<JavaClass> enclosedByElementAnnotatedWith(Class<? extends Annotation> annotationType) {
+        return new EnclosedByElementAnnotatedPredicate(annotationType);
+    }
+
+    /**
+     * The class is in an element that is annotated with the given annotation type.
+     */
+    static DescribedPredicate<JavaClass> inPackageAnnotatedWith(Class<? extends Annotation> annotationType) {
+        return new InPackageAnnotatedPredicate(annotationType);
+    }
+
+    class HaveGradleTypeEquivalent extends ArchCondition<JavaMethod> {
+        public HaveGradleTypeEquivalent() {
+            super("have Gradle equivalent to Closure taking method");
+        }
+
+        @Override
+        public void check(JavaMethod method, ConditionEvents events) {
+            if (method.isAnnotatedWith(Deprecated.class)) {
+                // Skip deprecated methods
+                events.add(new SimpleConditionEvent(method, true, method.getDescription() + " is deprecated, skipping"));
+                return;
+            }
+            List<JavaParameter> parameters = method.getParameters();
+            if (!parameters.isEmpty()) {
+                JavaParameter lastParameter = parameters.get(parameters.size() - 1);
+                // Closure taking method
+                if (lastParameter.getRawType().isEquivalentTo(Closure.class)) {
+                    // No other methods with the same name and parameters take a Gradle type instead of a Closure
+                    List<JavaMethod> similarMethods = findSimilarMethods(method);
+                    if (similarMethods.stream().noneMatch(m -> {
+                        List<JavaParameter> similarParameters = m.getParameters();
+                        JavaParameter last = similarParameters.get(similarParameters.size() - 1);
+                        return last.getRawType().isEquivalentTo(Action.class) || last.getRawType().isEquivalentTo(Spec.class) || last.getRawType().isEquivalentTo(Transformer.class);
+                    })) {
+                        // missing
+                        String message = String.format("%s has Closure but does not have equivalent Gradle type method in %s",
+                            method.getDescription(),
+                            method.getSourceCodeLocation());
+                        events.add(new SimpleConditionEvent(method, false, message));
+                    }
+                }
+            }
+            events.add(new SimpleConditionEvent(method, true, ""));
+        }
+
+        private static List<JavaMethod> findSimilarMethods(JavaMethod method) {
+            // This is taking a shortcut and assuming that we do not have multiple methods with the same name and number of parameters taking Closure
+            // with _different_ parameter types other than the Closure.
+            return method.getOwner().getAllMethods().stream()
+                .filter(m -> m != method
+                        && m.getName().equals(method.getName())
+                        && m.getParameters().size() == method.getParameters().size())
+                .collect(Collectors.toList());
+        }
+    }
+
+    class HaveOnlyArgumentsOrReturnTypesThatAre extends ArchCondition<JavaMember> {
         private final DescribedPredicate<JavaClass> types;
 
         public HaveOnlyArgumentsOrReturnTypesThatAre(DescribedPredicate<JavaClass> types) {
@@ -292,11 +423,14 @@ public interface ArchUnitFixture {
         }
 
         @Override
-        public void check(JavaMethod method, ConditionEvents events) {
-            Set<JavaClass> referencedTypes = new LinkedHashSet<>();
-            unpackJavaType(method.getReturnType(), referencedTypes);
-            method.getTypeParameters().forEach(typeParameter -> unpackJavaType(typeParameter, referencedTypes));
-            referencedTypes.addAll(method.getRawParameterTypes());
+        public void check(JavaMember member, ConditionEvents events) {
+            Set<JavaClass> referencedTypes = new TreeSet<>(new Comparator<JavaClass>() {
+                @Override
+                public int compare(JavaClass o1, JavaClass o2) {
+                    return o1.getFullName().compareTo(o2.getFullName());
+                }
+            });
+            referencedTypes.addAll(member.getAllInvolvedRawTypes());
             ImmutableSet<String> matchedClasses = referencedTypes.stream()
                 .filter(it -> !types.test(it))
                 .map(JavaClass::getName)
@@ -304,44 +438,18 @@ public interface ArchUnitFixture {
             boolean fulfilled = matchedClasses.isEmpty();
             String message = fulfilled
                 ? String.format("%s has only arguments/return type that are %s in %s",
-                method.getDescription(),
+                member.getDescription(),
                 types.getDescription(),
-                method.getSourceCodeLocation())
+                member.getSourceCodeLocation())
 
                 : String.format("%s has arguments/return type %s that %s not %s in %s",
-                method.getDescription(),
+                member.getDescription(),
                 String.join(", ", matchedClasses),
                 matchedClasses.size() == 1 ? "is" : "are",
                 types.getDescription(),
-                method.getSourceCodeLocation()
+                member.getSourceCodeLocation()
             );
-            events.add(new SimpleConditionEvent(method, fulfilled, message));
-        }
-
-        private void unpackJavaType(JavaType type, Set<JavaClass> referencedTypes) {
-            unpackJavaType(type, referencedTypes, new HashSet<>());
-        }
-
-        private void unpackJavaType(JavaType type, Set<JavaClass> referencedTypes, Set<JavaType> visited) {
-            if (!visited.add(type)) {
-                return;
-            }
-            if (type.toErasure().isEquivalentTo(Object.class)) {
-                return;
-            }
-            referencedTypes.add(type.toErasure());
-            if (type instanceof JavaTypeVariable) {
-                List<JavaType> upperBounds = ((JavaTypeVariable<?>) type).getUpperBounds();
-                upperBounds.forEach(bound -> unpackJavaType(bound, referencedTypes, visited));
-            } else if (type instanceof JavaGenericArrayType) {
-                unpackJavaType(((JavaGenericArrayType) type).getComponentType(), referencedTypes, visited);
-            } else if (type instanceof JavaWildcardType) {
-                JavaWildcardType wildcardType = (JavaWildcardType) type;
-                wildcardType.getUpperBounds().forEach(bound -> unpackJavaType(bound, referencedTypes, visited));
-                wildcardType.getLowerBounds().forEach(bound -> unpackJavaType(bound, referencedTypes, visited));
-            } else if (type instanceof JavaParameterizedType) {
-                ((JavaParameterizedType) type).getActualTypeArguments().forEach(argument -> unpackJavaType(argument, referencedTypes, visited));
-            }
+            events.add(new SimpleConditionEvent(member, fulfilled, message));
         }
     }
 
@@ -349,13 +457,18 @@ public interface ArchUnitFixture {
         private static final PackageMatchers INCLUDES = PackageMatchers.of(parsePackageMatcher(System.getProperty("org.gradle.public.api.includes")));
         private static final PackageMatchers EXCLUDES = PackageMatchers.of(parsePackageMatcher(System.getProperty("org.gradle.public.api.excludes")));
 
+        public static boolean test(String packageName) {
+            return INCLUDES.test(packageName) && !EXCLUDES.test(packageName);
+        }
+
         public InGradlePublicApiPackages() {
             super("in Gradle public API packages");
         }
 
         @Override
         public boolean test(JavaClass input) {
-            return INCLUDES.test(input.getPackageName()) && !EXCLUDES.test(input.getPackageName());
+            String packageName = input.getPackageName();
+            return test(packageName);
         }
 
         private static Set<String> parsePackageMatcher(String packageList) {
@@ -451,6 +564,20 @@ public interface ArchUnitFixture {
         }
     }
 
+    class InPackageAnnotatedPredicate extends DescribedPredicate<JavaClass> {
+        private final Class<? extends Annotation> annotationType;
+
+        InPackageAnnotatedPredicate(Class<? extends Annotation> annotationType) {
+            super("annotated via its package with @" + annotationType.getName());
+            this.annotationType = annotationType;
+        }
+
+        @Override
+        public boolean test(JavaClass input) {
+            return input.getPackage().isAnnotatedWith(annotationType);
+        }
+    }
+
     class AnnotatedOrInPackageAnnotatedPredicate extends DescribedPredicate<JavaClass> {
         private final Class<? extends Annotation> annotationType;
 
@@ -461,7 +588,149 @@ public interface ArchUnitFixture {
 
         @Override
         public boolean test(JavaClass input) {
-            return input.isAnnotatedWith(annotationType) || input.getPackage().isAnnotatedWith(annotationType);
+            try {
+                // Try to use reflection in order to find `TYPE_USE` annotations
+                // See https://github.com/TNG/ArchUnit/issues/1382
+                Class<?> clazz = input.reflect();
+                return clazz.getAnnotation(annotationType) != null || clazz.getPackage().getAnnotation(annotationType) != null;
+            } catch (NoClassDefFoundError e) {
+                // Fall back to ArchUnit query
+                return input.isAnnotatedWith(annotationType) || input.getPackage().isAnnotatedWith(annotationType);
+            }
+        }
+    }
+
+    class EnclosedByElementAnnotatedPredicate extends DescribedPredicate<JavaClass> {
+        private final AnnotatedOrEnclosedByElementAnnotatedPredicate delegate;
+
+        EnclosedByElementAnnotatedPredicate(Class<? extends Annotation> annotationType) {
+            super("annotated via an enclosing element with @" + annotationType.getName());
+            this.delegate = new AnnotatedOrEnclosedByElementAnnotatedPredicate(annotationType);
+        }
+
+        @Override
+        public boolean test(JavaClass input) {
+            try {
+                // Try to use reflection in order to find `TYPE_USE` annotations
+                // See https://github.com/TNG/ArchUnit/issues/1382
+                Class<?> clazz = input.reflect();
+                return delegate.isEnclosedByElementAnnotated(clazz);
+            } catch (NoClassDefFoundError e) {
+                // Fall back to ArchUnit query
+                return delegate.isEnclosedByElementAnnotated(input);
+            }
+        }
+    }
+
+    class AnnotatedOrEnclosedByElementAnnotatedPredicate extends DescribedPredicate<JavaClass> {
+        private final Class<? extends Annotation> annotationType;
+
+        AnnotatedOrEnclosedByElementAnnotatedPredicate(Class<? extends Annotation> annotationType) {
+            super("annotated (directly or via an enclosing element) with @" + annotationType.getName());
+            this.annotationType = annotationType;
+        }
+
+        @Override
+        public boolean test(JavaClass input) {
+            try {
+                // Try to use reflection in order to find `TYPE_USE` annotations
+                // See https://github.com/TNG/ArchUnit/issues/1382
+                Class<?> clazz = input.reflect();
+                return isAnnotatedOrEnclosedByElementAnnotated(clazz);
+            } catch (NoClassDefFoundError e) {
+                // Fall back to ArchUnit query
+                return isAnnotatedOrEnclosedByElementAnnotated(input);
+            }
+        }
+
+        private boolean isAnnotatedOrEnclosedByElementAnnotated(AnnotatedElement annotated) {
+            if (annotated.isAnnotationPresent(annotationType)) {
+                return true;
+            }
+            return isEnclosedByElementAnnotated(annotated);
+        }
+
+        private boolean isEnclosedByElementAnnotated(AnnotatedElement annotated) {
+            if (annotated instanceof Class<?> clazz) {
+                Class<?> enclosingClass = clazz.getEnclosingClass();
+                if (enclosingClass != null) {
+                    return isAnnotatedOrEnclosedByElementAnnotated(enclosingClass);
+                }
+                Method enclosingMethod = clazz.getEnclosingMethod();
+                if (enclosingMethod != null) {
+                    return isAnnotatedOrEnclosedByElementAnnotated(enclosingMethod);
+                }
+                Constructor<?> enclosingConstructor = clazz.getEnclosingConstructor();
+                if (enclosingConstructor != null) {
+                    return isAnnotatedOrEnclosedByElementAnnotated(enclosingConstructor);
+                }
+                Package pkg = clazz.getPackage();
+                if (pkg != null) {
+                    return isAnnotatedOrEnclosedByElementAnnotated(pkg);
+                }
+            }
+            if (annotated instanceof Member member) {
+                return isAnnotatedOrEnclosedByElementAnnotated(member.getDeclaringClass());
+            }
+            return false;
+        }
+
+        private boolean isAnnotatedOrEnclosedByElementAnnotated(CanBeAnnotated annotated) {
+            if (annotated.isAnnotatedWith(annotationType)) {
+                return true;
+            }
+            return isEnclosedByElementAnnotated(annotated);
+        }
+
+        private boolean isEnclosedByElementAnnotated(CanBeAnnotated annotated) {
+            if (annotated instanceof JavaClass javaClass) {
+                if (javaClass.getEnclosingClass().isPresent()) {
+                    return test(javaClass.getEnclosingClass().get());
+                }
+                if (javaClass.getEnclosingCodeUnit().isPresent()) {
+                    return isAnnotatedOrEnclosedByElementAnnotated(javaClass.getEnclosingCodeUnit().get());
+                }
+                return isAnnotatedOrEnclosedByElementAnnotated(javaClass.getPackage());
+            }
+            if (annotated instanceof JavaMember javaMember) {
+                return test(javaMember.getOwner());
+            }
+            return false;
+        }
+    }
+
+    @Nullable
+    static Method safeReflect(JavaMethod method) {
+        try {
+            return method.reflect();
+        } catch (NoClassDefFoundError | Exception e) {
+            return null;
+        }
+    }
+
+    @Nullable
+    static Class<?> safeReflect(JavaClass javaClass) {
+        try {
+            return javaClass.reflect();
+        } catch (NoClassDefFoundError | Exception e) {
+            return null;
+        }
+    }
+
+    @Nullable
+    static Path getClassFile(JavaClass javaClass) {
+        Class<?> reflectedClass = safeReflect(javaClass);
+        if (reflectedClass == null) {
+            return null;
+        }
+        CodeSource codeSource = reflectedClass.getProtectionDomain().getCodeSource();
+        if (codeSource == null) {
+            return null;
+        }
+        try {
+            return Paths.get(codeSource.getLocation().toURI());
+        } catch (URISyntaxException e) {
+            throw new RuntimeException("Failed to convert CodeSource location to URI", e);
         }
     }
 }

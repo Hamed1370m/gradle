@@ -19,6 +19,8 @@ package org.gradle
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.AvailableJavaHomes
 import org.gradle.integtests.fixtures.jvm.JavaToolchainFixture
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.InstalledJdkTestPreconditions
 import spock.lang.Ignore
 import spock.lang.Issue
 
@@ -95,6 +97,7 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec implements Jav
         outputContains('Hello World')
     }
 
+    @Requires(InstalledJdkTestPreconditions.Java11HomeAvailable)
     def "groovy compiler uses a different version of Jansi than initialized by Gradle's native services"() {
         when:
         AnnotationProcessorPublisher annotationProcessorPublisher = new AnnotationProcessorPublisher()
@@ -149,7 +152,7 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec implements Jav
 
             repositories {
                 maven {
-                    url '${repoDir.toURI()}'
+                    url = '${repoDir.toURI()}'
                 }
             }
 
@@ -222,7 +225,7 @@ class JansiEndUserIntegrationTest extends AbstractIntegrationSpec implements Jav
 
                     repositories {
                         maven {
-                            url "\$buildDir/repo"
+                            url = layout.buildDirectory.dir('repo')
                         }
                     }
                 }

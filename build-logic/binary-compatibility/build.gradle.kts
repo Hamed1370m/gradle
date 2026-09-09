@@ -6,20 +6,23 @@ plugins {
 description = "Provides a plugin for configuring japicmp-gradle-plugin to detect binary incompatible changes"
 
 dependencies {
-    api("me.champeau.gradle:japicmp-gradle-plugin")
+    api(buildLibs.japiCmpPlugin)
 
+    implementation(projects.dependencyModules)
     implementation("gradlebuild:basics")
     implementation("gradlebuild:module-identity")
 
-    implementation("com.google.code.gson:gson")
-    implementation("com.google.guava:guava")
-    implementation("org.javassist:javassist")
-    implementation("com.github.javaparser:javaparser-core")
-    implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm")
-    implementation(kotlin("compiler-embeddable"))
+    implementation(buildLibs.javaParserCore)
+    implementation(buildLibs.gson)
+    implementation(buildLibs.guava)
+    implementation(buildLibs.javaAssist)
+    implementation(buildLibs.kotlinMetadata)
+    implementation(buildLibs.jspecify)
+    implementation(libs.asm)
+    compileOnly(buildLibs.kotlinCompilerEmbeddable)
 
-    testImplementation("org.jsoup:jsoup")
-    testImplementation("org.junit.jupiter:junit-jupiter-engine")
+    testImplementation(buildLibs.jsoup)
+    testImplementation(buildLibs.hamcrest)
 }
 
 tasks.compileGroovy.configure {

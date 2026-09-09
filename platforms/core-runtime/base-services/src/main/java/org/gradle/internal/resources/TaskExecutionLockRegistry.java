@@ -18,7 +18,7 @@ package org.gradle.internal.resources;
 
 import org.gradle.util.Path;
 
-public class TaskExecutionLockRegistry extends AbstractResourceLockRegistry<Path, TaskExecutionLock> {
+public class TaskExecutionLockRegistry extends SingleLockRegistry<Path, TaskExecutionLock> {
     private final ProjectLockRegistry projectLockRegistry;
 
     public TaskExecutionLockRegistry(ResourceLockCoordinationService coordinationService, ProjectLockRegistry projectLockRegistry) {
@@ -38,7 +38,7 @@ public class TaskExecutionLockRegistry extends AbstractResourceLockRegistry<Path
         return getOrRegisterResourceLock(projectIdentityPath, new ResourceLockProducer<Path, TaskExecutionLock>() {
             @Override
             public TaskExecutionLock create(Path key, ResourceLockCoordinationService coordinationService, ResourceLockContainer owner) {
-                return new TaskExecutionLock("task execution for " + projectIdentityPath.getPath(), projectLockRegistry.getProjectLock(buildIdentityPath, projectIdentityPath1), coordinationService, owner);
+                return new TaskExecutionLock("task execution for " + projectIdentityPath.asString(), projectLockRegistry.getProjectLock(buildIdentityPath, projectIdentityPath1), coordinationService, owner);
             }
         });
     }
@@ -47,7 +47,7 @@ public class TaskExecutionLockRegistry extends AbstractResourceLockRegistry<Path
         return getOrRegisterResourceLock(buildIdentityPath, new ResourceLockProducer<Path, TaskExecutionLock>() {
             @Override
             public TaskExecutionLock create(Path projectPath, ResourceLockCoordinationService coordinationService, ResourceLockContainer owner) {
-                return new TaskExecutionLock("task execution for build " + buildIdentityPath.getPath(), projectLockRegistry.getProjectLock(buildIdentityPath, projectIdentityPath), coordinationService, owner);
+                return new TaskExecutionLock("task execution for build " + buildIdentityPath.asString(), projectLockRegistry.getProjectLock(buildIdentityPath, projectIdentityPath), coordinationService, owner);
             }
         });
     }

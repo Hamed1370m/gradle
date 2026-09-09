@@ -16,8 +16,10 @@
 package org.gradle.api.component;
 
 import org.gradle.api.Action;
-import org.gradle.api.InvalidUserDataException;
+import org.gradle.api.Incubating;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.ConsumableConfiguration;
+import org.gradle.api.provider.Provider;
 
 /**
  * A component which can declare additional variants corresponding to
@@ -36,8 +38,22 @@ public interface AdhocComponentWithVariants extends SoftwareComponent {
      *
      * @param outgoingConfiguration the configuration corresponding to the variant to use as source of dependencies and artifacts
      * @param action action executed to configure the variant prior to publishing
+     * @since 5.3
      */
     void addVariantsFromConfiguration(Configuration outgoingConfiguration, Action<? super ConfigurationVariantDetails> action);
+
+    /**
+     * Declares an additional variant to publish, corresponding to an additional feature.
+     * <p>
+     * This method behaves the same as {@link #addVariantsFromConfiguration(Configuration, Action)} but takes a provider of consumable configuration.
+     *
+     * @param outgoingConfiguration the provider of the configuration corresponding to the variant to use as source of dependencies and artifacts
+     * @param action action executed to configure the variant prior to publishing
+     *
+     * @since 9.2.0
+     */
+    @Incubating
+    void addVariantsFromConfiguration(Provider<ConsumableConfiguration> outgoingConfiguration, Action<? super ConfigurationVariantDetails> action);
 
     /**
      * Further configure previously declared variants.
@@ -47,8 +63,21 @@ public interface AdhocComponentWithVariants extends SoftwareComponent {
      *
      * @param outgoingConfiguration the configuration corresponding to the variant to configure with a given action
      * @param action an additional action to be executed to configure the variant prior to publishing
-     * @throws InvalidUserDataException if the specified variant was not already added to this component
+     * @since 6.0
      */
     void withVariantsFromConfiguration(Configuration outgoingConfiguration, Action<? super ConfigurationVariantDetails> action);
+
+    /**
+     * Further configure previously declared variants.
+     * <p>
+     * This method behaves the same as {@link #withVariantsFromConfiguration(Configuration, Action)} but takes a provider of consumable configuration.
+     *
+     * @param outgoingConfiguration the provider of the configuration corresponding to the variant to configure with a given action
+     * @param action an additional action to be executed to configure the variant prior to publishing
+     *
+     * @since 9.2.0
+     */
+    @Incubating
+    void withVariantsFromConfiguration(Provider<ConsumableConfiguration> outgoingConfiguration, Action<? super ConfigurationVariantDetails> action);
 
 }

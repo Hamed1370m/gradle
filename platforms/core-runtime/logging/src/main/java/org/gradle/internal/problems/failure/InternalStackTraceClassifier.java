@@ -16,7 +16,7 @@
 
 package org.gradle.internal.problems.failure;
 
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Classifies various calls to JDK, Groovy and Gradle runtime as {@link StackTraceRelevance#INTERNAL}.
@@ -29,16 +29,17 @@ public class InternalStackTraceClassifier implements StackTraceClassifier {
         return isInternal(frame.getClassName()) ? StackTraceRelevance.INTERNAL : null;
     }
 
-    private static boolean isInternal(String className) {
-        // JDK calls
-        return className.startsWith("java.") ||
+    public static boolean isInternal(String className) {
+        // Gradle calls dominate, check first
+        return isGradleCall(className) ||
+            // JDK calls
+            className.startsWith("java.") ||
             className.startsWith("jdk.") ||
             className.startsWith("sun.") ||
             className.startsWith("com.sun.") ||
             // Groovy calls
             className.startsWith("groovy.lang") ||
-            className.startsWith("org.codehaus.groovy.") ||
-            isGradleCall(className);
+            className.startsWith("org.codehaus.groovy.");
     }
 
     public static boolean isGradleCall(String className) {

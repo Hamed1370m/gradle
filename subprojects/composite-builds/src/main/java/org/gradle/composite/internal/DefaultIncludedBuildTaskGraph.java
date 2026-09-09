@@ -22,6 +22,7 @@ import org.gradle.api.specs.Spec;
 import org.gradle.execution.EntryTaskSelector;
 import org.gradle.execution.plan.PlanExecutor;
 import org.gradle.execution.plan.QueryableExecutionPlan;
+import org.gradle.execution.plan.TaskNode;
 import org.gradle.internal.build.BuildLifecycleController;
 import org.gradle.internal.build.BuildState;
 import org.gradle.internal.build.BuildStateRegistry;
@@ -49,6 +50,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 
+@SuppressWarnings("SameNameButDifferent")
 public class DefaultIncludedBuildTaskGraph implements BuildTreeWorkGraphController, Closeable {
     private enum State {
         NotPrepared, Preparing, ReadyToRun, Running, Finished
@@ -63,6 +65,7 @@ public class DefaultIncludedBuildTaskGraph implements BuildTreeWorkGraphControll
     private final int monitoringPollTime;
     private final TimeUnit monitoringPollTimeUnit;
     private final ManagedExecutor executorService;
+    @SuppressWarnings("ThreadLocalUsage") //TODO: evaluate errorprone suppression (https://github.com/gradle/gradle/issues/35864)
     private final ThreadLocal<DefaultBuildTreeWorkGraph> current = new ThreadLocal<>();
 
     @Inject
@@ -121,7 +124,7 @@ public class DefaultIncludedBuildTaskGraph implements BuildTreeWorkGraphControll
     @Override
     public IncludedBuildTaskResource locateTask(TaskIdentifier taskIdentifier) {
         return withState(workGraph -> {
-            BuildState build = buildRegistry.getBuild(taskIdentifier.getBuildIdentifier());
+            BuildState build = buildRegistry.getBuild(taskIdentifier.getBuildIdentity().getBuildPath());
             ExportedTaskNode taskNode = build.getWorkGraph().locateTask(taskIdentifier);
             return new TaskBackedResource(workGraph, build, taskNode);
         });
@@ -129,7 +132,7 @@ public class DefaultIncludedBuildTaskGraph implements BuildTreeWorkGraphControll
 
     @Override
     public void close() throws IOException {
-        CompositeStoppable.stoppable(executorService);
+        CompositeStoppable.stoppable(executorService).stop();
     }
 
     private <T> T withState(Function<DefaultBuildTreeWorkGraph, T> action) {
@@ -164,8 +167,8 @@ public class DefaultIncludedBuildTaskGraph implements BuildTreeWorkGraphControll
         }
 
         @Override
-        public void scheduleTasks(Collection<TaskIdentifier.TaskBasedTaskIdentifier> tasksToBuild) {
-            for (TaskIdentifier.TaskBasedTaskIdentifier identifier : tasksToBuild) {
+        public void scheduleTasks(Collection<TaskIdentifier> tasksToBuild) {
+            for (TaskIdentifier identifier : tasksToBuild) {
                 // This check should live lower down, and should have some kind of synchronization around it, as other threads may be
                 // running tasks at the same time
                 if (identifier.getTask().getState().getExecuted()) {
@@ -247,12 +250,8 @@ public class DefaultIncludedBuildTaskGraph implements BuildTreeWorkGraphControll
 
         private void expectInState(State expectedState) {
             if (state != expectedState) {
-                throw unexpectedState();
+                throw new IllegalStateException("Work graph is in an unexpected state: " + state + ", expected: " + expectedState);
             }
-        }
-
-        private IllegalStateException unexpectedState() {
-            return new IllegalStateException("Work graph is in an unexpected state: " + state);
         }
 
         private void assertIsOwner() {
@@ -296,6 +295,11 @@ public class DefaultIncludedBuildTaskGraph implements BuildTreeWorkGraphControll
         @Override
         public String healthDiagnostics() {
             return taskNode.healthDiagnostics();
+        }
+
+        @Override
+        public TaskNode getTaskNode() {
+            return taskNode.getTaskNode();
         }
     }
 }

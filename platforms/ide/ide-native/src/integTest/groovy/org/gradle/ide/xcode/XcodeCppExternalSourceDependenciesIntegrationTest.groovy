@@ -17,7 +17,6 @@
 package org.gradle.ide.xcode
 
 import org.gradle.ide.xcode.fixtures.AbstractXcodeIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.build.BuildTestFile
 import org.gradle.nativeplatform.fixtures.app.CppAppWithLibrary
 import org.gradle.vcs.fixtures.GitFileRepository
@@ -31,7 +30,6 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
     GitFileRepository repo = new GitFileRepository('greeter', temporaryFolder.getTestDirectory())
     BuildTestFile depProject
 
-    @ToBeFixedForConfigurationCache
     def "adds source dependencies C++ headers of main component to Xcode indexer search path"() {
         def fixture = new CppAppWithLibrary()
 
@@ -73,7 +71,7 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
         succeeds ':xcode'
 
         then:
-        result.assertTasksExecuted(":xcodeProject", ":xcodeProjectWorkspaceSettings", ":xcodeScheme", ":xcodeWorkspaceWorkspaceSettings", ":xcodeWorkspace", ":xcode")
+        result.assertTasksScheduled(":xcodeProject", ":xcodeProjectWorkspaceSettings", ":xcodeScheme", ":xcodeWorkspaceWorkspaceSettings", ":xcodeWorkspace", ":xcode")
         rootXcodeWorkspace.contentFile.assertHasProjects("${rootProjectName}.xcodeproj")
 
         def appProject = xcodeProject("${rootProjectName}.xcodeproj").projectFile
@@ -83,10 +81,9 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
         succeeds ':xcodeProject'
 
         then:
-        result.assertTasksExecuted(":xcodeProjectWorkspaceSettings", ":xcodeScheme", ":xcodeProject")
+        result.assertTasksScheduled(":xcodeProjectWorkspaceSettings", ":xcodeScheme", ":xcodeProject")
     }
 
-    @ToBeFixedForConfigurationCache
     def "does not add source dependencies Xcode project of main component to Xcode workspace"() {
         def fixture = new CppAppWithLibrary()
 
@@ -129,14 +126,13 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
         succeeds ':xcode'
 
         then:
-        result.assertTasksExecuted(":xcodeProject", ":xcodeProjectWorkspaceSettings", ":xcodeScheme", ":xcodeWorkspaceWorkspaceSettings", ":xcodeWorkspace", ":xcode")
+        result.assertTasksScheduled(":xcodeProject", ":xcodeProjectWorkspaceSettings", ":xcodeScheme", ":xcodeWorkspaceWorkspaceSettings", ":xcodeWorkspace", ":xcode")
         rootXcodeWorkspace.contentFile.assertHasProjects("${rootProjectName}.xcodeproj")
 
         def appProject = xcodeProject("${rootProjectName}.xcodeproj").projectFile
         appProject.indexTarget.getBuildSettings().HEADER_SEARCH_PATHS == toSpaceSeparatedList(file('src/main/headers'), checkoutDir(repo.name, commit.id.name, repo.id).file('src/main/public'))
     }
 
-    @ToBeFixedForConfigurationCache
     def "adds source dependencies C++ module of main component to Xcode indexer search path when no component in root project"() {
         def fixture = new CppAppWithLibrary()
 
@@ -186,7 +182,7 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
         succeeds ':xcode'
 
         then:
-        result.assertTasksExecuted(":app:xcodeProject", ":app:xcodeProjectWorkspaceSettings", ":app:xcodeScheme",
+        result.assertTasksScheduled(":app:xcodeProject", ":app:xcodeProjectWorkspaceSettings", ":app:xcodeScheme",
             ":xcodeProject", ":xcodeProjectWorkspaceSettings", ":xcodeWorkspaceWorkspaceSettings", ":xcodeWorkspace", ":xcode")
         rootXcodeWorkspace.contentFile.assertHasProjects("${rootProjectName}.xcodeproj", "app/app.xcodeproj")
 
@@ -194,7 +190,6 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
         appProject.indexTarget.getBuildSettings().HEADER_SEARCH_PATHS == toSpaceSeparatedList(file('app/src/main/headers'), checkoutDir(repo.name, commit.id.name, repo.id).file('src/main/public'))
     }
 
-    @ToBeFixedForConfigurationCache
     def "does not add source dependencies Xcode project of main component to Xcode workspace when no component in root project"() {
         def fixture = new CppAppWithLibrary()
 
@@ -245,7 +240,7 @@ class XcodeCppExternalSourceDependenciesIntegrationTest extends AbstractXcodeInt
         succeeds ':xcode'
 
         then:
-        result.assertTasksExecuted(":app:xcodeProject", ":app:xcodeProjectWorkspaceSettings", ":app:xcodeScheme",
+        result.assertTasksScheduled(":app:xcodeProject", ":app:xcodeProjectWorkspaceSettings", ":app:xcodeScheme",
             ":xcodeProject", ":xcodeProjectWorkspaceSettings", ":xcodeWorkspaceWorkspaceSettings", ":xcodeWorkspace", ":xcode")
         rootXcodeWorkspace.contentFile.assertHasProjects("${rootProjectName}.xcodeproj", "app/app.xcodeproj")
 

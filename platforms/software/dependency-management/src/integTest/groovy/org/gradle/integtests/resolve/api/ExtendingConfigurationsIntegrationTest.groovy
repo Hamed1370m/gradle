@@ -16,16 +16,15 @@
 package org.gradle.integtests.resolve.api
 
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.extensions.FluidDependenciesResolveTest
-import org.gradle.util.GradleVersion
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import spock.lang.Issue
 
 @FluidDependenciesResolveTest
 class ExtendingConfigurationsIntegrationTest extends AbstractDependencyResolutionTest {
 
     @Issue("GRADLE-2873")
-    @ToBeFixedForConfigurationCache(because = "task uses Configuration API")
     def "may replace configuration extension targets"() {
         mavenRepo.module("org", "foo").publish()
         mavenRepo.module("org", "bar").publish()
@@ -42,24 +41,20 @@ class ExtendingConfigurationsIntegrationTest extends AbstractDependencyResolutio
                 barConf 'org:bar:1.0'
             }
 
-            task check {
-                doLast {
-                    configurations.conf.extendsFrom(configurations.fooConf)
-                    assert configurations.conf.allDependencies*.name == ['foo']
+            configurations.conf.extendsFrom(configurations.fooConf)
+            assert configurations.conf.allDependencies*.name == ['foo']
 
-                    //purposefully again:
-                    configurations.conf.extendsFrom(configurations.fooConf)
-                    assert configurations.conf.allDependencies*.name == ['foo']
+            //purposefully again:
+            configurations.conf.extendsFrom(configurations.fooConf)
+            assert configurations.conf.allDependencies*.name == ['foo']
 
-                    //replace:
-                    configurations.conf.extendsFrom = [configurations.barConf] as Set
-                    assert configurations.conf.allDependencies*.name == ['bar']
-                }
-            }
+            //replace:
+            configurations.conf.extendsFrom = [configurations.barConf] as Set
+            assert configurations.conf.allDependencies*.name == ['bar']
         """
 
         when:
-        run "check"
+        run "help"
 
         then:
         noExceptionThrown()
@@ -72,7 +67,7 @@ class ExtendingConfigurationsIntegrationTest extends AbstractDependencyResolutio
 
         buildFile << """
 repositories {
-    maven { url "${mavenRepo.uri}" }
+    maven { url = "${mavenRepo.uri}" }
 }
 configurations {
     one
@@ -119,7 +114,7 @@ task checkResolveParentThenChild {
 
         buildFile << """
             repositories {
-                maven { url "${mavenRepo.uri}" }
+                maven { url = "${mavenRepo.uri}" }
             }
             configurations {
                 superConfiguration
@@ -151,7 +146,7 @@ task checkResolveParentThenChild {
             def attr = Attribute.of('org.example.attr', String)
 
             repositories {
-                maven { url "${mavenRepo.uri}" }
+                maven { url = "${mavenRepo.uri}" }
             }
 
             configurations {
@@ -185,7 +180,8 @@ task checkResolveParentThenChild {
         succeeds("resolve")
     }
 
-    def "extending a configuration in another project is deprecated"() {
+    @Requires(value = [TestExecutionPreconditions.NotIsolatedProjects], reason = "Explicitly tests IP incompatible behavior")
+    def "extending a configuration in another project is not allowed"() {
         given:
         settingsFile """
             include ":project1", ":project2"
@@ -206,19 +202,11 @@ task checkResolveParentThenChild {
         """)
 
         expect:
-        executer.expectDeprecationWarning("Configuration 'conf2' in project ':project2' extends configuration 'conf1' in project ':project1'. This behavior has been deprecated. This behavior is scheduled to be removed in Gradle 9.0. Configurations can only extend from configurations in the same project. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_8.html#extending_configurations_in_same_project")
-        succeeds ':project2:resolvableConfigurations', '--all'
-        outputContains("""
---------------------------------------------------
-Configuration conf2
---------------------------------------------------
-
-Extended Configurations
-    - conf1
-""")
+        fails ':project2:resolvableConfigurations', '--all'
+        failure.assertHasCause("Configuration ':project2:conf2' in project ':project2' cannot extend configuration ':project1:conf1' from project ':project1'. Configurations can only extend from configurations in the same context.")
     }
 
-    def "extending a configuration from the buildscript is deprecated"() {
+    def "extending a configuration from the buildscript is not allowed"() {
         settingsFile """
             rootProject.name = 'foo'
         """
@@ -231,17 +219,8 @@ Extended Configurations
         """
 
         expect:
-        executer.expectDeprecationWarning("Configuration 'conf1' in root project 'foo' extends configuration 'classpath' in buildscript of root project 'foo'. This behavior has been deprecated. This behavior is scheduled to be removed in Gradle 9.0. Configurations can only extend from configurations in the same project. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_8.html#extending_configurations_in_same_project")
-        succeeds ':resolvableConfigurations', '--configuration', 'conf1'
-        outputContains("""
---------------------------------------------------
-Configuration conf1
---------------------------------------------------
-
-Extended Configurations
-    - classpath
-""")
-
+        fails':resolvableConfigurations', '--configuration', 'conf1'
+        failure.assertHasCause("Configuration ':conf1' in root project 'foo' cannot extend configuration 'classpath' from buildscript of root project 'foo'. Configurations can only extend from configurations in the same context.")
     }
 
     def "extending a configuration in same project is fine"() {
@@ -262,11 +241,252 @@ Extended Configurations
         succeeds 'resolvableConfigurations', '--all'
         outputContains("""
 --------------------------------------------------
-Configuration conf2
+Configuration conf2 (n)
 --------------------------------------------------
 
 Extended Configurations
     - conf1
 """)
+    }
+
+    def "can extend from a configuration provider"() {
+        given:
+        buildFile """
+            def conf1 = configurations.resolvable('conf1')
+
+            configurations {
+                resolvable('conf2') {
+                    extendsFrom conf1
+                }
+            }
+        """
+
+        expect:
+        succeeds 'resolvableConfigurations', '--all'
+        outputContains("""
+--------------------------------------------------
+Configuration conf2 (n)
+--------------------------------------------------
+
+Extended Configurations
+    - conf1
+""")
+    }
+
+    def "can extend from multiple configuration providers"() {
+        given:
+        buildFile """
+            def conf1 = configurations.resolvable('conf1')
+            def conf2 = configurations.resolvable('conf2')
+
+            configurations {
+                resolvable('conf3') {
+                    extendsFrom conf1, conf2
+                }
+            }
+        """
+
+        expect:
+        succeeds 'resolvableConfigurations', '--all'
+        outputContains("""
+--------------------------------------------------
+Configuration conf3 (n)
+--------------------------------------------------
+
+Extended Configurations
+    - conf1
+    - conf2
+""")
+    }
+
+    def "extending from provided configuration does not impact iteration order"() {
+        mavenRepo.module("org", "foo").publish()
+        mavenRepo.module("org", "bar").publish()
+        mavenRepo.module("org", "baz").publish()
+
+        buildFile << """
+            repositories {
+                maven { url = "${mavenRepo.uri}" }
+            }
+            configurations {
+                resolvable('child')
+
+                def one = dependencyScope('one')
+                child.extendsFrom one
+
+                two
+                child.extendsFrom two
+
+                def zzz = dependencyScope('zzz')
+                child.extendsFrom zzz
+            }
+            dependencies {
+                one "org:foo:1.0"
+                two "org:bar:1.0"
+                zzz "org:baz:1.0"
+            }
+
+            task checkResolveChild {
+                def files = configurations.child
+                doFirst {
+                    println files*.name
+                }
+            }
+        """
+
+        when:
+        succeeds "checkResolveChild"
+
+        then:
+        outputContains("[foo-1.0.jar, bar-1.0.jar, baz-1.0.jar]")
+    }
+
+    def "simply extending from a provided configuration does not realize it"() {
+        mavenRepo.module("org", "foo").publish()
+        mavenRepo.module("org", "bar").publish()
+        mavenRepo.module("org", "baz").publish()
+
+        buildFile << """
+            repositories {
+                maven { url = "${mavenRepo.uri}" }
+            }
+            configurations {
+                resolvable('child')
+
+                def one = dependencyScope('one') {
+                    println "Realizing one"
+                    dependencies.add(project.dependencies.create("org:foo:1.0"))
+                }
+                child.extendsFrom one
+
+                two
+                child.extendsFrom two
+
+                def zzz = dependencyScope('zzz') {
+                    println "Realizing zzz"
+                    dependencies.add(project.dependencies.create("org:baz:1.0"))
+                }
+                child.extendsFrom zzz
+            }
+            dependencies {
+                two "org:bar:1.0"
+            }
+
+            task checkResolveTwo {
+                def files = configurations.two
+                doFirst {
+                    println files*.name
+                }
+            }
+
+            task checkResolveChild {
+                def files = configurations.child
+                doFirst {
+                    println files*.name
+                }
+            }
+        """
+
+        when:
+        succeeds "checkResolveTwo"
+
+        then:
+        outputContains("[bar-1.0.jar]")
+        outputDoesNotContain("Realizing one")
+        outputDoesNotContain("Realizing zzz")
+
+        when:
+        succeeds "checkResolveChild"
+
+        then:
+        outputContains("[foo-1.0.jar, bar-1.0.jar, baz-1.0.jar]")
+        outputContains("Realizing one")
+        outputContains("Realizing zzz")
+    }
+
+    def "resetting extended configurations does not realize provided configurations that are no longer included"() {
+        mavenRepo.module("org", "foo").publish()
+        mavenRepo.module("org", "bar").publish()
+        mavenRepo.module("org", "baz").publish()
+
+        buildKotlinFile()
+        buildFile << """
+            repositories {
+                maven { url = "${mavenRepo.uri}" }
+            }
+            configurations {
+                resolvable('child')
+
+                def one = dependencyScope('one') {
+                    println "Realizing one"
+                    dependencies.add(project.dependencies.create("org:foo:1.0"))
+                }
+                child.extendsFrom one
+
+                two
+                child.extendsFrom two
+
+                def zzz = dependencyScope('zzz') {
+                    println "Realizing zzz"
+                    dependencies.add(project.dependencies.create("org:baz:1.0"))
+                }
+                child.extendsFrom zzz
+
+                // Now reset the extended configurations to exclude 'zzz'
+                child.extendsFrom = [two]
+                child.extendsFrom one
+            }
+            dependencies {
+                two "org:bar:1.0"
+            }
+
+            task checkResolveChild {
+                def files = configurations.child
+                doFirst {
+                    println files*.name
+                }
+            }
+        """
+
+        when:
+        succeeds "checkResolveChild"
+
+        then:
+        outputContains("[foo-1.0.jar, bar-1.0.jar]")
+        outputContains("Realizing one")
+        outputDoesNotContain("Realizing zzz")
+    }
+
+    def "variant computation does not eagerly realize lazy artifact providers on consumable configurations"() {
+        given:
+        buildFile """
+            plugins {
+                id 'java-library'
+            }
+
+            configurations.dependencyScope("parent")
+            configurations.consumable("lazyOutgoing") {
+                extendsFrom(configurations.parent)
+                outgoing.artifacts(provider {
+                    throw new RuntimeException("Lazy artifact provider should not be realized during variant computation")
+                })
+            }
+
+            configurations.dependencyScope("selfDep")
+            dependencies {
+                selfDep project(":")
+            }
+            configurations.resolvable("trigger") {
+                extendsFrom(configurations.selfDep)
+            }
+
+            tasks.register("resolve") {
+                inputs.files(configurations.trigger)
+                doLast { println "resolved" }
+            }
+        """
+
+        expect:
+        succeeds "resolve"
     }
 }

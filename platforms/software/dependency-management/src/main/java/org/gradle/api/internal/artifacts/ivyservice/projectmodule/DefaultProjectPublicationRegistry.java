@@ -18,9 +18,9 @@ package org.gradle.api.internal.artifacts.ivyservice.projectmodule;
 
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.SetMultimap;
-import org.gradle.api.artifacts.component.BuildIdentifier;
 import org.gradle.api.internal.project.HoldsProjectState;
 import org.gradle.api.internal.project.ProjectIdentity;
+import org.gradle.internal.build.BuildIdentity;
 import org.gradle.internal.Cast;
 import org.gradle.util.Path;
 
@@ -31,9 +31,10 @@ import java.util.List;
 
 public class DefaultProjectPublicationRegistry implements ProjectPublicationRegistry, HoldsProjectState {
     private final SetMultimap<Path, ProjectPublication> publicationsByProjectId = LinkedHashMultimap.create();
-    private final SetMultimap<BuildIdentifier, PublicationForProject<?>> publicationsByBuildId = LinkedHashMultimap.create();
+    private final SetMultimap<BuildIdentity, PublicationForProject<?>> publicationsByBuildId = LinkedHashMultimap.create();
 
     @Override
+    @SuppressWarnings("MixedMutabilityReturnType")
     public <T extends ProjectPublication> Collection<T> getPublicationsForProject(Class<T> type, Path projectIdentityPath) {
         synchronized (publicationsByProjectId) {
             Collection<ProjectPublication> projectPublications = publicationsByProjectId.get(projectIdentityPath);
@@ -51,7 +52,8 @@ public class DefaultProjectPublicationRegistry implements ProjectPublicationRegi
     }
 
     @Override
-    public <T extends ProjectPublication> Collection<PublicationForProject<T>> getPublicationsForBuild(Class<T> type, BuildIdentifier buildIdentity) {
+    @SuppressWarnings("MixedMutabilityReturnType")
+    public <T extends ProjectPublication> Collection<PublicationForProject<T>> getPublicationsForBuild(Class<T> type, BuildIdentity buildIdentity) {
         synchronized (publicationsByBuildId) {
             Collection<PublicationForProject<?>> buildPublications = publicationsByBuildId.get(buildIdentity);
             if (buildPublications.isEmpty()) {
@@ -74,7 +76,7 @@ public class DefaultProjectPublicationRegistry implements ProjectPublicationRegi
         }
         synchronized (publicationsByBuildId) {
             DefaultPublicationForProject publicationReference = new DefaultPublicationForProject(publication, projectIdentity);
-            publicationsByBuildId.put(projectIdentity.getBuildIdentifier(), publicationReference);
+            publicationsByBuildId.put(new BuildIdentity(projectIdentity.getBuildPath()), publicationReference);
         }
     }
 

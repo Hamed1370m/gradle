@@ -14,34 +14,55 @@
  * limitations under the License.
  */
 
+@file:Suppress("DEPRECATION")
+
 package org.gradle.kotlin.dsl.precompile
 
-import org.gradle.internal.hash.Hashing
+import org.gradle.internal.deprecation.DeprecationLogger
 import org.gradle.kotlin.dsl.resolver.KotlinBuildScriptDependencies
-import org.gradle.util.internal.TextUtil.convertLineSeparatorsToUnix
-
+import org.gradle.kotlin.dsl.support.KotlinScriptHashing
 import java.util.concurrent.Future
-
 import kotlin.script.dependencies.Environment
 import kotlin.script.dependencies.KotlinScriptExternalDependencies
 import kotlin.script.dependencies.PseudoFuture
 import kotlin.script.dependencies.ScriptContents
 import kotlin.script.dependencies.ScriptDependenciesResolver
 
-
+/**
+ * @since 4.7
+ */
+@Deprecated("Will be removed in Gradle 10")
 class PrecompiledScriptDependenciesResolver : ScriptDependenciesResolver {
 
+    /**
+     * @since 5.3
+     */
     companion object {
 
-        fun hashOf(charSequence: CharSequence) =
-            hashOfNormalisedString(convertLineSeparatorsToUnix(charSequence.toString()))
+        init {
+            DeprecationLogger.deprecateType(PrecompiledScriptDependenciesResolver::class.java)
+                .willBeRemovedInGradle10()
+                .undocumented()
+                .nagUser()
+        }
 
+        /**
+         * @since 5.3
+         */
+        fun hashOf(charSequence: CharSequence) =
+            KotlinScriptHashing.hashOf(charSequence)
+
+        /**
+         * @since 6.3
+         */
         fun hashOfNormalisedString(charSequence: CharSequence) =
-            Hashing.hashString(charSequence).toString()
+            KotlinScriptHashing.hashOfNormalisedString(charSequence)
 
         /**
          * **Optimisation note**: assumes [scriptText] contains only `\n` line separators as any script text
          * coming from the Kotlin compiler already should.
+         *
+         * @since 6.0
          */
         fun implicitImportsForScript(scriptText: CharSequence, environment: Environment?) =
             implicitImportsFrom(environment) + precompiledScriptPluginImportsFrom(environment, scriptText)
@@ -64,8 +85,21 @@ class PrecompiledScriptDependenciesResolver : ScriptDependenciesResolver {
             this?.get(key) as? String
     }
 
+    /**
+     * @since 4.7
+     */
     object EnvironmentProperties {
+        /**
+         * @since 4.7
+         */
         const val kotlinDslImplicitImports = "kotlinDslImplicitImports"
+        /**
+         * @since 8.13
+         */
+        const val kotlinDslPluginSpecBuildersImplicitImports = "kotlinDslPluginSpecBuildersImplicitImports"
+        /**
+         * @since 8.1
+         */
         const val projectRoot = "projectRoot"
     }
 

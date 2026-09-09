@@ -92,19 +92,11 @@ abstract class DependencyCollectorDslIntegrationTest extends AbstractIntegration
     }
 
     String providerOf(String expression) {
-        return "project.provider { $expression }"
+        return "provider { $expression }"
     }
 
     def setup() {
-        file("subproject/build.gradle") << """
-            configurations {
-                consumable("default") {
-                    outgoing {
-                        artifact(file("subproject.jar"))
-                    }
-                }
-            }
-        """
+        createDirs("subproject")
         settingsFile("""
             include "subproject"
 
@@ -141,6 +133,9 @@ abstract class DependencyCollectorDslIntegrationTest extends AbstractIntegration
         """
 
         when:
+        if (expression.contains("module(")) {
+            executer.expectDocumentedDeprecationWarning("Declaring dependencies using multi-string notation has been deprecated. This will fail with an error in Gradle 10. Please use single-string notation (\"org.example:foo:1.0\") or DependencyFactory instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#dependency_multi_string_notation")
+        }
         succeeds("help")
 
         then:
@@ -256,32 +251,17 @@ abstract class DependencyCollectorDslIntegrationTest extends AbstractIntegration
 
         var dep = testingCollectorConf.dependencies.iterator().next()
         assert(dep ${instanceOf(dsl)} ProjectDependency)
-
-        configurations.consumable("default") {
-            outgoing {
-                artifact(file("${PROJECT_NAME}.jar"))
-            }
-        }
-
-        configurations.resolvable("res")
-        configurations["res"].fromDependencyCollector(dependencies.testingCollector)
-
-        tasks.register("resolve") {
-            var files = configurations["res"].incoming.files
-            doLast {
-                assert(files.singleFile.name == "${expectedProjectFile}")
-            }
-        }
+        assert(${cast("dep", "ProjectDependency", dsl)}.path == ${expectedProjectExpression}.path)
         """
 
         expect:
-        succeeds("resolve")
+        succeeds("help")
 
         where:
-        expression              | expectedProjectFile
-        project()               | "${PROJECT_NAME}.jar"
-        project(":subproject")  | "subproject.jar"
-        testFixtures(project()) | "${PROJECT_NAME}.jar"
+        expression              | expectedProjectExpression
+        project()               | "project"
+        project(":subproject")  | "project.project(\":subproject\")"
+        testFixtures(project()) | "project"
     }
 
     def "bundles add dependencies that show up in related configuration"() {
@@ -329,6 +309,9 @@ abstract class DependencyCollectorDslIntegrationTest extends AbstractIntegration
         """
 
         when:
+        if (expression.contains("module(")) {
+            executer.expectDocumentedDeprecationWarning("Declaring dependencies using multi-string notation has been deprecated. This will fail with an error in Gradle 10. Please use single-string notation (\"org.example:foo:1.0\") or DependencyFactory instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#dependency_multi_string_notation")
+        }
         succeeds("help")
 
         then:
@@ -497,7 +480,8 @@ class DependencyCollectorKotlinDslIntegrationTest extends DependencyCollectorDsl
         fails("dependencies")
 
         then:
-        result.assertHasErrorOutput("""None of the following functions can be called with the arguments supplied:${' '}
-public operator fun DependencyCollector.invoke""") // Don't care what the other options are, just that it's the right name
+        result.assertHasErrorOutput("""None of the following candidates is applicable:
+
+fun DependencyCollector.invoke""") // Don't care what the other options are, just that it's the right name
     }
 }

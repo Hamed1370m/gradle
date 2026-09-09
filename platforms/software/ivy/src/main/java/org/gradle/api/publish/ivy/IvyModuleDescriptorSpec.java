@@ -21,8 +21,7 @@ import org.gradle.api.XmlProvider;
 import org.gradle.api.tasks.Nested;
 import org.gradle.internal.HasInternalProtocol;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The descriptor of any Ivy publication.
@@ -33,7 +32,7 @@ import javax.annotation.Nullable;
  * However, the preferred way to customize the project information to be published is to use the dedicated configuration methods exposed by this class, e.g.
  * {@link #description(Action)}.
  *
- * @since 1.3
+ * @since 2.1
  */
 @HasInternalProtocol
 public interface IvyModuleDescriptorSpec {
@@ -72,11 +71,13 @@ public interface IvyModuleDescriptorSpec {
      * @param action The configuration action.
      * @see IvyPublication
      * @see XmlProvider
+     * @since 2.1
      */
     void withXml(Action<? super XmlProvider> action);
 
     /**
      * Returns the status for this publication.
+     * @since 2.1
      */
     @Nullable
     @ToBeReplacedByLazyProperty
@@ -84,11 +85,13 @@ public interface IvyModuleDescriptorSpec {
 
     /**
      * Sets the status for this publication.
+     * @since 2.1
      */
     void setStatus(@Nullable String status);
 
     /**
      * Returns the branch for this publication
+     * @since 2.1
      */
     @Nullable
     @ToBeReplacedByLazyProperty
@@ -96,17 +99,20 @@ public interface IvyModuleDescriptorSpec {
 
     /**
      * Sets the branch for this publication
+     * @since 2.1
      */
     void setBranch(@Nullable String branch);
 
     /**
      * Returns the extra info element spec for this publication
+     * @since 2.1
      */
     @Nested
     IvyExtraInfoSpec getExtraInfo();
 
     /**
      * Adds a new extra info element to the publication
+     * @since 2.1
      */
     void extraInfo(String namespace, String elementName, String value);
 

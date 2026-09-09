@@ -16,72 +16,101 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph;
 
-import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.Describable;
+import org.gradle.api.internal.artifacts.DependencyManagementInstanceIdentity;
+import org.gradle.internal.Describables;
+import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 public class DependencyGraphPathResolver {
 
-    public static Collection<List<ComponentIdentifier>> calculatePaths(List<DependencyGraphNode> fromNodes, DependencyGraphNode toNode) {
-        // Include the shortest path from each version that has a direct dependency on the broken dependency, back to the root
+    public static Collection<List<Describable>> calculatePaths(
+        List<DependencyGraphNode> fromNodes,
+        DependencyGraphNode toNode,
+        DependencyManagementInstanceIdentity owner
+    ) {
+        // Compute the shortest path from each component that has a direct dependency on the broken
+        // dependency back to the root component. Each search is an independent BFS in the reverse
+        // ("dependents") direction, which is robust against cycles in the resolved graph (e.g.
+        // mutually-dependent KMP variants like room-runtime <-> room-common-jvm).
 
-        Map<ResolvedGraphComponent, List<ComponentIdentifier>> shortestPaths = new LinkedHashMap<>();
-        List<ComponentIdentifier> rootPath = new ArrayList<>();
-        rootPath.add(toNode.getOwner().getComponentId());
-        shortestPaths.put(toNode.getOwner(), rootPath);
+        DependencyGraphComponent root = toNode.getOwner();
+        Describable rootDescribable = Describables.of(owner.getDisplayName());
 
         Set<DependencyGraphComponent> directDependees = new LinkedHashSet<>();
         for (DependencyGraphNode node : fromNodes) {
             directDependees.add(node.getOwner());
         }
 
-        Set<DependencyGraphComponent> seen = new HashSet<>();
-        LinkedList<DependencyGraphComponent> queue = new LinkedList<>(directDependees);
-        while (!queue.isEmpty()) {
-            DependencyGraphComponent version = queue.getFirst();
-            if (version == toNode.getOwner()) {
-                queue.removeFirst();
-            } else if (seen.add(version)) {
-                for (DependencyGraphComponent incomingVersion : version.getDependents()) {
-                    queue.add(0, incomingVersion);
-                }
-            } else {
-                queue.remove();
-                List<ComponentIdentifier> shortest = null;
-                for (DependencyGraphComponent incomingVersion : version.getDependents()) {
-                    List<ComponentIdentifier> candidate = shortestPaths.get(incomingVersion);
-                    if (candidate == null) {
-                        continue;
-                    }
-                    if (shortest == null) {
-                        shortest = candidate;
-                    } else if (shortest.size() > candidate.size()) {
-                        shortest = candidate;
-                    }
-
-                }
-                if (shortest == null) {
-                    continue;
-                }
-                List<ComponentIdentifier> path = new ArrayList<>(shortest);
-                path.add(version.getComponentId());
-                shortestPaths.put(version, path);
+        List<List<Describable>> paths = new ArrayList<>();
+        for (DependencyGraphComponent dependee : directDependees) {
+            List<Describable> path = shortestPathToRoot(dependee, root, rootDescribable);
+            if (path != null) {
+                paths.add(path);
             }
         }
-
-        List<List<ComponentIdentifier>> paths = new ArrayList<>();
-        for (DependencyGraphComponent version : directDependees) {
-            List<ComponentIdentifier> path = shortestPaths.get(version);
-            paths.add(path);
-        }
         return paths;
+    }
+
+    private static @Nullable List<Describable> shortestPathToRoot(
+        DependencyGraphComponent start,
+        DependencyGraphComponent root,
+        Describable rootDescribable
+    ) {
+        if (start == root) {
+            List<Describable> single = new ArrayList<>(1);
+            single.add(rootDescribable);
+            return single;
+        }
+        Map<DependencyGraphComponent, DependencyGraphComponent> predecessor = new HashMap<>();
+        predecessor.put(start, null);
+        Deque<DependencyGraphComponent> queue = new ArrayDeque<>();
+        queue.add(start);
+        boolean reachedRoot = false;
+        while (!queue.isEmpty()) {
+            DependencyGraphComponent current = queue.removeFirst();
+            if (current == root) {
+                reachedRoot = true;
+                break;
+            }
+            // TODO: this walks every dependents edge including constraint edges; constraints
+            //  don't "pull in" a component, so paths that traverse them aren't useful to users.
+            //  Restricting to non-constraint edges would shift many existing test expectations,
+            //  so it is deferred.
+            for (DependencyGraphComponent next : current.getDependents()) {
+                if (!predecessor.containsKey(next)) {
+                    predecessor.put(next, current);
+                    queue.addLast(next);
+                }
+            }
+        }
+        if (!reachedRoot) {
+            return null;
+        }
+
+        // Walk predecessors from root back to start; this naturally produces [root, ..., start].
+        List<DependencyGraphComponent> chain = new ArrayList<>();
+        for (DependencyGraphComponent walk = root; walk != null; walk = predecessor.get(walk)) {
+            chain.add(walk);
+        }
+
+        // Output format expected by ModuleVersionResolveException#getMessage:
+        // [<rootDisplayName>, <intermediate componentIds...>, <directDependee componentId>].
+        // Substitute rootDescribable for root's componentId, then emit the rest in order.
+        List<Describable> result = new ArrayList<>(chain.size());
+        result.add(rootDescribable);
+        for (int i = 1; i < chain.size(); i++) {
+            result.add(Describables.of(chain.get(i).getComponentId().getDisplayName()));
+        }
+        return result;
     }
 }

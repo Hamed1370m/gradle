@@ -28,6 +28,7 @@ import org.gradle.api.internal.tasks.compile.incremental.compilerapi.deps.Genera
 import org.gradle.api.internal.tasks.compile.incremental.transaction.CompileTransaction;
 import org.gradle.api.tasks.util.PatternSet;
 import org.gradle.internal.file.Deleter;
+import org.gradle.work.ChangeType;
 import org.gradle.work.FileChange;
 
 import java.io.File;
@@ -116,6 +117,11 @@ abstract class AbstractRecompilationSpecProvider implements RecompilationSpecPro
                 spec.setFullRebuildCause(rebuildClauseForChangedNonSourceFile(fileChange));
             }
             sourceFileChangeProcessor.processChange(changedClasses, spec);
+            // For added/modified files, record the source path directly so it's included
+            // in compilation even if the class-to-source reverse mapping is stale (see #28916).
+            if (fileChange.getChangeType() != ChangeType.REMOVED && !changedClasses.isEmpty()) {
+                spec.addSourcePath(relativeFilePath);
+            }
         }
     }
 
@@ -140,7 +146,7 @@ abstract class AbstractRecompilationSpecProvider implements RecompilationSpecPro
      * <p>
      * We will use name "independent classes" for classes that are in the sources that are passed to a compiler but are not a dependency to a changed class.
      * <p>
-     * Check also: <a href="https://github.com/gradle/gradle/issues/21644" />
+     * Check also: <a href="https://github.com/gradle/gradle/issues/21644">#21644</a>
      */
     private static void collectAllSourcePathsAndIndependentClasses(SourceFileChangeProcessor sourceFileChangeProcessor, RecompilationSpec spec, SourceFileClassNameConverter sourceFileClassNameConverter) {
         Set<String> classesToCompile = new LinkedHashSet<>(spec.getClassesToCompile());
@@ -157,8 +163,11 @@ abstract class AbstractRecompilationSpecProvider implements RecompilationSpecPro
     /**
      * Collect source paths and independent classes.
      * <p>
-     * The source paths corresponding to the {@param classesToCompile} are added to the {@param spec}.
-     * It will also add the independent classes to the {@param spec}'s {@code classesToCompile}.
+     * The source paths corresponding to the {@code classesToCompile} are added to the {@code spec}.
+     * It will also add the independent classes to the {@code spec}'s {@code classesToCompile}.
+     *
+     * @param classesToCompile the source paths that will be added to the {@code spec}.
+     * @param spec the spec that will receive the source paths.
      *
      * @return independent classes for the detected source paths.
      */
@@ -173,6 +182,7 @@ abstract class AbstractRecompilationSpecProvider implements RecompilationSpecPro
         return independentClasses;
     }
 
+    @SuppressWarnings("MixedMutabilityReturnType")
     private static Set<String> collectIndependentClassesForSourcePath(String sourcePath, RecompilationSpec spec, SourceFileClassNameConverter sourceFileClassNameConverter) {
         Set<String> classNames = sourceFileClassNameConverter.getClassNames(sourcePath);
         if (classNames.size() <= 1) {

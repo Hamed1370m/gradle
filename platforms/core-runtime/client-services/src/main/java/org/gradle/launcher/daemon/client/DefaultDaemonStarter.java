@@ -15,49 +15,62 @@
  */
 package org.gradle.launcher.daemon.client;
 
+import com.google.common.base.Joiner;
 import org.gradle.api.GradleException;
-import org.gradle.api.UncheckedIOException;
+import org.gradle.api.internal.DocumentationRegistry;
 import org.gradle.api.internal.classpath.DefaultModuleRegistry;
 import org.gradle.api.internal.classpath.ModuleRegistry;
+import org.gradle.api.internal.file.DefaultFileLookup;
+import org.gradle.api.internal.provider.PropertyFactory;
+import org.gradle.api.internal.provider.ProviderInternal;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
+import org.gradle.initialization.DefaultBuildCancellationToken;
+import org.gradle.initialization.exception.InitializationException;
 import org.gradle.internal.classpath.ClassPath;
 import org.gradle.internal.concurrent.CompositeStoppable;
+import org.gradle.internal.concurrent.DefaultExecutorFactory;
 import org.gradle.internal.installation.CurrentGradleInstallation;
-import org.gradle.internal.installation.GradleInstallation;
 import org.gradle.internal.instrumentation.agent.AgentUtils;
 import org.gradle.internal.io.StreamByteBuffer;
 import org.gradle.internal.jvm.JavaInfo;
 import org.gradle.internal.jvm.JpmsConfiguration;
 import org.gradle.internal.jvm.Jvm;
-import org.gradle.internal.jvm.inspection.JvmInstallationMetadata;
+import org.gradle.internal.jvm.UnsupportedJavaRuntimeException;
+import org.gradle.internal.jvm.inspection.JavaInstallationCapability;
 import org.gradle.internal.jvm.inspection.JvmVersionDetector;
+import org.gradle.internal.lazy.Lazy;
 import org.gradle.internal.os.OperatingSystem;
-import org.gradle.internal.serialize.FlushableEncoder;
-import org.gradle.internal.serialize.kryo.KryoBackedEncoder;
-import org.gradle.internal.stream.EncodedStream;
 import org.gradle.internal.time.Time;
 import org.gradle.internal.time.Timer;
+import org.gradle.jvm.toolchain.JavaLanguageVersion;
+import org.gradle.jvm.toolchain.JavaToolchainSpec;
+import org.gradle.jvm.toolchain.JvmImplementation;
+import org.gradle.jvm.toolchain.internal.DefaultToolchainSpec;
+import org.gradle.jvm.toolchain.internal.JavaToolchain;
+import org.gradle.jvm.toolchain.internal.JavaToolchainQueryService;
 import org.gradle.launcher.daemon.DaemonExecHandleBuilder;
 import org.gradle.launcher.daemon.bootstrap.DaemonOutputConsumer;
 import org.gradle.launcher.daemon.configuration.DaemonParameters;
-import org.gradle.launcher.daemon.configuration.DaemonPriority;
 import org.gradle.launcher.daemon.context.DaemonRequestContext;
-import org.gradle.launcher.daemon.diagnostics.DaemonStartupInfo;
+import org.gradle.launcher.daemon.logging.DaemonMessages;
 import org.gradle.launcher.daemon.registry.DaemonDir;
-import org.gradle.launcher.daemon.toolchain.DaemonJavaToolchainQueryService;
+import org.gradle.launcher.daemon.startup.DaemonPriority;
+import org.gradle.launcher.daemon.startup.DaemonStartupCommunication;
+import org.gradle.launcher.daemon.startup.DaemonStartupInfo;
+import org.gradle.launcher.daemon.startup.DefaultDaemonServerConfiguration;
 import org.gradle.launcher.daemon.toolchain.DaemonJvmCriteria;
-import org.gradle.process.internal.DefaultExecActionFactory;
+import org.gradle.process.internal.DefaultClientExecHandleBuilderFactory.RootClientExecHandleBuilderFactory;
 import org.gradle.process.internal.ExecHandle;
 import org.gradle.process.internal.JvmOptions;
 import org.gradle.util.GradleVersion;
 import org.gradle.util.internal.CollectionUtils;
 import org.gradle.util.internal.GFileUtils;
-import org.gradle.util.internal.IncubationLogger;
+import org.jspecify.annotations.NonNull;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -71,19 +84,17 @@ public class DefaultDaemonStarter implements DaemonStarter {
     private final DaemonDir daemonDir;
     private final DaemonParameters daemonParameters;
     private final DaemonRequestContext daemonRequestContext;
-    private final DaemonGreeter daemonGreeter;
-    private final JvmVersionValidator versionValidator;
     private final JvmVersionDetector jvmVersionDetector;
-    private final DaemonJavaToolchainQueryService daemonJavaToolchainQueryService;
+    private final Lazy<JavaToolchainQueryService> javaToolchainQueryService;
+    private final PropertyFactory propertyFactory;
 
-    public DefaultDaemonStarter(DaemonDir daemonDir, DaemonParameters daemonParameters, DaemonRequestContext daemonRequestContext, DaemonGreeter daemonGreeter, JvmVersionValidator versionValidator, JvmVersionDetector jvmVersionDetector, DaemonJavaToolchainQueryService daemonJavaToolchainQueryService) {
+    public DefaultDaemonStarter(DaemonDir daemonDir, DaemonParameters daemonParameters, DaemonRequestContext daemonRequestContext, JvmVersionDetector jvmVersionDetector, Lazy<JavaToolchainQueryService> javaToolchainQueryService, PropertyFactory propertyFactory) {
         this.daemonDir = daemonDir;
         this.daemonParameters = daemonParameters;
         this.daemonRequestContext = daemonRequestContext;
-        this.daemonGreeter = daemonGreeter;
-        this.versionValidator = versionValidator;
         this.jvmVersionDetector = jvmVersionDetector;
-        this.daemonJavaToolchainQueryService = daemonJavaToolchainQueryService;
+        this.javaToolchainQueryService = javaToolchainQueryService;
+        this.propertyFactory = propertyFactory;
     }
 
     @Override
@@ -96,10 +107,11 @@ public class DefaultDaemonStarter implements DaemonStarter {
 
         if (criteria instanceof DaemonJvmCriteria.Spec) {
             // Gradle daemon properties have been defined
-            IncubationLogger.incubatingFeatureUsed("Daemon JVM discovery");
-            JvmInstallationMetadata jvmInstallationMetadata = daemonJavaToolchainQueryService.findMatchingToolchain((DaemonJvmCriteria.Spec) criteria);
-            JavaInfo resolvedJvm = Jvm.forHome(jvmInstallationMetadata.getJavaHome().toFile());
-            majorJavaVersion = ((DaemonJvmCriteria.Spec) criteria).getJavaVersion().asInt();
+            DaemonJvmCriteria.Spec daemonJvmCriteria = (DaemonJvmCriteria.Spec) criteria;
+            JavaToolchainSpec daemonJvmToolchainSpec = getDaemonJvmToolchainSpec(daemonJvmCriteria);
+            ProviderInternal<JavaToolchain> jvmInstallationMetadata = javaToolchainQueryService.apply(service -> service.findMatchingToolchain(daemonJvmToolchainSpec, JavaInstallationCapability.JDK_CAPABILITIES));
+            JavaInfo resolvedJvm = Jvm.forHome(jvmInstallationMetadata.get().getInstallationPath().getAsFile());
+            majorJavaVersion = daemonJvmCriteria.getJavaVersion().asInt();
             resolvedJava = resolvedJvm.getJavaExecutable();
         } else if (criteria instanceof DaemonJvmCriteria.JavaHome) {
             JavaInfo resolvedJvm = Jvm.forHome(((DaemonJvmCriteria.JavaHome) criteria).getJavaHome());
@@ -113,39 +125,34 @@ public class DefaultDaemonStarter implements DaemonStarter {
             throw new IllegalStateException("Unknown DaemonJvmCriteria type: " + criteria.getClass().getName());
         }
 
-        GradleInstallation gradleInstallation = CurrentGradleInstallation.get();
-        ModuleRegistry registry = new DefaultModuleRegistry(gradleInstallation);
-        ClassPath classpath;
-        List<File> searchClassPath;
-
-        if (gradleInstallation == null) {
-            // When not running from a Gradle distro, need the daemon main jar and the daemon server implementation plus the search path to look for other modules
-            classpath = registry.getModule("gradle-daemon-server").getAllRequiredModulesClasspath();
-            classpath = classpath.plus(registry.getModule("gradle-daemon-main").getImplementationClasspath());
-            searchClassPath = registry.getAdditionalClassPath().getAsFiles();
-        } else {
-            // When running from a Gradle distro, only need the daemon main jar. The daemon can find everything from there.
-            classpath = registry.getModule("gradle-daemon-main").getImplementationClasspath();
-            searchClassPath = Collections.emptyList();
-        }
+        // We only need the daemon main jar for initial startup. The daemon is responsible for loading everything else.
+        ModuleRegistry registry = new DefaultModuleRegistry(CurrentGradleInstallation.get());
+        ClassPath classpath = registry.getModule("gradle-daemon-main").getImplementationClasspath();
         if (classpath.isEmpty()) {
             throw new IllegalStateException("Unable to construct a bootstrap classpath when starting the daemon");
         }
 
-        versionValidator.validate(majorJavaVersion);
+        UnsupportedJavaRuntimeException.assertIsSupportedDaemonJvmVersion(majorJavaVersion);
 
         List<String> daemonArgs = new ArrayList<>();
         daemonArgs.addAll(getPriorityArgs(daemonRequestContext.getPriority()));
         daemonArgs.add(resolvedJava.getAbsolutePath());
         Collection<String> daemonOpts = daemonRequestContext.getDaemonOpts();
-        if (majorJavaVersion >= 9) {
-            daemonArgs.addAll(JpmsConfiguration.GRADLE_DAEMON_JPMS_ARGS);
-        }
+        daemonArgs.addAll(JpmsConfiguration.forDaemonProcesses(majorJavaVersion, daemonRequestContext.getNativeServicesMode().isPotentiallyEnabled()));
         daemonArgs.addAll(daemonOpts);
         daemonArgs.add("-cp");
         daemonArgs.add(CollectionUtils.join(File.pathSeparator, classpath.getAsFiles()));
 
+        // TODO: remove in Gradle 10
         if (Boolean.getBoolean("org.gradle.daemon.debug")) {
+            // NOTE: DeprecationLogger is not initialized yet, so we cannot use it here.
+            LOGGER.warn(
+                "The org.gradle.daemon.debug launcher system property has been deprecated. " +
+                    "This is scheduled to be removed in Gradle 10. " +
+                    "Please use the org.gradle.debug daemon system property instead. " +
+                    "For more information, please refer to https://docs.gradle.org/{}/userguide/command_line_interface.html#sec:command_line_debugging in the Gradle documentation.",
+                GradleVersion.current().getVersion()
+            );
             daemonArgs.add(JvmOptions.getDebugArgument(true, true, "5005"));
         }
 
@@ -167,36 +174,46 @@ public class DefaultDaemonStarter implements DaemonStarter {
 
         // Serialize configuration to daemon via the process' stdin
         StreamByteBuffer buffer = new StreamByteBuffer();
-        FlushableEncoder encoder = new KryoBackedEncoder(new EncodedStream.EncodedOutput(buffer.getOutputStream()));
-        try {
-            encoder.writeString(daemonParameters.getGradleUserHomeDir().getAbsolutePath());
-            encoder.writeString(daemonDir.getBaseDir().getAbsolutePath());
-            encoder.writeSmallInt(daemonParameters.getIdleTimeout());
-            encoder.writeSmallInt(daemonParameters.getPeriodicCheckInterval());
-            encoder.writeBoolean(singleUse);
-            encoder.writeSmallInt(daemonParameters.getNativeServicesMode().ordinal());
-            encoder.writeString(daemonUid);
-            encoder.writeSmallInt(daemonParameters.getPriority().ordinal());
-            encoder.writeSmallInt(daemonOpts.size());
-            for (String daemonOpt : daemonOpts) {
-                encoder.writeString(daemonOpt);
-            }
-            encoder.writeSmallInt(searchClassPath.size());
-            for (File file : searchClassPath) {
-                encoder.writeString(file.getAbsolutePath());
-            }
-            encoder.flush();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        OutputStream outputStream = buffer.getOutputStream();
+
+        DaemonStartupCommunication.writeDaemonServerConfiguration(
+            outputStream,
+            new DefaultDaemonServerConfiguration(
+                daemonParameters.getGradleUserHomeDir(),
+                daemonUid,
+                daemonDir.getBaseDir(),
+                daemonParameters.getIdleTimeout(),
+                daemonParameters.getPeriodicCheckInterval(),
+                singleUse,
+                daemonParameters.getPriority(),
+                new ArrayList<>(daemonOpts),
+                // Using the available agent is correct for the forked daemon processes, because the forking
+                // code takes the desired agent status into account when configuring the daemon command line.
+                // The daemon that shouldn't use the agent won't have the agent applied.
+                true,
+                daemonParameters.getNativeServicesMode()
+            )
+        );
+
         InputStream stdInput = buffer.getInputStream();
 
         return startProcess(
             daemonArgs,
             daemonDir.getVersionedDir(),
-            daemonParameters.getGradleUserHomeDir().getAbsoluteFile(),
             stdInput
         );
+    }
+
+    @NonNull
+    private DefaultToolchainSpec getDaemonJvmToolchainSpec(DaemonJvmCriteria.Spec daemonJvmCriteria) {
+        DefaultToolchainSpec toolchainSpec = new DefaultToolchainSpec(propertyFactory);
+        toolchainSpec.getLanguageVersion().value(JavaLanguageVersion.of(daemonJvmCriteria.getJavaVersion().asInt()));
+        toolchainSpec.getVendor().value(daemonJvmCriteria.getVendorSpec());
+        toolchainSpec.getImplementation().convention(JvmImplementation.VENDOR_SPECIFIC);
+        if (daemonJvmCriteria.isNativeImageCapable()) {
+            toolchainSpec.getNativeImageCapable().set(true);
+        }
+        return toolchainSpec;
     }
 
     private List<String> getPriorityArgs(DaemonPriority priority) {
@@ -213,7 +230,7 @@ public class DefaultDaemonStarter implements DaemonStarter {
         }
     }
 
-    private DaemonStartupInfo startProcess(List<String> args, File workingDir, File gradleUserHome, InputStream stdInput) {
+    private static DaemonStartupInfo startProcess(List<String> args, File workingDir, InputStream stdInput) {
         LOGGER.debug("Starting daemon process: workingDir = {}, daemonArgs: {}", workingDir, args);
         Timer clock = Time.startTimer();
         try {
@@ -222,10 +239,13 @@ public class DefaultDaemonStarter implements DaemonStarter {
             DaemonOutputConsumer outputConsumer = new DaemonOutputConsumer();
 
             // This factory should be injected but leaves non-daemon threads running when used from the tooling API client
-            @SuppressWarnings("deprecation")
-            DefaultExecActionFactory execActionFactory = DefaultExecActionFactory.root(gradleUserHome);
+            RootClientExecHandleBuilderFactory execActionFactory = RootClientExecHandleBuilderFactory.of(
+                new DefaultFileLookup().getFileResolver(),
+                new DefaultExecutorFactory(),
+                new DefaultBuildCancellationToken()
+            );
             try {
-                ExecHandle handle = new DaemonExecHandleBuilder().build(args, workingDir, outputConsumer, stdInput, execActionFactory.newExec());
+                ExecHandle handle = new DaemonExecHandleBuilder().build(args, workingDir, outputConsumer, stdInput, execActionFactory.newExecHandleBuilder());
 
                 handle.start();
                 LOGGER.debug("Gradle daemon process is starting. Waiting for the daemon to detach...");
@@ -235,7 +255,16 @@ public class DefaultDaemonStarter implements DaemonStarter {
                 CompositeStoppable.stoppable(execActionFactory).stop();
             }
 
-            return daemonGreeter.parseDaemonOutput(outputConsumer.getProcessOutput(), args);
+            return outputConsumer.getResponse().mapFailure(failure ->
+                new InitializationException(
+                    DaemonMessages.UNABLE_TO_START_DAEMON + "\n" +
+                    "This problem might be caused by incorrect configuration of the daemon.\n" +
+                    "For example, an unrecognized jvm option is used.\n" +
+                    new DocumentationRegistry().getDocumentationRecommendationFor("details on the daemon", "gradle_daemon") + "\n" +
+                    "Process command line: " + Joiner.on(" ").join(args),
+                    failure
+                )
+            ).get();
         } catch (GradleException e) {
             throw e;
         } catch (Exception e) {

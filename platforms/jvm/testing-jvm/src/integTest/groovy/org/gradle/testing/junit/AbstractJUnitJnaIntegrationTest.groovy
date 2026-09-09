@@ -18,11 +18,12 @@ package org.gradle.testing.junit
 
 import org.gradle.integtests.fixtures.DefaultTestExecutionResult
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.gradle.testing.fixture.AbstractTestingMultiVersionIntegrationTest
 
 abstract class AbstractJUnitJnaIntegrationTest extends AbstractTestingMultiVersionIntegrationTest {
-    @Requires(UnitTestPreconditions.Windows)
+    @Requires(OsTestPreconditions.Windows)
     def canRunTestsUsingJna() {
         given:
         file('src/test/java/OkTest.java') << """
@@ -43,7 +44,7 @@ abstract class AbstractJUnitJnaIntegrationTest extends AbstractTestingMultiVersi
 
             dependencies {
                 ${testFrameworkDependencies}
-                testImplementation 'net.java.dev.jna:jna-platform:4.1.0'
+                testImplementation 'net.java.dev.jna:jna-platform:5.17.0'
             }
             test.${configureTestFramework}
         """.stripIndent()

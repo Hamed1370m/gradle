@@ -21,8 +21,10 @@ import org.gradle.internal.jvm.Jvm
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 import spock.lang.Issue
 
 class ApplicationPluginIntegrationTest extends WellBehavedPluginTest {
@@ -35,6 +37,21 @@ class ApplicationPluginIntegrationTest extends WellBehavedPluginTest {
         createSampleProjectSetup()
     }
 
+    def "can generate start scripts even if mainClass is not configured"() {
+        given:
+        buildFile.text = """
+            plugins {
+              id("application")
+            }
+        """
+        when:
+        succeeds('startScripts')
+
+        then:
+        assertGeneratedUnixStartScript()
+        assertGeneratedWindowsStartScript()
+    }
+
     def "can generate start scripts with minimal user configuration"() {
         when:
         succeeds('startScripts')
@@ -44,7 +61,7 @@ class ApplicationPluginIntegrationTest extends WellBehavedPluginTest {
         assertGeneratedWindowsStartScript()
     }
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk9OrLater)
     def "can generate start scripts with module path"() {
         given:
         configureMainModule()
@@ -133,7 +150,7 @@ class CustomWindowsStartScriptGenerator implements ScriptGenerator {
         windowsStartScript.text == 'myApp start up script for Windows'
     }
 
-    @Requires(UnitTestPreconditions.UnixDerivative)
+    @Requires(OsTestPreconditions.Unix)
     def "can execute generated Unix start script"() {
         when:
         succeeds('installDist')
@@ -148,7 +165,7 @@ class CustomWindowsStartScriptGenerator implements ScriptGenerator {
         outputContains('Hello World!')
     }
 
-    @Requires(UnitTestPreconditions.UnixDerivative)
+    @Requires(OsTestPreconditions.Unix)
     def "can execute generated Unix start script using JAVA_HOME with spaces"() {
         given:
         def testJavaHome = file("javahome/java home with spaces")
@@ -170,7 +187,7 @@ class CustomWindowsStartScriptGenerator implements ScriptGenerator {
         testJavaHome.usingNativeTools().deleteDir() //remove symlink
     }
 
-    @Requires(UnitTestPreconditions.UnixDerivative)
+    @Requires(OsTestPreconditions.Unix)
     def "java PID equals script PID"() {
         given:
         succeeds('installDist')
@@ -190,7 +207,7 @@ $binFile.text
         assert pids[0] == pids[1]
     }
 
-    @Requires(UnitTestPreconditions.Windows)
+    @Requires(OsTestPreconditions.Windows)
     def "can execute generated Windows start script"() {
         when:
         succeeds('installDist')
@@ -203,6 +220,108 @@ $binFile.text
 
         then:
         outputContains('Hello World!')
+    }
+
+    @Requires(OsTestPreconditions.Windows)
+    def "start script does not leak CLASSPATH on Windows"() {
+        given:
+        generateMainClass("""
+System.out.println("CLASSPATH: " + System.getenv("CLASSPATH"));
+""")
+
+        when:
+        succeeds('installDist')
+        runViaStartScript()
+
+        then:
+        // Should be empty string, so just the space and newline
+        outputContains('CLASSPATH: \n')
+    }
+
+    @Requires(OsTestPreconditions.Windows)
+    @Issue("https://github.com/gradle/gradle/issues/38082")
+    def "Windows start script fails cleanly when JAVA_HOME is invalid"() {
+        given:
+        def startScriptDir = file('build/install/sample/bin')
+        def outputFile = file('script-output.txt')
+        def invalidJavaHome = file('invalid-java-home')
+
+        when:
+        succeeds('installDist')
+        runViaWindowsStartScript(startScriptDir, [JAVA_OPTS: '', JAVA_HOME: invalidJavaHome.canonicalPath], outputFile)
+
+        then:
+        def scriptOutput = outputFile.text
+        scriptOutput.readLines().contains("ERROR: JAVA_HOME is set to an invalid directory: ${invalidJavaHome.canonicalPath}".toString())
+        // The script must stop after the error rather than falling through to :execute and
+        // trying to launch the missing java.exe, which prints "cannot find the path/file
+        // specified".
+        !scriptOutput.contains('cannot find the')
+    }
+
+    @Requires(OsTestPreconditions.Windows)
+    @Issue("https://github.com/gradle/gradle/issues/38082")
+    def "Windows start script fails cleanly when no 'java' command can be found"() {
+        given:
+        def startScriptDir = file('build/install/sample/bin')
+        def outputFile = file('script-output.txt')
+
+        when:
+        succeeds('installDist')
+        runViaWindowsStartScript(startScriptDir, [JAVA_OPTS: '', JAVA_HOME: '', PATH: ''], outputFile)
+
+        then:
+        def scriptOutput = outputFile.text
+        scriptOutput.contains("ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH")
+        // The script must stop here, not fall through to :findJavaFromJavaHome (which would print
+        // the invalid-directory message) and then :execute.
+        !scriptOutput.contains('ERROR: JAVA_HOME is set to an invalid directory')
+        !scriptOutput.contains('cannot find the')
+    }
+
+    @Requires(OsTestPreconditions.Windows)
+    @Issue("https://github.com/gradle/gradle/issues/10463")
+    def "Windows start script exit code drives conditional operators on success"() {
+        given:
+        def startScriptDir = file('build/install/sample/bin')
+        def outputFile = file('script-output.txt')
+
+        when:
+        succeeds('installDist')
+        runViaWindowsStartScript(
+            startScriptDir,
+            [JAVA_OPTS: ''],
+            outputFile,
+            'sample.bat && echo OPERATOR-SAW-SUCCESS || echo OPERATOR-SAW-FAILURE'
+        )
+
+        then:
+        def scriptOutput = outputFile.text
+        scriptOutput.contains('OPERATOR-SAW-SUCCESS')
+        !scriptOutput.contains('OPERATOR-SAW-FAILURE')
+    }
+
+    @Requires(OsTestPreconditions.Windows)
+    @Issue("https://github.com/gradle/gradle/issues/10463")
+    def "Windows start script exit code drives conditional operators on failure"() {
+        given:
+        def startScriptDir = file('build/install/sample/bin')
+        def outputFile = file('script-output.txt')
+        def invalidJavaHome = file('invalid-java-home')
+
+        when:
+        succeeds('installDist')
+        runViaWindowsStartScript(
+            startScriptDir,
+            [JAVA_OPTS: '', JAVA_HOME: invalidJavaHome.canonicalPath],
+            outputFile,
+            'sample.bat && echo OPERATOR-SAW-SUCCESS || echo OPERATOR-SAW-FAILURE'
+        )
+
+        then:
+        def scriptOutput = outputFile.text
+        scriptOutput.contains('OPERATOR-SAW-FAILURE')
+        !scriptOutput.contains('OPERATOR-SAW-SUCCESS')
     }
 
     ExecutionResult runViaUnixStartScript(TestFile startScriptDir) {
@@ -230,16 +349,53 @@ task execStartScript(type: Exec) {
         return succeeds('execStartScript')
     }
 
-    ExecutionResult runViaWindowsStartScript(TestFile startScriptDir) {
-        String escapedStartScriptDir = startScriptDir.canonicalPath.replaceAll('\\\\', '\\\\\\\\')
-        buildFile << """
-task execStartScript(type: Exec) {
-    workingDir '$escapedStartScriptDir'
-    commandLine 'cmd.exe', '/d', '/c', 'sample.bat'
-    environment JAVA_OPTS: ''
-}
-"""
+    ExecutionResult runViaWindowsStartScript(
+        TestFile startScriptDir,
+        Map<String, String> environment = [JAVA_OPTS: ''],
+        TestFile outputFile = null,
+        String command = 'sample.bat'
+    ) {
+        String envLines = environment.collect { name, value ->
+            value.isEmpty()
+                ? "environment.keySet().removeIf { it.equalsIgnoreCase('${name}') }"
+                : "environment '${name}', '${escapeForGroovy(value)}'"
+        }.join('\n')
+        // When an output file is given we expect a possibly non-zero exit, so ignore it and
+        // redirect the script's combined output to a file the test can read back.
+        String captureLines = outputFile == null ? '' :
+            """
+            ignoreExitValue = true
+            standardOutput = new FileOutputStream(file('${outputFile.name}'))
+            errorOutput = standardOutput
+            """
+        buildFile <<
+            """
+            task execStartScript(type: Exec) {
+                workingDir '${escapeForGroovy(startScriptDir.canonicalPath)}'
+                commandLine '${escapeForGroovy(resolveCmdExe())}', '/d', '/c', '${escapeForGroovy(command)}'
+                $envLines
+                $captureLines
+            }
+            """
         return succeeds('execStartScript')
+    }
+
+    /**
+     * Do a full resolution of {@code cmd.exe} to avoid any issues with the PATH environment variable being modified by the test.
+     *
+     * @return the full path to {@code cmd.exe}
+     */
+    private static String resolveCmdExe() {
+        String comSpec = System.getenv('ComSpec')
+        if (comSpec) {
+            return comSpec
+        }
+        String systemRoot = System.getenv('SystemRoot') ?: 'C:\\Windows'
+        return "$systemRoot\\System32\\cmd.exe"
+    }
+
+    private static String escapeForGroovy(String path) {
+        return path.replaceAll('\\\\', '\\\\\\\\')
     }
 
     def "compile only dependencies are not included in distribution"() {
@@ -250,7 +406,7 @@ task execStartScript(type: Exec) {
         and:
         buildFile << """
 repositories {
-    maven { url '$mavenRepo.uri' }
+    maven { url = '$mavenRepo.uri' }
 }
 
 dependencies {
@@ -307,15 +463,15 @@ application.executableDir = 'foo/bar'
     def "includes transitive implementation dependencies in distribution"() {
         given:
         mavenRepo.module('org.gradle.test', 'implementation', '1.0').publish()
-        buildFile << """
-            allprojects {
+        createDirs("utils", "core")
+        settingsFile << """
+            include 'utils', 'core'
+            gradle.lifecycle.beforeProject {
                 repositories {
-                    maven { url '$mavenRepo.uri' }
+                    maven { url = '$mavenRepo.uri' }
                 }
             }
         """
-        createDirs("utils", "core")
-        file('settings.gradle') << "include 'utils', 'core'"
         buildFile << '''
             apply plugin: 'java'
             apply plugin: 'application'
@@ -353,17 +509,16 @@ application.executableDir = 'foo/bar'
     def "includes transitive runtime dependencies in runtime classpath"() {
         given:
         mavenRepo.module('org.gradle.test', 'implementation', '1.0').publish()
-        buildFile << """
-        allprojects {
-            repositories {
-                maven { url '$mavenRepo.uri' }
-            }
-            apply plugin: 'java'
-        }
-        """
-
         createDirs("utils", "core", "foo", "bar")
-        file('settings.gradle') << "include 'utils', 'core', 'foo', 'bar'"
+        settingsFile << """
+            include 'utils', 'core', 'foo', 'bar'
+            gradle.lifecycle.beforeProject {
+                apply plugin: 'java'
+                repositories {
+                    maven { url = '$mavenRepo.uri' }
+                }
+            }
+        """
         buildFile << '''
             apply plugin: 'java'
             apply plugin: 'application'
@@ -407,16 +562,16 @@ dependencies {
     def "includes transitive implementation dependencies in test runtime classpath"() {
         given:
         mavenRepo.module('org.gradle.test', 'implementation', '1.0').publish()
-        buildFile << """
-        allprojects {
-            repositories {
-                maven { url '$mavenRepo.uri' }
-            }
-            apply plugin: 'java'
-        }
-        """
         createDirs("utils", "core", "foo", "bar")
-        file('settings.gradle') << "include 'utils', 'core', 'foo', 'bar'"
+        settingsFile << """
+            include 'utils', 'core', 'foo', 'bar'
+            gradle.lifecycle.beforeProject {
+                apply plugin: 'java'
+                repositories {
+                    maven { url = '$mavenRepo.uri' }
+                }
+            }
+        """
         buildFile << '''
             apply plugin: 'java'
             apply plugin: 'application'
@@ -507,7 +662,7 @@ startScripts {
         OperatingSystem.current().isWindows() ? runViaWindowsStartScript(startScriptDir) : runViaUnixStartScript(startScriptDir)
     }
 
-    @Requires(UnitTestPreconditions.NotWindows)
+    @Requires(OsTestPreconditions.NotWindows)
     // This test already fails silently on Windows, but adding an explicit check for the existence of xargs made it fail explicitly.
     def "can run under posix sh environment"() {
         buildFile << """
@@ -523,7 +678,7 @@ task execStartScript(type: Exec) {
     }
 
     // Paths to cygpath are only available when running under the embedded executor
-    @Requires([UnitTestPreconditions.Windows, IntegTestPreconditions.IsEmbeddedExecutor])
+    @Requires([OsTestPreconditions.Windows, TestExecutionPreconditions.IsEmbeddedExecutor])
     def "can pass absolute Unix-like paths to script on Windows"() {
         file("run.sh") << '''#!/bin/sh
 # convert paths into absolute Unix-like paths
@@ -654,7 +809,7 @@ rootProject.name = 'sample'
     }
 
     @Issue("https://github.com/gradle/gradle/issues/4627")
-    @Requires(UnitTestPreconditions.NotWindows)
+    @Requires(OsTestPreconditions.NotWindows)
     def "distribution not in root directory has correct permissions set"() {
         given:
         buildFile << """
@@ -683,7 +838,7 @@ rootProject.name = 'sample'
         executed(':compileJava', ':processResources', ':classes', ':run')
     }
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk9OrLater)
     def "runs the jar for modular applications"() {
         given:
         configureMainModule()
@@ -696,7 +851,7 @@ rootProject.name = 'sample'
     }
 
     @Issue("https://github.com/gradle/gradle-private/issues/3386")
-    @Requires(UnitTestPreconditions.UnixDerivative)
+    @Requires(OsTestPreconditions.Unix)
     def "does not execute code in user-set environment variable"() {
         when:
         succeeds('installDist')
@@ -718,14 +873,14 @@ rootProject.name = 'sample'
         fails('execStartScript')
 
         then:
-        result.assertTaskExecuted(":execStartScript")
+        result.assertTaskScheduled(":execStartScript")
         !exploit.exists()
 
         where:
         envVar << ["JAVA_OPTS", "SAMPLE_OPTS"]
     }
 
-    @Requires(UnitTestPreconditions.UnixDerivative)
+    @Requires(OsTestPreconditions.Unix)
     def "environment variables can have spaces in their values"() {
         when:
         succeeds('installDist')
@@ -750,7 +905,7 @@ rootProject.name = 'sample'
         envVar << ["JAVA_OPTS", "SAMPLE_OPTS"]
     }
 
-    @Requires(UnitTestPreconditions.UnixDerivative)
+    @Requires(OsTestPreconditions.Unix)
     def "environment variables can have spaces in their values that should be treated as separate tokens"() {
         when:
         succeeds('installDist')
@@ -775,7 +930,7 @@ rootProject.name = 'sample'
         envVar << ["JAVA_OPTS", "SAMPLE_OPTS"]
     }
 
-    @Requires(UnitTestPreconditions.UnixDerivative)
+    @Requires(OsTestPreconditions.Unix)
     def "environment variables that do not have spaces in their values that should be treated as separate tokens"() {
         when:
         succeeds('installDist')
@@ -800,7 +955,7 @@ rootProject.name = 'sample'
         envVar << ["JAVA_OPTS", "SAMPLE_OPTS"]
     }
 
-    @Requires(UnitTestPreconditions.UnixDerivative)
+    @Requires(OsTestPreconditions.Unix)
     def "environment variables that do not have spaces in their values that should be treated as one token"() {
         when:
         succeeds('installDist')
@@ -823,5 +978,34 @@ rootProject.name = 'sample'
 
         where:
         envVar << ["JAVA_OPTS", "SAMPLE_OPTS"]
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/34069")
+    def "Treat template as input for incremental build"() {
+        given:
+        buildFile.delete()
+        buildKotlinFile << """
+            tasks.register<CreateStartScripts>("foo") {
+                applicationName = "foo"
+                outputDir = temporaryDir
+                (unixStartScriptGenerator as TemplateBasedScriptGenerator).template = resources.text.fromFile("foo.txt")
+                (windowsStartScriptGenerator as TemplateBasedScriptGenerator).template = resources.text.fromFile("foo.txt")
+            }
+        """
+        when:
+        file('foo.txt') << '42'
+        succeeds('foo')
+
+        then:
+        file('build/tmp/foo/foo').text=='42'
+        file('build/tmp/foo/foo.bat').text=='42'
+
+        when:
+        file('foo.txt').text = '43'
+        succeeds('foo')
+
+        then:
+        file('build/tmp/foo/foo').text=='43'
+        file('build/tmp/foo/foo.bat').text=='43'
     }
 }

@@ -20,10 +20,9 @@ import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.MultimapBuilder;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.gradle.api.Action;
 import org.gradle.api.GradleException;
-import org.gradle.api.NonNullApi;
 import org.gradle.api.Task;
 import org.gradle.api.file.Directory;
 import org.gradle.api.internal.DocumentationRegistry;
@@ -34,20 +33,22 @@ import org.gradle.buildinit.plugins.internal.modifiers.BuildInitDsl;
 import org.gradle.groovy.scripts.internal.InitialPassStatementTransformer;
 import org.gradle.internal.Cast;
 import org.gradle.internal.UncheckedException;
+import org.gradle.internal.deprecation.Documentation;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.util.internal.GFileUtils;
 import org.gradle.util.internal.GUtil;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -57,6 +58,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.singletonList;
 import static org.gradle.buildinit.plugins.internal.SimpleGlobalFilesBuildSettingsDescriptor.PLUGINS_BUILD_LOCATION;
 
@@ -401,6 +403,7 @@ public class BuildScriptBuilder {
      *
      * @return An expression that can be used to refer to the task later.
      */
+    @SuppressWarnings("ExposedPrivateType")
     public TaskConfiguration taskConfiguration(@Nullable String comment, String taskName, String taskType, Action<? super ScriptBlockBuilder> blockContentsBuilder) {
         TaskConfiguration conf = new TaskConfiguration(comment, taskName, taskType);
         block.add(conf);
@@ -413,6 +416,7 @@ public class BuildScriptBuilder {
      *
      * @return An expression that can be used to refer to the task later.
      */
+    @SuppressWarnings("ExposedPrivateType")
     public TaskConfiguration taskConfiguration(@Nullable String comment, BlockStatement containingBlock, String taskName, String taskType, Action<? super ScriptBlockBuilder> blockContentsBuilder) {
         TaskConfiguration conf = new TaskConfiguration(comment, taskName, taskType);
         containingBlock.add(conf);
@@ -425,6 +429,7 @@ public class BuildScriptBuilder {
      *
      * @return An expression that can be used to refer to the task later.
      */
+    @SuppressWarnings("ExposedPrivateType")
     public TaskRegistration taskRegistration(@Nullable String comment, String taskName, String taskType, Action<? super ScriptBlockBuilder> blockContentsBuilder) {
         TaskRegistration registration = new TaskRegistration(comment, taskName, taskType);
         block.add(registration);
@@ -437,6 +442,7 @@ public class BuildScriptBuilder {
      *
      * @return An expression that can be used to refer to the task later.
      */
+    @SuppressWarnings("ExposedPrivateType")
     public TaskRegistration taskRegistration(@Nullable String comment, BlockStatement containingBlock, String taskName, String taskType, Action<? super ScriptBlockBuilder> blockContentsBuilder) {
         TaskRegistration registration = new TaskRegistration(comment, taskName, taskType);
         containingBlock.add(registration);
@@ -449,6 +455,7 @@ public class BuildScriptBuilder {
      *
      * @return An expression that can be used to refer to the task later.
      */
+    @SuppressWarnings("ExposedPrivateType")
     public SuiteConfiguration suiteConfiguration(@Nullable String comment, BlockStatement containingBlock, String taskName, String taskType, Action<? super ScriptBlockBuilder> blockContentsBuilder) {
         SuiteConfiguration conf = new SuiteConfiguration(comment, taskName, taskType);
         containingBlock.add(conf);
@@ -461,6 +468,7 @@ public class BuildScriptBuilder {
      *
      * @return An expression that can be used to refer to the task later.
      */
+    @SuppressWarnings("ExposedPrivateType")
     public SuiteRegistration suiteRegistration(@Nullable String comment, BlockStatement containingBlock, String taskName, String taskType, Action<? super ScriptBlockBuilder> blockContentsBuilder) {
         SuiteRegistration registration = new SuiteRegistration(comment, taskName, taskType);
         containingBlock.add(registration);
@@ -488,7 +496,7 @@ public class BuildScriptBuilder {
 
             File target = getTargetFile(targetDirectory);
             GFileUtils.mkdirs(target.getParentFile());
-            try (PrintWriter writer = new PrintWriter(new FileWriter(target))) {
+            try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(target.toPath(), UTF_8))) {
                 PrettyPrinter printer = new PrettyPrinter(syntaxFor(dsl), writer, comments);
                 if (!comments.equals(BuildInitComments.OFF)) {
                     printer.printFileHeader(headerCommentLines);
@@ -592,6 +600,7 @@ public class BuildScriptBuilder {
         }
 
         @Override
+        @SuppressWarnings("GetClassOnEnum") //TODO: evaluate errorprone suppression (https://github.com/gradle/gradle/issues/35864)
         public String with(Syntax syntax) {
             return literal.getClass().getSimpleName() + "." + literal.name();
         }
@@ -743,20 +752,38 @@ public class BuildScriptBuilder {
         final String configuration;
         final String dependencyOrCatalogReference;
         final boolean catalogReference;
+        final Collection<BuildInitDependency.DependencyExclusion> exclusions;
 
-        DepSpec(String configuration, @Nullable String comment, String dependencyOrCatalogReference, boolean catalogReference) {
+        DepSpec(String configuration, @Nullable String comment, String dependencyOrCatalogReference, boolean catalogReference, Collection<BuildInitDependency.DependencyExclusion> exclusions) {
             super(comment);
             this.configuration = configuration;
             this.dependencyOrCatalogReference = dependencyOrCatalogReference;
             this.catalogReference = catalogReference;
+            this.exclusions = exclusions;
         }
 
         @Override
         public void writeCodeTo(PrettyPrinter printer) {
+            String notation;
             if (catalogReference) {
-                printer.println(printer.syntax.dependencySpec(configuration, dependencyOrCatalogReference));
+                notation = dependencyOrCatalogReference;
             } else {
-                printer.println(printer.syntax.dependencySpec(configuration, printer.syntax.string(dependencyOrCatalogReference)));
+                notation = printer.syntax.string(dependencyOrCatalogReference);
+            }
+            if (exclusions.isEmpty()) {
+                printer.println(printer.syntax.dependencySpec(configuration, notation));
+            } else {
+                ScriptBlockImpl dependencyBlock = new ScriptBlockImpl();
+                for (BuildInitDependency.DependencyExclusion exclusion : exclusions) {
+                    Map<String, String> exclusionConfig = new LinkedHashMap<>();
+                    exclusionConfig.put("group", exclusion.getGroup());
+                    exclusionConfig.put("module", exclusion.getModule());
+
+                    String comment = "TODO: This exclude was sourced from a POM exclusion and is NOT exactly equivalent, see: " + Documentation.userManual("build_init_plugin", "sec:pom_maven_conversion").getUrl();
+                    dependencyBlock.add(new MethodInvocation(comment, new MethodInvocationExpression(null, "exclude", expressionValues(exclusionConfig))));
+                }
+                printer.printBlock(printer.syntax.complexDependencySpec(configuration, notation), dependencyBlock);
+                printer.needSeparatorLine = false;
             }
         }
     }
@@ -888,37 +915,6 @@ public class BuildScriptBuilder {
         }
     }
 
-    private static class ConventionSelector implements ConfigSelector {
-
-        final String conventionName;
-
-        private ConventionSelector(String conventionName) {
-            this.conventionName = conventionName;
-        }
-
-        @Override
-        public String codeBlockSelectorFor(Syntax syntax) {
-            return syntax.conventionSelector(this);
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            ConventionSelector that = (ConventionSelector) o;
-            return Objects.equal(conventionName, that.conventionName);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hashCode(conventionName);
-        }
-    }
-
     /**
      * Represents a statement in a script. Each statement has an optional comment that explains its purpose.
      */
@@ -936,12 +932,13 @@ public class BuildScriptBuilder {
         /**
          * Writes this statement to the given printer. Should not write the comment. Called only when {@link #type()} returns a value != {@link Type#Empty}
          */
+        @SuppressWarnings("ExposedPrivateType")
         void writeCodeTo(PrettyPrinter printer);
     }
 
     private static abstract class AbstractStatement implements Statement {
 
-        final String comment;
+        private final String comment;
 
         AbstractStatement(@Nullable String comment) {
             this.comment = comment;
@@ -959,7 +956,7 @@ public class BuildScriptBuilder {
         }
     }
 
-    @NonNullApi
+    @NullMarked
     private static class StatementGroup extends AbstractStatement {
         private final List<Statement> statements = new ArrayList<>();
 
@@ -1002,7 +999,7 @@ public class BuildScriptBuilder {
 
     private static class ContainerElement extends AbstractStatement implements ExpressionValue {
 
-        private final String comment;
+        private final String containerComment;
         private final String container;
         private final String elementName;
         @Nullable
@@ -1011,9 +1008,9 @@ public class BuildScriptBuilder {
         private final String elementType;
         private final ScriptBlockImpl body = new ScriptBlockImpl();
 
-        public ContainerElement(String comment, String container, String elementName, @Nullable String elementType, @Nullable String varName) {
+        public ContainerElement(String containerComment, String container, String elementName, @Nullable String elementType, @Nullable String varName) {
             super(null);
-            this.comment = comment;
+            this.containerComment = containerComment;
             this.container = container;
             this.elementName = elementName;
             this.elementType = elementType;
@@ -1022,7 +1019,7 @@ public class BuildScriptBuilder {
 
         @Override
         public void writeCodeTo(PrettyPrinter printer) {
-            Statement statement = printer.syntax.createContainerElement(comment, container, elementName, elementType, varName, body.statements);
+            Statement statement = printer.syntax.createContainerElement(containerComment, container, elementName, elementType, varName, body.statements);
             printer.printStatement(statement);
         }
 
@@ -1169,11 +1166,11 @@ public class BuildScriptBuilder {
         private Statement makeDepSpec(String configuration, @Nullable String comment, BuildInitDependency... dependencies) {
             StatementGroup statementGroup = new StatementGroup(comment);
             for (BuildInitDependency d : dependencies) {
-                if (d.version != null && buildScriptBuilder.useVersionCatalog) {
-                    String versionCatalogRef = buildScriptBuilder.buildContentGenerationContext.getVersionCatalogDependencyRegistry().registerLibrary(d.module, d.version);
-                    statementGroup.add(new DepSpec(configuration, null, versionCatalogRef, true));
+                if (d.getVersion() != null && buildScriptBuilder.useVersionCatalog) {
+                    String versionCatalogRef = buildScriptBuilder.buildContentGenerationContext.getVersionCatalogDependencyRegistry().registerLibrary(d.getModule(), d.getVersion());
+                    statementGroup.add(new DepSpec(configuration, null, versionCatalogRef, true, d.getExclusions()));
                 } else {
-                    statementGroup.add(new DepSpec(configuration, null, d.toNotation(), false));
+                    statementGroup.add(new DepSpec(configuration, null, d.toNotation(), false, d.getExclusions()));
                 }
             }
             return statementGroup;
@@ -1183,8 +1180,8 @@ public class BuildScriptBuilder {
         public void platformDependency(String configuration, @Nullable String comment, BuildInitDependency... dependencies) {
             StatementGroup statementGroup = new StatementGroup(comment);
             for (BuildInitDependency d : dependencies) {
-                if (d.version != null && buildScriptBuilder.useVersionCatalog) {
-                    String versionCatalogRef = buildScriptBuilder.buildContentGenerationContext.getVersionCatalogDependencyRegistry().registerLibrary(d.module, d.version);
+                if (d.getVersion() != null && buildScriptBuilder.useVersionCatalog) {
+                    String versionCatalogRef = buildScriptBuilder.buildContentGenerationContext.getVersionCatalogDependencyRegistry().registerLibrary(d.getModule(), d.getVersion());
                     statementGroup.add(new PlatformDepSpec(configuration, comment, versionCatalogRef, true));
                 } else {
                     statementGroup.add(new PlatformDepSpec(configuration, comment, d.toNotation(), false));
@@ -1329,6 +1326,7 @@ public class BuildScriptBuilder {
         }
     }
 
+    @SuppressWarnings("ExposedPrivateType")
     public static class SuiteSpec extends AbstractStatement {
         private final BuildScriptBuilder builder;
 
@@ -1402,6 +1400,7 @@ public class BuildScriptBuilder {
         }
 
         @Override
+        @SuppressWarnings("ExposedPrivateType")
         public void writeCodeTo(PrettyPrinter printer) {
             if (isDefaultTestSuite) {
                 printer.printStatement(builder.suiteConfiguration("Configure the built-in test suite", builder.block.testing, name, JvmTestSuite.class.getSimpleName(), buildSuiteConfigurationContents()));
@@ -1418,6 +1417,7 @@ public class BuildScriptBuilder {
             TEST_NG(new MethodInvocationExpression("useTestNG"), "TestNG");
 
             final String displayName;
+            @SuppressWarnings({"ImmutableEnumChecker", "ExposedPrivateType"})
             final MethodInvocationExpression method;
 
             TestSuiteFramework(MethodInvocationExpression method, String displayName) {
@@ -1531,6 +1531,7 @@ public class BuildScriptBuilder {
         }
     }
 
+    @SuppressWarnings("ExposedPrivateType")
     public static class ScriptBlockImpl implements ScriptBlockBuilder, BlockBody {
         final List<Statement> statements = new ArrayList<>();
 
@@ -1553,6 +1554,7 @@ public class BuildScriptBuilder {
         }
 
         @Override
+        @SuppressWarnings("ExposedPrivateType")
         public void writeBodyTo(PrettyPrinter printer) {
             printer.printStatements(statements);
         }
@@ -1617,7 +1619,6 @@ public class BuildScriptBuilder {
         final TestingBlock testing;
         final ConfigurationStatements<TaskTypeSelector> taskTypes = new ConfigurationStatements<>();
         final ConfigurationStatements<TaskSelector> tasks = new ConfigurationStatements<>();
-        final ConfigurationStatements<ConventionSelector> conventions = new ConfigurationStatements<>();
         final BuildScriptBuilder builder;
 
         private TopLevelBlock(BuildScriptBuilder builder) {
@@ -1638,7 +1639,6 @@ public class BuildScriptBuilder {
                 printer.printStatement(testing);
             }
             super.writeBodyTo(printer);
-            printer.printStatement(conventions);
             printer.printStatement(taskTypes);
             for (SuiteSpec suite : testing.suites) {
                 if (!suite.isDefaultTestSuite()) {
@@ -2003,10 +2003,9 @@ public class BuildScriptBuilder {
 
         String dependencySpec(String config, String notation);
 
-        String propertyAssignment(PropertyAssignment expression);
+        String complexDependencySpec(String config, String notation);
 
-        @Nullable
-        String conventionSelector(ConventionSelector selector);
+        String propertyAssignment(PropertyAssignment expression);
 
         String taskSelector(TaskSelector selector);
 
@@ -2105,6 +2104,11 @@ public class BuildScriptBuilder {
         }
 
         @Override
+        public String complexDependencySpec(String config, String notation) {
+            return dependencySpec(config, notation);
+        }
+
+        @Override
         public String propertyAssignment(PropertyAssignment expression) {
             String propertyName = expression.propertyName;
             ExpressionValue propertyValue = expression.propertyValue;
@@ -2133,11 +2137,6 @@ public class BuildScriptBuilder {
         }
 
         @Override
-        public String conventionSelector(ConventionSelector selector) {
-            return selector.conventionName;
-        }
-
-        @Override
         public String taskSelector(TaskSelector selector) {
             return "tasks.named<" + selector.taskType + ">(\"" + selector.taskName + "\")";
         }
@@ -2149,22 +2148,22 @@ public class BuildScriptBuilder {
 
         @Override
         public String taskRegistration(String taskName, String taskType) {
-            return "val " + taskName + " by tasks.registering(" + taskType + "::class)";
+            return "val " + taskName + " = tasks.register<" + taskType + ">(" + string(taskName) + ")";
         }
 
         @Override
         public String taskConfiguration(String taskName, String taskType) {
-            return "val " + taskName + " by tasks.getting(" + taskType + "::class)";
+            return "val " + taskName + " = tasks.named<" + taskType + ">(" + string(taskName) + ")";
         }
 
         @Override
         public String suiteRegistration(String suiteName, String suiteType) {
-            return "val " + suiteName + " by registering(" + suiteType + "::class)";
+            return "val " + suiteName + " = register<" + suiteType + ">(" + string(suiteName) + ")";
         }
 
         @Override
         public String suiteConfiguration(String suiteName, String suiteType) {
-            return "val " + suiteName + " by getting(" + suiteType + "::class)";
+            return "val " + suiteName + " = named<" + suiteType + ">(" + string(suiteName) + ")";
         }
 
         @Override
@@ -2187,11 +2186,11 @@ public class BuildScriptBuilder {
             return blockStatement;
         }
 
-        @Nonnull
+        @NonNull
         private String getLiteral(String container, String elementName, @Nullable String elementType, String varName) {
             if (varName == null) {
                 if (elementType == null) {
-                    return "val " + elementName + " by " + container + ".creating";
+                    return "val " + elementName + " = " + container + ".create(" + string(elementName) + ")";
                 }
                 return container + ".create<" + elementType + ">(" + string(elementName) + ")";
             }
@@ -2293,15 +2292,15 @@ public class BuildScriptBuilder {
         }
 
         @Override
+        public String complexDependencySpec(String config, String notation) {
+            return config + "(" + notation + ")";
+        }
+
+        @Override
         public String propertyAssignment(PropertyAssignment expression) {
             String propertyName = expression.propertyName;
             ExpressionValue propertyValue = expression.propertyValue;
             return propertyName + " = " + propertyValue.with(this);
-        }
-
-        @Override
-        public String conventionSelector(ConventionSelector selector) {
-            return null;
         }
 
         @Override

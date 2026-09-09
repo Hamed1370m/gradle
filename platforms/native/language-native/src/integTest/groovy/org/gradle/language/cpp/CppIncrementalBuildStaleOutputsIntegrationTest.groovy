@@ -24,6 +24,7 @@ import org.gradle.nativeplatform.fixtures.app.IncrementalCppStaleLinkOutputApp
 import org.gradle.nativeplatform.fixtures.app.IncrementalCppStaleLinkOutputAppWithLib
 import org.gradle.nativeplatform.fixtures.app.IncrementalCppStaleLinkOutputLib
 import org.gradle.nativeplatform.fixtures.app.SourceElement
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledToolChainIntegrationSpec implements CppTaskNames {
 
@@ -45,8 +46,8 @@ class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledTo
 
         expect:
         succeeds "assemble"
+        result.assertTasksScheduled(tasks.debug.allToInstall, ":assemble")
         result.assertTasksExecuted(tasks.debug.allToInstall, ":assemble")
-        result.assertTasksNotSkipped(tasks.debug.allToInstall, ":assemble")
 
         file("build/obj/main/debug").assertHasDescendants(expectIntermediateDescendants(app.alternate))
         executable("build/exe/main/debug/app").assertExists()
@@ -71,13 +72,14 @@ class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledTo
 
         expect:
         succeeds "assemble"
+        result.assertTasksScheduled(tasks.debug.allToLink, ":assemble")
         result.assertTasksExecuted(tasks.debug.allToLink, ":assemble")
-        result.assertTasksNotSkipped(tasks.debug.allToLink, ":assemble")
 
         file("build/obj/main/debug").assertHasDescendants(expectIntermediateDescendants(lib.alternate))
         sharedLibrary("build/lib/main/debug/hello").assertExists()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "removes stale installed executable and library file when all source files for executable are removed"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -117,8 +119,8 @@ class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledTo
         then:
         def skippedTasks = tasks(":greeter").debug.allToLink + [":greeter:assemble", ":assemble"]
         def notSkippedTasks = tasks(":app").debug.allToInstall + [":app:assemble"]
-        result.assertTasksExecuted(skippedTasks, notSkippedTasks)
-        result.assertTasksNotSkipped(notSkippedTasks)
+        result.assertTasksScheduled(skippedTasks, notSkippedTasks)
+        result.assertTasksExecuted(notSkippedTasks)
         result.assertTasksSkipped(skippedTasks)
 
         executable("app/build/exe/main/debug/app").assertDoesNotExist()
@@ -155,8 +157,8 @@ class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledTo
         succeeds "assemble"
 
         then:
+        result.assertTasksScheduled(tasks.debug.allToInstall, ":assemble")
         result.assertTasksExecuted(tasks.debug.allToInstall, ":assemble")
-        result.assertTasksNotSkipped(tasks.debug.allToInstall, ":assemble")
 
         executable("build/exe/main/debug/app").assertDoesNotExist()
         file("build/exe/main/debug").assertDoesNotExist()
@@ -188,8 +190,8 @@ class CppIncrementalBuildStaleOutputsIntegrationTest extends AbstractInstalledTo
         succeeds "assemble"
 
         then:
+        result.assertTasksScheduled(tasks.debug.allToLink, ":assemble")
         result.assertTasksExecuted(tasks.debug.allToLink, ":assemble")
-        result.assertTasksNotSkipped(tasks.debug.allToLink, ":assemble")
 
         sharedLibrary("build/lib/main/debug/hello").assertDoesNotExist()
         file("build/lib/main/debug").assertDoesNotExist()

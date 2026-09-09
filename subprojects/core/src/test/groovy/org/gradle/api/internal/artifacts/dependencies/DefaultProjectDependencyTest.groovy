@@ -16,139 +16,53 @@
 
 package org.gradle.api.internal.artifacts.dependencies
 
-import org.gradle.api.artifacts.ExternalDependency
 import org.gradle.api.artifacts.ProjectDependency
-import org.gradle.api.artifacts.dsl.DependencyFactory
-import org.gradle.api.internal.file.TestFiles
+import org.gradle.api.internal.artifacts.dsl.CapabilityNotationParserFactory
+import org.gradle.api.internal.project.ProjectIdentity
 import org.gradle.api.internal.project.ProjectInternal
-import org.gradle.api.internal.tasks.TaskDependencyResolveContext
-import org.gradle.internal.component.resolution.failure.exception.VariantSelectionByNameException
-import org.gradle.test.fixtures.AbstractProjectBuilderSpec
+import org.gradle.api.internal.project.ProjectState
+import org.gradle.util.AttributeTestUtil
+import org.gradle.util.Path
+import org.gradle.util.TestUtil
+import spock.lang.Specification
 
 import static org.gradle.api.internal.artifacts.dependencies.AbstractModuleDependencySpec.assertDeepCopy
 import static org.gradle.util.Matchers.strictlyEqual
 import static org.hamcrest.MatcherAssert.assertThat
 
-class DefaultProjectDependencyTest extends AbstractProjectBuilderSpec {
+class DefaultProjectDependencyTest extends Specification {
+
+    ProjectState projectState = Stub(ProjectState) {
+        getIdentity() >> ProjectIdentity.forRootProject(Path.ROOT, "test-project")
+    }
+
     private ProjectDependency projectDependency
 
     def setup() {
-        projectDependency = project.services.get(DependencyFactory).create(project)
-        project.version = "1.2"
-        project.group = "org.gradle"
+        def project = Mock(ProjectInternal) {
+            getName() >> projectState.identity.projectName
+            getGroup() >> "org.gradle"
+            getVersion() >> "1.2"
+        }
+        projectState.getMutableModel() >> project
+
+        projectDependency = new DefaultProjectDependency(projectState)
+        projectDependency.setAttributesFactory(AttributeTestUtil.attributesFactory())
+        projectDependency.setCapabilityNotationParser(new CapabilityNotationParserFactory(false).create())
+        projectDependency.setObjectFactory(TestUtil.objectFactory())
+    }
+
+    def "exposes local project path"() {
+        expect:
+        projectDependency.path == projectState.identity.projectPath.asString()
     }
 
     void "provides dependency information"() {
         expect:
         projectDependency.transitive
-        projectDependency.name == project.name
+        projectDependency.name == projectState.identity.projectName
         projectDependency.group == "org.gradle"
         projectDependency.version == "1.2"
-    }
-
-    void "transitive resolution resolves all dependencies"() {
-        def context = Mock(org.gradle.api.internal.artifacts.CachingDependencyResolveContext)
-
-        def superConf = project.configurations.create("superConf")
-        def conf = project.configurations.create("conf")
-        conf.extendsFrom(superConf)
-
-        def dep1 = Mock(ProjectDependency)
-        def dep2 = Mock(ExternalDependency)
-        conf.dependencies.add(dep1)
-        superConf.dependencies.add(dep2)
-
-        projectDependency = new DefaultProjectDependency(project, "conf", true, TestFiles.taskDependencyFactory())
-
-        when:
-        projectDependency.resolve(context)
-
-        then:
-        1 * context.transitive >> true
-        1 * context.add(dep1)
-        1 * context.add(dep2)
-        0 * _
-    }
-
-    void "if resolution context is not transitive it will not contain all dependencies"() {
-        def context = Mock(org.gradle.api.internal.artifacts.CachingDependencyResolveContext)
-        projectDependency = new DefaultProjectDependency(project, null, true, TestFiles.taskDependencyFactory())
-
-        when:
-        projectDependency.resolve(context)
-
-        then:
-        1 * context.transitive >> false
-        0 * _
-    }
-
-    void "if dependency is not transitive the resolution context will not contain all dependencies"() {
-        def context = Mock(org.gradle.api.internal.artifacts.CachingDependencyResolveContext)
-        projectDependency = new DefaultProjectDependency(project, null, true, TestFiles.taskDependencyFactory())
-        projectDependency.setTransitive(false)
-
-        when:
-        projectDependency.resolve(context)
-
-        then:
-        0 * _
-    }
-
-    void "is buildable"() {
-        def context = Mock(TaskDependencyResolveContext)
-
-        def conf = project.configurations.create('conf')
-        projectDependency = new DefaultProjectDependency(project, 'conf', true, TestFiles.taskDependencyFactory())
-
-        when:
-        projectDependency.buildDependencies.visitDependencies(context)
-
-        then:
-        1 * context.add(conf)
-        1 * context.add({ it.is(conf.allArtifacts) })
-        0 * _
-    }
-
-    void "doesn't allow selection of configuration that is not consumable"() {
-        def context = Mock(TaskDependencyResolveContext)
-
-        project.configurations.create('conf') {
-            canBeConsumed = false
-        }
-        projectDependency = new DefaultProjectDependency(project, 'conf', true, TestFiles.taskDependencyFactory())
-
-        when:
-        projectDependency.buildDependencies.visitDependencies(context)
-
-        then:
-        def e = thrown(VariantSelectionByNameException)
-        e.message == "Selected configuration 'conf' on root project : but it can't be used as a project dependency because it isn't intended for consumption by other components."
-    }
-
-    void "does not build project dependencies if configured so"() {
-        def context = Mock(TaskDependencyResolveContext)
-        project.configurations.create('conf')
-        projectDependency = new DefaultProjectDependency(project, 'conf', false, TestFiles.taskDependencyFactory())
-
-        when:
-        projectDependency.buildDependencies.visitDependencies(context)
-
-        then:
-        0 * _
-    }
-
-    void "is self resolving dependency"() {
-        def conf = project.configurations.create('conf')
-        projectDependency = new DefaultProjectDependency(project, 'conf', true, TestFiles.taskDependencyFactory())
-
-        when:
-        def files = projectDependency.resolve()
-
-        then:
-        0 * _
-
-        and:
-        files == conf.allArtifacts.files as Set
     }
 
     void "knows when content is equal"() {
@@ -156,7 +70,7 @@ class DefaultProjectDependencyTest extends AbstractProjectBuilderSpec {
         def d2 = createProjectDependency()
 
         expect:
-        d1.contentEquals(d2)
+        d1 == d2
     }
 
     void "knows when content is not equal"() {
@@ -165,7 +79,7 @@ class DefaultProjectDependencyTest extends AbstractProjectBuilderSpec {
         d2.setTransitive(false)
 
         expect:
-        !d1.contentEquals(d2)
+        d1 != d2
     }
 
     void "can copy"() {
@@ -174,7 +88,7 @@ class DefaultProjectDependencyTest extends AbstractProjectBuilderSpec {
 
         expect:
         assertDeepCopy(d1, copy)
-        d1.dependencyProject == copy.dependencyProject
+        d1.path == copy.path
     }
 
     def "requested capabilities exposes all capability selector types"() {
@@ -195,28 +109,40 @@ class DefaultProjectDependencyTest extends AbstractProjectBuilderSpec {
     }
 
     private createProjectDependency() {
-        def out = new DefaultProjectDependency(project, true)
+        def out = new DefaultProjectDependency(projectState)
         out.addArtifact(new DefaultDependencyArtifact("name", "type", "ext", "classifier", "url"))
         out
     }
 
     void "knows if is equal"() {
-        expect:
-        assertThat(new DefaultProjectDependency(project, true),
-            strictlyEqual(new DefaultProjectDependency(project, true)))
+        def dep1 = new DefaultProjectDependency(projectState)
+        def dep2 = new DefaultProjectDependency(projectState)
 
-        assertThat(new DefaultProjectDependency(project, "conf1", false, TestFiles.taskDependencyFactory()),
-            strictlyEqual(new DefaultProjectDependency(project, "conf1", false, TestFiles.taskDependencyFactory())))
+        def dep1WithConf = new DefaultProjectDependency(projectState)
+        dep1WithConf.setTargetConfiguration("conf1")
+
+        def dep2WithConf = new DefaultProjectDependency(projectState)
+        dep2WithConf.setTargetConfiguration("conf1")
+
+        expect:
+        assertThat(dep1, strictlyEqual(dep2))
+        assertThat(dep1WithConf, strictlyEqual(dep2WithConf))
 
         when:
-        def base = new DefaultProjectDependency(project, "conf1", true, TestFiles.taskDependencyFactory())
-        def differentConf = new DefaultProjectDependency(project, "conf2", true, TestFiles.taskDependencyFactory())
-        def differentBuildDeps = new DefaultProjectDependency(project, "conf1", false, TestFiles.taskDependencyFactory())
-        def differentProject = new DefaultProjectDependency(Mock(ProjectInternal), "conf1", true, TestFiles.taskDependencyFactory())
+        def base = new DefaultProjectDependency(projectState)
+        base.setTargetConfiguration("conf1")
+
+        def differentConf = new DefaultProjectDependency(projectState)
+        differentConf.setTargetConfiguration("conf2")
+
+        def otherProjectState = Mock(ProjectState) {
+            getIdentity() >> ProjectIdentity.forSubproject(Path.ROOT, Path.path(":bar"))
+        }
+        def differentProject = new DefaultProjectDependency(otherProjectState)
+        differentProject.setTargetConfiguration("conf1")
 
         then:
         base != differentConf
-        base != differentBuildDeps
         base != differentProject
     }
 }

@@ -56,6 +56,7 @@ class TestProjectGeneratorConfiguration {
     int testForkEvery
     boolean useTestNG
     Map<String, String> fileToChangeByScenario
+    int deprecationsPerProject
 }
 
 @Builder(prefix = "with",
@@ -87,10 +88,10 @@ class TestProjectGeneratorConfigurationBuilder {
         this.systemProperties = [:]
         this.featurePreviews = [] as String[]
         this.externalApiDependencies = [
-            commonsLang: 'commons-lang:commons-lang:2.5',
-            commonsHttpClient: 'commons-httpclient:commons-httpclient:3.0',
-            commonsCodec: 'commons-codec:commons-codec:1.2',
-            jclOverSlf4j: 'org.slf4j:jcl-over-slf4j:1.7.10',
+            commonsLang: 'org.apache.commons:commons-lang3:3.20.0',
+            commonsHttpClient: 'org.apache.httpcomponents.client5:httpclient5:5.6.2',
+            commonsCodec: 'commons-codec:commons-codec:1.22.0',
+            jclOverSlf4j: 'org.slf4j:jcl-over-slf4j:2.0.18',
         ]
     }
 
@@ -130,7 +131,7 @@ class TestProjectGeneratorConfigurationBuilder {
         config.repositories = [mavenCentralRepositoryDefinition(this.dsl)]
         config.externalApiDependencies = this.externalApiDependencies
         config.externalImplementationDependencies = [
-            reflectasm: 'com.googlecode:reflectasm:1.01',
+            reflectasm: 'com.esotericsoftware:reflectasm:1.11.9',
         ]
 
         config.subProjects = this.subProjects
@@ -151,6 +152,7 @@ class TestProjectGeneratorConfigurationBuilder {
         config.testForkEvery = 1000
         config.useTestNG = this.useTestNG
         config.fileToChangeByScenario = this.fileToChangeByScenario
+        config.deprecationsPerProject = this.deprecationsPerProject
         return config
     }
 }

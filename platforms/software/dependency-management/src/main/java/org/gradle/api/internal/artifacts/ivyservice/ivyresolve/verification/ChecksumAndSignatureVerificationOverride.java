@@ -24,6 +24,8 @@ import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
 import org.gradle.api.artifacts.result.ResolvedArtifactResult;
 import org.gradle.api.artifacts.result.ResolvedVariantResult;
 import org.gradle.api.artifacts.verification.DependencyVerificationMode;
+import org.gradle.api.attributes.AttributeContainer;
+import org.gradle.api.capabilities.Capability;
 import org.gradle.api.component.Artifact;
 import org.gradle.api.internal.DocumentationRegistry;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.DependencyVerifyingModuleComponentRepository;
@@ -42,7 +44,7 @@ import org.gradle.api.logging.Logging;
 import org.gradle.internal.Factory;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.component.external.model.ModuleComponentArtifactIdentifier;
-import org.gradle.internal.component.external.model.ModuleComponentGraphResolveState;
+import org.gradle.internal.component.external.model.ExternalModuleComponentGraphResolveState;
 import org.gradle.internal.concurrent.Stoppable;
 import org.gradle.internal.hash.ChecksumService;
 import org.gradle.internal.logging.ConsoleRenderer;
@@ -102,7 +104,7 @@ public class ChecksumAndSignatureVerificationOverride implements DependencyVerif
             this.verifier = DependencyVerificationsXmlReader.readFromXml(
                 new FileInputStream(observed(verificationsFile))
             );
-            this.reportWriter = new DependencyVerificationReportWriter(gradleUserHome.toPath(), documentationRegistry, verificationsFile, verifier.getSuggestedWriteFlags(), reportsDirectory, gradlePropertiesFactory);
+            this.reportWriter = new DependencyVerificationReportWriter(gradleUserHome.toPath(), documentationRegistry, verificationsFile, verifier.getSuggestedWriteFlags(), reportsDirectory, gradlePropertiesFactory, verifier.getConfiguration().isUseKeyServers());
         } catch (FileNotFoundException e) {
             throw UncheckedException.throwAsUncheckedException(e);
         } catch (DependencyVerificationException e) {
@@ -167,7 +169,7 @@ public class ChecksumAndSignatureVerificationOverride implements DependencyVerif
     }
 
     @Override
-    public ModuleComponentRepository<ModuleComponentGraphResolveState> overrideDependencyVerification(ModuleComponentRepository<ModuleComponentGraphResolveState> original) {
+    public ModuleComponentRepository<ExternalModuleComponentGraphResolveState> overrideDependencyVerification(ModuleComponentRepository<ExternalModuleComponentGraphResolveState> original) {
         return new DependencyVerifyingModuleComponentRepository(original, this, verifier.getConfiguration().isVerifySignatures());
     }
 
@@ -221,6 +223,16 @@ public class ChecksumAndSignatureVerificationOverride implements DependencyVerif
             @Override
             public ComponentArtifactIdentifier getId() {
                 return artifact.getId();
+            }
+
+            @Override
+            public AttributeContainer getAttributes() {
+                return artifact.getAttributes();
+            }
+
+            @Override
+            public Collection<? extends Capability> getCapabilities() {
+                return artifact.getCapabilities();
             }
 
             @Override

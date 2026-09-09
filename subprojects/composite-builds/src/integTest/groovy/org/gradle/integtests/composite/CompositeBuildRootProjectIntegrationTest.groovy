@@ -16,10 +16,12 @@
 
 package org.gradle.integtests.composite
 
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.build.BuildTestFile
 
 class CompositeBuildRootProjectIntegrationTest extends AbstractCompositeBuildIntegrationTest {
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "root of a composite build cannot refer to own subprojects by GA coordinates by default"() {
         given:
         def buildB = multiProjectBuild("buildB", ['c1', 'c2', 'c3']) {
@@ -44,6 +46,7 @@ class CompositeBuildRootProjectIntegrationTest extends AbstractCompositeBuildInt
         failure.assertHasCause("Cannot resolve external dependency org.test:buildB because no repositories are defined.")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
     def "root of a composite build can refer to own subprojects by GA coordinates when including itself"() {
         given:
         def buildB = multiProjectBuild("buildB", ['c1', 'c2', 'c3']) {
@@ -66,10 +69,10 @@ class CompositeBuildRootProjectIntegrationTest extends AbstractCompositeBuildInt
         execute(buildB, "c3:jar")
 
         then:
-        result.assertTaskExecuted(":c1:compileJava")
-        result.assertTaskExecuted(":c2:compileJava")
-        result.assertTaskExecuted(":c3:compileJava")
-        result.assertTaskExecuted(":compileJava")
+        result.assertTaskScheduled(":c1:compileJava")
+        result.assertTaskScheduled(":c2:compileJava")
+        result.assertTaskScheduled(":c3:compileJava")
+        result.assertTaskScheduled(":compileJava")
     }
 
     def "included build can depend on including build"() {
@@ -96,10 +99,10 @@ class CompositeBuildRootProjectIntegrationTest extends AbstractCompositeBuildInt
         execute(buildA, "buildBJar")
 
         then:
-        result.assertTaskExecuted(":compileJava")
-        result.assertTaskExecuted(":jar")
-        result.assertTaskExecuted(":buildB:compileJava")
-        result.assertTaskExecuted(":buildB:jar")
-        result.assertTaskExecuted(":buildBJar")
+        result.assertTaskScheduled(":compileJava")
+        result.assertTaskScheduled(":jar")
+        result.assertTaskScheduled(":buildB:compileJava")
+        result.assertTaskScheduled(":buildB:jar")
+        result.assertTaskScheduled(":buildBJar")
     }
 }

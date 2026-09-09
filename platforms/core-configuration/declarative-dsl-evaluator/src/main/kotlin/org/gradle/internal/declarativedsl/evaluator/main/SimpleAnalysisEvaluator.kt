@@ -23,28 +23,32 @@ import org.gradle.internal.declarativedsl.evaluator.defaults.ApplyModelDefaultsH
 import org.gradle.internal.declarativedsl.evaluator.defaults.ModelDefaultsDefinitionCollector
 import org.gradle.internal.declarativedsl.evaluator.defaults.ModelDefaultsRepository
 import org.gradle.internal.declarativedsl.evaluator.defaults.ModelDefaultsResolutionResults
-import org.gradle.internal.declarativedsl.evaluator.defaults.defaultsForAllUsedSoftwareTypes
+import org.gradle.internal.declarativedsl.evaluator.defaults.defaultsForAllUsedProjectFeatures
+import org.gradle.internal.declarativedsl.evaluator.runner.AnalysisEvaluationResult
 import org.gradle.internal.declarativedsl.evaluator.runner.AnalysisStepContext
-import org.gradle.internal.declarativedsl.evaluator.runner.AnalysisStepResult
 import org.gradle.internal.declarativedsl.evaluator.runner.AnalysisStepRunner
-import org.gradle.internal.declarativedsl.evaluator.runner.EvaluationResult
 import org.gradle.internal.declarativedsl.evaluator.schema.DeclarativeScriptContext
-import org.gradle.internal.declarativedsl.evaluator.schema.InterpretationSchemaBuilder
 import org.gradle.internal.declarativedsl.evaluator.schema.InterpretationSchemaBuildingResult
 import java.io.File
 
 
 class AnalysisSequenceResult(
-    val stepResults: Map<InterpretationSequenceStep, EvaluationResult<AnalysisStepResult>>
+    val stepResults: Map<InterpretationSequenceStep, AnalysisEvaluationResult>
 )
 
 
 class SimpleAnalysisEvaluator(
-    val schemaBuilder: InterpretationSchemaBuilder
+    val schemaBuilder: (DeclarativeScriptContext) -> InterpretationSchemaBuildingResult
 ) {
     companion object {
         fun withSchema(settings: InterpretationSequence, project: InterpretationSequence): SimpleAnalysisEvaluator =
-            SimpleAnalysisEvaluator(PrebuiltInterpretationSchemaBuilder(settings, project))
+            SimpleAnalysisEvaluator {
+                when (it) {
+                    DeclarativeScriptContext.ProjectScript -> InterpretationSchemaBuildingResult.InterpretationSequenceAvailable(project)
+                    DeclarativeScriptContext.SettingsScript -> InterpretationSchemaBuildingResult.InterpretationSequenceAvailable(settings)
+                    DeclarativeScriptContext.UnknownScript -> InterpretationSchemaBuildingResult.SchemaNotBuilt
+                }
+            }
     }
 
     private
@@ -61,7 +65,7 @@ class SimpleAnalysisEvaluator(
             // Note that for this evaluator, which only analyzes the script (but does not apply conversion), we add the model defaults
             // to the resolution result so that they are visible to clients after analysis.  We instead do this application as part
             // of the conversion step runner (during plugin application) for normal script evaluation.
-            AllSoftwareTypesApplyModelDefaultsHandler(modelDefaultsStorage)
+            AllProjectTypesApplyModelDefaultsHandler(modelDefaultsStorage)
         )
     )
 
@@ -70,7 +74,7 @@ class SimpleAnalysisEvaluator(
         scriptSource: String
     ): AnalysisSequenceResult {
         val scriptContext = scriptContextFromFileName(scriptFileName)
-        return when (val built = schemaBuilder.getEvaluationSchemaForScript(scriptContext)) {
+        return when (val built = schemaBuilder(scriptContext)) {
             InterpretationSchemaBuildingResult.SchemaNotBuilt -> AnalysisSequenceResult(emptyMap())
             is InterpretationSchemaBuildingResult.InterpretationSequenceAvailable -> AnalysisSequenceResult(
                 built.sequence.steps.associateWith {
@@ -82,15 +86,15 @@ class SimpleAnalysisEvaluator(
 
     private
     fun scriptContextFromFileName(fileName: String) = when (File(fileName).name) {
-        "build.gradle.dcl" -> object : DeclarativeScriptContext.ProjectScript {}
-        "settings.gradle.dcl" -> object : DeclarativeScriptContext.SettingsScript {}
+        "build.gradle.dcl", "build.gradle.kts" -> DeclarativeScriptContext.ProjectScript
+        "settings.gradle.dcl", "settings.gradle.kts" -> DeclarativeScriptContext.SettingsScript
         else -> DeclarativeScriptContext.UnknownScript
     }
 }
 
 
 private
-class AllSoftwareTypesApplyModelDefaultsHandler(val modelDefaultsRepository: ModelDefaultsRepository) : ApplyModelDefaultsHandler {
+class AllProjectTypesApplyModelDefaultsHandler(val modelDefaultsRepository: ModelDefaultsRepository) : ApplyModelDefaultsHandler {
     override fun getDefaultsResolutionResults(resolutionResult: ResolutionResult): List<ModelDefaultsResolutionResults> =
-        defaultsForAllUsedSoftwareTypes(modelDefaultsRepository, resolutionResult)
+        defaultsForAllUsedProjectFeatures(modelDefaultsRepository, resolutionResult)
 }

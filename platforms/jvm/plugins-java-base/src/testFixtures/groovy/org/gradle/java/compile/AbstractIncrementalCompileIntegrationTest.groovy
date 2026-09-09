@@ -19,11 +19,12 @@ package org.gradle.java.compile
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.CompiledLanguage
 import org.gradle.integtests.fixtures.FeaturePreviewsFixture
-import org.gradle.integtests.fixtures.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.internal.jvm.Jvm
 
 abstract class AbstractIncrementalCompileIntegrationTest extends AbstractIntegrationSpec implements IncrementalCompileMultiProjectTestFixture {
     abstract CompiledLanguage getLanguage()
+    abstract Class<?> getLanguageBasePluginClass()
 
     def setup() {
         if (language == CompiledLanguage.GROOVY) {
@@ -87,7 +88,7 @@ abstract class AbstractIncrementalCompileIntegrationTest extends AbstractIntegra
 
         then:
         def failure = fails 'classes'
-        failure.assertHasDescription "Execution failed for task ':${language.compileTaskName}'."
+        failure.assertHasDescription "Execution failed for task ':${language.compileTaskName}' (registered by plugin class '${getLanguageBasePluginClass().getName()}')."
     }
 
     @ToBeFixedForIsolatedProjects(because = "subprojects, configure projects from root")
@@ -117,7 +118,7 @@ abstract class AbstractIncrementalCompileIntegrationTest extends AbstractIntegra
 
         then:
         def failure = fails 'app:classes'
-        failure.assertHasDescription "Execution failed for task ':app:${language.compileTaskName}'."
+        failure.assertHasDescription "Execution failed for task ':app:${language.compileTaskName}' (registered by plugin class '${getLanguageBasePluginClass().getName()}')."
     }
 
     @ToBeFixedForIsolatedProjects(because = "subprojects, configure projects from root")

@@ -17,6 +17,9 @@
 package org.gradle.api.publish.maven;
 
 import org.gradle.api.provider.Property;
+import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.Optional;
+import org.jspecify.annotations.NullMarked;
 
 /**
  * The relocation information of a Maven publication that has been moved
@@ -26,26 +29,39 @@ import org.gradle.api.provider.Property;
  * @see MavenPom
  * @see MavenPomDistributionManagement
  */
+@NullMarked
 public interface MavenPomRelocation {
 
     /**
      * The new group ID of the artifact.
+     * @since 4.8
      */
+    @Input
+    @Optional
     Property<String> getGroupId();
 
     /**
      * The new artifact ID of the artifact.
+     * @since 4.8
      */
+    @Input
+    @Optional
     Property<String> getArtifactId();
 
     /**
      * The new version of the artifact.
+     * @since 4.8
      */
+    @Input
+    @Optional
     Property<String> getVersion();
 
     /**
      * The message to show the user for this relocation.
+     * @since 4.8
      */
+    @Input
+    @Optional
     Property<String> getMessage();
 
 }

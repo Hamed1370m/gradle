@@ -26,6 +26,7 @@ import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.GradleModu
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.MetaDataParser
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionParser
 import org.gradle.api.internal.artifacts.mvnsettings.LocalMavenRepositoryLocator
+import org.gradle.api.internal.artifacts.mvnsettings.MavenMirrorResolver
 import org.gradle.api.internal.artifacts.repositories.metadata.IvyMutableModuleMetadataFactory
 import org.gradle.api.internal.artifacts.repositories.metadata.MavenMutableModuleMetadataFactory
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransportFactory
@@ -57,17 +58,20 @@ class DefaultBaseRepositoryFactoryTest extends Specification {
     final ImmutableModuleIdentifierFactory moduleIdentifierFactory = Mock()
     final MavenMutableModuleMetadataFactory mavenMetadataFactory = DependencyManagementTestUtil.mavenMetadataFactory()
     final IvyMutableModuleMetadataFactory ivyMetadataFactory = DependencyManagementTestUtil.ivyMetadataFactory()
-    final DefaultUrlArtifactRepository.Factory urlArtifactRepositoryFactory = new DefaultUrlArtifactRepository.Factory(fileResolver);
+    final DefaultUrlArtifactRepository.Factory urlArtifactRepositoryFactory = new DefaultUrlArtifactRepository.Factory(fileResolver)
     final ProviderFactory providerFactory = Mock()
+    final MavenMirrorResolver mavenMirrorResolver = Mock(MavenMirrorResolver) {
+        mirrorFor(_, _) >> Optional.empty()
+    }
 
     final DefaultBaseRepositoryFactory factory = new DefaultBaseRepositoryFactory(
-            localMavenRepoLocator, fileResolver, fileCollectionFactory, transportFactory, locallyAvailableResourceFinder,
-            artifactIdentifierFileStore, externalResourceFileStore, pomParser, metadataParser, authenticationSchemeRegistry, ivyContextManager, moduleIdentifierFactory,
-            TestUtil.instantiatorFactory(), Mock(FileResourceRepository), mavenMetadataFactory, ivyMetadataFactory, SnapshotTestUtil.isolatableFactory(), TestUtil.objectFactory(),
-            CollectionCallbackActionDecorator.NOOP,
-            urlArtifactRepositoryFactory,
-            TestUtil.checksumService,
-            providerFactory, new VersionParser()
+        localMavenRepoLocator, fileResolver, fileCollectionFactory, transportFactory, locallyAvailableResourceFinder,
+        artifactIdentifierFileStore, externalResourceFileStore, pomParser, metadataParser, authenticationSchemeRegistry, ivyContextManager, moduleIdentifierFactory,
+        TestUtil.instantiatorFactory(), Mock(FileResourceRepository), mavenMetadataFactory, ivyMetadataFactory, SnapshotTestUtil.isolatableFactory(), TestUtil.objectFactory(),
+        CollectionCallbackActionDecorator.NOOP,
+        urlArtifactRepositoryFactory,
+        TestUtil.checksumService,
+        providerFactory, new VersionParser(), mavenMirrorResolver
     )
 
     def testCreateFlatDirResolver() {
@@ -103,19 +107,6 @@ class DefaultBaseRepositoryFactoryTest extends Specification {
         repo.url == repoDir.toURI()
     }
 
-    def testCreateJCenterRepo() {
-        given:
-        def jcenterUrl = new URI(DefaultRepositoryHandler.BINTRAY_JCENTER_URL)
-
-        when:
-        fileResolver.resolveUri(DefaultRepositoryHandler.BINTRAY_JCENTER_URL) >> jcenterUrl
-
-        then:
-        def repo = factory.createJCenterRepository()
-        repo instanceof DefaultMavenArtifactRepository
-        repo.url == jcenterUrl
-    }
-
     def testCreateMavenCentralRepo() {
         given:
         def centralUrl = new URI(RepositoryHandler.MAVEN_CENTRAL_URL)
@@ -123,10 +114,31 @@ class DefaultBaseRepositoryFactoryTest extends Specification {
         when:
         fileResolver.resolveUri(RepositoryHandler.MAVEN_CENTRAL_URL) >> centralUrl
 
-        then:
         def repo = factory.createMavenCentralRepository()
+
+        then:
         repo instanceof DefaultMavenArtifactRepository
         repo.url == centralUrl
+
+        then:
+        def contentDescriptor = (repo as DefaultMavenArtifactRepository).getRepositoryDescriptorCopy()
+            as DefaultMavenRepositoryContentDescriptor
+        contentDescriptor.releases == true
+        contentDescriptor.snapshots == false
+    }
+
+    def "returns the same URL instance"() {
+        given:
+        def url = "https://repo.invalid/"
+
+        when:
+        fileResolver.resolveUri(url) >> { new URI(url) }
+        def repo = factory.createMavenRepository()
+        repo.url = url
+
+        then:
+        !fileResolver.resolveUri(url).is(fileResolver.resolveUri(url))
+        repo.url.is(repo.url)
     }
 
     def createIvyRepository() {

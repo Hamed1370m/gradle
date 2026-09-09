@@ -41,7 +41,6 @@ import org.gradle.kotlin.dsl.provider.fileCollectionOf
 import org.gradle.kotlin.dsl.provider.gradleKotlinDslOf
 import org.gradle.kotlin.dsl.support.ScriptHandlerScopeInternal
 import org.gradle.kotlin.dsl.support.invalidPluginsCall
-import org.gradle.kotlin.dsl.support.serviceOf
 
 import org.gradle.plugin.use.PluginDependenciesSpec
 
@@ -51,6 +50,8 @@ import kotlin.reflect.KProperty
 
 /**
  * Configures the build script classpath for this project.
+ *
+ * @since 4.7
  */
 fun Project.buildscript(action: ScriptHandlerScope.() -> Unit): Unit =
     ScriptHandlerScopeInternal(project, buildscript).action()
@@ -59,6 +60,8 @@ fun Project.buildscript(action: ScriptHandlerScope.() -> Unit): Unit =
 /**
  * Sets the default tasks of this project. These are used when no tasks names are provided when
  * starting the build.
+ *
+ * @since 4.1
  */
 @Suppress("nothing_to_inline", "SpreadOperator")
 inline fun Project.defaultTasks(vararg tasks: Task) {
@@ -74,6 +77,8 @@ inline fun Project.defaultTasks(vararg tasks: Task) {
  *
  * @param T the plugin type.
  * @see [PluginAware.apply]
+ *
+ * @since 5.6
  */
 inline fun <reified T : Plugin<Project>> Project.apply() =
     (this as PluginAware).apply<T>()
@@ -83,111 +88,49 @@ inline fun <reified T : Plugin<Project>> Project.apply() =
  * Executes the given configuration block against the [project extension]
  * [org.gradle.api.plugins.ExtensionAware] of the specified type.
  *
- * If no extension is found, configures a project convention if available.
- * Note, that the concept of conventions is deprecated and scheduled for
- * removal in Gradle 9.
- *
  * @param T the project extension type.
  * @param configuration the configuration block.
  * @see [org.gradle.api.plugins.ExtensionAware]
+ *
+ * @since 5.6
  */
 inline fun <reified T : Any> Project.configure(noinline configuration: T.() -> Unit): Unit =
-    typeOf<T>().let { type ->
-        // Find and configure extension
-        extensions.findByType(type)?.let(configuration)
-            ?: Factory {
-                // Find and configure convention
-                // Reflective look up to still support plugins that inlined this function once conventions will be removed
-                this::class.java.methods
-                    .firstOrNull { it.name == "getConvention" }
-                    ?.invoke(this)
-                    ?.let { convention ->
-                        convention::class.java
-                            .getMethod("findPlugin", Class::class.java)
-                            .invoke(convention, T::class.java)
-                    }
-            }.let { findPlugin ->
-                DeprecationLogger.whileDisabled(findPlugin)?.let { plugin ->
-                    // Second lookup to trigger deprecation warning if convention is found
-                    findPlugin.create()
-                    @Suppress("UNCHECKED_CAST")
-                    configuration(plugin as T)
-                }
-            }
-            // Configure the non-existent extension for error handling
-            ?: extensions.configure(type, configuration)
-    }
+    typeOf<T>().let { type -> extensions.configure(type, configuration) }
 
 
 /**
  * Returns the [project extension][org.gradle.api.plugins.ExtensionAware] of the specified type.
  *
- * If no extension is found, returns a project convention if available.
- * Note, that the concept of conventions is deprecated and scheduled for
- * removal in Gradle 9.
- *
  * @param T the project extension type.
  * @see [org.gradle.api.plugins.ExtensionAware]
+ *
+ * @since 5.6
  */
 inline fun <reified T : Any> Project.the(): T =
-    typeOf<T>().let { type ->
-        // Find extension
-        extensions.findByType(type)
-            ?: Factory {
-                // Find convention
-                // Reflective look up to still support plugins that inlined this function once conventions will be removed
-                this::class.java.methods.firstOrNull { it.name == "getConvention" }?.invoke(this)?.let { convention ->
-                    convention::class.java.getMethod("findPlugin", Class::class.java).invoke(convention, T::class.java)
-                }
-            }.let { findPlugin ->
-                DeprecationLogger.whileDisabled(findPlugin)?.let { plugin ->
-                    // Second lookup to trigger deprecation warning if convention is found
-                    findPlugin.create()
-                    @Suppress("UNCHECKED_CAST")
-                    plugin as T
-                }
-            }
-            // Get the non-existent extension for error handling
-            ?: extensions.getByType(type)
-    }
+    typeOf<T>().let { type -> extensions.getByType(type) }
 
 
 /**
  * Returns the [project extension][org.gradle.api.plugins.ExtensionAware] of the specified type.
  *
- * If no extension is found, returns a project convention if available.
- * Note, that the concept of conventions is deprecated and scheduled for
- * removal in Gradle 9.
- *
  * @param T the project extension type.
  * @see [org.gradle.api.plugins.ExtensionAware]
+ *
+ * @since 4.1
  */
 fun <T : Any> Project.the(extensionType: KClass<T>): T =
-    // Find extension
-    extensions.findByType(extensionType.java)
-        ?: Factory {
-            // Find convention
-            // Reflective look up to still support plugins that inlined this function once conventions will be removed
-            this::class.java.methods.firstOrNull { it.name == "getConvention" }?.invoke(this)?.let { convention ->
-                convention::class.java.getMethod("findPlugin", Class::class.java).invoke(convention, extensionType.java)
-            }
-        }.let { findPlugin ->
-            DeprecationLogger.whileDisabled(findPlugin)?.let { plugin ->
-                // Second lookup to trigger deprecation warning if convention is found
-                findPlugin.create()
-                @Suppress("UNCHECKED_CAST")
-                plugin as T
-            }
-        }
-        // Get the non-existent extension for error handling
-        ?: extensions.getByType(extensionType.java)
+    extensions.getByType(extensionType.java)
 
 
 /**
  * Creates a [Task] with the given [name] and [type], configures it with the given [configuration] action,
  * and adds it to this project tasks container.
+ *
+ * @since 4.1
  */
+@Deprecated("Use tasks.register instead", ReplaceWith("tasks.register<type>(name, configuration)"))
 inline fun <reified type : Task> Project.task(name: String, noinline configuration: type.() -> Unit) =
+    @Suppress("DEPRECATION")
     task(name, type::class, configuration)
 
 
@@ -196,12 +139,19 @@ inline fun <reified type : Task> Project.task(name: String, noinline configurati
  *
  * @see [Project.getTasks]
  * @see [TaskContainer.create]
+ *
+ * @since 5.6
  */
-@Suppress("extension_shadowed_by_member")
+@Deprecated("Use tasks.register instead", ReplaceWith("tasks.register<type>(name)"))
+@Suppress("extension_shadowed_by_member", "DEPRECATION")
 inline fun <reified type : Task> Project.task(name: String) =
     tasks.create(name, type::class.java)
 
-
+/**
+ * @since 4.1
+ */
+@Deprecated("Use tasks.register instead", ReplaceWith("tasks.register(name, type, configuration)"))
+@Suppress("DEPRECATION")
 fun <T : Task> Project.task(name: String, type: KClass<T>, configuration: T.() -> Unit) =
     tasks.create(name, type.java, configuration)
 
@@ -213,6 +163,8 @@ fun <T : Task> Project.task(name: String, type: KClass<T>, configuration: T.() -
  * project.
  *
  * @param configuration the configuration block.
+ *
+ * @since 4.1
  */
 fun Project.repositories(configuration: RepositoryHandler.() -> Unit) =
     repositories.configuration()
@@ -220,6 +172,8 @@ fun Project.repositories(configuration: RepositoryHandler.() -> Unit) =
 
 /**
  * Configures the repositories for the script dependencies.
+ *
+ * @since 4.1
  */
 fun ScriptHandler.repositories(configuration: RepositoryHandler.() -> Unit) =
     repositories.configuration()
@@ -232,6 +186,8 @@ fun ScriptHandler.repositories(configuration: RepositoryHandler.() -> Unit) =
  * project.
  *
  * @param configuration the configuration block.
+ *
+ * @since 4.1
  */
 fun Project.dependencies(configuration: DependencyHandlerScope.() -> Unit) =
     DependencyHandlerScope.of(dependencies).configuration()
@@ -244,6 +200,8 @@ fun Project.dependencies(configuration: DependencyHandlerScope.() -> Unit) =
  * project.
  *
  * @param configuration the configuration block.
+ *
+ * @since 5.1
  */
 fun Project.artifacts(configuration: ArtifactHandlerScope.() -> Unit) =
     ArtifactHandlerScope.of(artifacts).configuration()
@@ -251,9 +209,27 @@ fun Project.artifacts(configuration: ArtifactHandlerScope.() -> Unit) =
 
 /**
  * Locates a property on [Project].
+ *
+ * @since 4.7
  */
-operator fun Project.provideDelegate(any: Any?, property: KProperty<*>): PropertyDelegate =
-    propertyDelegateFor(serviceOf(), this, property)
+@Deprecated("Use 'val property = project.property(name)' or 'val property = project.findProperty(name)' instead. See the Gradle 9.6 upgrading guide.")
+@Suppress("DEPRECATION")
+operator fun Project.provideDelegate(any: Any?, property: KProperty<*>): PropertyDelegate {
+    if (property.returnType.isMarkedNullable) {
+        DeprecationLogger.deprecate("The 'val name: Type? by project' property delegate syntax")
+            .withAdvice("Use 'val property = project.findProperty(name)' instead.")
+            .willBeRemovedInGradle10()
+            .withUpgradeGuideSection(9, "kotlin_dsl_delegated_properties")
+            .nagUser()
+    } else {
+        DeprecationLogger.deprecate("The 'val name: Type by project' property delegate syntax")
+            .withAdvice("Use 'val property = project.property(name)' instead.")
+            .willBeRemovedInGradle10()
+            .withUpgradeGuideSection(9, "kotlin_dsl_delegated_properties")
+            .nagUser()
+    }
+    return DeprecationLogger.whileDisabled(Factory { propertyDelegateFor(this, property) })
+}
 
 
 /**
@@ -268,8 +244,12 @@ operator fun Project.provideDelegate(any: Any?, property: KProperty<*>): Propert
  * @return The container.
  *
  * @see [Project.container]
+ *
+ * @since 5.6
  */
-inline fun <reified T> Project.container(): NamedDomainObjectContainer<T> =
+@Suppress("DEPRECATION")
+@Deprecated("Replaced by ObjectFactory method", replaceWith = ReplaceWith("objects.domainObjectContainer(T::class.java)"))
+inline fun <reified T : Any> Project.container(): NamedDomainObjectContainer<T> =
     container(T::class.java)
 
 
@@ -286,7 +266,11 @@ inline fun <reified T> Project.container(): NamedDomainObjectContainer<T> =
  * @return The container.
  *
  * @see [Project.container]
+ *
+ * @since 5.6
  */
+@Suppress("DEPRECATION")
+@Deprecated("Replaced by ObjectFactory method", replaceWith = ReplaceWith("objects.domainObjectContainer(T::class.java, factory)"))
 inline fun <reified T : Any> Project.container(noinline factory: (String) -> T): NamedDomainObjectContainer<T> =
     container(T::class.java, factory)
 
@@ -297,6 +281,8 @@ inline fun <reified T : Any> Project.container(noinline factory: (String) -> T):
  * Includes the Kotlin and Gradle APIs.
  *
  * @return The dependency.
+ *
+ * @since 4.1
  */
 fun Project.gradleKotlinDsl(): Dependency =
     DefaultFileCollectionDependency(

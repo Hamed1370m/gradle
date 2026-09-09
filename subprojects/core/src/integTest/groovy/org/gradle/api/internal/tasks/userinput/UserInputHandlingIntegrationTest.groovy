@@ -17,8 +17,12 @@
 package org.gradle.api.internal.tasks.userinput
 
 import org.gradle.api.tasks.TasksWithInputsAndOutputs
-import org.gradle.integtests.fixtures.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import org.gradle.test.fixtures.server.http.BlockingHttpServer
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.gradle.util.internal.TextUtil
+import org.junit.Rule
 
 import static org.gradle.integtests.fixtures.BuildScanUserInputFixture.EOF
 import static org.gradle.integtests.fixtures.BuildScanUserInputFixture.NO
@@ -174,6 +178,35 @@ class UserInputHandlingIntegrationTest extends AbstractUserInputHandlerIntegrati
     def "does not prompt user for yes/no question in non-interactive build"() {
         when:
         run("askYesNo")
+
+        then:
+        outputDoesNotContain(YES_NO_PROMPT)
+        outputContains("result = <default>")
+    }
+
+    def "does not prompt and uses default when org.gradle.console.interactive is false"() {
+        given:
+        file("gradle.properties") << "org.gradle.console.interactive=false"
+        interactiveExecution()
+
+        when:
+        def gradleHandle = executer.withTasks("askYesNo").start()
+        writeToStdInAndClose(gradleHandle, EOF)
+        result = gradleHandle.waitForFinish()
+
+        then:
+        outputDoesNotContain(YES_NO_PROMPT)
+        outputContains("result = <default>")
+    }
+
+    def "does not prompt and uses default with --non-interactive"() {
+        given:
+        interactiveExecution()
+
+        when:
+        def gradleHandle = executer.withArgument("--non-interactive").withTasks("askYesNo").start()
+        writeToStdInAndClose(gradleHandle, EOF)
+        result = gradleHandle.waitForFinish()
 
         then:
         outputDoesNotContain(YES_NO_PROMPT)
@@ -404,7 +437,7 @@ class UserInputHandlingIntegrationTest extends AbstractUserInputHandlerIntegrati
         runWithInput("generate", prompt, "value")
 
         then:
-        result.assertTaskNotSkipped(":generate")
+        result.assertTaskExecuted(":generate")
         file("build/out.txt").text == "value"
 
         when:
@@ -417,7 +450,7 @@ class UserInputHandlingIntegrationTest extends AbstractUserInputHandlerIntegrati
         runWithInput("generate", prompt, "")
 
         then:
-        result.assertTaskNotSkipped(":generate")
+        result.assertTaskExecuted(":generate")
         file("build/out.txt").text == "<default>"
 
         when:
@@ -451,6 +484,81 @@ class UserInputHandlingIntegrationTest extends AbstractUserInputHandlerIntegrati
         NO     | false
         "What" | null
         ""     | null
+    }
+
+    @Rule
+    BlockingHttpServer server = new BlockingHttpServer()
+
+    @Requires([TestExecutionPreconditions.NotEmbeddedExecutor])
+    def "does not run out of memory when buffering output during user input with parallel execution"() {
+        given:
+        def subprojectCount = 4
+        def linesPerTask = 50_000
+
+        and:
+        withParallel()
+        executer.beforeExecute {
+            executer.withArgument("--max-workers=${subprojectCount + 2}")
+        }
+        interactiveExecution()
+
+        and: "parallel task orchestration"
+        server.start()
+        def requests = server.expectConcurrentAndBlock(
+            *(["ask"] + ((1..subprojectCount).collect { "sub$it" } as List<String>))
+        )
+
+        and:
+        buildFile.text = """
+            task askYesNo {
+                def handler = services.get(${UserInputHandler.name})
+                def result = handler.askUser { it.askYesNoQuestion("thing?") }
+                doLast {
+                    ${server.callFromTaskAction("ask")}
+                    println "result = " + result.getOrElse("<default>")
+                }
+            }
+        """
+
+        and: "~80MB of events exceeding the default 64MB heap of the client"
+        (1..subprojectCount).each { i ->
+            file("sub$i/build.gradle") << """
+                task verboseTask {
+                    def doneFile = layout.projectDirectory.file("done.txt")
+                    doLast {
+                        ${server.callFromTaskAction("sub$i")}
+                        for (int j = 0; j < $linesPerTask; j++) {
+                            logger.lifecycle("sub$i output line " + j + " " + ("x" * 200))
+                        }
+                        doneFile.asFile.text = "done"
+                    }
+                }
+            """
+        }
+        settingsFile << "\n" + (1..subprojectCount).collect { "include 'sub$it'" }.join("\n")
+
+        when: "paused waiting for user input"
+        def gradleHandle = executer.withTasks("askYesNo", "verboseTask").start()
+        requests.waitForAllPendingCalls()
+        requests.releaseAll()
+        poll(INTERACTIVE_WAIT_TIME_SECONDS) {
+            assert gradleHandle.standardOutput.contains(YES_NO_PROMPT)
+        }
+
+        and: "wait until other tasks are done"
+        poll(INTERACTIVE_WAIT_TIME_SECONDS) {
+            (1..subprojectCount).each {
+                assert file("sub$it/done.txt").exists()
+            }
+        }
+
+        and: "answer the question, buffered events will be replayed"
+        writeToStdInAndClose(gradleHandle, "yes")
+        result = gradleHandle.waitForFinish()
+
+        then: "success"
+        result.assertTaskExecuted(":askYesNo")
+        outputContains("result = true")
     }
 
     void runWithInput(String task, String prompt, String input) {

@@ -37,8 +37,8 @@ import org.gradle.internal.hash.Hasher;
 import org.gradle.internal.hash.Hashing;
 import org.gradle.internal.lazy.Lazy;
 import org.gradle.internal.snapshot.FileSystemLocationSnapshot;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.io.File;
 import java.util.Map;
@@ -50,6 +50,7 @@ import java.util.stream.Collectors;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
+@SuppressWarnings("this-escape")
 public abstract class CacheInstrumentationDataBuildService implements BuildService<BuildServiceParameters.None> {
 
     private final Map<Long, ResolutionData> resolutionData = new ConcurrentHashMap<>();

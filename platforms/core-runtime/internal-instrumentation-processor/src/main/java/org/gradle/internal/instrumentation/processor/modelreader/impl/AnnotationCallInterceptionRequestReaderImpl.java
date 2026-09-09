@@ -34,10 +34,10 @@ import org.gradle.internal.instrumentation.model.ParameterKindInfo;
 import org.gradle.internal.instrumentation.model.RequestExtra;
 import org.gradle.internal.instrumentation.model.RequestExtra.OriginatingElement;
 import org.gradle.internal.instrumentation.processor.extensibility.AnnotatedMethodReaderExtension;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.objectweb.asm.Type;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -63,6 +63,8 @@ import static org.gradle.internal.instrumentation.processor.modelreader.impl.Ann
 import static org.gradle.internal.instrumentation.processor.modelreader.impl.TypeUtils.extractMethodDescriptor;
 import static org.gradle.internal.instrumentation.processor.modelreader.impl.TypeUtils.extractReturnType;
 import static org.gradle.internal.instrumentation.processor.modelreader.impl.TypeUtils.extractType;
+
+import static java.util.Objects.requireNonNull;
 
 public class AnnotationCallInterceptionRequestReaderImpl implements AnnotatedMethodReaderExtension {
 
@@ -97,9 +99,9 @@ public class AnnotationCallInterceptionRequestReaderImpl implements AnnotatedMet
         return new CallableInfoImpl(kindInfo, owner, callableName, returnType, parameterInfos);
     }
 
-    @Nonnull
+    @NonNull
     private static ImplementationInfoImpl extractImplementationInfo(ExecutableElement input) {
-        Type implementationOwner = extractType(input.getEnclosingElement().asType());
+        Type implementationOwner = extractType(requireNonNull(input.getEnclosingElement()).asType());
         String implementationName = input.getSimpleName().toString();
         String implementationDescriptor = extractMethodDescriptor(input);
         return new ImplementationInfoImpl(implementationOwner, implementationName, implementationDescriptor);

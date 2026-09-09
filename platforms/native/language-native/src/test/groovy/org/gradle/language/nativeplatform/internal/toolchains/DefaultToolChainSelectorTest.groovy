@@ -17,7 +17,6 @@
 package org.gradle.language.nativeplatform.internal.toolchains
 
 import org.gradle.language.cpp.CppPlatform
-import org.gradle.model.internal.registry.ModelRegistry
 import org.gradle.nativeplatform.MachineArchitecture
 import org.gradle.nativeplatform.OperatingSystemFamily
 import org.gradle.nativeplatform.TargetMachine
@@ -36,10 +35,11 @@ import spock.lang.Specification
 import static org.gradle.language.swift.SwiftVersion.SWIFT3
 import static org.gradle.language.swift.SwiftVersion.SWIFT4
 import static org.gradle.language.swift.SwiftVersion.SWIFT5
+import static org.gradle.language.swift.SwiftVersion.SWIFT6
 
 @UsesNativeServices
 class DefaultToolChainSelectorTest extends Specification {
-    def modelRegistry = Stub(ModelRegistry)
+    def registry = Mock(NativeToolChainRegistryInternal)
     def osFamily = Stub(OperatingSystemFamily)
     def machineArchitecture = Stub(MachineArchitecture)
     def targetMachine = Stub(TargetMachine) {
@@ -49,14 +49,13 @@ class DefaultToolChainSelectorTest extends Specification {
     def os = Stub(OperatingSystemInternal)
     def arch = Stub(ArchitectureInternal)
     def host = new DefaultNativePlatform("host", os, arch)
-    def selector = new DefaultToolChainSelector(modelRegistry)
+    def selector = new DefaultToolChainSelector(registry)
 
     def setup() {
         selector.host = host
     }
 
     def "selects C++ toolchain for the specified architecture"() {
-        def registry = Mock(NativeToolChainRegistryInternal)
         def toolChain = Mock(NativeToolChainInternal)
         def toolProvider = Mock(PlatformToolProvider)
         def requestPlatform = Stub(CppPlatform) {
@@ -64,7 +63,6 @@ class DefaultToolChainSelectorTest extends Specification {
         }
 
         given:
-        modelRegistry.realize(_, NativeToolChainRegistryInternal) >> registry
         machineArchitecture.name >> architecture
 
         when:
@@ -101,6 +99,7 @@ class DefaultToolChainSelectorTest extends Specification {
         where:
         // See https://swift.org/download
         compilerVersion | languageVersion
+        '6.0.1'         | SWIFT6
         '5.0.0'         | SWIFT5
         '4.2.3'         | SWIFT4
         '4.1.3'         | SWIFT4

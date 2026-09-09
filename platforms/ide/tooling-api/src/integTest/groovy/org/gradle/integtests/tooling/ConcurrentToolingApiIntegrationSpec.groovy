@@ -20,25 +20,23 @@ import groovy.transform.stc.ClosureParams
 import groovy.transform.stc.SimpleType
 import org.gradle.initialization.BuildCancellationToken
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.OtherGradleVersionFixture
 import org.gradle.integtests.fixtures.executer.GradleDistribution
 import org.gradle.integtests.fixtures.executer.UnderDevelopmentGradleDistribution
-import org.gradle.integtests.fixtures.versions.ReleasedVersionDistributions
 import org.gradle.integtests.tooling.fixture.ConfigurableOperation
 import org.gradle.integtests.tooling.fixture.ToolingApi
 import org.gradle.integtests.tooling.fixture.ToolingApiConnector
 import org.gradle.internal.classpath.ClassPath
-import org.gradle.internal.jvm.Jvm
 import org.gradle.internal.logging.progress.ProgressLoggerFactory
 import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.gradle.tooling.ProjectConnection
 import org.gradle.tooling.internal.consumer.ConnectionParameters
 import org.gradle.tooling.internal.consumer.Distribution
 import org.gradle.tooling.internal.protocol.InternalBuildProgressListener
 import org.gradle.tooling.model.GradleProject
 import org.gradle.tooling.model.idea.IdeaProject
-import org.junit.Assume
 import org.junit.Rule
 import spock.lang.Issue
 import spock.lang.Retry
@@ -50,8 +48,8 @@ import static spock.lang.Retry.Mode.SETUP_FEATURE_CLEANUP
 
 @Issue("GRADLE-1933")
 @Retry(condition = { onWindowsSocketDisappearance(instance, failure) }, mode = SETUP_FEATURE_CLEANUP, count = 2)
-@Requires(value = IntegTestPreconditions.NotEmbeddedExecutor, reason = "concurrent tooling api is only supported for forked mode")
-class ConcurrentToolingApiIntegrationSpec extends AbstractIntegrationSpec {
+@Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = "concurrent tooling api is only supported for forked mode")
+class ConcurrentToolingApiIntegrationSpec extends AbstractIntegrationSpec implements OtherGradleVersionFixture {
 
     @Rule
     final ConcurrentTestUtil concurrent = new ConcurrentTestUtil()
@@ -79,12 +77,7 @@ class ConcurrentToolingApiIntegrationSpec extends AbstractIntegrationSpec {
 
     def "handles different target gradle versions concurrently"() {
         given:
-        def last = new ReleasedVersionDistributions().getMostRecentRelease()
-        // When adding support for a new JDK version, the previous release might not work with it yet.
-        Assume.assumeTrue(last.worksWith(Jvm.current()))
-        assert dist != last
-        println "Combination of versions used: current - $dist, last - $last"
-        def oldDistApi = new ToolingApi(last, temporaryFolder)
+        def oldDistApi = new ToolingApi(otherVersion, temporaryFolder)
 
         buildFile << "apply plugin: 'java'"
 
@@ -277,11 +270,11 @@ project.description = text
         concurrent.finished()
     }
 
-    static void distributionProgressMessage(connector, String message) {
+    static void distributionProgressMessage(ToolingApiConnector connector, String message) {
         connector.distribution = new ConfigurableDistribution(delegate: connector.distribution, operation: { it.description = message })
     }
 
-    static void distributionOperation(connector, Closure operation) {
+    static void distributionOperation(ToolingApiConnector connector, Closure operation) {
         connector.distribution = new ConfigurableDistribution(delegate: connector.distribution, operation: operation)
     }
 

@@ -16,15 +16,18 @@
 package org.gradle.scala.compile
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.ScalaCoverage
 import org.gradle.integtests.fixtures.TestResources
-import org.gradle.integtests.fixtures.ZincScalaCompileFixture
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 import org.junit.Rule
 import spock.lang.Issue
 
+@Requires(value = JdkVersionTestPreconditions.Jdk23OrEarlier, reason = "Scala does not work with Java 24 without warnings yet")
 class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
 
     @Rule TestResources resources = new TestResources(temporaryFolder)
-    @Rule public final ZincScalaCompileFixture zincScalaCompileFixture = new ZincScalaCompileFixture(executer, temporaryFolder)
 
     def setup() {
         executer.withRepositoryMirrors()
@@ -51,7 +54,7 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
         file('src/main/scala/IPerson.scala').assertIsFile().copyFrom(file('NewIPerson.scala'))
 
         then:
-        runAndFail("classes").assertHasDescription("Execution failed for task ':compileScala'.")
+        runAndFail("classes").assertHasDescription("Execution failed for task ':compileScala' (registered by plugin class 'org.gradle.api.plugins.scala.ScalaBasePlugin').")
     }
 
     @Issue("gradle/gradle#13392")
@@ -64,7 +67,7 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
         when: // Update interface, compile should fail
         file('src/main/scala/IPerson.scala').assertIsFile().copyFrom(file('NewIPerson.scala'))
 
-        runAndFail("classes").assertHasDescription("Execution failed for task ':compileScala'.")
+        runAndFail("classes").assertHasDescription("Execution failed for task ':compileScala' (registered by plugin class 'org.gradle.api.plugins.scala.ScalaBasePlugin').")
 
         then:
         // both files must exist (same content as in previous compilation)
@@ -83,7 +86,7 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
             ${mavenCentralRepository()}
 
             dependencies {
-                implementation 'org.scala-lang:scala-library:2.11.12'
+                implementation 'org.scala-lang:scala-library:${ScalaCoverage.latestSupportedScala2Version}'
             }
         """
 
@@ -101,7 +104,7 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         //the build should fail because the interface the scala class needs has changed
-        runAndFail("classes").assertHasDescription("Execution failed for task ':compileScala'.")
+        runAndFail("classes").assertHasDescription("Execution failed for task ':compileScala' (registered by plugin class 'org.gradle.api.plugins.scala.ScalaBasePlugin').")
     }
 
     @Issue("gradle/gradle#8421")
@@ -118,7 +121,7 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
                     ${mavenCentralRepository()}
 
                 dependencies {
-                   implementation 'org.scala-lang:scala-library:2.11.12'
+                   implementation 'org.scala-lang:scala-library:${ScalaCoverage.latestSupportedScala2Version}'
                 }
             """
         }
@@ -176,7 +179,7 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
                 mainClass = "HelloWorld"
             }
             dependencies {
-               implementation 'org.scala-lang:scala-library:2.11.12'
+               implementation 'org.scala-lang:scala-library:${ScalaCoverage.latestSupportedScala2Version}'
             }
         """
 

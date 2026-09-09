@@ -16,13 +16,17 @@
 
 package org.gradle.tooling.provider.model.internal;
 
-import org.gradle.api.NonNullApi;
 import org.gradle.api.internal.project.ProjectState;
-import org.gradle.internal.service.scopes.EventScope;
 import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
+import org.jspecify.annotations.NullMarked;
 
-@NonNullApi
-@EventScope(Scope.Build.class)
+/**
+ * Receives events about cross project dependencies while building tooling models.
+ * These events are not sent through {@code ListenerManager}.
+ */
+@NullMarked
+@ServiceScope(Scope.Build.class)
 public interface ToolingModelProjectDependencyListener {
 
     /**

@@ -17,7 +17,6 @@
 package gradlebuild.basics.classanalysis
 
 import org.gradle.api.attributes.Attribute
-import org.gradle.api.internal.file.archive.ZipCopyAction.CONSTANT_TIME_FOR_ZIP_ENTRIES
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.commons.ClassRemapper
@@ -33,6 +32,8 @@ import java.nio.file.FileVisitor
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
+import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.jar.JarFile
 import java.util.jar.JarOutputStream
 import java.util.zip.ZipEntry
@@ -40,6 +41,12 @@ import java.util.zip.ZipEntry
 
 private
 val ignoredPackagePatterns = PackagePatterns(setOf("java"))
+
+
+// See explanation in `org.gradle.api.internal.file.archive.ZipEntryConstants#CONSTANT_TIME_FOR_ZIP_ENTRIES`
+private
+val zipEntryBaseTimestamp = LocalDateTime.of(1980, 2, 1, 0, 0, 0)
+    .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
 
 object Attributes {
@@ -93,9 +100,11 @@ class JarAnalyzer(
                         file.isClassFilePath() -> {
                             visitClassFile(file)
                         }
+
                         file.isBuildReceipt() -> {
                             Files.copy(file, buildReceipt)
                         }
+
                         file.isUnseenManifestFilePath() -> {
                             seenManifest = true
                             Files.copy(file, manifest)
@@ -125,6 +134,17 @@ class JarAnalyzer(
                 private
                 fun visitClassFile(file: Path) {
                     try {
+                        if (file.endsWith("module-info.class")) {
+                            // We can't keep this info intact, ignore this.
+                            return
+                        }
+                        val outputPrefix = if (file.startsWith("/META-INF/versions")) {
+                            // Java 9 multi-release JAR entry, we must keep it nested in the output
+                            file.subpath(0, 3).toString()
+                        } else {
+                            ""
+                        }
+
                         val reader = ClassReader(Files.newInputStream(file))
                         val details = classes[reader.className]
                         details.visited = true
@@ -148,12 +168,12 @@ class JarAnalyzer(
                             ClassReader.EXPAND_FRAMES
                         )
 
-                        classesDir.resolve(details.outputClassFilename).apply {
+                        classesDir.resolve(outputPrefix).resolve(details.outputClassFilename).apply {
                             parentFile.mkdirs()
                             writeBytes(classWriter.toByteArray())
                         }
                     } catch (exception: Exception) {
-                        throw ClassAnalysisException("Could not transform class from ${file.toFile()}", exception)
+                        throw ClassAnalysisException("Could not transform class from $file", exception)
                     }
                 }
             }
@@ -164,7 +184,7 @@ class JarAnalyzer(
 
 fun JarOutputStream.addJarEntry(entryName: String, sourceFile: File) {
     val entry = ZipEntry(entryName)
-    entry.time = CONSTANT_TIME_FOR_ZIP_ENTRIES
+    entry.time = zipEntryBaseTimestamp
     putNextEntry(entry)
     BufferedInputStream(FileInputStream(sourceFile)).use { inputStream -> inputStream.copyTo(this) }
     closeEntry()

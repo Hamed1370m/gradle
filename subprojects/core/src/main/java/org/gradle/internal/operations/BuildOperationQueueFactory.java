@@ -16,8 +16,21 @@
 
 package org.gradle.internal.operations;
 
-import org.gradle.internal.concurrent.ManagedExecutor;
+import org.gradle.internal.work.SubmissionQueue;
+import org.jspecify.annotations.Nullable;
+
+import java.util.concurrent.Executor;
 
 public interface BuildOperationQueueFactory {
-    <T extends BuildOperation> BuildOperationQueue<T> create(ManagedExecutor executor, boolean allowAccessToProjectState, BuildOperationQueue.QueueWorker<T> worker);
+    /**
+     * @param constrainedQueue receives work added via {@link BuildOperationQueue#add}, which must hold a worker lease
+     * @param unconstrainedExecutor runs work added via {@link BuildOperationQueue#addUnconstrained}, which must not
+     */
+    <T extends BuildOperation> BuildOperationQueue<T> create(
+        SubmissionQueue constrainedQueue,
+        Executor unconstrainedExecutor,
+        boolean allowAccessToProjectState,
+        BuildOperationQueue.QueueWorker<T> worker,
+        @Nullable BuildOperationRef parent
+    );
 }

@@ -17,10 +17,10 @@
 package org.gradle.plugin.management;
 
 import org.gradle.api.artifacts.ModuleVersionSelector;
+import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.internal.HasInternalProtocol;
 import org.gradle.plugin.use.PluginId;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contains information about a plugin that has been requested for resolution.
@@ -32,18 +32,31 @@ public interface PluginRequest {
 
     /**
      * The ID of the plugin requested. Never null.
+     * @since 3.5
      */
     PluginId getId();
 
     /**
      * The version of the plugin if one was specified, otherwise null.
+     * @since 3.5
      */
     @Nullable
     String getVersion();
 
     /**
      * The implementation module of the plugin if one was explicitly specified, otherwise null.
+     * <p>
+     * Prefer {@link #getSelector()}.
+     * @since 3.5
      */
     @Nullable
     ModuleVersionSelector getModule();
+
+    /**
+     * A selector for the implementation of the plugin if one was explicitly specified, otherwise null.
+     *
+     * @since 9.3.0
+     */
+    @Nullable ComponentSelector getSelector();
+
 }

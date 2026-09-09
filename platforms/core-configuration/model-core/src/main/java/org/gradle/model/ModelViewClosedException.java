@@ -25,10 +25,19 @@ import org.gradle.model.internal.type.ModelType;
  * Thrown when at attempt is made to mutate a subject of a rule after the rule has completed.
  * <p>
  * This can potentially happen when a reference to the subject is retained during a rule and then used afterwards,
- * Such as when an anonymous inner class or closure “closes over” the subject.
+ * Such as when an anonymous inner class or closure "closes over" the subject.
+ *
+ * @deprecated The Gradle software model is deprecated and will be removed in Gradle 10. Use the new component model (e.g. {@code cpp-application}, {@code cpp-library}, {@code swift-application}, {@code swift-library}, {@code xctest}) instead.
+ * @since 2.1
  */
 @Incubating
+@Deprecated
 public class ModelViewClosedException extends ReadOnlyModelViewException {
+    /**
+     * Creates a new {@code ModelViewClosedException}.
+     *
+     * @since 2.1
+     */
     public ModelViewClosedException(ModelPath path, ModelType<?> type, ModelRuleDescriptor ruleDescriptor) {
         super(createMessage("closed", path, type, ruleDescriptor));
     }

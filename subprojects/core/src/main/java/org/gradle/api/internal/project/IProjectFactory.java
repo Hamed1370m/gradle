@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,12 @@
  */
 package org.gradle.api.internal.project;
 
-import org.gradle.api.initialization.ProjectDescriptor;
-import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.initialization.ClassLoaderScope;
+import org.gradle.internal.build.BuildState;
+import org.gradle.internal.project.ImmutableProjectDescriptor;
 import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceRegistryFactory;
 import org.gradle.internal.service.scopes.ServiceScope;
-
-import javax.annotation.Nullable;
 
 /**
  * Creates a {@link ProjectInternal} implementation.
@@ -30,10 +28,9 @@ import javax.annotation.Nullable;
 @ServiceScope(Scope.Build.class)
 public interface IProjectFactory {
     ProjectInternal createProject(
-        GradleInternal gradle,
-        ProjectDescriptor projectDescriptor,
+        BuildState build,
+        ImmutableProjectDescriptor projectDescriptor,
         ProjectState owner,
-        @Nullable ProjectInternal parent,
         ServiceRegistryFactory serviceRegistryFactory,
         ClassLoaderScope selfClassLoaderScope,
         ClassLoaderScope baseClassLoaderScope

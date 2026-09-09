@@ -16,7 +16,9 @@
 
 package org.gradle.internal.build
 
+import org.gradle.api.internal.tasks.NodeExecutionContext
 import org.gradle.execution.plan.Node
+import org.gradle.execution.plan.NodeComparator
 import org.gradle.execution.plan.PlannedNodeInternal
 import org.gradle.execution.plan.TaskDependencyResolver
 import org.gradle.execution.plan.ToPlannedNodeConverter
@@ -24,7 +26,7 @@ import org.gradle.execution.plan.ToPlannedNodeConverterRegistry
 import org.gradle.internal.taskgraph.NodeIdentity
 import spock.lang.Specification
 
-import static org.gradle.internal.taskgraph.NodeIdentity.*
+import static org.gradle.internal.taskgraph.NodeIdentity.NodeType
 
 class PlannedNodeGraphTest extends Specification {
 
@@ -291,7 +293,7 @@ class PlannedNodeGraphTest extends Specification {
         }
     }
 
-    static class TestNode extends Node {
+    static class TestNode extends NodeComparator.ComparableNode {
         String name
 
         TestNode(String name) {
@@ -307,8 +309,17 @@ class PlannedNodeGraphTest extends Specification {
         void resolveDependencies(TaskDependencyResolver dependencyResolver) {}
 
         @Override
+        void execute(NodeExecutionContext context) {}
+
+        @Override
         String toString() {
             return "TestNode($name)"
+        }
+
+        @Override
+        int compareTo(NodeComparator.ComparableNode o) {
+            assert o instanceof TestNode
+            this.name <=> ((TestNode) o).name
         }
     }
 

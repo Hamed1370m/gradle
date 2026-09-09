@@ -17,7 +17,6 @@
 package org.gradle.kotlin.dsl.tooling.builders.r60
 
 import org.gradle.integtests.tooling.fixture.TargetGradleVersion
-import org.gradle.test.fixtures.Flaky
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.tooling.model.kotlin.dsl.KotlinDslScriptsModel
 import org.gradle.util.GradleVersion
@@ -26,7 +25,6 @@ import static org.gradle.kotlin.dsl.tooling.fixtures.KotlinScriptModelParameters
 
 @TargetGradleVersion(">=6.0")
 @LeaksFileHandles("Kotlin Compiler Daemon taking time to shut down")
-@Flaky(because = 'https://github.com/gradle/gradle-private/issues/3414')
 class KotlinDslDefaultScriptsModelCrossVersionSpec extends AbstractKotlinDslScriptsModelCrossVersionSpec {
 
 
@@ -75,7 +73,7 @@ class KotlinDslDefaultScriptsModelCrossVersionSpec extends AbstractKotlinDslScri
         assertHasExceptionMessage(
             model,
             spec.scripts.a,
-            "Unresolved reference: script_body_compilation_error"
+            "script_body_compilation_error"
         )
     }
 

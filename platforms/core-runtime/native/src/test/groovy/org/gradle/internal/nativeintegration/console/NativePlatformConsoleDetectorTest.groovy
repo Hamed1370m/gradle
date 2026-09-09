@@ -20,7 +20,9 @@ import net.rubygrapefruit.platform.NativeException
 import net.rubygrapefruit.platform.terminal.Terminals
 import org.gradle.internal.nativeintegration.ProcessEnvironment
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+import org.gradle.test.preconditions.TestEnvironmentPreconditions
+
 import org.gradle.testfixtures.internal.NativeServicesTestFixture
 import spock.lang.Specification
 
@@ -52,7 +54,7 @@ class NativePlatformConsoleDetectorTest extends Specification {
         detector.console == null
     }
 
-    @Requires(UnitTestPreconditions.SmartTerminalAvailable)
+    @Requires(TestEnvironmentPreconditions.SmartTerminalAvailable)
     def "returns metadata when stdout and stderr are attached to console"() {
         given:
         terminals.isTerminal(Terminals.Output.Stdout) >> true
@@ -60,11 +62,11 @@ class NativePlatformConsoleDetectorTest extends Specification {
 
         expect:
         detector.console != null
-        detector.console.stdOut
-        detector.console.stdErr
+        detector.console.stdOutATerminal
+        detector.console.stdErrATerminal
     }
 
-    @Requires(UnitTestPreconditions.SmartTerminalAvailable)
+    @Requires(TestEnvironmentPreconditions.SmartTerminalAvailable)
     def "returns metadata when only stdout is attached to console"() {
         given:
         terminals.isTerminal(Terminals.Output.Stdout) >> true
@@ -72,11 +74,11 @@ class NativePlatformConsoleDetectorTest extends Specification {
 
         expect:
         detector.console != null
-        detector.console.stdOut
-        !detector.console.stdErr
+        detector.console.stdOutATerminal
+        !detector.console.stdErrATerminal
     }
 
-    @Requires(UnitTestPreconditions.SmartTerminalAvailable)
+    @Requires(TestEnvironmentPreconditions.SmartTerminalAvailable)
     def "returns metadata when only stderr is attached to console"() {
         given:
         terminals.isTerminal(Terminals.Output.Stdout) >> false
@@ -84,11 +86,11 @@ class NativePlatformConsoleDetectorTest extends Specification {
 
         expect:
         detector.console != null
-        !detector.console.stdOut
-        detector.console.stdErr
+        !detector.console.stdOutATerminal
+        detector.console.stdErrATerminal
     }
 
-    @Requires(UnitTestPreconditions.Unix)
+    @Requires(OsTestPreconditions.Unix)
     def "returns null when TERM is not set"() {
         given:
         env.removeEnvironmentVariable('TERM')
@@ -109,6 +111,18 @@ class NativePlatformConsoleDetectorTest extends Specification {
         given:
         terminals.isTerminal(terminal) >> true
         terminals.getTerminal(terminal) >> { throw new NativeException("error getting terminal") }
+
+        expect:
+        detector.console == null
+
+        where:
+        terminal << [Terminals.Output.Stdout, Terminals.Output.Stderr]
+    }
+
+    def "returns null when failing to detect whether #terminal is a terminal"() {
+        given:
+        // e.g. a redirected stdout on Windows whose handle information cannot be queried
+        terminals.isTerminal(terminal) >> { throw new NativeException("could not get handle file information") }
 
         expect:
         detector.console == null

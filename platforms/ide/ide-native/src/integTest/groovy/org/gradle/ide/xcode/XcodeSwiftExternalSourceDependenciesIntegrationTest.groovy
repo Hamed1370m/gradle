@@ -17,7 +17,6 @@
 package org.gradle.ide.xcode
 
 import org.gradle.ide.xcode.fixtures.AbstractXcodeIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.app.SwiftAppWithLibrary
 import org.gradle.nativeplatform.fixtures.app.SwiftLib
 import org.gradle.nativeplatform.fixtures.app.SwiftLibTest
@@ -37,7 +36,6 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         requireSwiftToolChain()
     }
 
-    @ToBeFixedForConfigurationCache
     def "adds source dependencies Swift module of main component to Xcode indexer search path"() {
         def fixture = new SwiftAppWithLibrary()
 
@@ -79,7 +77,7 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         succeeds ':xcode'
 
         then:
-        result.assertTasksExecuted(":greeter:compileDebugSwift",
+        result.assertTasksScheduled(":greeter:compileDebugSwift",
             ":xcodeProject", ":xcodeProjectWorkspaceSettings", ":xcodeScheme",
             ":xcodeWorkspace", ":xcodeWorkspaceWorkspaceSettings", ":xcode")
         rootXcodeWorkspace.contentFile.assertHasProjects("${rootProjectName}.xcodeproj")
@@ -91,11 +89,10 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         succeeds ':xcodeProject'
 
         then:
-        result.assertTasksExecuted(":greeter:compileDebugSwift",
+        result.assertTasksScheduled(":greeter:compileDebugSwift",
             ":xcodeProject", ":xcodeProjectWorkspaceSettings", ":xcodeScheme")
     }
 
-    @ToBeFixedForConfigurationCache
     def "does not add source dependencies Xcode project of main component to Xcode workspace"() {
         def fixture = new SwiftAppWithLibrary()
 
@@ -138,7 +135,7 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         succeeds ':xcode'
 
         then:
-        result.assertTasksExecuted(":greeter:compileDebugSwift",
+        result.assertTasksScheduled(":greeter:compileDebugSwift",
             ":xcodeProject", ":xcodeProjectWorkspaceSettings", ":xcodeScheme",
             ":xcodeWorkspace", ":xcodeWorkspaceWorkspaceSettings", ":xcode")
         rootXcodeWorkspace.contentFile.assertHasProjects("${rootProjectName}.xcodeproj")
@@ -147,7 +144,6 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         appProject.indexTarget.getBuildSettings().SWIFT_INCLUDE_PATHS == toSpaceSeparatedList(checkoutDir(repo.name, commit.id.name, repo.id).file('build/modules/main/debug'))
     }
 
-    @ToBeFixedForConfigurationCache
     def "adds source dependencies Swift module of test component to Xcode indexer search path"() {
         def library = new SwiftLib()
         def test = new SwiftLibTest(library, library.greeter, library.sum, library.multiply)
@@ -190,7 +186,7 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         succeeds ':xcode'
 
         then:
-        result.assertTasksExecuted(":greeter:compileDebugSwift",
+        result.assertTasksScheduled(":greeter:compileDebugSwift",
             ":compileDebugSwift",
             ":xcodeProject", ":xcodeProjectWorkspaceSettings", ":xcodeScheme",
             ":xcodeWorkspace", ":xcodeWorkspaceWorkspaceSettings", ":xcode")
@@ -201,7 +197,6 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         appProject.indexTarget.getBuildSettings().SWIFT_INCLUDE_PATHS == toSpaceSeparatedList(file('build/modules/main/debug'), checkoutDir(repo.name, commit.id.name, repo.id).file('build/modules/main/debug'))
     }
 
-    @ToBeFixedForConfigurationCache
     def "does not add source dependencies Xcode project of test component to Xcode workspace"() {
         def library = new SwiftLib()
         def test = new SwiftLibTest(library, library.greeter, library.sum, library.multiply)
@@ -245,7 +240,7 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         succeeds ':xcode'
 
         then:
-        result.assertTasksExecuted(":greeter:compileDebugSwift",
+        result.assertTasksScheduled(":greeter:compileDebugSwift",
             ":compileDebugSwift",
             ":xcodeProject", ":xcodeProjectWorkspaceSettings", ":xcodeScheme",
             ":xcodeWorkspace", ":xcodeWorkspaceWorkspaceSettings", ":xcode")
@@ -256,7 +251,6 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         appProject.indexTarget.getBuildSettings().SWIFT_INCLUDE_PATHS == toSpaceSeparatedList(file('build/modules/main/debug'), checkoutDir(repo.name, commit.id.name, repo.id).file('build/modules/main/debug'))
     }
 
-    @ToBeFixedForConfigurationCache
     def "adds source dependencies Swift module of main component to Xcode indexer search path when no component in root project"() {
         def fixture = new SwiftAppWithLibrary()
 
@@ -306,7 +300,7 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         succeeds ':xcode'
 
         then:
-        result.assertTasksExecuted(":greeter:compileDebugSwift",
+        result.assertTasksScheduled(":greeter:compileDebugSwift",
             ":app:xcodeProject", ":app:xcodeProjectWorkspaceSettings", ":app:xcodeScheme",
             ":xcodeProject", ":xcodeProjectWorkspaceSettings",
             ":xcodeWorkspace", ":xcodeWorkspaceWorkspaceSettings", ":xcode")
@@ -316,7 +310,6 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         appProject.indexTarget.getBuildSettings().SWIFT_INCLUDE_PATHS == toSpaceSeparatedList(checkoutDir(repo.name, commit.id.name, repo.id).file('build/modules/main/debug'))
     }
 
-    @ToBeFixedForConfigurationCache
     def "does not add source dependencies Xcode project of main component to Xcode workspace when no component in root project"() {
         def fixture = new SwiftAppWithLibrary()
 
@@ -367,7 +360,7 @@ class XcodeSwiftExternalSourceDependenciesIntegrationTest extends AbstractXcodeI
         succeeds ':xcode'
 
         then:
-        result.assertTasksExecuted(":greeter:compileDebugSwift",
+        result.assertTasksScheduled(":greeter:compileDebugSwift",
             ":app:xcodeProject", ":app:xcodeProjectWorkspaceSettings", ":app:xcodeScheme",
             ":xcodeProject", ":xcodeProjectWorkspaceSettings",
             ":xcodeWorkspace", ":xcodeWorkspaceWorkspaceSettings", ":xcode")

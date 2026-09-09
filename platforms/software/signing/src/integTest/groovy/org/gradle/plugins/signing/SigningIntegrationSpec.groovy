@@ -64,8 +64,8 @@ abstract class SigningIntegrationSpec extends AbstractIntegrationSpec {
 
     def setupGpgCmd() {
         TestFile sampleDir = new IntegrationTestBuildContext().getSamplesDir()
-        sampleDir.file('signing/gnupg-signatory/groovy/gnupg-home').copyTo(file('gnupg-home'))
-        sampleDir.file('signing/gnupg-signatory/groovy/gradle.properties').copyTo(file('gradle.properties'))
+        sampleDir.file('integration-tests/signing/gnupg-signatory/groovy/gnupg-home').copyTo(file('gnupg-home'))
+        sampleDir.file('integration-tests/signing/gnupg-signatory/groovy/gradle.properties').copyTo(file('gradle.properties'))
         GpgCmdFixture.setupGpgCmd(temporaryFolder.testDirectory)
     }
 
@@ -131,11 +131,10 @@ abstract class SigningIntegrationSpec extends AbstractIntegrationSpec {
         } else {
             javaPluginConfig + """
                 configurations {
-                    $configurationName
-                }
-
-                artifacts {
-                    $configurationName sourcesJar, javadocJar
+                    $configurationName {
+                        outgoing.artifact(tasks.named("sourcesJar"))
+                        outgoing.artifact(tasks.named("javadocJar"))
+                    }
                 }
             """
         }

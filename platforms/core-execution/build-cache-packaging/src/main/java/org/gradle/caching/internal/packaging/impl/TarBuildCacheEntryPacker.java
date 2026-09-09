@@ -32,6 +32,7 @@ import org.gradle.caching.internal.origin.OriginReader;
 import org.gradle.caching.internal.origin.OriginWriter;
 import org.gradle.caching.internal.packaging.BuildCacheEntryPacker;
 import org.gradle.internal.RelativePathSupplier;
+import org.gradle.internal.UncheckedException;
 import org.gradle.internal.file.BufferProvider;
 import org.gradle.internal.file.FileType;
 import org.gradle.internal.file.PathTraversalChecker;
@@ -50,8 +51,8 @@ import org.gradle.internal.snapshot.RegularFileSnapshot;
 import org.gradle.internal.snapshot.RelativePathTracker;
 import org.gradle.internal.snapshot.RelativePathTrackingFileSystemSnapshotHierarchyVisitor;
 import org.gradle.internal.snapshot.SnapshotVisitResult;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -60,7 +61,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.UncheckedIOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -72,6 +72,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static java.util.Objects.requireNonNull;
 import static org.gradle.internal.file.FileMetadata.AccessType.DIRECT;
 import static org.gradle.internal.snapshot.DirectorySnapshotBuilder.EmptyDirectoryHandlingStrategy.INCLUDE_EMPTY_DIRS;
 
@@ -144,7 +145,7 @@ public class TarBuildCacheEntryPacker implements BuildCacheEntryPacker {
         entity.visitOutputTrees((treeName, type, root) -> {
             FileSystemSnapshot treeSnapshots = snapshots.get(treeName);
             try {
-                long entryCount = packTree(treeName, type, treeSnapshots, tarOutput);
+                long entryCount = packTree(treeName, type, requireNonNull(treeSnapshots), tarOutput);
                 entries.addAndGet(entryCount);
             } catch (Exception ex) {
                 throw new RuntimeException(String.format("Could not pack tree '%s': %s", treeName, ex.getMessage()), ex);
@@ -424,7 +425,7 @@ public class TarBuildCacheEntryPacker implements BuildCacheEntryPacker {
                 createTarEntry("missing-" + treePath, 0, UnixPermissions.FILE_FLAG | UnixPermissions.DEFAULT_FILE_PERM, tarOutput);
                 tarOutput.closeArchiveEntry();
             } catch (IOException e) {
-                throw new UncheckedIOException(e);
+                throw UncheckedException.throwAsUncheckedException(e);
             }
         }
 
@@ -433,7 +434,7 @@ public class TarBuildCacheEntryPacker implements BuildCacheEntryPacker {
                 createTarEntry(path + "/", 0, UnixPermissions.DIR_FLAG | mode, tarOutput);
                 tarOutput.closeArchiveEntry();
             } catch (IOException e) {
-                throw new UncheckedIOException(e);
+                throw UncheckedException.throwAsUncheckedException(e);
             }
         }
 
@@ -445,7 +446,7 @@ public class TarBuildCacheEntryPacker implements BuildCacheEntryPacker {
                 }
                 tarOutput.closeArchiveEntry();
             } catch (IOException e) {
-                throw new UncheckedIOException(e);
+                throw UncheckedException.throwAsUncheckedException(e);
             }
         }
     }

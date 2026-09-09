@@ -50,9 +50,6 @@ import java.io.IOException;
  */
 @CacheableTask
 public abstract class UnexportMainSymbol extends DefaultTask {
-    private final ConfigurableFileCollection source = getProject().files();
-    private final DirectoryProperty outputDirectory = getProject().getObjects().directoryProperty();
-
     /**
      * The object files to relocate.
      *
@@ -62,9 +59,7 @@ public abstract class UnexportMainSymbol extends DefaultTask {
     @SkipWhenEmpty
     @IgnoreEmptyDirectories
     @PathSensitive(PathSensitivity.NAME_ONLY)
-    public ConfigurableFileCollection getObjects() {
-        return source;
-    }
+    public abstract ConfigurableFileCollection getObjects();
 
     /**
      * Collection of modified object files.
@@ -73,7 +68,7 @@ public abstract class UnexportMainSymbol extends DefaultTask {
      */
     @Internal
     public FileCollection getRelocatedObjects() {
-        return outputDirectory.getAsFileTree();
+        return getOutputDirectory().getAsFileTree();
     }
 
     /**
@@ -82,10 +77,13 @@ public abstract class UnexportMainSymbol extends DefaultTask {
      * @since 4.5
      */
     @OutputDirectory
-    public DirectoryProperty getOutputDirectory() {
-        return outputDirectory;
-    }
+    public abstract DirectoryProperty getOutputDirectory();
 
+    /**
+     * Unexport.
+     *
+     * @since 6.0
+     */
     @TaskAction
     protected void unexport(InputChanges inputChanges) {
         for (FileChange change : inputChanges.getFileChanges(getObjects())) {
@@ -138,7 +136,7 @@ public abstract class UnexportMainSymbol extends DefaultTask {
     }
 
     private File relocatedObject(File object) {
-        return outputDirectory.file(object.getName()).get().getAsFile();
+        return getOutputDirectory().file(object.getName()).get().getAsFile();
     }
 
     @Inject

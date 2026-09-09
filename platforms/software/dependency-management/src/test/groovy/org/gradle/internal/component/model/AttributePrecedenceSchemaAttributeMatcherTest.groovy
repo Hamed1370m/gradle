@@ -24,13 +24,14 @@ import org.gradle.api.attributes.MultipleCandidatesDetails
 import org.gradle.api.internal.attributes.ImmutableAttributes
 import org.gradle.api.internal.attributes.immutable.ImmutableAttributesSchema
 import org.gradle.api.internal.attributes.matching.AttributeMatcher
+import org.gradle.api.internal.attributes.matching.AttributeMatchingCandidate
+import org.gradle.api.internal.attributes.matching.ImmutableAttributesBackedMatchingCandidate
 import org.gradle.util.AttributeTestUtil
 import spock.lang.Specification
 
 class AttributePrecedenceSchemaAttributeMatcherTest extends Specification {
 
     def matcher = newMatcher()
-    def explanationBuilder = Stub(AttributeMatchingExplanationBuilder)
 
     static Attribute<String> highest = Attribute.of("highest", String)
     static Attribute<String> middle = Attribute.of("middle", String)
@@ -96,13 +97,13 @@ class AttributePrecedenceSchemaAttributeMatcherTest extends Specification {
         def candidate6 = candidate("compatible", "compatible", "compatible")
         def requested = requested("requested", "requested","requested")
         expect:
-        matcher.matchMultipleCandidates([candidate1], requested, explanationBuilder) == [candidate1]
-        matcher.matchMultipleCandidates([candidate1, candidate2, candidate3, candidate4, candidate5, candidate6], requested, explanationBuilder) == [candidate1]
-        matcher.matchMultipleCandidates([candidate2, candidate3, candidate4, candidate5, candidate6], requested, explanationBuilder) == [candidate2]
-        matcher.matchMultipleCandidates([candidate3, candidate4, candidate5, candidate6], requested, explanationBuilder) == [candidate3]
-        matcher.matchMultipleCandidates([candidate4, candidate5, candidate6], requested, explanationBuilder) == [candidate4]
-        matcher.matchMultipleCandidates([candidate5, candidate6], requested, explanationBuilder) == [candidate5]
-        matcher.matchMultipleCandidates([candidate6], requested, explanationBuilder) == [candidate6]
+        matcher.matchMultipleCandidates([candidate1], requested) == [candidate1]
+        matcher.matchMultipleCandidates([candidate1, candidate2, candidate3, candidate4, candidate5, candidate6], requested) == [candidate1]
+        matcher.matchMultipleCandidates([candidate2, candidate3, candidate4, candidate5, candidate6], requested) == [candidate2]
+        matcher.matchMultipleCandidates([candidate3, candidate4, candidate5, candidate6], requested) == [candidate3]
+        matcher.matchMultipleCandidates([candidate4, candidate5, candidate6], requested) == [candidate4]
+        matcher.matchMultipleCandidates([candidate5, candidate6], requested) == [candidate5]
+        matcher.matchMultipleCandidates([candidate6], requested) == [candidate6]
     }
 
     def "disambiguates extra attributes in precedence order"() {
@@ -113,15 +114,17 @@ class AttributePrecedenceSchemaAttributeMatcherTest extends Specification {
         def requested = AttributeTestUtil.attributes("unknown": "unknown")
 
         expect:
-        matcher.matchMultipleCandidates([candidate1, candidate2, candidate3, candidate4], requested, explanationBuilder) == [candidate1]
-        matcher.matchMultipleCandidates([candidate2, candidate3, candidate4], requested, explanationBuilder) == [candidate2]
-        matcher.matchMultipleCandidates([candidate3, candidate4], requested, explanationBuilder) == [candidate3]
+        matcher.matchMultipleCandidates([candidate1, candidate2, candidate3, candidate4], requested) == [candidate1]
+        matcher.matchMultipleCandidates([candidate2, candidate3, candidate4], requested) == [candidate2]
+        matcher.matchMultipleCandidates([candidate3, candidate4], requested) == [candidate3]
     }
 
     private static ImmutableAttributes requested(String highestValue, String middleValue, String lowestValue) {
-        return candidate(highestValue, middleValue, lowestValue)
+        return candidate(highestValue, middleValue, lowestValue).attributes
     }
-    private static ImmutableAttributes candidate(String highestValue, String middleValue, String lowestValue) {
-        return AttributeTestUtil.attributes([highest: highestValue, middle: middleValue, lowest: lowestValue])
+
+    private static AttributeMatchingCandidate candidate(String highestValue, String middleValue, String lowestValue) {
+        def attributes = AttributeTestUtil.attributes([highest: highestValue, middle: middleValue, lowest: lowestValue])
+        new ImmutableAttributesBackedMatchingCandidate(attributes)
     }
 }

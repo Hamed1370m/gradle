@@ -16,15 +16,16 @@
 
 package org.gradle.tooling.model;
 
+import org.gradle.api.Incubating;
 import org.gradle.tooling.model.gradle.GradleScript;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 
 /**
  * Represents a Gradle project.
  *
- * @since 1.0-milestone-5
+ * @since 1.0
  */
 public interface GradleProject extends HierarchicalElement, BuildableElement, ProjectModel {
     /**
@@ -57,6 +58,7 @@ public interface GradleProject extends HierarchicalElement, BuildableElement, Pr
      * Returns the path of this project. This is a unique identifier for this project within the build.
      *
      * @return The path.
+     * @since 1.0
      */
     String getPath();
 
@@ -64,6 +66,7 @@ public interface GradleProject extends HierarchicalElement, BuildableElement, Pr
      * Searches all descendants (children, grand-children, etc.), including self, by given path.
      *
      * @return Gradle project with matching path or {@code null} if not found.
+     * @since 1.0
      */
     @Nullable
     GradleProject findByPath(String path);
@@ -95,4 +98,13 @@ public interface GradleProject extends HierarchicalElement, BuildableElement, Pr
      */
     File getProjectDirectory() throws UnsupportedMethodException;
 
+    /**
+     * Returns a path to the project for the full build tree
+     *
+     * @return a path to the project for the full build tree
+     * @throws org.gradle.tooling.model.UnsupportedMethodException When the target Gradle version does not support this method.
+     * @since 9.2.0
+     */
+    @Incubating
+    String getBuildTreePath() throws UnsupportedMethodException;
 }

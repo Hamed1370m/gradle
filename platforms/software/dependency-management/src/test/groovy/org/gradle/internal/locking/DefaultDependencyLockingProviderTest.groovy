@@ -23,16 +23,21 @@ import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.dsl.LockMode
 import org.gradle.api.internal.DomainObjectContext
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier
+import org.gradle.api.internal.artifacts.DependencyManagementInstanceIdentity
 import org.gradle.api.internal.artifacts.ivyservice.dependencysubstitution.DependencySubstitutionRules
 import org.gradle.api.internal.file.FilePropertyFactory
 import org.gradle.api.internal.file.FileResolver
 import org.gradle.api.internal.file.TestFiles
+import org.gradle.api.internal.project.ProjectIdentity
+import org.gradle.api.internal.project.ProjectState
 import org.gradle.api.internal.provider.DefaultPropertyFactory
 import org.gradle.api.internal.provider.PropertyFactory
 import org.gradle.api.internal.provider.PropertyHost
+import org.gradle.internal.Describables
 import org.gradle.internal.DisplayName
 import org.gradle.internal.component.external.model.DefaultModuleComponentIdentifier
 import org.gradle.internal.resource.local.FileResourceListener
+import org.gradle.internal.service.scopes.ProjectDomainObjectContext
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.util.GradleVersion
@@ -54,7 +59,12 @@ class DefaultDependencyLockingProviderTest extends Specification {
     DisplayName owner = Mock()
     FileResolver resolver = Mock()
     StartParameter startParameter = Mock()
-    DomainObjectContext context = Mock()
+    DomainObjectContext context = Mock(ProjectDomainObjectContext) {
+        getModel() >> Mock(ProjectState) {
+            getIdentity() >> ProjectIdentity.forRootProject(Path.ROOT, "root")
+        }
+    }
+    DependencyManagementInstanceIdentity instanceIdentity = new DependencyManagementInstanceIdentity(Describables.of("root project 'root'"))
     DependencySubstitutionRules dependencySubstitutionRules = Mock()
     FileResourceListener listener = Mock()
     PropertyFactory propertyFactory = new DefaultPropertyFactory(Stub(PropertyHost))
@@ -64,8 +74,6 @@ class DefaultDependencyLockingProviderTest extends Specification {
     DefaultDependencyLockingProvider provider
 
     def setup() {
-        context.identityPath(_) >> { String value -> Path.path(value) }
-        context.getProjectPath() >> Path.path(':')
         resolver.canResolveRelativePath() >> true
         resolver.resolve(LockFileReaderWriter.DEPENDENCY_LOCKING_FOLDER) >> lockDir
         resolver.resolve(LockFileReaderWriter.UNIQUE_LOCKFILE_NAME) >> uniqueLockFile
@@ -86,11 +94,11 @@ class DefaultDependencyLockingProviderTest extends Specification {
         provider.buildFinished()
 
         then:
-        uniqueLockFile.text == """${LockFileReaderWriter.LOCKFILE_HEADER_LIST.join('\n')}
+        uniqueLockFile.text == """${expectedHeader()}
 org:bar:1.3=conf
 org:foo:1.0=conf
 empty=
-""".denormalize()
+"""
 
     }
 
@@ -268,14 +276,19 @@ empty=
         provider.buildFinished()
 
         then:
-        uniqueLockFile.text == """${LockFileReaderWriter.LOCKFILE_HEADER_LIST.join('\n')}
+        uniqueLockFile.text == """${expectedHeader()}
 org:foo:1.0=otherConf
 empty=
-""".denormalize()
+"""
+    }
+
+    private String expectedHeader() {
+        LockFileReaderWriter.LOCKFILE_HEADER_LIST.join('\n') +
+            '\n# To regenerate this file, run: ./gradlew :dependencies --write-locks'
     }
 
     private DefaultDependencyLockingProvider newProvider() {
-        new DefaultDependencyLockingProvider(resolver, startParameter, context, dependencySubstitutionRules, propertyFactory, filePropertyFactory, listener)
+        new DefaultDependencyLockingProvider(resolver, startParameter, context, instanceIdentity, "", dependencySubstitutionRules, propertyFactory, filePropertyFactory, listener)
     }
 
     def writeLockFile(List<String> modules, boolean unique = true, String lockFileId = 'conf') {

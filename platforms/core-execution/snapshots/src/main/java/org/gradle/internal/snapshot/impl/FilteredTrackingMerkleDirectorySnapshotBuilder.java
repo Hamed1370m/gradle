@@ -24,8 +24,8 @@ import org.gradle.internal.snapshot.FileSystemLocationSnapshot;
 import org.gradle.internal.snapshot.MerkleDirectorySnapshotBuilder;
 import org.gradle.internal.snapshot.RootTrackingFileSystemSnapshotHierarchyVisitor;
 import org.gradle.internal.snapshot.SnapshotVisitResult;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.function.Consumer;
@@ -81,6 +81,7 @@ public class FilteredTrackingMerkleDirectorySnapshotBuilder implements Directory
     }
 
     @Override
+    @Nullable
     public FileSystemLocationSnapshot leaveDirectory() {
         FileSystemLocationSnapshot directorySnapshot = delegate.leaveDirectory();
         boolean leftLevelUnfiltered = isCurrentLevelUnfiltered.removeLast();

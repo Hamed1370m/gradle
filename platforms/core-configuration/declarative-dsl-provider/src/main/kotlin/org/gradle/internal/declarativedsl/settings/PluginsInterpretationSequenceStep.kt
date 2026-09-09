@@ -16,9 +16,10 @@
 
 package org.gradle.internal.declarativedsl.settings
 
+import org.gradle.api.internal.SettingsInternal
+import org.gradle.api.internal.artifacts.DependencyManagementParameters
 import org.gradle.api.internal.initialization.ClassLoaderScope
 import org.gradle.api.internal.initialization.ScriptHandlerFactory
-import org.gradle.api.internal.initialization.StandaloneDomainObjectContext
 import org.gradle.api.internal.plugins.PluginManagerInternal
 import org.gradle.declarative.dsl.evaluation.AnalysisStatementFilter
 import org.gradle.declarative.dsl.evaluation.InterpretationSequenceStep.StepIdentifier
@@ -29,28 +30,49 @@ import org.gradle.internal.declarativedsl.analysis.AnalysisStatementFilterUtils.
 import org.gradle.internal.declarativedsl.analysis.AnalysisStatementFilterUtils.isTopLevelElement
 import org.gradle.internal.declarativedsl.analysis.and
 import org.gradle.internal.declarativedsl.analysis.implies
+import org.gradle.internal.declarativedsl.common.RunsBeforeClassScopeIsReady
 import org.gradle.internal.declarativedsl.common.UnsupportedSyntaxFeatureCheck
 import org.gradle.internal.declarativedsl.common.gradleDslGeneralSchema
 import org.gradle.internal.declarativedsl.evaluationSchema.DefaultStepIdentifier
 import org.gradle.internal.declarativedsl.evaluationSchema.buildEvaluationAndConversionSchema
+import org.gradle.internal.declarativedsl.evaluator.checks.AccessOnCurrentReceiverCheck
 import org.gradle.internal.declarativedsl.evaluator.conversion.EvaluationAndConversionSchema
 import org.gradle.internal.declarativedsl.evaluator.conversion.InterpretationSequenceStepWithConversion
 import org.gradle.internal.declarativedsl.plugins.PluginsTopLevelReceiver
 import org.gradle.internal.service.ServiceRegistry
 import org.gradle.plugin.management.internal.DefaultPluginRequest
+import org.gradle.plugin.management.internal.PluginHandler
 import org.gradle.plugin.management.internal.PluginRequestInternal
 import org.gradle.plugin.management.internal.PluginRequests
 import org.gradle.plugin.use.internal.DefaultPluginId
 import org.gradle.plugin.use.internal.PluginRequestApplicator
 
 
+internal fun settingsPluginsInterpretationSequenceStep(stepIdentifierString: String) =
+    PluginsInterpretationSequenceStep(
+        stepIdentifierString,
+        { target ->
+            target as SettingsInternal
+            PluginsInterpretationSequenceStep.Host(
+                targetScope = target.classLoaderScope,
+                targetServices = target.services,
+                scriptSource = target.settingsScript
+            )
+        }
+    )
+
+
 internal
 class PluginsInterpretationSequenceStep(
     stepIdentifierString: String = "plugins",
-    private val targetScope: ClassLoaderScope,
-    private val scriptSource: ScriptSource,
-    private val getTargetServices: () -> ServiceRegistry,
+    private val produceHost: (Any) -> Host,
 ) : InterpretationSequenceStepWithConversion<PluginsTopLevelReceiver> {
+
+    class Host(
+        val targetScope: ClassLoaderScope,
+        val targetServices: ServiceRegistry,
+        val scriptSource: ScriptSource
+    )
 
     override val stepIdentifier: StepIdentifier = DefaultStepIdentifier(stepIdentifierString)
 
@@ -62,19 +84,38 @@ class PluginsInterpretationSequenceStep(
     override fun getTopLevelReceiverFromTarget(target: Any) = PluginsTopLevelReceiver()
 
     override val features: Set<InterpretationStepFeature>
-        get() = setOf(SettingsBlocksCheck.feature, UnsupportedSyntaxFeatureCheck.feature)
+        get() = setOf(
+            SettingsBlocksCheck.feature,
+            UnsupportedSyntaxFeatureCheck.feature,
+            AccessOnCurrentReceiverCheck.feature,
+            RunsBeforeClassScopeIsReady()
+        )
 
-    override fun whenEvaluated(resultReceiver: PluginsTopLevelReceiver) {
-        val pluginRequests = resultReceiver.plugins.specs.map {
-            DefaultPluginRequest(DefaultPluginId.unvalidated(it.id), it.apply, PluginRequestInternal.Origin.OTHER, scriptSource.displayName, null, it.version, null, null, null)
+    override fun whenEvaluated(target: Any, resultReceiver: PluginsTopLevelReceiver) {
+        with(produceHost(target)) {
+            val pluginRequests = resultReceiver.plugins.specs.map {
+                DefaultPluginRequest(
+                    DefaultPluginId.unvalidated(it.id),
+                    it.apply,
+                    PluginRequestInternal.Origin.OTHER,
+                    scriptSource.displayName,
+                    null,
+                    if (it.versionIsSet) it.version else null,
+                    null,
+                    null,
+                    null
+                )
+            }
+            with(targetServices) {
+                val scriptHandler = get(ScriptHandlerFactory::class.java).create(scriptSource, targetScope, DependencyManagementParameters(scriptSource.shortDisplayName, "settings-", true, true, true))
+                val pluginManager = get(PluginManagerInternal::class.java)
+                val pluginApplicator = get(PluginRequestApplicator::class.java)
+                val pluginHandler = get(PluginHandler::class.java)
+                val allPluginRequests = pluginHandler.getAllPluginRequests(PluginRequests.of(pluginRequests), target)
+                pluginApplicator.applyPlugins(allPluginRequests, scriptHandler, pluginManager, targetScope)
+            }
+            targetScope.lock()
         }
-        with(getTargetServices()) {
-            val scriptHandler = get(ScriptHandlerFactory::class.java).create(scriptSource, targetScope, StandaloneDomainObjectContext.forScript(scriptSource))
-            val pluginManager = get(PluginManagerInternal::class.java)
-            val pluginApplicator = get(PluginRequestApplicator::class.java)
-            pluginApplicator.applyPlugins(PluginRequests.of(pluginRequests), scriptHandler, pluginManager, targetScope)
-        }
-        targetScope.lock()
     }
 }
 

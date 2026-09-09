@@ -15,7 +15,6 @@
  */
 package org.gradle.plugins.ide.eclipse;
 
-import com.google.common.collect.Lists;
 import org.gradle.api.Action;
 import org.gradle.api.JavaVersion;
 import org.gradle.api.Project;
@@ -28,6 +27,7 @@ import org.gradle.api.plugins.WarPlugin;
 import org.gradle.api.plugins.internal.JavaPluginHelper;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.bundling.War;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.xml.XmlTransformer;
 import org.gradle.plugins.ear.Ear;
@@ -41,11 +41,13 @@ import org.gradle.plugins.ide.eclipse.model.Facet;
 import org.gradle.plugins.ide.eclipse.model.WbResource;
 import org.gradle.plugins.ide.eclipse.model.internal.WtpClasspathAttributeSupport;
 import org.gradle.plugins.ide.internal.IdePlugin;
+import org.gradle.plugins.ide.internal.IdePluginHelper;
 import org.gradle.util.internal.RelativePathUtil;
 import org.gradle.util.internal.WrapUtil;
 
 import javax.inject.Inject;
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -55,13 +57,34 @@ import java.util.concurrent.Callable;
  * A plugin which configures the Eclipse Web Tools Platform.
  *
  * @see <a href="https://docs.gradle.org/current/userguide/eclipse_plugin.html">Eclipse plugin reference</a>
+ * @since 1.0
  */
 public abstract class EclipseWtpPlugin extends IdePlugin {
 
+    /**
+     * The eclipse wtp component task name.
+     *
+     * @since 3.0
+     */
     public static final String ECLIPSE_WTP_COMPONENT_TASK_NAME = "eclipseWtpComponent";
+    /**
+     * The eclipse wtp facet task name.
+     *
+     * @since 3.0
+     */
     public static final String ECLIPSE_WTP_FACET_TASK_NAME = "eclipseWtpFacet";
+    /**
+     * The web libs container.
+     *
+     * @since 3.0
+     */
     public static final String WEB_LIBS_CONTAINER = "org.eclipse.jst.j2ee.internal.web.container";
 
+    /**
+     * The instantiator.
+     *
+     * @since 3.0
+     */
     public final Instantiator instantiator;
 
     @Inject
@@ -72,6 +95,11 @@ public abstract class EclipseWtpPlugin extends IdePlugin {
     @Override
     protected String getLifecycleTaskName() {
         return "eclipseWtp";
+    }
+
+    @Override
+    protected boolean shouldDeprecateLifecycleTask() {
+        return true;
     }
 
     @Override
@@ -125,6 +153,7 @@ public abstract class EclipseWtpPlugin extends IdePlugin {
         });
     }
 
+    @SuppressWarnings("deprecation")
     private void configureEclipseWtpComponent(final Project project, final EclipseModel model) {
         XmlTransformer xmlTransformer = new XmlTransformer();
         xmlTransformer.setIndentation("\t");
@@ -139,8 +168,8 @@ public abstract class EclipseWtpPlugin extends IdePlugin {
                 task.setInputFile(project.file(".settings/org.eclipse.wst.common.component"));
                 task.setOutputFile(project.file(".settings/org.eclipse.wst.common.component"));
             }
-
         });
+        task.configure(IdePluginHelper.withGracefulDegradation());
         addWorker(task, ECLIPSE_WTP_COMPONENT_TASK_NAME);
 
         ((IConventionAware) component).getConventionMapping().map("deployName", new Callable<String>() {
@@ -204,7 +233,9 @@ public abstract class EclipseWtpPlugin extends IdePlugin {
                         File projectDir = project.getProjectDir();
                         File webAppDir = ((War) project.getTasks().getByName("war")).getWebAppDirectory().get().getAsFile();
                         String webAppDirName = RelativePathUtil.relativePath(projectDir, webAppDir);
-                        return Lists.newArrayList(new WbResource("/", webAppDirName));
+                        List<WbResource> result = new ArrayList<>(1);
+                        result.add(new WbResource("/", webAppDirName));
+                        return result;
                     }
                 });
                 convention.map("sourceDirs", new Callable<Set<File>>() {
@@ -262,8 +293,9 @@ public abstract class EclipseWtpPlugin extends IdePlugin {
         });
     }
 
+    @SuppressWarnings("deprecation")
     private void configureEclipseWtpFacet(final Project project, final EclipseModel eclipseModel) {
-        TaskProvider<GenerateEclipseWtpFacet> task = project.getTasks().register(ECLIPSE_WTP_FACET_TASK_NAME, GenerateEclipseWtpFacet.class, eclipseModel.getWtp().getFacet());
+        TaskProvider<GenerateEclipseWtpFacet> task = project.getTasks().register(ECLIPSE_WTP_FACET_TASK_NAME, GenerateEclipseWtpFacet.class, DeprecationLogger.whileDisabled(() -> eclipseModel.getWtp().getFacet()));
         task.configure(new Action<GenerateEclipseWtpFacet>() {
             @Override
             public void execute(final GenerateEclipseWtpFacet task) {
@@ -281,14 +313,14 @@ public abstract class EclipseWtpPlugin extends IdePlugin {
                     return;
                 }
 
-                ((IConventionAware) eclipseModel.getWtp().getFacet()).getConventionMapping().map("facets", new Callable<List<Facet>>() {
+                ((IConventionAware) DeprecationLogger.whileDisabled(() -> eclipseModel.getWtp().getFacet())).getConventionMapping().map("facets", new Callable<List<Facet>>() {
                     @Override
                     public List<Facet> call() throws Exception {
-                        return Lists.newArrayList(
-                            new Facet(Facet.FacetType.fixed, "jst.java", null),
-                            new Facet(Facet.FacetType.installed, "jst.utility", "1.0"),
-                            new Facet(Facet.FacetType.installed, "jst.java", toJavaFacetVersion(project.getExtensions().getByType(JavaPluginExtension.class).getSourceCompatibility()))
-                        );
+                        List<Facet> result = new ArrayList<>(3);
+                        result.add(new Facet(Facet.FacetType.fixed, "jst.java", null));
+                        result.add(new Facet(Facet.FacetType.installed, "jst.utility", "1.0"));
+                        result.add(new Facet(Facet.FacetType.installed, "jst.java", toJavaFacetVersion(project.getExtensions().getByType(JavaPluginExtension.class).getSourceCompatibility())));
+                        return result;
                     }
                 });
             }
@@ -297,15 +329,15 @@ public abstract class EclipseWtpPlugin extends IdePlugin {
         project.getPlugins().withType(WarPlugin.class, new Action<WarPlugin>() {
             @Override
             public void execute(WarPlugin warPlugin) {
-                ((IConventionAware) eclipseModel.getWtp().getFacet()).getConventionMapping().map("facets", new Callable<List<Facet>>() {
+                ((IConventionAware) DeprecationLogger.whileDisabled(() -> eclipseModel.getWtp().getFacet())).getConventionMapping().map("facets", new Callable<List<Facet>>() {
                     @Override
                     public List<Facet> call() throws Exception {
-                        return Lists.newArrayList(
-                            new Facet(Facet.FacetType.fixed, "jst.java", null),
-                            new Facet(Facet.FacetType.fixed, "jst.web", null),
-                            new Facet(Facet.FacetType.installed, "jst.web", "2.4"),
-                            new Facet(Facet.FacetType.installed, "jst.java", toJavaFacetVersion(project.getExtensions().getByType(JavaPluginExtension.class).getSourceCompatibility()))
-                        );
+                        List<Facet> result = new ArrayList<>(4);
+                        result.add(new Facet(Facet.FacetType.fixed, "jst.java", null));
+                        result.add(new Facet(Facet.FacetType.fixed, "jst.web", null));
+                        result.add(new Facet(Facet.FacetType.installed, "jst.web", "2.4"));
+                        result.add(new Facet(Facet.FacetType.installed, "jst.java", toJavaFacetVersion(project.getExtensions().getByType(JavaPluginExtension.class).getSourceCompatibility())));
+                        return result;
                     }
                 });
             }
@@ -314,13 +346,13 @@ public abstract class EclipseWtpPlugin extends IdePlugin {
         project.getPlugins().withType(EarPlugin.class, new Action<EarPlugin>() {
             @Override
             public void execute(EarPlugin earPlugin) {
-                ((IConventionAware) eclipseModel.getWtp().getFacet()).getConventionMapping().map("facets", new Callable<List<Facet>>() {
+                ((IConventionAware) DeprecationLogger.whileDisabled(() -> eclipseModel.getWtp().getFacet())).getConventionMapping().map("facets", new Callable<List<Facet>>() {
                     @Override
                     public List<Facet> call() throws Exception {
-                        return Lists.newArrayList(
-                            new Facet(Facet.FacetType.fixed, "jst.ear", null),
-                            new Facet(Facet.FacetType.installed, "jst.ear", "5.0")
-                        );
+                        List<Facet> result = new ArrayList<>(2);
+                        result.add(new Facet(Facet.FacetType.fixed, "jst.ear", null));
+                        result.add(new Facet(Facet.FacetType.installed, "jst.ear", "5.0"));
+                        return result;
                     }
                 });
             }

@@ -16,33 +16,28 @@
 
 package org.gradle.integtests.resource.gcs.fixtures
 
-import org.eclipse.jetty.server.Request
-import org.eclipse.jetty.server.handler.AbstractHandler
+import org.gradle.test.fixtures.server.http.HttpRequest
+import org.gradle.test.fixtures.server.http.HttpResponse
+
 import org.gradle.integtests.resource.gcs.fixtures.stub.HttpStub
 import org.gradle.integtests.resource.gcs.fixtures.stub.StubRequest
 import org.gradle.internal.hash.Hashing
 import org.gradle.test.fixtures.file.TestDirectoryProvider
 import org.gradle.test.fixtures.server.RepositoryServer
+import org.gradle.test.fixtures.server.http.HttpResourceHandler
 import org.gradle.test.fixtures.server.http.HttpServer
-import org.joda.time.DateTimeZone
-import org.joda.time.format.DateTimeFormat
-import org.joda.time.format.DateTimeFormatter
-import org.joda.time.tz.FixedDateTimeZone
 
-import javax.servlet.ServletException
-import javax.servlet.http.HttpServletRequest
-import javax.servlet.http.HttpServletResponse
+import java.nio.file.Files
 import java.security.MessageDigest
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 import static org.apache.commons.codec.binary.Base64.encodeBase64String
 
 class GcsServer extends HttpServer implements RepositoryServer {
 
     private static final String BUCKET_NAME = "testgcsbucket"
-    private static final DateTimeZone GMT = new FixedDateTimeZone("GMT", "GMT", 0, 0)
-    private static final DateTimeFormatter RCF_3339_DATE_FORMAT = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-        .withLocale(Locale.US)
-        .withZone(GMT)
+    private static final DateTimeFormatter RCF_3339_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneId.of("GMT"))
 
     private static final String DATE_HEADER = 'Mon, 29 Sep 2014 11:04:27 GMT'
     private static final String SERVER_GCS = 'GCS'
@@ -59,7 +54,7 @@ class GcsServer extends HttpServer implements RepositoryServer {
         start()
     }
 
-    void assertRequest(HttpStub httpStub, HttpServletRequest request) {
+    void assertRequest(HttpStub httpStub, HttpRequest request) {
         StubRequest stubRequest = httpStub.request
         String path = stubRequest.path
         assert path.startsWith('/')
@@ -70,7 +65,7 @@ class GcsServer extends HttpServer implements RepositoryServer {
         }
     }
 
-    boolean requestMatches(HttpStub httpStub, HttpServletRequest request) {
+    boolean requestMatches(HttpStub httpStub, HttpRequest request) {
         StubRequest stubRequest = httpStub.request
         String path = stubRequest.path
         assert path.startsWith('/')
@@ -181,7 +176,7 @@ class GcsServer extends HttpServer implements RepositoryServer {
                     {
                         "etag": "${calculateEtag(file)}",
                         "size": "0",
-                        "updated": "${RCF_3339_DATE_FORMAT.print(file.lastModified())}",
+                        "updated": "${RCF_3339_DATE_FORMAT.format(Files.getLastModifiedTime(file.toPath()).toInstant())}",
                         "md5Hash": "${encodeBase64String(Hashing.md5().hashFile(file).toByteArray())}"
                     }
                     """
@@ -255,7 +250,7 @@ class GcsServer extends HttpServer implements RepositoryServer {
                         "size": "${file.length()}",
                         "bucket": "${bucketName}",
                         "name": "${objectName}",
-                        "updated": "${RCF_3339_DATE_FORMAT.print(file.lastModified())}"
+                        "updated": "${RCF_3339_DATE_FORMAT.format(Files.getLastModifiedTime(file.toPath()).toInstant())}"
                     }
                     """
                 }
@@ -430,7 +425,7 @@ class GcsServer extends HttpServer implements RepositoryServer {
 
     private static HttpServer.ActionSupport stubAction(HttpStub httpStub) {
         new HttpServer.ActionSupport("Generic stub handler") {
-            void handle(HttpServletRequest request, HttpServletResponse response) {
+            void handle(HttpRequest request, HttpResponse response) {
                 if (httpStub.request.body) {
                     httpStub.request.body.call(request.getInputStream())
                 }
@@ -448,9 +443,9 @@ class GcsServer extends HttpServer implements RepositoryServer {
     private void add(HttpStub httpStub, HttpServer.ActionSupport action) {
         HttpServer.HttpExpectOne expectation = new HttpServer.HttpExpectOne(action, [httpStub.request.method], httpStub.request.path)
         expectations << expectation
-        addHandler(new AbstractHandler() {
+        addHandler(new HttpResourceHandler() {
             @Override
-            void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+            void handle(String target, HttpRequest request, HttpResponse response) throws IOException {
 
                 if (requestMatches(httpStub, request)) {
                     assertRequest(httpStub, request)
@@ -458,10 +453,10 @@ class GcsServer extends HttpServer implements RepositoryServer {
                         println("This expectation for the request [${request.method} :${request.pathInfo}] was already handled - skipping")
                         return
                     }
-                    if (!baseRequest.isHandled()) {
+                    if (!isHandled(request)) {
                         expectation.atomicRun.set(true)
                         action.handle(request, response)
-                        baseRequest.setHandled(true)
+                        markHandled(request)
                     }
                 }
             }

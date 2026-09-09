@@ -44,9 +44,9 @@ abstract class FileContentGenerator {
     String generateVersionCatalog() {
         return """
         [libraries]
-        groovy = "org.codehaus.groovy:groovy:2.5.22"
-        testng = "org.testng:testng:6.4"
-        junit = "junit:junit:4.13"
+        groovy = "org.apache.groovy:groovy:4.0.32"
+        testng = "org.testng:testng:7.12.0"
+        junit = "junit:junit:4.13.2"
 
         ${config.externalApiDependencies
             .collect { "${it.key} = \"${it.value}\"" }
@@ -71,6 +71,7 @@ abstract class FileContentGenerator {
         return """
         plugins {
             ${config.plugins.collect { decideOnJavaPlugin(it, dependencyTree.hasParentProject(subProjectNumber)) }.join("\n        ")}
+            ${config.deprecationsPerProject > 0 ? pluginBlockApply("perf-deprecations") : ""}
         }
 
         group = "org.gradle.test.performance"
@@ -117,14 +118,24 @@ abstract class FileContentGenerator {
             String includedProjects = ""
             if (config.subProjects != 0) {
                 includedProjects = """
-                    ${(0..config.subProjects - 1).collect { projectNumber ->
-                    "include(\"project$projectNumber${(0..config.projectDepth).collect { subprojectNumber -> ":sub${subprojectNumber}project${projectNumber}" }.join("")}\")"
-                }.join("\n")}
+                    ${
+                    (0..config.subProjects - 1).collect { projectNumber ->
+                        "include(\"project$projectNumber${getSubProjectPath(projectNumber)}\")"
+                    }.join("\n")
+                }
                 """
             }
 
             return includedProjects + generateEnableFeaturePreviewCode()
         }
+    }
+
+    String getSubProjectPath(projectNumber) {
+        def depth = config.projectDepth
+        if(depth <= 0) {
+            return ""
+        }
+        return (0..(depth-1)).collect { subprojectNumber -> ":sub${subprojectNumber}project${projectNumber}" }.join("")
     }
 
     abstract protected String generateEnableFeaturePreviewCode()
@@ -164,7 +175,7 @@ abstract class FileContentGenerator {
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-compiler-plugin</artifactId>
-                        <version>3.8.0</version>
+                        <version>3.15.0</version>
                         <configuration>
                             <source>1.8</source>
                             <target>1.8</target>
@@ -176,7 +187,7 @@ abstract class FileContentGenerator {
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
-                        <version>2.19.1</version>
+                        <version>3.5.6</version>
                         <configuration>
                             <forkCount>${config.maxParallelForks}</forkCount>
                             <reuseForks>true</reuseForks>
@@ -186,7 +197,7 @@ abstract class FileContentGenerator {
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-report-plugin</artifactId>
-                        <version>2.19.1</version>
+                        <version>3.5.6</version>
                         <executions>
                             <execution>
                                 <id>test-report</id>
@@ -219,7 +230,7 @@ abstract class FileContentGenerator {
             <dependencies>
                 ${config.externalApiDependencies.values().collect { convertToPomDependency(it) }.join("")}
                 ${config.externalImplementationDependencies.values().collect { convertToPomDependency(it) }.join("")}
-                ${convertToPomDependency('junit:junit:4.13', 'test')}
+                ${convertToPomDependency('junit:junit:4.13.2', 'test')}
                 ${subProjectDependencies}
             </dependencies>
             """
@@ -327,7 +338,8 @@ abstract class FileContentGenerator {
         def ownPackageName = packageName(classNumber, subProjectNumber)
         def imports = ''
         def children = dependencyTree.getTransitiveChildClassIds(classNumber)
-        (0..Math.max(propertyCount, children.size()) - 1).each {
+        def i = Math.max(propertyCount, children.size()) - 1
+        (0..Math.max(0, i)).each {
             def propertyType
             if (it < children.size()) {
                 def childNumber = children.get(it)
@@ -367,7 +379,8 @@ abstract class FileContentGenerator {
         def ownPackageName = packageName(classNumber, subProjectNumber)
         def imports = ''
         def children = dependencyTree.getTransitiveChildClassIds(classNumber)
-        (0..Math.max(propertyCount, children.size()) - 1).each {
+        def i = Math.max(propertyCount, children.size()) - 1
+        (0..Math.max(0, i)).each {
             def propertyType
             def propertyValue
             if (it < children.size()) {
@@ -435,7 +448,7 @@ abstract class FileContentGenerator {
         def subProjectDependencies = ''
         if (subProjectNumbers?.size() > 0) {
             def abiProjectNumber = subProjectNumbers.get(DependencyTree.API_DEPENDENCY_INDEX)
-            subProjectDependencies = subProjectNumbers.collect {
+            subProjectDependencies = new HashSet<Integer>(subProjectNumbers).collect {
                 it == abiProjectNumber ? projectDependencyDeclaration(hasParent ? api : implementation, abiProjectNumber) : projectDependencyDeclaration(implementation, it)
             }.join("\n            ")
         }

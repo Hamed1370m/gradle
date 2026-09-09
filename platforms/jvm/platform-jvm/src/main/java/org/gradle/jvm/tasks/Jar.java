@@ -26,11 +26,11 @@ import org.gradle.api.file.FileCopyDetails;
 import org.gradle.api.internal.file.FileCollectionFactory;
 import org.gradle.api.internal.file.FileTreeInternal;
 import org.gradle.api.internal.file.copy.CopySpecInternal;
-import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.java.archives.Manifest;
-import org.gradle.api.java.archives.internal.CustomManifestInternalWrapper;
 import org.gradle.api.java.archives.internal.DefaultManifest;
 import org.gradle.api.java.archives.internal.ManifestInternal;
+import org.gradle.api.java.archives.internal.CustomManifestInternalWrapper;
+import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.bundling.Zip;
@@ -40,26 +40,36 @@ import org.gradle.internal.serialization.Cached;
 import org.gradle.util.internal.ConfigureUtil;
 import org.gradle.work.DisableCachingByDefault;
 
+import javax.inject.Inject;
 import java.nio.charset.Charset;
 
 import static org.gradle.api.internal.lambdas.SerializableLambdas.action;
 
 /**
  * Assembles a JAR archive.
+ * @since 2.3
  */
 @DisableCachingByDefault(because = "Not worth caching")
 public abstract class Jar extends Zip {
 
+    /**
+     * The default extension.
+     *
+     * @since 2.3
+     */
     public static final String DEFAULT_EXTENSION = "jar";
-    private String manifestContentCharset = DefaultManifest.DEFAULT_CONTENT_CHARSET;
     private Manifest manifest;
     private final CopySpecInternal metaInf;
+    private final Property<String> manifestContentCharset;
 
+    @SuppressWarnings("this-escape")
+    @Inject
     public Jar() {
         getArchiveExtension().set(DEFAULT_EXTENSION);
         setMetadataCharset("UTF-8");
 
-        manifest = new DefaultManifest(getFileResolver());
+        this.manifestContentCharset = getObjectFactory().property(String.class).convention(ManifestInternal.DEFAULT_CONTENT_CHARSET);
+        manifest = new DefaultManifest(getFileResolver(), manifestContentCharset);
         // Add these as separate specs, so they are not affected by the changes to the main spec
         metaInf = (CopySpecInternal) getRootSpec().addFirst().into("META-INF");
         metaInf.addChild().from(manifestFileTree());
@@ -80,15 +90,16 @@ public abstract class Jar extends Zip {
     private ManifestInternal computeManifest() {
         Manifest manifest = getManifest();
         if (manifest == null) {
-            manifest = new DefaultManifest(null);
+            manifest = new DefaultManifest(getFileResolver(), manifestContentCharset);
         }
         ManifestInternal manifestInternal;
         if (manifest instanceof ManifestInternal) {
+            // If the manifest is already charset-aware, just use the existing manifest
             manifestInternal = (ManifestInternal) manifest;
         } else {
-            manifestInternal = new CustomManifestInternalWrapper(manifest);
+            // If the manifest is not charset-aware, wrap it in a charset-aware wrapper
+            manifestInternal = new CustomManifestInternalWrapper(manifest, manifestContentCharset);
         }
-        manifestInternal.setContentCharset(manifestContentCharset);
         return manifestInternal;
     }
 
@@ -138,7 +149,7 @@ public abstract class Jar extends Zip {
     @Input
     @ToBeReplacedByLazyProperty
     public String getManifestContentCharset() {
-        return manifestContentCharset;
+        return manifestContentCharset.get();
     }
 
     /**
@@ -155,13 +166,14 @@ public abstract class Jar extends Zip {
         if (!Charset.isSupported(manifestContentCharset)) {
             throw new InvalidUserDataException(String.format("Charset for manifestContentCharset '%s' is not supported by your JVM", manifestContentCharset));
         }
-        this.manifestContentCharset = manifestContentCharset;
+        this.manifestContentCharset.set(manifestContentCharset);
     }
 
     /**
      * Returns the manifest for this JAR archive.
      *
      * @return The manifest
+     * @since 2.3
      */
     @Internal
     @ToBeReplacedByLazyProperty
@@ -173,6 +185,7 @@ public abstract class Jar extends Zip {
      * Sets the manifest for this JAR archive.
      *
      * @param manifest The manifest. May be null.
+     * @since 2.3
      */
     public void setManifest(Manifest manifest) {
         this.manifest = manifest;
@@ -185,6 +198,7 @@ public abstract class Jar extends Zip {
      *
      * @param configureClosure The closure.
      * @return This.
+     * @since 2.3
      */
     public Jar manifest(@DelegatesTo(Manifest.class) Closure<?> configureClosure) {
         ConfigureUtil.configure(configureClosure, forceManifest());
@@ -196,8 +210,23 @@ public abstract class Jar extends Zip {
      *
      * <p>The given action is executed to configure the manifest.</p>
      *
+     * <pre class='autoTested'>
+     * plugins {
+     *     id 'java'
+     * }
+     *
+     * def buildNumber = providers.gradleProperty('buildNumber').orElse('0')
+     *
+     * tasks.named('jar', Jar) {
+     *     manifest {
+     *         attributes('Build-Number': buildNumber)
+     *     }
+     * }
+     * </pre>
+     *
      * @param configureAction The action.
      * @return This.
+     * @see Manifest#attributes(java.util.Map)
      * @since 3.5
      */
     public Jar manifest(Action<? super Manifest> configureAction) {
@@ -207,11 +236,16 @@ public abstract class Jar extends Zip {
 
     private Manifest forceManifest() {
         if (manifest == null) {
-            manifest = new DefaultManifest(((ProjectInternal) getProject()).getFileResolver());
+            manifest = new DefaultManifest(getFileResolver(), manifestContentCharset);
         }
         return manifest;
     }
 
+    /**
+     * Returns the meta inf.
+     *
+     * @since 2.3
+     */
     @Internal
     @ToBeReplacedByLazyProperty(comment = "This should probably stay eager")
     public CopySpec getMetaInf() {
@@ -225,6 +259,7 @@ public abstract class Jar extends Zip {
      *
      * @param configureClosure The closure.
      * @return The created {@code CopySpec}
+     * @since 2.3
      */
     public CopySpec metaInf(@DelegatesTo(CopySpec.class) Closure<?> configureClosure) {
         return ConfigureUtil.configure(configureClosure, getMetaInf());

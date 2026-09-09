@@ -17,7 +17,12 @@
 package org.gradle.internal.session;
 
 import org.gradle.api.internal.StartParameterInternal;
+import org.gradle.api.internal.options.InternalOptionsFactory;
+import org.gradle.internal.buildoption.InternalOptions;
 import org.gradle.internal.concurrent.CompositeStoppable;
+import org.gradle.internal.operations.BuildOperationsParameters;
+import org.gradle.internal.operations.DefaultBuildOperationsParameters;
+import org.gradle.internal.operations.trace.BuildOperationJfrEmitter;
 import org.gradle.internal.operations.trace.BuildOperationTrace;
 import org.gradle.internal.service.Provides;
 import org.gradle.internal.service.ServiceRegistration;
@@ -30,6 +35,7 @@ import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceScope;
 
 import java.io.Closeable;
+import java.io.File;
 import java.util.List;
 
 /**
@@ -45,15 +51,16 @@ import java.util.List;
 public class CrossBuildSessionState implements Closeable {
     private final ServiceRegistry services;
 
-    public CrossBuildSessionState(ServiceRegistry parent, StartParameterInternal startParameter) {
+    public CrossBuildSessionState(ServiceRegistry parent, StartParameterInternal startParameter, File userActionRootDir) {
         this.services = ServiceRegistryBuilder.builder()
             .scopeStrictly(Scope.CrossBuildSession.class)
             .displayName("cross session services")
             .parent(parent)
-            .provider(new Services(startParameter))
+            .provider(new Services(startParameter, userActionRootDir))
             .build();
-        // Trigger listener to wire itself in
+        // Trigger listeners to wire themselves in
         services.get(BuildOperationTrace.class);
+        services.get(BuildOperationJfrEmitter.class);
     }
 
     public ServiceRegistry getServices() {
@@ -68,9 +75,11 @@ public class CrossBuildSessionState implements Closeable {
     private class Services implements ServiceRegistrationProvider {
 
         private final StartParameterInternal startParameter;
+        private final File userActionRootDir;
 
-        public Services(StartParameterInternal startParameter) {
+        public Services(StartParameterInternal startParameter, File userActionRootDir) {
             this.startParameter = startParameter;
+            this.userActionRootDir = userActionRootDir;
         }
 
         @Provides
@@ -78,8 +87,14 @@ public class CrossBuildSessionState implements Closeable {
             for (GradleModuleServices services : servicesProviders) {
                 services.registerCrossBuildSessionServices(registration);
             }
-            registration.add(CrossBuildSessionParameters.class, new CrossBuildSessionParameters(startParameter));
+            registration.add(CrossBuildSessionParameters.class, new CrossBuildSessionParameters(startParameter, userActionRootDir));
             registration.add(CrossBuildSessionState.class, CrossBuildSessionState.this);
+            registration.add(BuildOperationsParameters.class, DefaultBuildOperationsParameters.class);
+        }
+
+        @Provides
+        InternalOptions createInternalOptions(CrossBuildSessionParameters parameters) {
+            return InternalOptionsFactory.createInternalOptions(startParameter, parameters.getUserActionRootDirectory());
         }
     }
 }

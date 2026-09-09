@@ -16,6 +16,8 @@
 
 package org.gradle.language.cpp
 
+
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 import org.gradle.nativeplatform.fixtures.ToolChainRequirement
 import org.gradle.nativeplatform.fixtures.app.CppApp
@@ -31,7 +33,6 @@ import spock.lang.Issue
 import static org.gradle.util.Matchers.containsText
 
 class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implements CppTaskNames {
-
     @Override
     protected void makeSingleProject() {
         buildFile << """
@@ -67,7 +68,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(tasks.debug.allToInstall, ':assemble')
+        result.assertTasksScheduled(tasks.debug.allToInstall, ':assemble')
         // TODO - should skip the task as NO-SOURCE
         result.assertTasksSkipped(tasks.debug.allToInstall, ':assemble')
     }
@@ -87,7 +88,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         fails "assemble"
-        failure.assertHasDescription("Execution failed for task ':compileDebugCpp'.")
+        failure.assertHasDescription("Execution failed for task ':compileDebugCpp' (registered by plugin class 'org.gradle.language.cpp.plugins.CppBasePlugin').")
         failure.assertHasCause("A build operation failed.")
         failure.assertThatCause(containsText("C++ compiler failed while compiling broken.cpp"))
     }
@@ -106,7 +107,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(tasks.debug.allToInstall, ':assemble')
+        result.assertTasksScheduled(tasks.debug.allToInstall, ':assemble')
 
         executable("build/exe/main/debug/app").assertExists()
         installation("build/install/main/debug").exec().out == app.expectedOutput(toolChain)
@@ -123,20 +124,20 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             apply plugin: 'cpp-application'
             application.binaries.get { it.optimized }.configure {
-                compileTask.get().macros(WITH_FEATURE: "true")
+                compileTask.get().setMacros(WITH_FEATURE: "true")
             }
          """
 
         expect:
         succeeds tasks.release.assemble
-        result.assertTasksExecuted(tasks.release.allToInstall, tasks.release.extract, tasks.release.assemble)
+        result.assertTasksScheduled(tasks.release.allToInstall, tasks.release.extract, tasks.release.assemble)
 
         executable("build/exe/main/release/app").assertExists()
         executable("build/exe/main/release/app").assertHasStrippedDebugSymbolsFor(app.sourceFileNamesWithoutHeaders)
         installation("build/install/main/release").exec().out == app.withFeatureEnabled().expectedOutput
 
         succeeds tasks.debug.assemble
-        result.assertTasksExecuted(tasks.debug.allToInstall, tasks.debug.assemble)
+        result.assertTasksScheduled(tasks.debug.allToInstall, tasks.debug.assemble)
 
         executable("build/exe/main/debug/app").assertExists()
         executable("build/exe/main/debug/app").assertHasDebugSymbolsFor(app.sourceFileNamesWithoutHeaders)
@@ -161,7 +162,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "buildDebug"
-        result.assertTasksExecuted(tasks.debug.allToLink, ':buildDebug')
+        result.assertTasksScheduled(tasks.debug.allToLink, ':buildDebug')
         executable("build/exe/main/debug/app").assertExists()
     }
 
@@ -183,7 +184,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "compileDebug"
-        result.assertTasksExecuted(tasks.debug.compile, ':compileDebug')
+        result.assertTasksScheduled(tasks.debug.compile, ':compileDebug')
         executable("build/exe/main/debug/app").assertDoesNotExist()
         objectFiles(app.main)*.assertExists()
     }
@@ -206,7 +207,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "install"
-        result.assertTasksExecuted(tasks.debug.allToInstall, ':install')
+        result.assertTasksScheduled(tasks.debug.allToInstall, ':install')
         installation("build/install/main/debug").exec().out == app.expectedOutput
     }
 
@@ -229,7 +230,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(tasks.debug.allToInstall, ":assemble")
+        result.assertTasksScheduled(tasks.debug.allToInstall, ":assemble")
 
         executable("build/exe/main/debug/app").assertExists()
         installation("build/install/main/debug").exec().out == app.expectedOutput
@@ -256,7 +257,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(tasks.debug.allToInstall, ':assemble')
+        result.assertTasksScheduled(tasks.debug.allToInstall, ':assemble')
 
         file("build/obj/main/debug").assertIsDir()
         executable("build/exe/main/debug/app").assertExists()
@@ -288,7 +289,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(tasks.debug.allToInstall, ':assemble')
+        result.assertTasksScheduled(tasks.debug.allToInstall, ':assemble')
 
         file("build/obj/main/debug").assertIsDir()
         executable("build/exe/main/debug/app").assertExists()
@@ -310,7 +311,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(tasks.debug.allToInstall, ':assemble')
+        result.assertTasksScheduled(tasks.debug.allToInstall, ':assemble')
 
         !file("build").exists()
         file("output/obj/main/debug").assertIsDir()
@@ -332,7 +333,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(tasks.debug.allToInstall, ':assemble')
+        result.assertTasksScheduled(tasks.debug.allToInstall, ':assemble')
 
         file("build/obj/main/debug").assertIsDir()
         executable("build/exe/main/debug/test_app").assertExists()
@@ -358,13 +359,14 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(tasks.debug.allToInstall, ':assemble')
+        result.assertTasksScheduled(tasks.debug.allToInstall, ':assemble')
 
         file("build/object-files").assertIsDir()
         file("build/exe/some-app.exe").assertIsFile()
         installation("build/some-app").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp/Swift build")
     def "can compile and link against a library"() {
         createDirs("app", "hello")
         settingsFile << "include 'app', 'hello'"
@@ -374,8 +376,10 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             project(':app') {
                 apply plugin: 'cpp-application'
-                dependencies {
-                    implementation project(':hello')
+                application {
+                    dependencies {
+                        implementation project(':hello')
+                    }
                 }
             }
             project(':hello') {
@@ -388,7 +392,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(tasks(':hello').debug.allToLink, tasks(':app').debug.allToInstall, ":app:assemble")
+        result.assertTasksScheduled(tasks(':hello').debug.allToLink, tasks(':app').debug.allToInstall, ":app:assemble")
         executable("app/build/exe/main/debug/app").assertExists()
         sharedLibrary("hello/build/lib/main/debug/hello").assertExists()
         def installation = installation("app/build/install/main/debug")
@@ -396,6 +400,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.assertIncludesLibraries("hello")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "can compile and link against a library when specifying multiple target machines"() {
         createDirs("app", "hello")
         settingsFile << "include 'app', 'hello'"
@@ -407,9 +412,9 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
                 apply plugin: 'cpp-application'
                 application {
                     targetMachines = [machines.${currentHostOperatingSystemFamilyDsl}, machines.os('host-family')]
-                }
-                dependencies {
-                    implementation project(':hello')
+                    dependencies {
+                        implementation project(':hello')
+                    }
                 }
             }
             project(':hello') {
@@ -425,7 +430,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(tasks(':hello').withOperatingSystemFamily(currentOsFamilyName).debug.allToLink, tasks(':app').withOperatingSystemFamily(currentOsFamilyName).debug.allToInstall, ":app:assemble")
+        result.assertTasksScheduled(tasks(':hello').withOperatingSystemFamily(currentOsFamilyName).debug.allToLink, tasks(':app').withOperatingSystemFamily(currentOsFamilyName).debug.allToInstall, ":app:assemble")
         executable("app/build/exe/main/debug/${currentOsFamilyName.toLowerCase()}/app").assertExists()
         sharedLibrary("hello/build/lib/main/debug/${currentOsFamilyName.toLowerCase()}/hello").assertExists()
         def installation = installation("app/build/install/main/debug/${currentOsFamilyName.toLowerCase()}")
@@ -433,6 +438,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.assertIncludesLibraries("hello")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "fails when dependency library does not specify the same target machines"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -463,10 +469,11 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         fails ":app:assemble"
 
         and:
-        failure.assertHasCause("Could not resolve project :greeter")
-        failure.assertHasCause("No matching variant of project :greeter was found. The consumer was configured to find attribute 'org.gradle.native.architecture' with value '${currentArchitecture}', attribute 'org.gradle.native.debuggable' with value 'true', attribute 'org.gradle.native.operatingSystem' with value '${currentOsFamilyName.toLowerCase()}', attribute 'org.gradle.native.optimized' with value 'false', attribute 'org.gradle.usage' with value 'native-runtime' but:")
+        failure.assertHasCause("Could not resolve project ':greeter'")
+        failure.assertHasCause("No matching variant of project ':greeter' was found. The consumer was configured to find attribute 'org.gradle.native.architecture' with value '${currentArchitecture}', attribute 'org.gradle.native.debuggable' with value 'true', attribute 'org.gradle.native.operatingSystem' with value '${currentOsFamilyName.toLowerCase()}', attribute 'org.gradle.native.optimized' with value 'false', attribute 'org.gradle.usage' with value 'native-runtime' but:")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "fails when dependency library does not specify the same target architecture"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -498,7 +505,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         fails ":app:assemble"
 
         and:
-        failure.assertHasCause("Could not resolve project :greeter")
+        failure.assertHasCause("Could not resolve project ':greeter'")
         failure.assertHasErrorOutput("Incompatible because this component declares attribute 'org.gradle.native.architecture' with value 'foo', attribute 'org.gradle.usage' with value 'native-link' and the consumer needed attribute 'org.gradle.native.architecture' with value '${currentArchitecture}', attribute 'org.gradle.usage' with value 'native-runtime'")
     }
 
@@ -542,6 +549,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         succeeds "compileDebug"
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "can compile and link against a library with explicit target machine defined"() {
         createDirs("app", "hello")
         settingsFile << "include 'app', 'hello'"
@@ -571,7 +579,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(tasks(':hello').debug.allToLink, tasks(':app').debug.allToInstall, ":app:assemble")
+        result.assertTasksScheduled(tasks(':hello').debug.allToLink, tasks(':app').debug.allToInstall, ":app:assemble")
         executable("app/build/exe/main/debug/app").assertExists()
         sharedLibrary("hello/build/lib/main/debug/hello").assertExists()
         def installation = installation("app/build/install/main/debug")
@@ -579,6 +587,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.assertIncludesLibraries("hello")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "fails compile and link against a library with different operating system family support"() {
         createDirs("app", "hello")
         settingsFile << """
@@ -611,7 +620,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         fails ":app:assemble"
 
-        failure.assertHasCause """No matching variant of project :hello was found. The consumer was configured to find attribute 'org.gradle.native.architecture' with value '${currentArchitecture}', attribute 'org.gradle.native.debuggable' with value 'true', attribute 'org.gradle.native.operatingSystem' with value '${currentOsFamilyName}', attribute 'org.gradle.native.optimized' with value 'false', attribute 'org.gradle.usage' with value 'native-runtime' but:
+        failure.assertHasCause """No matching variant of project ':hello' was found. The consumer was configured to find attribute 'org.gradle.native.architecture' with value '${currentArchitecture}', attribute 'org.gradle.native.debuggable' with value 'true', attribute 'org.gradle.native.operatingSystem' with value '${currentOsFamilyName}', attribute 'org.gradle.native.optimized' with value 'false', attribute 'org.gradle.usage' with value 'native-runtime' but:
   - Variant 'cppApiElements':
       - Incompatible because this component declares attribute 'org.gradle.usage' with value 'cplusplus-api' and the consumer needed attribute 'org.gradle.usage' with value 'native-runtime'
       - Other compatible attributes:
@@ -621,6 +630,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
           - Doesn't say anything about org.gradle.native.optimized (required 'false')"""
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "can compile and link against a static library"() {
         createDirs("app", "hello")
         settingsFile << "include 'app', 'hello'"
@@ -630,8 +640,10 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             project(':app') {
                 apply plugin: 'cpp-application'
-                dependencies {
-                    implementation project(':hello')
+                application {
+                    dependencies {
+                        implementation project(':hello')
+                    }
                 }
             }
             project(':hello') {
@@ -646,7 +658,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(tasks(':hello').debug.allToCreate, tasks(':app').debug.allToInstall, ':app:assemble')
+        result.assertTasksScheduled(tasks(':hello').debug.allToCreate, tasks(':app').debug.allToInstall, ':app:assemble')
         executable("app/build/exe/main/debug/app").assertExists()
         staticLibrary("hello/build/lib/main/debug/hello").assertExists()
         def installation = installation("app/build/install/main/debug")
@@ -654,6 +666,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.assertIncludesLibraries()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "can compile and link against a library with both linkages defined"() {
         createDirs("app", "hello")
         settingsFile << "include 'app', 'hello'"
@@ -663,8 +676,10 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             project(':app') {
                 apply plugin: 'cpp-application'
-                dependencies {
-                    implementation project(':hello')
+                application {
+                    dependencies {
+                        implementation project(':hello')
+                    }
                 }
             }
             project(':hello') {
@@ -679,7 +694,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(tasks(':hello').withBuildType(debugShared).allToLink, tasks(':app').debug.allToInstall, ":app:assemble")
+        result.assertTasksScheduled(tasks(':hello').withBuildType(debugShared).allToLink, tasks(':app').debug.allToInstall, ":app:assemble")
         executable("app/build/exe/main/debug/app").assertExists()
         sharedLibrary("hello/build/lib/main/debug/shared/hello").assertExists()
         def installation = installation("app/build/install/main/debug")
@@ -687,6 +702,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.assertIncludesLibraries("hello")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp/Swift build")
     def "can compile and link against a library with debug and release variants"() {
         createDirs("app", "hello")
         settingsFile << "include 'app', 'hello'"
@@ -696,17 +712,19 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             project(':app') {
                 apply plugin: 'cpp-application'
-                dependencies {
-                    implementation project(':hello')
+                application {
+                    dependencies {
+                        implementation project(':hello')
+                    }
                 }
                 application.binaries.get { it.optimized }.configure {
-                    compileTask.get().macros(WITH_FEATURE: "true")
+                    compileTask.get().setMacros(WITH_FEATURE: "true")
                 }
             }
             project(':hello') {
                 apply plugin: 'cpp-library'
                 library.binaries.get { it.optimized }.configure {
-                    compileTask.get().macros(WITH_FEATURE: "true")
+                    compileTask.get().setMacros(WITH_FEATURE: "true")
                 }
             }
         """
@@ -716,7 +734,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds tasks(':app').release.assemble
 
-        result.assertTasksExecuted(tasks(':hello').release.allToLink, tasks(':app').release.allToInstall, tasks(':app').release.extract, tasks(':app').release.assemble)
+        result.assertTasksScheduled(tasks(':hello').release.allToLink, tasks(':app').release.allToInstall, tasks(':app').release.extract, tasks(':app').release.assemble)
         executable("app/build/exe/main/release/app").assertExists()
         executable("app/build/exe/main/release/app").assertHasStrippedDebugSymbolsFor(app.main.sourceFileNames)
         sharedLibrary("hello/build/lib/main/release/hello").assertExists()
@@ -725,7 +743,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         succeeds tasks(':app').debug.assemble
 
-        result.assertTasksExecuted(tasks(':hello').debug.allToLink, tasks(':app').debug.allToInstall, tasks(':app').debug.assemble)
+        result.assertTasksScheduled(tasks(':hello').debug.allToLink, tasks(':app').debug.allToInstall, tasks(':app').debug.assemble)
 
         executable("app/build/exe/main/debug/app").assertExists()
         executable("app/build/exe/main/debug/app").assertHasDebugSymbolsFor(app.main.sourceFileNames)
@@ -734,6 +752,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation("app/build/install/main/debug").exec().out == app.withFeatureDisabled().expectedOutput
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "can compile and link against library with api and implementation dependencies"() {
         createDirs("app", "deck", "card", "shuffle")
         settingsFile << "include 'app', 'deck', 'card', 'shuffle'"
@@ -743,15 +762,19 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             project(':app') {
                 apply plugin: 'cpp-application'
-                dependencies {
-                    implementation project(':deck')
+                application {
+                    dependencies {
+                        implementation project(':deck')
+                    }
                 }
             }
             project(':deck') {
                 apply plugin: 'cpp-library'
-                dependencies {
-                    api project(':card')
-                    implementation project(':shuffle')
+                library {
+                    dependencies {
+                        api project(':card')
+                        implementation project(':shuffle')
+                    }
                 }
             }
             project(':card') {
@@ -769,7 +792,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted([':card', ':deck', ':shuffle'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
+        result.assertTasksScheduled([':card', ':deck', ':shuffle'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
         sharedLibrary("deck/build/lib/main/debug/deck").assertExists()
         sharedLibrary("card/build/lib/main/debug/card").assertExists()
         sharedLibrary("shuffle/build/lib/main/debug/shuffle").assertExists()
@@ -779,6 +802,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "can compile and link against a static library with api and implementation dependencies"() {
         createDirs("app", "deck", "card", "shuffle")
         settingsFile << "include 'app', 'deck', 'card', 'shuffle'"
@@ -788,16 +812,20 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             project(':app') {
                 apply plugin: 'cpp-application'
-                dependencies {
-                    implementation project(':deck')
+                application {
+                    dependencies {
+                        implementation project(':deck')
+                    }
                 }
             }
             project(':deck') {
                 apply plugin: 'cpp-library'
-                library.linkage = [Linkage.STATIC]
-                dependencies {
-                    api project(':card')
-                    implementation project(':shuffle')
+                library {
+                    linkage = [Linkage.STATIC]
+                    dependencies {
+                        api project(':card')
+                        implementation project(':shuffle')
+                    }
                 }
             }
             project(':card') {
@@ -817,7 +845,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted([':card', ':deck', ':shuffle'].collect { tasks(it).debug.allToCreate }, tasks(':app').debug.allToInstall, ":app:assemble")
+        result.assertTasksScheduled([':card', ':deck', ':shuffle'].collect { tasks(it).debug.allToCreate }, tasks(':app').debug.allToInstall, ":app:assemble")
         staticLibrary("deck/build/lib/main/debug/deck").assertExists()
         staticLibrary("card/build/lib/main/debug/card").assertExists()
         staticLibrary("shuffle/build/lib/main/debug/shuffle").assertExists()
@@ -827,6 +855,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         installation.exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "honors changes to library buildDir"() {
         createDirs("app", "lib1", "lib2")
         settingsFile << "include 'app', 'lib1', 'lib2'"
@@ -836,14 +865,18 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             project(':app') {
                 apply plugin: 'cpp-application'
-                dependencies {
-                    implementation project(':lib1')
+                application {
+                    dependencies {
+                        implementation project(':lib1')
+                    }
                 }
             }
             project(':lib1') {
                 apply plugin: 'cpp-library'
-                dependencies {
-                    implementation project(':lib2')
+                library {
+                    dependencies {
+                        implementation project(':lib2')
+                    }
                 }
             }
             project(':lib2') {
@@ -858,7 +891,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted([':lib1', ':lib2'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
+        result.assertTasksScheduled([':lib1', ':lib2'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
 
         !file("lib2/build").exists()
         sharedLibrary("lib1/build/lib/main/debug/lib1").assertExists()
@@ -869,6 +902,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         sharedLibrary("app/build/install/main/debug/lib/lib2").file.assertExists()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "honors changes to library output locations"() {
         createDirs("app", "lib1", "lib2")
         settingsFile << "include 'app', 'lib1', 'lib2'"
@@ -878,14 +912,18 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             project(':app') {
                 apply plugin: 'cpp-application'
-                dependencies {
-                    implementation project(':lib1')
+                application {
+                    dependencies {
+                        implementation project(':lib1')
+                    }
                 }
             }
             project(':lib1') {
                 apply plugin: 'cpp-library'
-                dependencies {
-                    implementation project(':lib2')
+                library {
+                    dependencies {
+                        implementation project(':lib2')
+                    }
                 }
             }
             project(':lib2') {
@@ -906,7 +944,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted([':lib1', ':lib2'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
+        result.assertTasksScheduled([':lib1', ':lib2'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
 
         file("lib2/build/shared/lib1_debug.dll").assertIsFile()
         if (toolChain.visualCpp) {
@@ -917,6 +955,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         file("app/build/install/main/debug/lib/lib1_debug.dll").assertIsFile()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "honors changes to library public header location"() {
         createDirs("app", "lib1", "lib2")
         settingsFile << "include 'app', 'lib1', 'lib2'"
@@ -926,16 +965,18 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             project(':app') {
                 apply plugin: 'cpp-application'
-                dependencies {
-                    implementation project(':lib1')
+                application {
+                    dependencies {
+                        implementation project(':lib1')
+                    }
                 }
             }
             project(':lib1') {
                 apply plugin: 'cpp-library'
-                dependencies {
-                    implementation project(':lib2')
-                }
                 library {
+                    dependencies {
+                        implementation project(':lib2')
+                    }
                     publicHeaders.from('include')
                 }
             }
@@ -956,7 +997,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted([':lib1', ':lib2'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
+        result.assertTasksScheduled([':lib1', ':lib2'].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
 
         sharedLibrary("lib1/build/lib/main/debug/lib1").assertExists()
         sharedLibrary("lib2/build/lib/main/debug/lib2").assertExists()
@@ -966,6 +1007,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         sharedLibrary("app/build/install/main/debug/lib/lib2").file.assertExists()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "C++ uses allprojects/subprojects (software model)")
     def "multiple components can share the same source directory"() {
         createDirs("app", "greeter", "logger")
         settingsFile << "include 'app', 'greeter', 'logger'"
@@ -975,19 +1017,19 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
         buildFile << """
             project(':app') {
                 apply plugin: 'cpp-application'
-                dependencies {
-                    implementation project(':greeter')
-                }
                 application {
+                    dependencies {
+                        implementation project(':greeter')
+                    }
                     source.from '../Sources/main.cpp'
                 }
             }
             project(':greeter') {
                 apply plugin: 'cpp-library'
-                dependencies {
-                    implementation project(':logger')
-                }
                 library {
+                    dependencies {
+                        implementation project(':logger')
+                    }
                     source.from '../Sources/greeter.cpp'
                 }
             }
@@ -1006,7 +1048,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds ":app:assemble"
-        result.assertTasksExecuted([':greeter', ":logger"].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
+        result.assertTasksScheduled([':greeter', ":logger"].collect { tasks(it).debug.allToLink }, tasks(':app').debug.allToInstall, ":app:assemble")
 
         sharedLibrary("greeter/build/lib/main/debug/greeter").assertExists()
         sharedLibrary("logger/build/lib/main/debug/logger").assertExists()
@@ -1053,7 +1095,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds ":assemble"
-        result.assertTasksExecuted([':lib1', ":lib2"].collect { tasks(it).debug.allToLink }, tasks.debug.allToInstall, ":assemble")
+        result.assertTasksScheduled([':lib1', ":lib2"].collect { tasks(it).debug.allToLink }, tasks.debug.allToInstall, ":assemble")
         sharedLibrary("lib1/build/lib/main/debug/lib1").assertExists()
         sharedLibrary("lib2/build/lib/main/debug/lib2").assertExists()
         executable("build/exe/main/debug/app").assertExists()
@@ -1084,7 +1126,7 @@ class CppApplicationIntegrationTest extends AbstractCppIntegrationTest implement
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(tasks.debug.allToInstall, ':assemble')
+        result.assertTasksScheduled(tasks.debug.allToInstall, ':assemble')
 
         executable("build/exe/main/debug/app").assertExists()
         installation("build/install/main/debug").exec().out == app.expectedOutput(toolChain)

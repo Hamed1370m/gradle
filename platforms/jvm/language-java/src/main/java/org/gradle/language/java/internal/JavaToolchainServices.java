@@ -19,14 +19,14 @@ package org.gradle.language.java.internal;
 import org.gradle.api.internal.ClassPathRegistry;
 import org.gradle.api.internal.tasks.compile.DefaultJavaCompilerFactory;
 import org.gradle.api.internal.tasks.compile.processing.AnnotationProcessorDetector;
-import org.gradle.api.problems.internal.InternalProblems;
+import org.gradle.api.problems.internal.ProblemsInternal;
 import org.gradle.initialization.layout.ProjectCacheDir;
 import org.gradle.internal.service.Provides;
 import org.gradle.internal.service.ServiceRegistration;
 import org.gradle.internal.service.ServiceRegistrationProvider;
 import org.gradle.internal.service.scopes.AbstractGradleModuleServices;
 import org.gradle.jvm.toolchain.internal.JavaCompilerFactory;
-import org.gradle.process.internal.ExecHandleFactory;
+import org.gradle.process.internal.ClientExecHandleBuilderFactory;
 import org.gradle.process.internal.JavaForkOptionsFactory;
 import org.gradle.process.internal.worker.child.WorkerDirectoryProvider;
 import org.gradle.workers.internal.ActionExecutionSpecFactory;
@@ -44,11 +44,11 @@ public class JavaToolchainServices extends AbstractGradleModuleServices {
             WorkerDaemonFactory workerDaemonFactory,
             JavaForkOptionsFactory forkOptionsFactory,
             WorkerDirectoryProvider workerDirectoryProvider,
-            ExecHandleFactory execHandleFactory,
+            ClientExecHandleBuilderFactory execHandleFactory,
             AnnotationProcessorDetector processorDetector,
             ClassPathRegistry classPathRegistry,
             ActionExecutionSpecFactory actionExecutionSpecFactory,
-            InternalProblems problems,
+            ProblemsInternal problems,
             ProjectCacheDir projectCacheDir
         ) {
             return new DefaultJavaCompilerFactory(

@@ -14,7 +14,5 @@
  * limitations under the License.
  */
 
-@NonNullApi
+@org.jspecify.annotations.NullMarked
 package org.gradle.plugin.management.internal.autoapply;
-
-import org.gradle.api.NonNullApi;

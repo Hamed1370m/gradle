@@ -49,7 +49,7 @@ class PluginConfigurationAttributesIntegrationTest extends AbstractIntegrationSp
 
         then:
         fails("test")
-        result.assertHasErrorOutput("A dependency was declared on configuration '$configuration' of 'project :producer' but no variant with that configuration name exists.")
+        result.assertHasErrorOutput("A dependency was declared on configuration '$configuration' of 'project ':producer'' but no variant with that configuration name exists.")
 
         where:
         plugin       | configuration
@@ -88,6 +88,8 @@ class PluginConfigurationAttributesIntegrationTest extends AbstractIntegrationSp
                 consumer {
                     canBeConsumed = false
                     assert canBeResolved
+                    // extra attributes interferes with Guava's metadata
+                    exclude(group: "com.google.guava", module: "guava")
                     attributes {
                         attribute(Attribute.of("test", String), "test")
                         ${plugin == 'codenarc' ?

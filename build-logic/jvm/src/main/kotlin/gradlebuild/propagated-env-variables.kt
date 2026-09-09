@@ -47,6 +47,8 @@ val propagatedEnvironmentVariables = listOf(
     // Used by Gradle test infrastructure
     "REPO_MIRROR_URLS",
     "YARNPKG_MIRROR_URL",
+    // Optional mirror for services.gradle.org layout in internal tests (ReleasedGradleDistribution)
+    "GRADLE_INTERNAL_TEST_SERVICES_BASE_URL",
 
     // Used to find local java installations
     "SDKMAN_CANDIDATES_DIR",
@@ -108,17 +110,23 @@ val credentialsKeywords = listOf(
 )
 
 
-fun Test.filterEnvironmentVariables() {
+fun Test.filterEnvironmentVariables(inheritedEnvVars: List<String>) {
     environment = makePropagatedEnvironment()
     environment.forEach { (key, _) ->
         require(credentialsKeywords.none { key.contains(it, true) }) { "Found sensitive data in filtered environment variables: $key" }
+    }
+
+    inheritedEnvVars.forEach { envVar ->
+        System.getenv(envVar)?.let {
+            environment[envVar] = it
+        }
     }
 }
 
 
 private
-fun makePropagatedEnvironment(): Map<String, String?> {
-    val result = HashMap<String, String?>()
+fun makePropagatedEnvironment(): MutableMap<String, String> {
+    val result = HashMap<String, String>()
     for (key in propagatedEnvironmentVariables) {
         val value = System.getenv(key)
         if (value != null) {

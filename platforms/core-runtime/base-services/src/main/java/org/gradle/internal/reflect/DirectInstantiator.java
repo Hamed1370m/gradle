@@ -21,26 +21,27 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.Iterables;
 import org.gradle.api.reflect.ObjectInstantiationException;
 import org.gradle.model.internal.asm.AsmClassGeneratorUtils;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Arrays;
 
 /**
- * You should use the methods of {@link org.gradle.api.internal.InstantiatorFactory} instead of this type, as it will give better error reporting, more consistent behaviour and better performance.
- * This type will be retired in favor of {@link org.gradle.api.internal.InstantiatorFactory} at some point. Currently it is too tangled with a few things to just remove.
+ * You should use the methods of {@link org.gradle.internal.instantiation.InstantiatorFactory} instead of this type, as it will give better error reporting, more consistent behaviour and better performance.
+ * This type will be retired in favor of {@link org.gradle.internal.instantiation.InstantiatorFactory} at some point. Currently it is too tangled with a few things to just remove.
  */
 public class DirectInstantiator implements Instantiator {
 
     /**
-     * Please use {@link org.gradle.api.internal.InstantiatorFactory} instead.
+     * Please use {@link org.gradle.internal.instantiation.InstantiatorFactory} instead.
      */
     public static final Instantiator INSTANCE = new DirectInstantiator();
 
     private final ConstructorCache constructorCache = new ConstructorCache();
 
     /**
-     * Please use {@link org.gradle.api.internal.InstantiatorFactory} instead.
+     * Please use {@link org.gradle.internal.instantiation.InstantiatorFactory} instead.
      */
     public static <T> T instantiate(Class<? extends T> type, Object... params) {
         return INSTANCE.newInstance(type, params);
@@ -50,7 +51,7 @@ public class DirectInstantiator implements Instantiator {
     }
 
     @Override
-    public <T> T newInstance(Class<? extends T> type, Object... params) {
+    public <T> T newInstance(Class<? extends T> type, @Nullable Object... params) {
         try {
             Class<?>[] argTypes = wrapArgs(params);
             Constructor<?> match = null;
@@ -68,7 +69,7 @@ public class DirectInstantiator implements Instantiator {
         }
     }
 
-    private Class<?>[] wrapArgs(Object[] params) {
+    private Class<?>[] wrapArgs(@Nullable Object[] params) {
         Class<?>[] result = new Class<?>[params.length];
         for (int i = 0; i < result.length; i++) {
             Object param = params[i];
@@ -85,9 +86,11 @@ public class DirectInstantiator implements Instantiator {
     }
 
     @VisibleForTesting
+    @SuppressWarnings("ExposedPrivateType")
     public static class ConstructorCache extends ReflectionCache<CachedConstructor> {
 
         @Override
+        @SuppressWarnings("ExposedPrivateType")
         protected CachedConstructor create(Class<?> receiver, Class<?>[] argumentTypes) {
             Constructor<?>[] constructors = receiver.getConstructors();
             Constructor<?> match = null;

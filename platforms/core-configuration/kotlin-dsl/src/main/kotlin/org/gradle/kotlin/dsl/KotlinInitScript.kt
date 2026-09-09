@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+@file:Suppress("DEPRECATION")
+
 package org.gradle.kotlin.dsl
 
 import org.gradle.api.Action
@@ -32,6 +34,8 @@ import kotlin.script.templates.ScriptTemplateDefinition
  * Legacy base class for Gradle Kotlin DSL standalone [Gradle] scripts IDE support, aka. init scripts.
  *
  * @see KotlinGradleScriptTemplate
+ *
+ * @since 4.6
  */
 @ScriptTemplateDefinition(
     resolver = KotlinBuildScriptDependenciesResolver::class,
@@ -39,25 +43,26 @@ import kotlin.script.templates.ScriptTemplateDefinition
 )
 @ScriptTemplateAdditionalCompilerArguments(
     [
-        "-language-version", "1.8",
-        "-api-version", "1.8",
-        "-Xjvm-default=all",
+        "-language-version", "2.2",
+        "-api-version", "2.2",
+        "-jvm-default=enable",
         "-Xjsr305=strict",
+        "-Xjspecify-annotations=strict",
         "-Xskip-prerelease-check",
         "-Xallow-unstable-dependencies",
-        "-XXLanguage:+DisableCompatibilityModeForNewInference",
-        "-XXLanguage:-TypeEnhancementImprovementsInStrictMode",
         "-P=plugin:org.jetbrains.kotlin.assignment:annotation=org.gradle.api.SupportsKotlinAssignmentOverloading",
     ]
 )
 @SamWithReceiverAnnotations("org.gradle.api.HasImplicitReceiver")
-@Deprecated("Will be removed in Gradle 9.0")
+@Deprecated("Will be removed in Gradle 10")
 abstract class KotlinInitScript(
     private val host: KotlinScriptHost<Gradle>
-) : @Suppress("DEPRECATION") InitScriptApi(host.target) {
+) : InitScriptApi(host.target) {
 
     /**
      * The [ScriptHandler] for this script.
+     *
+     * @since 4.7
      */
     val initscript: ScriptHandler
         get() = host.scriptHandler
@@ -65,9 +70,9 @@ abstract class KotlinInitScript(
     /**
      * Applies zero or more plugins or scripts.
      * <p>
-     * The given action is used to configure an [ObjectConfigurationAction], which “builds” the plugin application.
+     * The given action is used to configure an [ObjectConfigurationAction], which "builds" the plugin application.
      * <p>
-     * @param action the action to configure an [ObjectConfigurationAction] with before “executing” it
+     * @param action the action to configure an [ObjectConfigurationAction] with before "executing" it
      * @see [PluginAware.apply]
      */
     override fun apply(action: Action<in ObjectConfigurationAction>) =
@@ -76,6 +81,4 @@ abstract class KotlinInitScript(
     override val fileOperations
         get() = host.fileOperations
 
-    override val processOperations
-        get() = host.processOperations
 }

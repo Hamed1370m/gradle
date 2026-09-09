@@ -31,9 +31,15 @@ import org.gradle.api.tasks.TaskProvider;
  * Adds a task, "buildDashboard", that aggregates the output of all tasks that produce reports.
  *
  * @see <a href="https://docs.gradle.org/current/userguide/build_dashboard_plugin.html">Build Dashboard plugin reference</a>
+ * @since 1.5
  */
 public abstract class BuildDashboardPlugin implements Plugin<Project> {
 
+    /**
+     * The build dashboard task name.
+     *
+     * @since 1.5
+     */
     public static final String BUILD_DASHBOARD_TASK_NAME = "buildDashboard";
 
     @Override
@@ -47,7 +53,7 @@ public abstract class BuildDashboardPlugin implements Plugin<Project> {
                 buildDashboardTask.setGroup("reporting");
 
                 DirectoryReport htmlReport = buildDashboardTask.getReports().getHtml();
-                htmlReport.getOutputLocation().convention(project.getLayout().getProjectDirectory().dir(project.provider(() -> project.getExtensions().getByType(ReportingExtension.class).file("buildDashboard").getAbsolutePath())));
+                htmlReport.getOutputLocation().convention(project.getExtensions().getByType(ReportingExtension.class).getBaseDirectory().dir("buildDashboard"));
             }
         });
 

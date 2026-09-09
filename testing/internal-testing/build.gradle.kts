@@ -4,13 +4,6 @@ plugins {
 
 description = "Collection of test fixtures for both unit tests and integration tests, internal use only"
 
-sourceSets {
-    main {
-        // Incremental Groovy joint-compilation doesn't work with the Error Prone annotation processor
-        errorprone.enabled = false
-    }
-}
-
 dependencies {
     api(projects.baseServices)
     api(projects.concurrent)
@@ -18,32 +11,52 @@ dependencies {
     api(projects.serviceLookup)
     api(projects.stdlibJavaExtensions)
 
+    api(libs.commonsCompress)
     api(libs.groovy)
-    api(libs.groovyXml)
-    api(libs.hamcrest)
-    api(libs.hamcrestCore)
-    api(libs.junit)
-    api(libs.junit5JupiterApi)
-    api(libs.spock)
-    api(libs.spockJUnit4)
+    api(testLibs.hamcrest)
+    api(libs.jspecify)
+    api(testLibs.junit)
+    api(testLibs.junit5JupiterApi)
+    api(testLibs.spock)
 
     implementation(projects.baseAsm)
     implementation(projects.buildOperations)
+    implementation(projects.buildProcessServices)
     implementation(projects.functional)
     implementation(projects.native)
     implementation(projects.serialization)
 
-    implementation(libs.ant)
     implementation(libs.asm)
-    implementation(libs.commonsCompress)
     implementation(libs.commonsIo)
     implementation(libs.commonsLang)
     implementation(libs.guava)
-    implementation(libs.jsoup)
     implementation(libs.jsr305)
+    implementation(libs.kotlinCompilerEmbeddable)
     implementation(libs.slf4jApi)
-    implementation(libs.testcontainers)
+    implementation(testLibs.testcontainers)
+    implementation(testLibs.dockerJavaApi)
+
+    compileOnly(libs.kotlinStdlib)
 
     runtimeOnly(libs.groovyJson)
-    runtimeOnly(libs.bytebuddy)
+    runtimeOnly(testLibs.bytebuddy)
+
+    // Javadoc-only: for groovy.test.NotYetImplemented reference in ToBeImplemented
+    javadocReferences(testLibs.groovyTest)
+}
+
+jvmCompile {
+    compilations {
+        named("main") {
+            // These test fixtures are used by the tooling API tests, which still run on JVM 8
+            targetJvmVersion = 8
+        }
+    }
+}
+
+sourceSets {
+    main {
+        // Incremental Groovy joint-compilation doesn't work with the Error Prone annotation processor
+        errorprone.enabled = false
+    }
 }

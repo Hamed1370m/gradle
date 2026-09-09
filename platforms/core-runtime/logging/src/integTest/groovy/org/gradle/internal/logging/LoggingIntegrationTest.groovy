@@ -20,10 +20,10 @@ package org.gradle.internal.logging
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.Sample
 import org.gradle.integtests.fixtures.TestResources
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.UsesSample
 import org.gradle.integtests.fixtures.executer.ExecutionResult
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.test.fixtures.file.TestFile
 import org.junit.Rule
 
@@ -169,7 +169,7 @@ class LoggingIntegrationTest extends AbstractIntegrationSpec {
         }
     }}
 
-    @ToBeFixedForConfigurationCache(because = "https://github.com/gradle/gradle/issues/25483")
+    @ToBeFixedForConfigurationCache(issue = "https://github.com/gradle/gradle/issues/30771")
     def "build emits #level logging"() {
         LogLevel logLevel = logOutput."$level"
         resources.maybeCopy('LoggingIntegrationTest/logging')
@@ -229,7 +229,7 @@ class LoggingIntegrationTest extends AbstractIntegrationSpec {
         """
 
         executer.expectDocumentedDeprecationWarning("The Gradle.useLogger(Object) method has been deprecated. " +
-            "This is scheduled to be removed in Gradle 9.0. " +
+            "This is scheduled to be removed in Gradle 10. " +
             "Consult the upgrading guide for further information: " +
             "https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_use_logger")
 
@@ -240,8 +240,8 @@ class LoggingIntegrationTest extends AbstractIntegrationSpec {
         loggerClass << ["DeprecatedListener", "NonDeprecatedListener"]
     }
 
-    @ToBeFixedForConfigurationCache(because = "https://github.com/gradle/gradle/issues/25483", iterationMatchers = 'sample emits (quiet|lifecycle) logging')
-    @UsesSample('tutorial/logging/groovy')
+    @ToBeFixedForConfigurationCache(issue = "https://github.com/gradle/gradle/issues/30771", iterationMatchers = 'sample emits (quiet|lifecycle) logging')
+    @UsesSample('integration-tests/tutorial/logging/groovy')
     def "sample emits #level logging"() {
         LogLevel logLevel = sample."$level"
 

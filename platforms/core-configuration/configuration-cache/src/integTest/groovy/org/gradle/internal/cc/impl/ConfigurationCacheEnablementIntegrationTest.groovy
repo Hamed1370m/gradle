@@ -18,8 +18,10 @@ package org.gradle.internal.cc.impl
 
 import org.gradle.initialization.StartParameterBuildOptions.ConfigurationCacheOption
 import org.gradle.integtests.fixtures.configurationcache.ConfigurationCacheFixture
+import spock.lang.Issue
 
 import static org.gradle.initialization.StartParameterBuildOptions.ConfigurationCacheProblemsOption.Value.WARN
+import org.gradle.api.problems.Severity
 
 
 class ConfigurationCacheEnablementIntegrationTest extends AbstractConfigurationCacheIntegrationTest {
@@ -63,6 +65,19 @@ class ConfigurationCacheEnablementIntegrationTest extends AbstractConfigurationC
         fixture.assertStateLoaded()
     }
 
+    def "configuration cache warn mode is reported through the Problems API"() {
+        given:
+        enableProblemsApiCheck()
+
+        when:
+        run("help", "--configuration-cache", "--configuration-cache-problems=warn")
+
+        then:
+        verifyAll(consumeWarnModeProblem()) {
+            definition.severity == Severity.WARNING
+        }
+    }
+
     def "can enable with a property in gradle user home gradle.properties"() {
         given:
         executer.requireOwnGradleUserHomeDir()
@@ -101,6 +116,24 @@ class ConfigurationCacheEnablementIntegrationTest extends AbstractConfigurationC
         "system property" | DISABLE_SYS_PROP
     }
 
+    @Issue("https://github.com/gradle/gradle/issues/38598")
+    def "deprecated property set to false does not disable configuration cache enabled via gradle.properties"() {
+        // Characterization test: for Configuration Cache the stable property name deliberately wins over
+        // the deprecated spelling regardless of value, unchanged since Gradle 8.1. The Isolated Projects
+        // options resolve the same situation as a conjunction (explicit disable wins) since issue 38598;
+        // flipping this test is a conscious decision to migrate CC to those semantics.
+        given:
+        file('gradle.properties') << """
+            $ENABLE_GRADLE_PROP
+        """
+
+        when:
+        run 'help', "-D${ConfigurationCacheOption.DEPRECATED_PROPERTY_NAME}=false"
+
+        then:
+        fixture.assertStateStored()
+    }
+
     def "can enable configuration cache using incubating and final property variants"() {
         given:
         buildFile """
@@ -126,9 +159,9 @@ class ConfigurationCacheEnablementIntegrationTest extends AbstractConfigurationC
         task    | ccOn  | problemsAs| maxProblems   | quiet | recreate  | debug | options
         "check" | false | WARN      | _             | _     | _         | _     | ["-Dorg.gradle.configuration-cache.problems=warn"]
         "check" | false | _         | 100           | _     | _         | _     | ["-Dorg.gradle.configuration-cache.max-problems=100"]
-        "check" | false | _         | _             | true  | _         | _     | ["-Dorg.gradle.configuration-cache.internal.quiet=true"]
-        "check" | false | _         | _             | _     | true      | _     | ["-Dorg.gradle.configuration-cache.internal.recreate-cache=true"]
-        "check" | false | _         | _             | _     | _         | true  | ["-Dorg.gradle.configuration-cache.internal.debug=true"]
+        "check" | false | _         | _             | true  | _         | _     | ["-Dorg.gradle.internal.configuration-cache.quiet=true"]
+        "check" | false | _         | _             | _     | true      | _     | ["-Dorg.gradle.internal.configuration-cache.recreate-cache=true"]
+        "check" | false | _         | _             | _     | _         | true  | ["-Dorg.gradle.internal.configuration-cache.debug=true"]
         "check" | false | WARN      | _             | _     | _         | _     | ["-Dorg.gradle.unsafe.configuration-cache-problems=warn"]
         "check" | false | _         | 100           | _     | _         | _     | ["-Dorg.gradle.unsafe.configuration-cache.max-problems=100"]
         "check" | false | _         | _             | true  | _         | _     | ["-Dorg.gradle.unsafe.configuration-cache.quiet=true"]

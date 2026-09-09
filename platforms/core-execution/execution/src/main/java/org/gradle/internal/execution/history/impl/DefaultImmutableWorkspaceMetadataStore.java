@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Optional;
 
 public class DefaultImmutableWorkspaceMetadataStore implements ImmutableWorkspaceMetadataStore {
     private static final String METADATA_FILE = "metadata.bin";
@@ -39,8 +40,9 @@ public class DefaultImmutableWorkspaceMetadataStore implements ImmutableWorkspac
     private final OriginMetadataSerializer originMetadataSerializer = new OriginMetadataSerializer();
 
     @Override
-    public ImmutableWorkspaceMetadata loadWorkspaceMetadata(File workspace) {
+    public Optional<ImmutableWorkspaceMetadata> loadWorkspaceMetadata(File workspace) {
         File metadataFile = new File(workspace, METADATA_FILE);
+
         //noinspection IOStreamConstructor
         try (KryoBackedDecoder decoder = new KryoBackedDecoder(new FileInputStream(metadataFile))) {
             OriginMetadata originMetadata = originMetadataSerializer.read(decoder);
@@ -55,9 +57,13 @@ public class DefaultImmutableWorkspaceMetadataStore implements ImmutableWorkspac
                     outputPropertyHashes.put(outputProperty, hashCode);
                 }
             }
-            return new ImmutableWorkspaceMetadata(originMetadata, outputPropertyHashes.build());
+            boolean isComplete = decoder.readBoolean();
+            return isComplete
+                ? Optional.of(new ImmutableWorkspaceMetadata(originMetadata, outputPropertyHashes.build()))
+                : Optional.empty();
         } catch (IOException e) {
-            throw new UncheckedIOException("Could not read workspace metadata from " + metadataFile, e);
+            // If the metadata file does not exist or cannot be read, return empty
+            return Optional.empty();
         }
     }
 
@@ -78,6 +84,8 @@ public class DefaultImmutableWorkspaceMetadataStore implements ImmutableWorkspac
                     hashCodeSerializer.write(encoder, hash);
                 }
             }
+            // Write controlling "is complete" byte
+            encoder.writeBoolean(true);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not write workspace metadata to " + metadataFile, e);
         }

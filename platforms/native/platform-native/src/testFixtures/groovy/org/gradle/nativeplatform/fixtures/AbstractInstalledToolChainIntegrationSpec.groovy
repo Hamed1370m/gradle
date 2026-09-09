@@ -19,6 +19,7 @@ package org.gradle.nativeplatform.fixtures
 import org.gradle.api.internal.file.TestFiles
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.SourceFile
+import org.gradle.integtests.fixtures.StableConfigurationCacheDeprecations
 import org.gradle.integtests.fixtures.compatibility.MultiVersionTestCategory
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.internal.time.Time
@@ -31,7 +32,7 @@ import org.gradle.test.fixtures.file.TestFile
  */
 @NativeToolchainTest
 @MultiVersionTestCategory
-abstract class AbstractInstalledToolChainIntegrationSpec extends AbstractIntegrationSpec implements HostPlatform {
+abstract class AbstractInstalledToolChainIntegrationSpec extends AbstractIntegrationSpec implements HostPlatform, StableConfigurationCacheDeprecations {
     static AvailableToolChains.InstalledToolChain toolChain
     File initScript
 
@@ -39,13 +40,11 @@ abstract class AbstractInstalledToolChainIntegrationSpec extends AbstractIntegra
 
     def setup() {
         initScript = file("init.gradle") << """
-            allprojects { p ->
-                apply plugin: ${toolChain.pluginClass}
+            gradle.lifecycle.beforeProject { p ->
+                p.apply plugin: ${toolChain.pluginClass}
 
-                model {
-                      toolChains {
-                        ${toolChain.buildScriptConfig}
-                      }
+                p.toolChains {
+                    ${toolChain.buildScriptConfig}
                 }
             }
         """

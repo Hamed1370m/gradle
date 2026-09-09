@@ -16,6 +16,7 @@
 package org.gradle.plugins.ide.eclipse;
 
 import org.gradle.api.tasks.Internal;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.xml.XmlTransformer;
 import org.gradle.plugins.ide.api.XmlFileContentMerger;
 import org.gradle.plugins.ide.api.XmlGeneratorTask;
@@ -29,12 +30,22 @@ import javax.inject.Inject;
  * Generates an Eclipse <code>.project</code> file. If you want to fine tune the eclipse configuration
  * <p>
  * At this moment nearly all configuration is done via {@link EclipseProject}.
+ *
+ * @deprecated Will be removed in Gradle 10.
+ * @since 1.0
  */
+@Deprecated
 @DisableCachingByDefault(because = "Not made cacheable, yet")
 public abstract class GenerateEclipseProject extends XmlGeneratorTask<Project> {
 
     private EclipseProject projectModel;
 
+    /**
+     * Creates a new {@code GenerateEclipseProject}.
+     *
+     * @since 1.0
+     */
+    @SuppressWarnings("this-escape")
     public GenerateEclipseProject() {
         getXmlTransformer().setIndentation("\t");
         projectModel = getInstantiator().newInstance(EclipseProject.class, new XmlFileContentMerger(getXmlTransformer()));
@@ -43,6 +54,15 @@ public abstract class GenerateEclipseProject extends XmlGeneratorTask<Project> {
     @Inject
     public GenerateEclipseProject(EclipseProject projectModel) {
         this.projectModel = projectModel;
+    }
+
+    @Override
+    protected void generate() {
+        DeprecationLogger.deprecateTask(getName())
+            .willBeRemovedInGradle10()
+            .withUpgradeGuideSection(9, "ide_task_deprecation")
+            .nagUser();
+        super.generate();
     }
 
     @Override
@@ -65,12 +85,18 @@ public abstract class GenerateEclipseProject extends XmlGeneratorTask<Project> {
 
     /**
      * The Eclipse project model that contains the details required to generate the project file.
+     * @since 1.0
      */
     @Internal
     public EclipseProject getProjectModel() {
         return projectModel;
     }
 
+    /**
+     * Sets the project model.
+     *
+     * @since 1.0
+     */
     public void setProjectModel(EclipseProject projectModel) {
         this.projectModel = projectModel;
     }

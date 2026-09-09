@@ -17,6 +17,7 @@
 package org.gradle.internal.serialize.graph
 
 import org.gradle.api.logging.Logger
+import org.gradle.internal.configuration.problems.ProblemsListener
 import org.gradle.internal.configuration.problems.PropertyKind
 import org.gradle.internal.configuration.problems.PropertyProblem
 import org.gradle.internal.configuration.problems.PropertyTrace
@@ -40,6 +41,9 @@ interface EncodingProvider<T> {
 
 interface DecodingProvider<T> {
     suspend fun ReadContext.decode(): T?
+
+    val displayName: String
+        get() = this::class.simpleName ?: "Unknown"
 }
 
 
@@ -57,7 +61,7 @@ interface WriteContext : MutableIsolateContext, Encoder {
 
     suspend fun write(value: Any?)
 
-    suspend fun <T: Any> writeSharedObject(value: T, encode: suspend WriteContext.(T) -> Unit)
+    suspend fun <T : Any> writeSharedObject(value: T, encode: suspend WriteContext.(T) -> Unit)
 
     fun writeClass(type: Class<*>)
 
@@ -84,9 +88,9 @@ fun <I, R> CloseableWriteContext.writeWith(
 
 interface Tracer {
 
-    fun open(frame: String)
+    fun open(frame: String, instance: Any?)
 
-    fun close(frame: String)
+    fun close(frame: String, instance: Any?)
 }
 
 
@@ -106,7 +110,7 @@ interface ReadContext : IsolateContext, MutableIsolateContext, Decoder {
 
     suspend fun read(): Any?
 
-    suspend fun <T: Any> readSharedObject(decode: suspend ReadContext.() -> T): T
+    suspend fun <T : Any> readSharedObject(decode: suspend ReadContext.() -> T): T
 
     fun readClass(): Class<*>
 
@@ -157,12 +161,15 @@ suspend fun <T : Any> ReadContext.readNonNull() = read()!!.uncheckedCast<T>()
 
 
 interface IsolateContext {
+    val isIntegrityCheckEnabled: Boolean
 
     val logger: Logger
 
     val isolate: Isolate
 
     val trace: PropertyTrace
+
+    val problemsListener: ProblemsListener
 
     fun onProblem(problem: PropertyProblem)
 
@@ -175,11 +182,11 @@ interface IsolateContext {
 
 interface IsolateOwner {
     val delegate: Any
-    fun <T> service(type: Class<T>): T
+    fun <T : Any> service(type: Class<T>): T
 }
 
 
-inline fun <reified T> IsolateOwner.serviceOf() = service(T::class.java)
+inline fun <reified T : Any> IsolateOwner.serviceOf() = service(T::class.java)
 
 
 interface Isolate {
@@ -282,22 +289,58 @@ inline fun <T : MutableIsolateContext, R> T.withPropertyTrace(trace: PropertyTra
 }
 
 
-inline fun <T : Any> WriteContext.encodePreservingIdentityOf(reference: T, encode: WriteContext.(T) -> Unit) {
+/**
+ * Encodes [reference] preserving its identity within the current isolate.
+ *
+ * If [reference] has been seen before in this isolate, only its id is written and [encode] is NOT
+ * invoked; otherwise a fresh id is assigned and [encode] is called to write the value's contents.
+ * The matching read side is [ReadContext.decodePreservingIdentity].
+ *
+ * See the explicit-identities overload of [encodePreservingIdentityOf] for proper-usage notes.
+ */
+inline fun <T : Any> WriteContext.encodePreservingIdentityOf(reference: T, encode: WriteContext.(T) -> Unit) =
     encodePreservingIdentityOf(isolate.identities, reference, encode)
-}
 
 
+/**
+ * Like [WriteContext.encodePreservingIdentityOf] but uses [WriteContext.sharedIdentities] — identity is
+ * preserved across all isolates.
+ * Use for values that may legitimately appear in multiple isolates (e.g. classes, classloader scopes).
+ */
 inline fun <T : Any> WriteContext.encodePreservingSharedIdentityOf(reference: T, encode: WriteContext.(T) -> Unit) =
     encodePreservingIdentityOf(sharedIdentities, reference, encode)
 
 
-inline fun <T : Any> WriteContext.encodePreservingIdentityOf(identities: WriteIdentities, reference: T, encode: WriteContext.(T) -> Unit) {
+/**
+ * Encodes [reference] preserving its identity in the given [identities] map.
+ *
+ * On first encounter a new id is assigned, [reference] is registered immediately (so a cycle
+ * inside [encode] resolves to the same id rather than a duplicate), and [encode] writes the
+ * contents. On subsequent encounters only the id is written.
+ *
+ * **Proper usage:** the matching decoder must call [ReadIdentities.putInstance] *before* reading
+ * any sub-graph that could transitively reference the value being decoded. Decoders that read
+ * non-trivial state before registering the partial instance break under self-references and
+ * produce corrupted streams. See [ReadContext.decodePreservingIdentity] for the read-side contract.
+ *
+ * When the receiving context has [WriteContext.isIntegrityCheckEnabled] set, an extra boolean is
+ * written after the id indicating whether this encounter is a back-reference (`true`) or a fresh
+ * write (`false`). The matching decoder verifies the flag and fails fast with a clear message if
+ * the writer's view of the identity state disagrees with the reader's.
+ */
+inline fun <T : Any> WriteContext.encodePreservingIdentityOf(
+    identities: WriteIdentities,
+    reference: T,
+    encode: WriteContext.(T) -> Unit
+) {
     val id = identities.getId(reference)
-    if (id != null) {
+    if (id >= 0) {
         writeSmallInt(id)
+        if (isIntegrityCheckEnabled) writeBoolean(true)
     } else {
         val newId = identities.putInstance(reference)
         writeSmallInt(newId)
+        if (isIntegrityCheckEnabled) writeBoolean(false)
         circularReferences.enter(reference)
         try {
             encode(reference)
@@ -308,10 +351,26 @@ inline fun <T : Any> WriteContext.encodePreservingIdentityOf(identities: WriteId
 }
 
 
+/**
+ * Decodes a value previously written with [encodePreservingIdentityOf] within the current
+ * isolate's identities.
+ *
+ * See the explicit-identities overload of [decodePreservingIdentity] for the proper-usage contract.
+ */
 inline fun <T> ReadContext.decodePreservingIdentity(decode: ReadContext.(Int) -> T): T =
     decodePreservingIdentity(isolate.identities, decode)
 
 
+/**
+ * Decodes a value previously written with [WriteContext.encodePreservingSharedIdentityOf]. The decoded
+ * instance is registered with [ReadContext.sharedIdentities] automatically, so callers do not
+ * need to call `putInstance` themselves.
+ *
+ * **Limitation:** registration happens *after* [decode] returns, so this helper cannot handle
+ * self-cycles — a sub-read inside [decode] that back-references the value being decoded will
+ * trip the circular-reference detection under the integrity check. Use [decodePreservingIdentity]
+ * with manual `putInstance` if the decoded graph may reference itself.
+ */
 inline fun <T : Any> ReadContext.decodePreservingSharedIdentity(decode: ReadContext.(Int) -> T): T =
     decodePreservingIdentity(sharedIdentities) { id ->
         decode(id).also {
@@ -320,9 +379,68 @@ inline fun <T : Any> ReadContext.decodePreservingSharedIdentity(decode: ReadCont
     }
 
 
-inline fun <T> ReadContext.decodePreservingIdentity(identities: ReadIdentities, decode: ReadContext.(Int) -> T): T {
+/**
+ * Decodes a value previously written with [encodePreservingIdentityOf], looking up identities in
+ * the given [identities] map.
+ *
+ * If the id has already been decoded, the previously-registered instance is returned and [decode]
+ * is NOT invoked. Otherwise [decode] is called with the id; it must produce the value AND register
+ * it via `identities.putInstance(id, instance)` — the registration is asserted on return.
+ *
+ * **Proper usage of [decode]:** call `putInstance(id, partialInstance)` *before* reading any
+ * sub-graph that could transitively reference the value being decoded. The typical pattern is:
+ *
+ * ```
+ * decodePreservingIdentity { id ->
+ *     val partial = createEmptyInstance()
+ *     identities.putInstance(id, partial)   // register first
+ *     populate(partial)                     // then read children that may reference `partial`
+ *     partial
+ * }
+ * ```
+ *
+ * Reading children before `putInstance` corrupts the stream when a self-reference is encountered.
+ *
+ * When the receiving context has [ReadContext.isIntegrityCheckEnabled] set, the encoder has
+ * written a boolean flag indicating whether the id is a back-reference. The decoder verifies that
+ * the flag matches the current identity state and fails fast with [IllegalStateException]
+ * pointing at the buggy codec — instead of letting a stream-corruption error surface later.
+ * Note that the writer side must have been running with the integrity check enabled too;
+ * mismatched modes corrupt the stream.
+ *
+ * @throws IllegalArgumentException if [decode] hasn't called `putInstance`
+ * @throws IllegalStateException if integrity checks are enabled and the writer's view of the
+ *      identity state disagrees with the reader's (back-reference to a not-yet-registered id, or
+ *      fresh write to an already-bound id)
+ */
+inline fun <T> ReadContext.decodePreservingIdentity(
+    identities: ReadIdentities,
+    decode: ReadContext.(Int) -> T
+): T {
     val id = readSmallInt()
     val previousValue = identities.getInstance(id)
+    if (isIntegrityCheckEnabled) {
+        val reusedExpected = readBoolean()
+        if (reusedExpected) {
+            // Let's check if the current state of the identities is valid according to what is written in the stream.
+            // Our codecs should handle everything users throw at them properly. Invalid identity state is our fault.
+            // Let's point the user in a right direction.
+            check(previousValue != null) {
+                // We have a circular reference and must backfill it, but the reference is not available.
+                "Unresolvable circular reference detected when decoding id=$id. An existing instance is expected but none available. " +
+                    "This is likely a bug in a Gradle codec. " +
+                    "Please report the issue to Gradle's bug tracker."
+            }
+        } else {
+            check(previousValue == null) {
+                // We have a fresh id that is followed by a definition, but the id is already used for something.
+                "Unexpected reuse of id=$id. The id is already bound to `${previousValue!!.javaClass.name}`. " +
+                    "This is likely a bug in a Gradle codec. " +
+                    "Please report the issue to Gradle's bug tracker."
+            }
+        }
+    }
+
     return when {
         previousValue != null -> previousValue.uncheckedCast()
         else -> {

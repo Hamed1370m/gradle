@@ -15,11 +15,12 @@
  */
 package org.gradle.integtests.resolve.artifactreuse
 
+import org.gradle.api.internal.artifacts.ivyservice.CacheLayout
 import org.gradle.api.internal.artifacts.ivyservice.DefaultArtifactCacheMetadata
 import org.gradle.integtests.fixtures.IgnoreVersions
 import org.gradle.test.fixtures.file.LeaksFileHandles
 
-@IgnoreVersions({ it.artifactCacheLayoutVersion == DefaultArtifactCacheMetadata.CACHE_LAYOUT_VERSION })
+@IgnoreVersions({ CacheLayout.META_DATA.getVersionMapping().getVersionUsedBy(it.version).get() == DefaultArtifactCacheMetadata.CACHE_LAYOUT_VERSION })
 @LeaksFileHandles
 class CacheReuseCrossVersionIntegrationTest extends AbstractCacheReuseCrossVersionIntegrationTest {
     def "uses cached artifacts from previous Gradle version when no sha1 header"() {
@@ -28,7 +29,7 @@ class CacheReuseCrossVersionIntegrationTest extends AbstractCacheReuseCrossVersi
         server.sendSha1Header = false
         buildFile << """
 repositories {
-    maven { url '${mavenHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations { compile }
 dependencies {
@@ -74,7 +75,7 @@ task retrieve(type: Sync) {
         server.sendSha1Header = true
         buildFile << """
 repositories {
-    maven { url '${mavenHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations { compile }
 dependencies {
@@ -118,7 +119,7 @@ task retrieve(type: Sync) {
 
         buildFile << """
 repositories {
-    maven { url '${mavenHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations { compile }
 dependencies {

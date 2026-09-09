@@ -20,7 +20,6 @@ import groovy.lang.Closure
 import groovy.lang.GroovyObject
 import groovy.lang.MetaClass
 import org.codehaus.groovy.runtime.InvokerHelper.getMetaClass
-import org.gradle.api.Incubating
 import org.gradle.kotlin.dsl.support.uncheckedCast
 import org.gradle.kotlin.dsl.support.unsafeLazy
 
@@ -32,6 +31,8 @@ import org.gradle.kotlin.dsl.support.unsafeLazy
  * @param action the function to be adapted.
  *
  * @see [KotlinClosure1]
+ *
+ * @since 4.1
  */
 fun <T> Any.closureOf(action: T.() -> Unit): Closure<Any?> =
     KotlinClosure1(action, this, this)
@@ -45,6 +46,8 @@ fun <T> Any.closureOf(action: T.() -> Unit): Closure<Any?> =
  * @param action the function to be adapted.
  *
  * @see [KotlinClosure1]
+ *
+ * @since 4.1
  */
 fun <T> Any.delegateClosureOf(action: T.() -> Unit) =
     object : Closure<Unit>(this, this) {
@@ -62,20 +65,28 @@ fun <T> Any.delegateClosureOf(action: T.() -> Unit) =
  * @param thisObject optional _this Object_ of the Closure.
  *
  * @see [Closure]
+ *
+ * @since 4.1
  */
 open class KotlinClosure0<V : Any>(
+    /**
+     * @since 4.1
+     */
     val function: () -> V?,
     owner: Any? = null,
     thisObject: Any? = null
-) : groovy.lang.Closure<V?>(owner, thisObject) {
+) : Closure<V?>(owner, thisObject) {
 
+    /**
+     * @since 4.1
+     */
     @Suppress("unused") // to be called dynamically by Groovy
     fun doCall(): V? = function()
 }
 
 
 /**
- * Adapts an unary Kotlin function to an unary Groovy [Closure].
+ * Adapts a unary Kotlin function to a unary Groovy [Closure].
  *
  * @param T the type of the single argument to the closure.
  * @param V the return type.
@@ -84,13 +95,21 @@ open class KotlinClosure0<V : Any>(
  * @param thisObject optional _this Object_ of the Closure.
  *
  * @see [Closure]
+ *
+ * @since 4.1
  */
 class KotlinClosure1<in T : Any?, V : Any>(
+    /**
+     * @since 4.1
+     */
     val function: T.() -> V?,
     owner: Any? = null,
     thisObject: Any? = null
 ) : Closure<V?>(owner, thisObject) {
 
+    /**
+     * @since 4.1
+     */
     @Suppress("unused") // to be called dynamically by Groovy
     fun doCall(it: T): V? = it.function()
 }
@@ -107,13 +126,21 @@ class KotlinClosure1<in T : Any?, V : Any>(
  * @param thisObject optional _this Object_ of the Closure.
  *
  * @see [Closure]
+ *
+ * @since 4.1
  */
 class KotlinClosure2<in T : Any?, in U : Any?, V : Any>(
+    /**
+     * @since 4.1
+     */
     val function: (T, U) -> V?,
     owner: Any? = null,
     thisObject: Any? = null
 ) : Closure<V?>(owner, thisObject) {
 
+    /**
+     * @since 4.1
+     */
     @Suppress("unused") // to be called dynamically by Groovy
     fun doCall(t: T, u: U): V? = function(t, u)
 }
@@ -131,13 +158,21 @@ class KotlinClosure2<in T : Any?, in U : Any?, V : Any>(
  * @param thisObject optional _this Object_ of the Closure.
  *
  * @see [Closure]
+ *
+ * @since 5.0
  */
 class KotlinClosure3<in T : Any?, in U : Any?, in V : Any?, R : Any>(
+    /**
+     * @since 5.0
+     */
     val function: (T, U, V) -> R?,
     owner: Any? = null,
     thisObject: Any? = null
 ) : Closure<R?>(owner, thisObject) {
 
+    /**
+     * @since 5.0
+     */
     @Suppress("unused") // to be called dynamically by Groovy
     fun doCall(t: T, u: U, v: V): R? = function(t, u, v)
 }
@@ -145,18 +180,24 @@ class KotlinClosure3<in T : Any?, in U : Any?, in V : Any?, R : Any>(
 
 /**
  * Enables function invocation syntax on [Closure] references.
+ *
+ * @since 4.1
  */
 operator fun <T> Closure<T>.invoke(): T = call()
 
 
 /**
  * Enables function invocation syntax on [Closure] references.
+ *
+ * @since 4.1
  */
 operator fun <T> Closure<T>.invoke(x: Any?): T = call(x)
 
 
 /**
  * Enables function invocation syntax on [Closure] references.
+ *
+ * @since 4.1
  */
 operator fun <T> Closure<T>.invoke(vararg xs: Any?): T = call(*xs)
 
@@ -165,6 +206,8 @@ operator fun <T> Closure<T>.invoke(vararg xs: Any?): T = call(*xs)
  * Executes the given [builder] against this object's [GroovyBuilderScope].
  *
  * @see [GroovyBuilderScope]
+ *
+ * @since 4.2
  */
 inline fun <T> Any.withGroovyBuilder(builder: GroovyBuilderScope.() -> T): T =
     GroovyBuilderScope.of(this).builder()
@@ -193,13 +236,20 @@ inline fun <T> Any.withGroovyBuilder(builder: GroovyBuilderScope.() -> T): T =
  * ```
  *
  * @see [withGroovyBuilder]
+ *
+ * @since 4.2
  */
 interface GroovyBuilderScope : GroovyObject {
 
+    /**
+     * @since 4.2
+     */
     companion object {
 
         /**
          * Creates a [GroovyBuilderScope] for the given [value].
+         *
+         * @since 4.2
          */
         fun of(value: Any): GroovyBuilderScope =
             when (value) {
@@ -210,6 +260,8 @@ interface GroovyBuilderScope : GroovyObject {
 
     /**
      * The delegate of this [GroovyBuilderScope].
+     *
+     * @since 4.3
      */
     val delegate: Any
 
@@ -220,16 +272,19 @@ interface GroovyBuilderScope : GroovyObject {
      *
      * @since 8.1
      */
-    @Incubating
     fun hasProperty(name: String): Boolean
 
     /**
      * Invokes with Groovy semantics and [arguments].
+     *
+     * @since 4.2
      */
     operator fun String.invoke(vararg arguments: Any?): Any?
 
     /**
      * Invokes with Groovy semantics and no arguments.
+     *
+     * @since 4.3
      */
     @Suppress("SpreadOperator")
     operator fun String.invoke(): Any? =
@@ -237,24 +292,32 @@ interface GroovyBuilderScope : GroovyObject {
 
     /**
      * Invokes with Groovy semantics, [arguments] and provides a nested [GroovyBuilderScope].
+     *
+     * @since 4.2
      */
     operator fun <T> String.invoke(vararg arguments: Any?, builder: GroovyBuilderScope.() -> T): Any? =
         invoke(*arguments, closureFor(builder))
 
     /**
      * Invokes with Groovy semantics, no arguments, and provides a nested [GroovyBuilderScope].
+     *
+     * @since 4.2
      */
     operator fun <T> String.invoke(builder: GroovyBuilderScope.() -> T): Any? =
         invoke(closureFor(builder))
 
     /**
      * Invokes with Groovy semantics, named [keywordArguments], and provides a nested [GroovyBuilderScope].
+     *
+     * @since 4.2
      */
     operator fun <T> String.invoke(vararg keywordArguments: Pair<String, Any?>, builder: GroovyBuilderScope.() -> T): Any? =
         invoke(keywordArguments.toMap(), closureFor(builder))
 
     /**
      * Invokes with Groovy semantics and named [keywordArguments].
+     *
+     * @since 4.2
      */
     operator fun String.invoke(vararg keywordArguments: Pair<String, Any?>): Any? =
         invoke(keywordArguments.toMap())

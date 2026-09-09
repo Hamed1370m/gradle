@@ -22,6 +22,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import static org.junit.Assert.fail;
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects;
 
 @SuppressWarnings("ResultOfMethodCallIgnored")
 public class BuildScriptClasspathIntegrationTest extends AbstractIntegrationTest {
@@ -43,7 +44,7 @@ public class BuildScriptClasspathIntegrationTest extends AbstractIntegrationTest
 
         testFile("buildSrc/build.gradle").writelns(
                 "repositories { flatDir { dirs '../repo' } }",
-                "dependencies { implementation name: 'test', version: '1.3' }");
+                "dependencies { implementation(':test:1.3') }");
         testFile("buildSrc/src/main/java/BuildClass.java").writelns("public class BuildClass extends org.gradle.test.DepClass { }");
         testFile("build.gradle").writelns("new BuildClass()");
         inTestDirectory().withTasks("help").run();
@@ -113,7 +114,7 @@ public class BuildScriptClasspathIntegrationTest extends AbstractIntegrationTest
                 "    flatDir { dirs 'repo' }",
                 "  }",
                 "  dependencies {",
-                "    classpath name: 'test', version: '1.+'",
+                "    classpath(':test:1.+')",
                 "  }",
                 "}",
                 "task hello {",
@@ -174,6 +175,7 @@ public class BuildScriptClasspathIntegrationTest extends AbstractIntegrationTest
         inTestDirectory().withTasks("hello").run();
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-project configuration / project loading")
     @Test
     public void inheritsClassPathOfParentProject() {
         ArtifactBuilder builder = artifactBuilder();
@@ -188,7 +190,7 @@ public class BuildScriptClasspathIntegrationTest extends AbstractIntegrationTest
         testFile("build.gradle").writelns(
                 "buildscript {",
                 "    repositories { flatDir { dirs 'repo' }}",
-                "    dependencies { classpath name: 'test', version: '1.3' }",
+                "    dependencies { classpath(':test:1.3') }",
                 "}"
         );
         testFile("child/build.gradle").writelns(

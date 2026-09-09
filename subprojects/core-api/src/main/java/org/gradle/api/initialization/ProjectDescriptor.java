@@ -15,10 +15,10 @@
  */
 package org.gradle.api.initialization;
 
-import org.gradle.declarative.dsl.model.annotations.Restricted;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
 import org.gradle.internal.instrumentation.api.annotations.NotToBeMigratedToLazy;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.util.Set;
 
@@ -29,6 +29,7 @@ import java.util.Set;
  * <p> A {@code ProjectDescriptor} is created when you add a project to the build from the settings script, using {@link
  * Settings#include(String...)}. You can access the descriptors using one of
  * the lookup methods on the {@link Settings} object.</p>
+ * @since 0.7
  */
 @NotToBeMigratedToLazy
 public interface ProjectDescriptor {
@@ -36,14 +37,15 @@ public interface ProjectDescriptor {
      * Returns the name of this project.
      *
      * @return The name of the project. Never returns null.
+     * @since 0.7
      */
-    @Restricted
     String getName();
 
     /**
      * Sets the name of this project.
      *
      * @param name The new name for the project. Should not be null
+     * @since 0.7
      */
     void setName(String name);
 
@@ -51,14 +53,21 @@ public interface ProjectDescriptor {
      * Returns the project directory of this project.
      *
      * @return The project directory. Never returns null.
+     * @since 0.7
      */
+    @HiddenInDefinition
     File getProjectDir();
 
     /**
      * Sets the project directory of this project.
+     * <p>
+     * Gradle expects project directories to exist and be writable.
+     * </p>
      *
-     * @param dir The new project directory. Should not be null.
+     * @param dir The new project directory. Should not be null, and it is expected to exist and be writable.
+     * @since 0.7
      */
+    @HiddenInDefinition
     void setProjectDir(File dir);
 
     /**
@@ -66,6 +75,7 @@ public interface ProjectDescriptor {
      * directory.
      *
      * @return The build file name.
+     * @since 0.7
      */
     String getBuildFileName();
 
@@ -73,6 +83,7 @@ public interface ProjectDescriptor {
      * Sets the name of the build file. This name is interpreted relative to the project directory.
      *
      * @param name The build file name. Should not be null.
+     * @since 0.7
      */
     void setBuildFileName(String name);
 
@@ -80,28 +91,36 @@ public interface ProjectDescriptor {
      * Returns the build file for this project.
      *
      * @return The build file. Never returns null.
+     * @since 0.7
      */
+    @HiddenInDefinition
     File getBuildFile();
 
     /**
      * Returns the parent of this project, if any. Returns null if this project is the root project.
      *
      * @return The parent, or null if this is the root project.
+     * @since 0.7
      */
     @Nullable
+    @HiddenInDefinition
     ProjectDescriptor getParent();
 
     /**
      * Returns the children of this project, if any.
      *
      * @return The children. Returns an empty set if this project does not have any children.
+     * @since 0.7
      */
+    @HiddenInDefinition
     Set<ProjectDescriptor> getChildren();
 
     /**
      * Returns the path of this project. The path can be used as a unique identifier for this project.
      *
      * @return The path. Never returns null.
+     * @since 0.7
      */
+    @HiddenInDefinition
     String getPath();
 }

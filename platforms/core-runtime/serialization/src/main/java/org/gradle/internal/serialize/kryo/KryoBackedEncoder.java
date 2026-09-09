@@ -21,15 +21,15 @@ import org.gradle.internal.serialize.AbstractEncoder;
 import org.gradle.internal.serialize.Encoder;
 import org.gradle.internal.serialize.FlushableEncoder;
 import org.gradle.internal.serialize.PositionAwareEncoder;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.OutputStream;
 
 public class KryoBackedEncoder extends AbstractEncoder implements PositionAwareEncoder, FlushableEncoder, Closeable {
     private final Output output;
-    private KryoBackedEncoder nested;
+    private @Nullable KryoBackedEncoder nested;
 
     public KryoBackedEncoder(OutputStream outputStream) {
         this(outputStream, 4096);

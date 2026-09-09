@@ -19,10 +19,10 @@ package org.gradle.language.swift
 import org.gradle.nativeplatform.fixtures.app.IncrementalSwiftModifyCppDepApp
 import org.gradle.nativeplatform.fixtures.app.IncrementalSwiftModifyCppDepHeadersApp
 import org.gradle.nativeplatform.fixtures.app.IncrementalSwiftModifyCppDepModuleMapApp
-import spock.lang.Ignore
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
-@Ignore("Inconsistent Swift SDK and tooling discovered on our Intel Macs")
 class SwiftIncrementalCppInteroperabilityIntegrationTest extends AbstractSwiftMixedLanguageIntegrationTest {
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "relinks but does not recompile when c++ sources change"() {
         def app = new IncrementalSwiftModifyCppDepApp()
         createDirs("app", "cppGreeter")
@@ -47,9 +47,9 @@ class SwiftIncrementalCppInteroperabilityIntegrationTest extends AbstractSwiftMi
         succeeds ":app:assemble"
 
         then:
-        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
+        result.assertTasksScheduled(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
-        result.assertTasksNotSkipped(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
+        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         installation("app/build/install/main/debug").exec().out == app.expectedOutput
 
@@ -58,9 +58,9 @@ class SwiftIncrementalCppInteroperabilityIntegrationTest extends AbstractSwiftMi
         succeeds ":app:assemble"
 
         then:
-        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
+        result.assertTasksScheduled(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
-        result.assertTasksNotSkipped( ":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
+        result.assertTasksExecuted( ":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":app:linkDebug", ":app:installDebug", ":app:assemble")
         installation("app/build/install/main/debug").exec().out == app.alternateLibraryOutput
 
@@ -68,10 +68,11 @@ class SwiftIncrementalCppInteroperabilityIntegrationTest extends AbstractSwiftMi
         succeeds ":app:assemble"
 
         then:
-        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         result.assertTasksSkipped(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "recompiles when c++ headers change"() {
         def app = new IncrementalSwiftModifyCppDepHeadersApp()
         createDirs("app", "cppGreeter")
@@ -96,9 +97,9 @@ class SwiftIncrementalCppInteroperabilityIntegrationTest extends AbstractSwiftMi
         succeeds ":app:assemble"
 
         then:
-        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
+        result.assertTasksScheduled(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
-        result.assertTasksNotSkipped(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
+        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         installation("app/build/install/main/debug").exec().out == app.expectedOutput
 
@@ -107,9 +108,9 @@ class SwiftIncrementalCppInteroperabilityIntegrationTest extends AbstractSwiftMi
         succeeds ":app:assemble"
 
         then:
-        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
+        result.assertTasksScheduled(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
-        result.assertTasksNotSkipped(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
+        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         installation("app/build/install/main/debug").exec().out == app.alternateLibraryOutput
 
@@ -117,10 +118,11 @@ class SwiftIncrementalCppInteroperabilityIntegrationTest extends AbstractSwiftMi
         succeeds ":app:assemble"
 
         then:
-        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         result.assertTasksSkipped(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "regenerates module map and recompiles swift app when headers change"() {
         def app = new IncrementalSwiftModifyCppDepModuleMapApp()
         createDirs("app", "cppGreeter")
@@ -145,9 +147,9 @@ class SwiftIncrementalCppInteroperabilityIntegrationTest extends AbstractSwiftMi
         succeeds ":app:assemble"
 
         then:
-        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
+        result.assertTasksScheduled(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
-        result.assertTasksNotSkipped(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
+        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         installation("app/build/install/main/debug").exec().out == app.expectedOutput
 
@@ -161,16 +163,16 @@ class SwiftIncrementalCppInteroperabilityIntegrationTest extends AbstractSwiftMi
         succeeds ":app:assemble"
 
         then:
-        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
+        result.assertTasksScheduled(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
-        result.assertTasksNotSkipped(":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksExecuted(":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         installation("app/build/install/main/debug").exec().out == app.alternateLibraryOutput
 
         when:
         succeeds ":app:assemble"
 
         then:
-        result.assertTasksExecuted(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         result.assertTasksSkipped(":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
     }
 }

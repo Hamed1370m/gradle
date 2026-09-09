@@ -16,6 +16,7 @@
 
 package org.gradle.internal.locking;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 import org.gradle.StartParameter;
 import org.gradle.api.Action;
@@ -31,12 +32,12 @@ import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.internal.DocumentationRegistry;
 import org.gradle.api.internal.DomainObjectContext;
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier;
+import org.gradle.api.internal.artifacts.DependencyManagementInstanceIdentity;
 import org.gradle.api.internal.artifacts.DependencySubstitutionInternal;
 import org.gradle.api.internal.artifacts.dependencies.DefaultMutableVersionConstraint;
 import org.gradle.api.internal.artifacts.dsl.dependencies.DependencyLockingProvider;
 import org.gradle.api.internal.artifacts.dsl.dependencies.DependencyLockingState;
 import org.gradle.api.internal.artifacts.dsl.dependencies.LockEntryFilter;
-import org.gradle.api.internal.artifacts.ivyservice.dependencysubstitution.ArtifactSelectionDetailsInternal;
 import org.gradle.api.internal.artifacts.ivyservice.dependencysubstitution.DependencySubstitutionRules;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionDescriptorInternal;
 import org.gradle.api.internal.file.FilePropertyFactory;
@@ -49,8 +50,8 @@ import org.gradle.api.provider.Property;
 import org.gradle.internal.DisplayName;
 import org.gradle.internal.component.external.model.DefaultModuleComponentSelector;
 import org.gradle.internal.resource.local.FileResourceListener;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -68,7 +69,7 @@ public class DefaultDependencyLockingProvider implements DependencyLockingProvid
     private final boolean writeLocks;
     private final boolean partialUpdate;
     private final LockEntryFilter updateLockEntryFilter;
-    private final DomainObjectContext context;
+    private final DependencyManagementInstanceIdentity instanceIdentity;
     private final DependencySubstitutionRules dependencySubstitutionRules;
     private final Property<LockMode> lockMode;
     private final RegularFileProperty lockFile;
@@ -78,8 +79,18 @@ public class DefaultDependencyLockingProvider implements DependencyLockingProvid
     private LockEntryFilter compoundLockEntryFilter;
     private LockEntryFilter ignoredEntryFilter;
 
-    public DefaultDependencyLockingProvider(FileResolver fileResolver, StartParameter startParameter, DomainObjectContext context, DependencySubstitutionRules dependencySubstitutionRules, PropertyFactory propertyFactory, FilePropertyFactory filePropertyFactory, FileResourceListener listener) {
-        this.context = context;
+    public DefaultDependencyLockingProvider(
+        FileResolver fileResolver,
+        StartParameter startParameter,
+        DomainObjectContext context,
+        DependencyManagementInstanceIdentity instanceIdentity,
+        String prefix,
+        DependencySubstitutionRules dependencySubstitutionRules,
+        PropertyFactory propertyFactory,
+        FilePropertyFactory filePropertyFactory,
+        FileResourceListener listener
+    ) {
+        this.instanceIdentity = instanceIdentity;
         this.dependencySubstitutionRules = dependencySubstitutionRules;
         this.writeLocks = startParameter.isWriteDependencyLocks();
         if (writeLocks) {
@@ -92,7 +103,7 @@ public class DefaultDependencyLockingProvider implements DependencyLockingProvid
         lockMode.convention(LockMode.DEFAULT);
         lockFile = filePropertyFactory.newFileProperty();
         ignoredDependencies = propertyFactory.listProperty(String.class);
-        this.lockFileReaderWriter = new LockFileReaderWriter(fileResolver, context, lockFile, listener);
+        this.lockFileReaderWriter = new LockFileReaderWriter(fileResolver, context, instanceIdentity, prefix, lockFile, listener);
     }
 
     private static ComponentSelector toComponentSelector(ModuleComponentIdentifier lockIdentifier) {
@@ -159,7 +170,7 @@ public class DefaultDependencyLockingProvider implements DependencyLockingProvid
                 allLockState = lockFileReaderWriter.readUniqueLockFile();
                 uniqueLockStateLoaded = true;
             } catch (IllegalStateException e) {
-                throw new InvalidLockFileException(context.getDisplayName(), e, LockFileReaderWriter.FORMATTING_DOC_LINK);
+                throw new InvalidLockFileException(instanceIdentity.getDisplayName(), e, LockFileReaderWriter.FORMATTING_DOC_LINK);
             }
         }
     }
@@ -198,9 +209,10 @@ public class DefaultDependencyLockingProvider implements DependencyLockingProvid
     ) {
         if (writeLocks) {
             List<String> modulesOrdered = getModulesOrdered(resolvedModules);
-            if (!changingResolvedModules.isEmpty()) {
+            List<String> changingModulesOrdered = getModulesOrdered(changingResolvedModules);
+            if (!changingModulesOrdered.isEmpty()) {
                 LOGGER.warn("Dependency lock state for {} contains changing modules: {}. This means that dependencies content may still change over time. {}",
-                    lockOwner, getModulesOrdered(changingResolvedModules), DOC_REG.getDocumentationRecommendationFor("details", "dependency_locking"));
+                    lockOwner, changingModulesOrdered, DOC_REG.getDocumentationRecommendationFor("details", "dependency_locking"));
             }
             allLockState.put(lockId, modulesOrdered);
         }
@@ -210,7 +222,7 @@ public class DefaultDependencyLockingProvider implements DependencyLockingProvid
     public void buildFinished() {
         if (uniqueLockStateLoaded && lockFileReaderWriter.canWrite()) {
             lockFileReaderWriter.writeUniqueLockfile(allLockState);
-            LOGGER.lifecycle("Persisted dependency lock state for {}", context.getDisplayName());
+            LOGGER.lifecycle("Persisted dependency lock state for {}", instanceIdentity.getDisplayName());
         }
     }
 
@@ -274,7 +286,8 @@ public class DefaultDependencyLockingProvider implements DependencyLockingProvid
 
         @Override
         public void artifactSelection(Action<? super ArtifactSelectionDetails> action) {
-            throw new UnsupportedOperationException();
+            // No need to execute the artifact selection action.
+            // We only care if the dependency selector was substituted.
         }
 
         boolean didSubstitute() {
@@ -287,60 +300,19 @@ public class DefaultDependencyLockingProvider implements DependencyLockingProvid
         }
 
         @Override
-        public ComponentSelector getTarget() {
+        public @Nullable ComponentSelector getConfiguredTargetSelector() {
             return selector;
         }
 
         @Override
-        public List<ComponentSelectionDescriptorInternal> getRuleDescriptors() {
-            return Collections.emptyList();
+        public @Nullable ImmutableList<ComponentSelectionDescriptorInternal> getRuleDescriptors() {
+            throw new UnsupportedOperationException("Should not be called");
         }
 
         @Override
-        public boolean isUpdated() {
-            return false;
+        public @Nullable ImmutableList<DependencyArtifactSelector> getConfiguredArtifactSelectors() {
+            throw new UnsupportedOperationException("Should not be called");
         }
 
-        @Override
-        public ArtifactSelectionDetailsInternal getArtifactSelectionDetails() {
-            return new NoOpArtifactSelectionDetails();
-        }
-
-        private static class NoOpArtifactSelectionDetails implements ArtifactSelectionDetailsInternal {
-            @Override
-            public boolean isUpdated() {
-                return false;
-            }
-
-            @Override
-            public List<DependencyArtifactSelector> getTargetSelectors() {
-                return Collections.emptyList();
-            }
-
-            @Override
-            public boolean hasSelectors() {
-                return false;
-            }
-
-            @Override
-            public List<DependencyArtifactSelector> getRequestedSelectors() {
-                return Collections.emptyList();
-            }
-
-            @Override
-            public void withoutArtifactSelectors() {
-
-            }
-
-            @Override
-            public void selectArtifact(String type, @Nullable String extension, @Nullable String classifier) {
-
-            }
-
-            @Override
-            public void selectArtifact(DependencyArtifactSelector selector) {
-
-            }
-        }
     }
 }

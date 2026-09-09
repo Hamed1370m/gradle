@@ -24,18 +24,19 @@ import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.archive.ZipTestFixture
 import org.gradle.test.fixtures.server.http.HttpServer
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.gradle.util.internal.TextUtil
 import org.junit.Rule
 import spock.lang.Issue
 
+import java.nio.charset.StandardCharsets
 import java.util.jar.Attributes
 import java.util.jar.Manifest
 
 import static org.hamcrest.CoreMatchers.containsString
 
 class WrapperGenerationIntegrationTest extends AbstractIntegrationSpec {
-    private static final HashCode EXPECTED_WRAPPER_JAR_HASH = HashCode.fromString("2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046")
+    private static final HashCode EXPECTED_WRAPPER_JAR_HASH = HashCode.fromString("238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5")
 
     def "generated wrapper scripts use correct line separators"() {
         buildFile << """
@@ -53,6 +54,21 @@ class WrapperGenerationIntegrationTest extends AbstractIntegrationSpec {
         file("gradlew.bat").text.split(TextUtil.windowsLineSeparator).length > 1
     }
 
+    @Issue('https://github.com/gradle/gradle/issues/35905')
+    def "generated wrapper script contains correct application name"() {
+        buildFile << """
+            wrapper {
+                distributionUrl = 'http://localhost:8080/gradlew/dist'
+            }
+        """
+
+        when:
+        run "wrapper", "--no-validate-url"
+
+        then:
+        file("gradlew").text.contains("ksh gradlew")
+    }
+
     def "wrapper jar is small"() {
         buildFile << """
             wrapper {
@@ -65,7 +81,7 @@ class WrapperGenerationIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         // wrapper needs to be small. Let's check it's smaller than some arbitrary 'small' limit
-        file("gradle/wrapper/gradle-wrapper.jar").length() < 46 * 1024
+        file("gradle/wrapper/gradle-wrapper.jar").length() < 52 * 1024
     }
 
     def "wrapper jar has LICENSE file"() {
@@ -89,6 +105,37 @@ class WrapperGenerationIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         file("gradle/wrapper/gradle-wrapper.properties").text.contains("distributionUrl=https\\://services.gradle.org/distributions/gradle-2.2.1-bin.zip")
+    }
+
+    // These are the byte offsets that 9.0-9.7 executions might land around, so the safety net
+    // must contain them.
+    private static final int MAX_SAFETY_NET_FILLER_START = 2486
+    private static final int MIN_SAFETY_NET_TERMINATOR_START = 2737
+
+    @Issue("https://github.com/gradle/gradle/issues/38082")
+    def "generated batch script contains the overwrite safety net"() {
+        when:
+        run "wrapper", "--no-validate-url"
+
+        then:
+        byte[] bytes = file("gradlew.bat").bytes
+        String text = new String(bytes, StandardCharsets.US_ASCII)
+        bytes.length == text.length()
+
+        and:
+        String skipLine = 'goto afterSafetyNet\r\n'
+        String net = skipLine +
+            (':' * 78 + '\r\n') * 20 +
+            'goto exitWithErrorLevel\r\n' +
+            ':afterSafetyNet\r\n'
+        int netStart = text.indexOf(net)
+        netStart > 0
+
+        and:
+        int fillerStart = netStart + skipLine.length()
+        int terminatorStart = text.indexOf('goto exitWithErrorLevel\r\n', fillerStart)
+        fillerStart <= MAX_SAFETY_NET_FILLER_START
+        terminatorStart >= MIN_SAFETY_NET_TERMINATOR_START
     }
 
     // NOTE: this test will fail on any changes to wrapper code
@@ -124,7 +171,7 @@ class WrapperGenerationIntegrationTest extends AbstractIntegrationSpec {
         run "wrapper", "--gradle-version", "2.2.1", "--rerun-tasks", "--no-validate-url"
 
         then:
-        result.assertTasksExecuted(":wrapper")
+        result.assertTasksScheduled(":wrapper")
         wrapperJar.md5Hash == old(wrapperJar.md5Hash)
         wrapperProperties.text == old(wrapperProperties.text)
     }
@@ -172,6 +219,22 @@ class WrapperGenerationIntegrationTest extends AbstractIntegrationSpec {
         file("gradle/wrapper/gradle-wrapper.properties").text.contains("networkTimeout=7000")
     }
 
+    def "generated wrapper scripts for given retries from command-line"() {
+        when:
+        run "wrapper", "--retries", "5"
+
+        then:
+        file("gradle/wrapper/gradle-wrapper.properties").text.contains("retries=5")
+    }
+
+    def "generated wrapper scripts for given retry back off from command-line"() {
+        when:
+        run "wrapper", "--retry-back-off-ms", "1000"
+
+        then:
+        file("gradle/wrapper/gradle-wrapper.properties").text.contains("retryBackOffMs=1000")
+    }
+
     def "wrapper JAR does not contain version in manifest"() {
         when:
         run "wrapper"
@@ -183,16 +246,21 @@ class WrapperGenerationIntegrationTest extends AbstractIntegrationSpec {
 
         Manifest manifest = contents.file('META-INF/MANIFEST.MF').withInputStream { new Manifest(it) } as Manifest
         with(manifest.mainAttributes) {
-            size() == 2
+            size() == 7
             getValue(Attributes.Name.MANIFEST_VERSION) == '1.0'
             getValue(Attributes.Name.IMPLEMENTATION_TITLE) == 'Gradle Wrapper'
+            getValue(Attributes.Name.MAIN_CLASS) == org.gradle.wrapper.GradleWrapperMain.class.getName()
+            getValue(Attributes.Name.IMPLEMENTATION_VENDOR) == 'Gradle, Inc.'
+            getValue("Implementation-Vendor-Id") == "org.gradle"
+            getValue("SPDX-License-Identifier") == "Apache-2.0"
+            getValue("Enable-Native-Access") == "ALL-UNNAMED"
         }
     }
 
     @Rule
     HttpServer httpServer = new HttpServer()
 
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor)
     def "wrapper task fails if http distribution url from command-line is invalid"() {
         given:
         def path = "/distributions/8.0-RC-5"
@@ -224,7 +292,7 @@ class WrapperGenerationIntegrationTest extends AbstractIntegrationSpec {
         succeeds()
     }
 
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor)
     def "wrapper task fails if file distribution url from command-line is invalid"() {
         given:
         def target = file("/distributions/8.0-rc-5")

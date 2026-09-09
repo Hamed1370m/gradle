@@ -24,7 +24,8 @@ import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.gradle.tooling.BuildCancelledException
 import org.gradle.tooling.BuildLauncher
 import org.gradle.tooling.GradleConnectionException
@@ -281,7 +282,7 @@ class ToolingApiRemoteIntegrationTest extends AbstractIntegrationSpec {
     }
 
     @Issue('https://github.com/gradle/gradle/issues/15405')
-    @Requires(UnitTestPreconditions.NotWindows)
+    @Requires(OsTestPreconditions.NotWindows)
     // cannot delete files when daemon is running
     def "calling disconnect on existing connection does not re-trigger wrapper download"() {
         setup:
@@ -300,5 +301,46 @@ class ToolingApiRemoteIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         !toolingApi.gradleUserHomeDir.file("wrapper/dists/custom-dist").exists()
+    }
+
+    @Issue('https://github.com/gradle/gradle/issues/32063')
+    def "respects wrapper timeout configuration"() {
+        given:
+        def timeout = 31
+        def distUriString = "http://localhost:${server.port}/custom-dist.zip"
+        def distUri = URI.create(distUriString)
+        file('gradle/wrapper/gradle-wrapper.properties') << """
+            distributionBase=GRADLE_USER_HOME
+            distributionPath=wrapper/dists
+            distributionUrl=http\\://localhost\\:${server.port}/custom-dist.zip
+            networkTimeout=$timeout
+            zipStoreBase=GRADLE_USER_HOME
+            zipStorePath=wrapper/dists
+        """
+        server.expectAndBlock(server.get("/custom-dist.zip"))
+
+        and:
+        toolingApi.withConnector {
+            it.useBuildDistribution()
+        }
+
+        when:
+        def events = ProgressEvents.create()
+        toolingApi.withConnection {
+            it.newBuild()
+                .forTasks("help")
+                .addProgressListener(events)
+                .run()
+        }
+
+        then:
+        GradleConnectionException e = thrown()
+        e.message == "Could not install Gradle distribution from '$distUri'."
+        e.cause.message == "Downloading from http://localhost:${server.port}/custom-dist.zip failed: timeout (${timeout}ms)"
+
+        and:
+        events.buildOperations.size() == 1
+        def download = events.buildOperations.first()
+        download.failures.first().message == "Downloading from http://localhost:${server.port}/custom-dist.zip failed: timeout (${timeout}ms)"
     }
 }

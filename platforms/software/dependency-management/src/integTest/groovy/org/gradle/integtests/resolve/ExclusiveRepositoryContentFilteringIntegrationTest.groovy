@@ -24,17 +24,19 @@ import org.gradle.test.fixtures.server.http.MavenHttpRepository
 import org.gradle.test.fixtures.server.http.RepositoryHttpServer
 
 class ExclusiveRepositoryContentFilteringIntegrationTest extends AbstractHttpDependencyResolutionTest {
-    ResolveTestFixture resolve
+
+    ResolveTestFixture resolve = new ResolveTestFixture(testDirectory)
 
     def setup() {
-        settingsFile << "rootProject.name = 'test'"
+        settingsFile << """
+            rootProject.name = 'test'
+        """
         buildFile << """
             configurations {
                 conf
             }
+            ${resolve.configureProject("conf")}
         """
-        resolve = new ResolveTestFixture(buildFile, 'conf')
-        resolve.prepare()
     }
 
     def "can include a module from a repository using #notation (Maven 1st)"() {
@@ -43,10 +45,10 @@ class ExclusiveRepositoryContentFilteringIntegrationTest extends AbstractHttpDep
         given:
         buildFile << """
             repositories {
-                maven { url "${mavenHttpRepo.uri}" }
+                maven { url = "${mavenHttpRepo.uri}" }
                 exclusiveContent {
                    forRepository {
-                      ivy { url "${ivyHttpRepo.uri}" }
+                      ivy { url = "${ivyHttpRepo.uri}" }
                    }
                    filter {
                       $notation
@@ -100,7 +102,7 @@ class ExclusiveRepositoryContentFilteringIntegrationTest extends AbstractHttpDep
                 exclusiveContent {
                    forRepository {
                       ivy {
-                         url "${ivyHttpRepo.uri}"
+                         url = "${ivyHttpRepo.uri}"
                          content {
                             includeGroup('other') // says that we can find "bar", not exclusively
                          }
@@ -110,7 +112,7 @@ class ExclusiveRepositoryContentFilteringIntegrationTest extends AbstractHttpDep
                       $notation
                    }
                 }
-                maven { url "${mavenHttpRepo.uri}" }
+                maven { url = "${mavenHttpRepo.uri}" }
             }
             dependencies {
                 conf "org:foo:1.0"
@@ -162,13 +164,13 @@ class ExclusiveRepositoryContentFilteringIntegrationTest extends AbstractHttpDep
         given:
         buildFile << """
             repositories {
-                maven { url "${mavenHttpRepo.uri}" }
+                maven { url = "${mavenHttpRepo.uri}" }
                 exclusiveContent {
                    forRepository {
-                      maven { url "${otherMavenRepo.uri}" }
+                      maven { url = "${otherMavenRepo.uri}" }
                    }
                    forRepository {
-                      ivy { url "${ivyHttpRepo.uri}" }
+                      ivy { url = "${ivyHttpRepo.uri}" }
                    }
                    filter {
                       $notation
@@ -222,8 +224,8 @@ class ExclusiveRepositoryContentFilteringIntegrationTest extends AbstractHttpDep
         given:
         buildFile << """
             repositories {
-                maven { url "${mavenHttpRepo.uri}" }
-                def repo = ivy { url "${ivyHttpRepo.uri}" }
+                maven { url = "${mavenHttpRepo.uri}" }
+                def repo = ivy { url = "${ivyHttpRepo.uri}" }
                 exclusiveContent {
                    forRepositories(repo)
                    filter {

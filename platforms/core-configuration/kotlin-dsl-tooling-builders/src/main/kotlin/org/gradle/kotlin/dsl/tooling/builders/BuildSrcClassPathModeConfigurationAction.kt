@@ -19,15 +19,16 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.Project
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 import org.gradle.api.artifacts.result.ResolvedComponentResult
+import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.api.plugins.JavaBasePlugin
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.TaskAction
 import org.gradle.initialization.buildsrc.BuildSrcProjectConfigurationAction
-import org.gradle.kotlin.dsl.*
 import org.gradle.kotlin.dsl.provider.inClassPathMode
 import org.gradle.kotlin.dsl.resolver.BUILD_SRC_SOURCE_ROOTS_FILE_PATH
 
@@ -45,15 +46,13 @@ class BuildSrcClassPathModeConfigurationAction : BuildSrcProjectConfigurationAct
 
     private
     fun Project.configureBuildSrcSourceRootsTask() {
-        plugins.withType<JavaBasePlugin> {
-            tasks {
-                val generateSourceRoots by registering(GenerateSourceRootsFile::class) {
-                    sourceRoots.set(projectDependenciesSourceRootsFrom("runtimeClasspath"))
-                    destinationFile.set(layout.projectDirectory.file(BUILD_SRC_SOURCE_ROOTS_FILE_PATH))
-                }
-                named("jar") {
-                    it.finalizedBy(generateSourceRoots)
-                }
+        plugins.withType(JavaBasePlugin::class.java) {
+            val generateSourceRoots = tasks.register("generateSourceRoots", GenerateSourceRootsFile::class.java) { task ->
+                task.sourceRoots.set(projectDependenciesSourceRootsFrom("runtimeClasspath"))
+                task.destinationFile.set(layout.projectDirectory.file(BUILD_SRC_SOURCE_ROOTS_FILE_PATH))
+            }
+            tasks.named("jar") { jar ->
+                jar.finalizedBy(generateSourceRoots)
             }
         }
     }
@@ -63,7 +62,7 @@ class BuildSrcClassPathModeConfigurationAction : BuildSrcProjectConfigurationAct
         configurations.getByName(configurationName).incoming.resolutionResult.allComponents.asSequence()
             .projectDependenciesIdentifiers()
             .map { project(it.projectPath) }
-            .withJavaBasePlugin()
+            .filterHasJavaBasePlugin()
             .allSourceSetsRoots()
             .map { it.relativeTo(rootDir).path }
             .toList()
@@ -74,16 +73,16 @@ class BuildSrcClassPathModeConfigurationAction : BuildSrcProjectConfigurationAct
         mapNotNull { it.id as? ProjectComponentIdentifier }
 
     private
-    fun Sequence<Project>.withJavaBasePlugin() =
+    fun Sequence<Project>.filterHasJavaBasePlugin() =
         filter { it.plugins.hasPlugin(JavaBasePlugin::class.java) }
 
     private
     fun Sequence<Project>.allSourceSetsRoots() =
-        flatMap { it.sourceSets.flatMap { it.allSource.srcDirs }.asSequence() }
-
-    private
-    val Project.sourceSets
-        get() = the<SourceSetContainer>()
+        flatMap { project ->
+            project.extensions.getByType(SourceSetContainer::class.java)
+                .flatMap { it.allSource.srcDirs }
+                .asSequence()
+        }
 }
 
 
@@ -91,10 +90,10 @@ class BuildSrcClassPathModeConfigurationAction : BuildSrcProjectConfigurationAct
 abstract class GenerateSourceRootsFile : DefaultTask() {
 
     @get:Input
-    val sourceRoots = project.objects.listProperty<String>()
+    abstract val sourceRoots: ListProperty<String>
 
     @get:OutputFile
-    val destinationFile = project.objects.fileProperty()
+    abstract val destinationFile: RegularFileProperty
 
     @TaskAction
     @Suppress("unused")

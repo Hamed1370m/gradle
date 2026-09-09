@@ -45,7 +45,7 @@ class MavenPublishArtifactCustomizationIntegTest extends AbstractMavenPublishInt
         def module = mavenRepo.module("group", "projectText", "1.0")
         module.assertPublished()
         module.assertArtifactsPublished("projectText-1.0.pom", "projectText-1.0.txt", "projectText-1.0.foo", "projectText-1.0.bar", "projectText-1.0-customjar.jar", "projectText-1.0.reg")
-        result.assertTasksExecuted(":customJar", ":regularFileTask", ":generatePomFileForMavenCustomPublication", ":publishMavenCustomPublicationToMavenRepository", ":publish")
+        result.assertTasksScheduled(":customJar", ":regularFileTask", ":generatePomFileForMavenCustomPublication", ":publishMavenCustomPublicationToMavenRepository", ":publish")
 
         and:
         resolveArtifacts(module) {
@@ -305,16 +305,16 @@ Cannot publish module metadata because an artifact from the 'java' component has
             publications {
                 mavenCustom(MavenPublication) {
                     artifact("customFile.txt") {
-                        classifier "output"
+                        classifier = "output"
                     }
                     artifact(customFileTask.outputFile) {
-                        extension "htm"
-                        classifier "documentation"
+                        extension = "htm"
+                        classifier = "documentation"
                         builtBy customFileTask
                     }
                     artifact(regularFileTask.outputFile) {
-                        classifier "regular"
-                        extension "txt"
+                        classifier = "regular"
+                        extension = "txt"
                     }
                     artifact customJar {
                         archiveClassifier = null
@@ -492,7 +492,7 @@ Cannot publish module metadata because an artifact from the 'java' component has
         fails 'publish'
 
         then:
-        failure.assertHasDescription("Execution failed for task ':publishMavenCustomPublicationToMavenRepository'.")
+        failure.assertHasDescription("Execution failed for task ':publishMavenCustomPublicationToMavenRepository' (registered by plugin 'org.gradle.maven-publish').")
         failure.assertHasCause("Failed to publish publication 'mavenCustom' to repository 'maven'")
         failure.assertHasCause("Invalid publication 'mavenCustom': artifact file is a directory")
     }
@@ -549,7 +549,7 @@ Cannot publish module metadata because an artifact from the 'java' component has
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 $publications
             }

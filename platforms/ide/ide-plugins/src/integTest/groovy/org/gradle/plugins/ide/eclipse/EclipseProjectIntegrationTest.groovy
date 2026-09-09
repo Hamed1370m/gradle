@@ -15,50 +15,51 @@
  */
 package org.gradle.plugins.ide.eclipse
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
-
 class EclipseProjectIntegrationTest extends AbstractEclipseIntegrationSpec {
 
     def setup(){
         settingsFile.text = "rootProject.name = 'root'"
     }
 
-    @ToBeFixedForConfigurationCache
     void allowsConfiguringEclipseProject() {
         given:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    name = 'someBetterName'
-    comment = 'a test project'
+            eclipse {
+              project {
+                name = 'someBetterName'
+                comment = 'a test project'
 
-    referencedProjects = ['some referenced project'] as Set
-    referencedProjects 'some cool project'
+                referencedProjects = ['some referenced project'] as Set
+                referencedProjects 'some cool project'
 
-    natures = ['test.groovy.nature']
-    natures 'test.java.nature'
+                natures = ['test.groovy.nature']
+                natures 'test.java.nature'
 
-    buildCommand 'buildThisLovelyProject'
-    buildCommand argumentFoo: 'a foo argument', 'buildWithTheArguments'
+                buildCommand 'buildThisLovelyProject'
+                buildCommand argumentFoo: 'a foo argument', 'buildWithTheArguments'
 
-    linkedResource name: 'linkToFolderFoo', type: 'aFolderFoo', location: '/test/folders/foo'
-    linkedResource name: 'linkToUriFoo', type: 'aFooUri', locationUri: 'http://test/uri/foo'
+                linkedResource name: 'linkToFolderFoo', type: 'aFolderFoo', location: '/test/folders/foo'
+                linkedResource name: 'linkToUriFoo', type: 'aFooUri', locationUri: 'http://test/uri/foo'
 
-    file {
-      withXml { it.asNode().appendNode('motto', 'Stay happy!') }
-    }
-  }
+                file {
+                  withXml { it.asNode().appendNode('motto', 'Stay happy!') }
+                }
+              }
 
-  jdt {
-    sourceCompatibility = 1.4
-    targetCompatibility = 1.3
-  }
-}
+              jdt {
+                sourceCompatibility = 1.4
+                targetCompatibility = 1.3
+              }
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
+        expectTaskTypeDeprecations(
+                ("org.gradle.plugins.ide.api.XmlFileContentMerger.withXml"): 1,
+        )
         run("eclipse")
         then:
 
@@ -79,27 +80,27 @@ eclipse {
         assert jdt.contains('source=1.4')
     }
 
-    @ToBeFixedForConfigurationCache
     void "allows custom matcher resource filter"() {
         given:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    resourceFilter {
-      appliesTo = 'FILES_AND_FOLDERS'
-      type = 'EXCLUDE_ALL'
-      matcher {
-        id = 'org.eclipse.some.custom.matcher'
-        arguments = 'foobar'
-      }
-    }
-  }
-}
+            eclipse {
+              project {
+                resourceFilter {
+                  appliesTo = 'FILES_AND_FOLDERS'
+                  type = 'EXCLUDE_ALL'
+                  matcher {
+                    id = 'org.eclipse.some.custom.matcher'
+                    arguments = 'foobar'
+                  }
+                }
+              }
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run("eclipse")
         then:
 
@@ -120,35 +121,35 @@ eclipse {
         project.assertHasResourceFilterXml(resourceFilterXml)
     }
 
-    @ToBeFixedForConfigurationCache
     void "allows configuring multiple resource filters"() {
         given:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    resourceFilter {
-      appliesTo = 'FILES_AND_FOLDERS'
-      type = 'EXCLUDE_ALL'
-      matcher {
-        id = 'org.eclipse.some.custom.matcher'
-        arguments = 'foobar'
-      }
-    }
-    resourceFilter {
-      appliesTo = 'FILES_AND_FOLDERS'
-      type = 'EXCLUDE_ALL'
-      matcher {
-        id = 'org.eclipse.some.custom.matcher'
-        arguments = 'barfoo'
-      }
-    }
-  }
-}
+            eclipse {
+              project {
+                resourceFilter {
+                  appliesTo = 'FILES_AND_FOLDERS'
+                  type = 'EXCLUDE_ALL'
+                  matcher {
+                    id = 'org.eclipse.some.custom.matcher'
+                    arguments = 'foobar'
+                  }
+                }
+                resourceFilter {
+                  appliesTo = 'FILES_AND_FOLDERS'
+                  type = 'EXCLUDE_ALL'
+                  matcher {
+                    id = 'org.eclipse.some.custom.matcher'
+                    arguments = 'barfoo'
+                  }
+                }
+              }
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run("eclipse")
         then:
 
@@ -178,27 +179,27 @@ eclipse {
         project.assertHasResourceFilterXml(resourceFilterXml)
     }
 
-    @ToBeFixedForConfigurationCache
     void "allows 'include only' type resource filter"() {
         given:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    resourceFilter {
-      appliesTo = 'FILES_AND_FOLDERS'
-      type = 'INCLUDE_ONLY'
-      matcher {
-        id = 'org.eclipse.some.custom.matcher'
-        arguments = 'foobar'
-      }
-    }
-  }
-}
+            eclipse {
+              project {
+                resourceFilter {
+                  appliesTo = 'FILES_AND_FOLDERS'
+                  type = 'INCLUDE_ONLY'
+                  matcher {
+                    id = 'org.eclipse.some.custom.matcher'
+                    arguments = 'foobar'
+                  }
+                }
+              }
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run("eclipse")
         then:
 
@@ -219,27 +220,27 @@ eclipse {
         project.assertHasResourceFilterXml(resourceFilterXml)
     }
 
-    @ToBeFixedForConfigurationCache
     void "allows resource filter for files"() {
         given:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    resourceFilter {
-      appliesTo = 'FILES'
-      type = 'INCLUDE_ONLY'
-      matcher {
-        id = 'org.eclipse.some.custom.matcher'
-        arguments = 'foobar'
-      }
-    }
-  }
-}
+            eclipse {
+              project {
+                resourceFilter {
+                  appliesTo = 'FILES'
+                  type = 'INCLUDE_ONLY'
+                  matcher {
+                    id = 'org.eclipse.some.custom.matcher'
+                    arguments = 'foobar'
+                  }
+                }
+              }
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run("eclipse")
         then:
 
@@ -260,27 +261,27 @@ eclipse {
         project.assertHasResourceFilterXml(resourceFilterXml)
     }
 
-    @ToBeFixedForConfigurationCache
     void "allows resource filter for folders"() {
         given:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    resourceFilter {
-      appliesTo = 'FOLDERS'
-      type = 'INCLUDE_ONLY'
-      matcher {
-        id = 'org.eclipse.some.custom.matcher'
-        arguments = 'foobar'
-      }
-    }
-  }
-}
+            eclipse {
+              project {
+                resourceFilter {
+                  appliesTo = 'FOLDERS'
+                  type = 'INCLUDE_ONLY'
+                  matcher {
+                    id = 'org.eclipse.some.custom.matcher'
+                    arguments = 'foobar'
+                  }
+                }
+              }
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run("eclipse")
         then:
 
@@ -301,28 +302,28 @@ eclipse {
         project.assertHasResourceFilterXml(resourceFilterXml)
     }
 
-    @ToBeFixedForConfigurationCache
     void "allows non-recursive resource filter"() {
         given:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    resourceFilter {
-      appliesTo = 'FOLDERS'
-      type = 'INCLUDE_ONLY'
-      recursive = false
-      matcher {
-        id = 'org.eclipse.some.custom.matcher'
-        arguments = 'foobar'
-      }
-    }
-  }
-}
+            eclipse {
+              project {
+                resourceFilter {
+                  appliesTo = 'FOLDERS'
+                  type = 'INCLUDE_ONLY'
+                  recursive = false
+                  matcher {
+                    id = 'org.eclipse.some.custom.matcher'
+                    arguments = 'foobar'
+                  }
+                }
+              }
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run("eclipse")
         then:
 
@@ -343,55 +344,55 @@ eclipse {
         project.assertHasResourceFilterXml(resourceFilterXml)
     }
 
-    @ToBeFixedForConfigurationCache
     void "existing resource filters are not duplicated"() {
         given:
         def projectFile = file('.project')
         projectFile << '''<?xml version="1.0" encoding="UTF-8"?>
-<projectDescription>
-        <name>root</name>
-        <filteredResources>
-                <filter>
-                        <id>1</id>
-                        <type>9</type>
-                        <name/>
-                        <matcher>
-                                <id>org.eclipse.some.custom.matcher</id>
-                                <arguments>foobar</arguments>
-                        </matcher>
-                </filter>
-        </filteredResources>
-</projectDescription>'''
+            <projectDescription>
+                    <name>root</name>
+                    <filteredResources>
+                            <filter>
+                                    <id>1</id>
+                                    <type>9</type>
+                                    <name/>
+                                    <matcher>
+                                            <id>org.eclipse.some.custom.matcher</id>
+                                            <arguments>foobar</arguments>
+                                    </matcher>
+                            </filter>
+                    </filteredResources>
+            </projectDescription>'''
 
         and:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    // this filter is equivalent to the one that exists in .project already
-    resourceFilter {
-      appliesTo = 'FOLDERS'
-      type = 'INCLUDE_ONLY'
-      recursive = false
-      matcher {
-        id = 'org.eclipse.some.custom.matcher'
-        arguments = 'foobar'
-      }
-    }
-    resourceFilter {
-      appliesTo = 'FILES_AND_FOLDERS'
-      type = 'EXCLUDE_ALL'
-      matcher {
-        id = 'org.eclipse.some.custom.matcher'
-        arguments = 'barfoo'
-      }
-    }
-  }
-}
+            eclipse {
+              project {
+                // this filter is equivalent to the one that exists in .project already
+                resourceFilter {
+                  appliesTo = 'FOLDERS'
+                  type = 'INCLUDE_ONLY'
+                  recursive = false
+                  matcher {
+                    id = 'org.eclipse.some.custom.matcher'
+                    arguments = 'foobar'
+                  }
+                }
+                resourceFilter {
+                  appliesTo = 'FILES_AND_FOLDERS'
+                  type = 'EXCLUDE_ALL'
+                  matcher {
+                    id = 'org.eclipse.some.custom.matcher'
+                    arguments = 'barfoo'
+                  }
+                }
+              }
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run("eclipse")
         then:
 
@@ -421,7 +422,6 @@ eclipse {
         project.assertHasResourceFilterXml(resourceFilterXml)
     }
 
-    @ToBeFixedForConfigurationCache
     void "existing project file with equivalent resource filters is unchanged"() {
         given:
         def projectFile = file('.project')
@@ -467,33 +467,34 @@ eclipse {
 
         and:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    // these filters are equivalent to those already in the .project
-    resourceFilter {
-      appliesTo = 'FOLDERS'
-      type = 'INCLUDE_ONLY'
-      recursive = false
-      matcher {
-        id = 'org.eclipse.some.custom.matcher'
-        arguments = 'foobar'
-      }
-    }
-    resourceFilter {
-      appliesTo = 'FILES_AND_FOLDERS'
-      type = 'EXCLUDE_ALL'
-      matcher {
-        id = 'org.eclipse.some.custom.matcher'
-        arguments = 'barfoo'
-      }
-    }
-  }
-}
+            eclipse {
+              project {
+                // these filters are equivalent to those already in the .project
+                resourceFilter {
+                  appliesTo = 'FOLDERS'
+                  type = 'INCLUDE_ONLY'
+                  recursive = false
+                  matcher {
+                    id = 'org.eclipse.some.custom.matcher'
+                    arguments = 'foobar'
+                  }
+                }
+                resourceFilter {
+                  appliesTo = 'FILES_AND_FOLDERS'
+                  type = 'EXCLUDE_ALL'
+                  matcher {
+                    id = 'org.eclipse.some.custom.matcher'
+                    arguments = 'barfoo'
+                  }
+                }
+              }
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run("eclipse")
         then:
 
@@ -524,35 +525,35 @@ eclipse {
         projectFileOriginalText == projectFile.text.normalize()
     }
 
-    @ToBeFixedForConfigurationCache
     void "allows nested matcher"() {
         given:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    resourceFilter {
-      appliesTo = 'FOLDERS'
-      type = 'INCLUDE_ONLY'
-      recursive = false
-      matcher {
-        id = 'org.eclipse.ui.ide.orFilterMatcher'
-        matcher {
-          id = 'org.eclipse.ui.ide.multiFilter'
-          arguments = '1.0-name-matches-false-false-node_modules'
-        }
-        matcher {
-          id = 'org.eclipse.ui.ide.multiFilter'
-          arguments = '1.0-name-matches-false-false-target'
-        }
-      }
-    }
-  }
-}
+            eclipse {
+              project {
+                resourceFilter {
+                  appliesTo = 'FOLDERS'
+                  type = 'INCLUDE_ONLY'
+                  recursive = false
+                  matcher {
+                    id = 'org.eclipse.ui.ide.orFilterMatcher'
+                    matcher {
+                      id = 'org.eclipse.ui.ide.multiFilter'
+                      arguments = '1.0-name-matches-false-false-node_modules'
+                    }
+                    matcher {
+                      id = 'org.eclipse.ui.ide.multiFilter'
+                      arguments = '1.0-name-matches-false-false-target'
+                    }
+                  }
+                }
+              }
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run("eclipse")
         then:
 
@@ -582,97 +583,103 @@ eclipse {
         project.assertHasResourceFilterXml(resourceFilterXml)
     }
 
-    @ToBeFixedForConfigurationCache
     void enablesBeforeAndWhenHooksForProject() {
         given:
         def projectFile = file('.project')
         projectFile << '''<?xml version="1.0" encoding="UTF-8"?>
-<projectDescription>
-	<name>root</name>
-	<comment/>
-	<projects/>
-	<natures>
-		<nature>org.eclipse.jdt.core.javanature</nature>
-		<nature>some.nature.one</nature>
-	</natures>
-	<buildSpec>
-		<buildCommand>
-			<name>org.eclipse.jdt.core.javabuilder</name>
-			<arguments/>
-		</buildCommand>
-	</buildSpec>
-	<linkedResources/>
-</projectDescription>'''
+            <projectDescription>
+                <name>root</name>
+                <comment/>
+                <projects/>
+                <natures>
+                    <nature>org.eclipse.jdt.core.javanature</nature>
+                    <nature>some.nature.one</nature>
+                </natures>
+                <buildSpec>
+                    <buildCommand>
+                        <name>org.eclipse.jdt.core.javabuilder</name>
+                        <arguments/>
+                    </buildCommand>
+                </buildSpec>
+                <linkedResources/>
+            </projectDescription>'''
 
         and:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    file {
-      beforeMerged {
-        assert it.natures.contains('some.nature.one')
-        it.natures << 'some.nature.two'
-      }
-      whenMerged {
-        assert it.natures.contains('some.nature.one')
-        assert it.natures.contains('some.nature.two')
+            eclipse {
+              project {
+                file {
+                  beforeMerged {
+                    assert it.natures.contains('some.nature.one')
+                    it.natures << 'some.nature.two'
+                  }
+                  whenMerged {
+                    assert it.natures.contains('some.nature.one')
+                    assert it.natures.contains('some.nature.two')
 
-        it.natures << 'some.nature.three'
-      }
-    }
-  }
-}
+                    it.natures << 'some.nature.three'
+                  }
+                }
+              }
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run "eclipse"
 
         then:
         project.assertHasNatures('org.eclipse.jdt.core.javanature', 'some.nature.one', 'some.nature.two', 'some.nature.three')
     }
 
-    @ToBeFixedForConfigurationCache
     void enablesBeforeAndWhenAndWithPropertiesHooksForJdt() {
         given:
         def jdtFile = file('.settings/org.eclipse.jdt.core.prefs')
         jdtFile << '''
-org.eclipse.jdt.core.compiler.codegen.targetPlatform=1.3
-'''
+            org.eclipse.jdt.core.compiler.codegen.targetPlatform=1.3
+        '''
 
         and:
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-ext.hooks = []
+            ext.hooks = []
 
-eclipse {
+            eclipse {
 
-  jdt {
-    file {
-      beforeMerged {
-        hooks << 'beforeMerged'
-      }
-      whenMerged {
-        hooks << 'whenMerged'
-        assert '1.1' != it.targetCompatibility.toString()
-        it.targetCompatibility = JavaVersion.toVersion('1.1')
-      }
-      withProperties {
-        hooks << 'withProperties'
-        it.dummy = 'testValue'
-      }
-    }
-  }
-}
+              jdt {
+                file {
+                  beforeMerged {
+                    hooks << 'beforeMerged'
+                  }
+                  whenMerged {
+                    hooks << 'whenMerged'
+                    assert '1.1' != it.targetCompatibility.toString()
+                    it.targetCompatibility = JavaVersion.toVersion('1.1')
+                  }
+                  withProperties {
+                    hooks << 'withProperties'
+                    it.dummy = 'testValue'
+                  }
+                }
+              }
+            }
 
-eclipseJdt.doLast() {
-  assert hooks == ['beforeMerged', 'whenMerged', 'withProperties']
-}
+            eclipseJdt.doLast() {
+              assert hooks == ['beforeMerged', 'whenMerged', 'withProperties']
+            }
         """
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
+        expectTaskTypeDeprecations(
+                ("org.gradle.plugins.ide.eclipse.model.EclipseJdt.file"): 1,
+                ("org.gradle.plugins.ide.api.PropertiesFileContentMerger.beforeMerged"): 1,
+                ("org.gradle.plugins.ide.api.PropertiesFileContentMerger.whenMerged"): 1,
+                ("org.gradle.plugins.ide.api.PropertiesFileContentMerger.withProperties"): 1,
+        )
         run "eclipse"
         def jdt = parseJdtFile()
         then:
@@ -681,25 +688,25 @@ eclipseJdt.doLast() {
         assert jdt.contains('dummy=testValue')
     }
 
-    @ToBeFixedForConfigurationCache
     void "setting project name within #hook is disallowed"(){
         given:
 
         buildFile """
-apply plugin: 'java'
-apply plugin: 'eclipse'
+            apply plugin: 'java'
+            apply plugin: 'eclipse'
 
-eclipse {
-  project {
-    file {
-      $hook { project ->
-        project.name = "custom-name"
-      }
-    }
-  }
-}
-"""
+            eclipse {
+              project {
+                file {
+                  $hook { project ->
+                    project.name = "custom-name"
+                  }
+                }
+              }
+            }
+        """
         when:
+        expectTaskDeprecations("eclipseClasspath", "eclipseJdt", "eclipseProject")
         fails "eclipse"
 
         then:

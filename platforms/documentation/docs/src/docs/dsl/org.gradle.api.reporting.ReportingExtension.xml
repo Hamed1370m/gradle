@@ -8,7 +8,10 @@
                 </tr>
             </thead>
             <tr>
-                <td>baseDir</td>
+                <td>baseDirectory</td>
+            </tr>
+            <tr>
+                <td>reports</td>
             </tr>
         </table>
     </section>

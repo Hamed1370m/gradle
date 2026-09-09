@@ -24,6 +24,7 @@ import org.gradle.api.internal.tasks.DefaultSourceSetContainer;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
+import org.gradle.internal.instrumentation.api.annotations.NotToBeReplacedByLazyProperty;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 
 import java.util.Arrays;
@@ -41,12 +42,10 @@ import java.util.Set;
  *     }
  *
  *     sourceSets {
- *         customMain
  *         functionalTest
  *     }
  *
  *     gradlePlugin {
- *         pluginSourceSet project.sourceSets.customMain
  *         testSourceSets project.sourceSets.functionalTest
  *         plugins {
  *             helloPlugin {
@@ -61,37 +60,20 @@ import java.util.Set;
  * @since 2.13
  */
 public abstract class GradlePluginDevelopmentExtension {
-
-    private final Property<String> website;
-
-    private final Property<String> vcsUrl;
-
     private final SourceSetContainer testSourceSets;
-    private SourceSet pluginSourceSet;
+    private final SourceSet pluginSourceSet;
     private boolean automatedPublishing = true;
 
-    private final NamedDomainObjectContainer<PluginDeclaration> plugins;
-
+    /**
+     * Creates a new {@code GradlePluginDevelopmentExtension}.
+     *
+     * @since 2.14
+     */
+    @SuppressWarnings("this-escape")
     public GradlePluginDevelopmentExtension(Project project, SourceSet pluginSourceSet, SourceSet testSourceSet) {
-        this(project, pluginSourceSet, new SourceSet[] {testSourceSet});
-    }
-
-    public GradlePluginDevelopmentExtension(Project project, SourceSet pluginSourceSet, SourceSet[] testSourceSets) {
-        this.plugins = project.container(PluginDeclaration.class);
         this.pluginSourceSet = pluginSourceSet;
         this.testSourceSets = project.getObjects().newInstance(DefaultSourceSetContainer.class);
-        this.website = project.getObjects().property(String.class);
-        this.vcsUrl = project.getObjects().property(String.class);
-        testSourceSets(testSourceSets);
-    }
-
-    /**
-     * Provides the source set that compiles the code under test.
-     *
-     * @param pluginSourceSet the plugin source set
-     */
-    public void pluginSourceSet(SourceSet pluginSourceSet) {
-        this.pluginSourceSet = pluginSourceSet;
+        testSourceSets(testSourceSet);
     }
 
      /**
@@ -115,6 +97,7 @@ public abstract class GradlePluginDevelopmentExtension {
      * method will overwrite any existing test source sets with the provided arguments.
      *
      * @param testSourceSets the test source sets
+     * @since 2.13
      */
     public void testSourceSets(SourceSet... testSourceSets) {
         this.testSourceSets.clear();
@@ -126,8 +109,9 @@ public abstract class GradlePluginDevelopmentExtension {
      * Returns the source set that compiles the code under test. Defaults to {@code project.sourceSets.main}.
      *
      * @return the plugin source set
+     * @since 2.13
      */
-    @ToBeReplacedByLazyProperty
+    @NotToBeReplacedByLazyProperty(because="this property will be made non-configurable")
     public SourceSet getPluginSourceSet() {
         return pluginSourceSet;
     }
@@ -136,8 +120,9 @@ public abstract class GradlePluginDevelopmentExtension {
      * Returns the source sets executing the functional tests with TestKit. Defaults to {@code project.sourceSets.test}.
      *
      * @return the test source sets
+     * @since 2.13
      */
-    @ToBeReplacedByLazyProperty
+    @NotToBeReplacedByLazyProperty(because="this property will be replaced by another API")
     public Set<SourceSet> getTestSourceSets() {
         return testSourceSets;
     }
@@ -147,40 +132,37 @@ public abstract class GradlePluginDevelopmentExtension {
      *
      * @since 7.6
      */
-    public Property<String> getWebsite() {
-        return website;
-    }
+    public abstract Property<String> getWebsite();
 
     /**
      * Returns the property holding the URL for the plugin's VCS repository.
      *
      * @since 7.6
      */
-    public Property<String> getVcsUrl() {
-        return vcsUrl;
-    }
+    public abstract Property<String> getVcsUrl();
 
     /**
      * Returns the declared plugins.
      *
      * @return the declared plugins, never null
+     * @since 2.14
      */
-    public NamedDomainObjectContainer<PluginDeclaration> getPlugins() {
-        return plugins;
-    }
+    public abstract NamedDomainObjectContainer<PluginDeclaration> getPlugins();
 
     /**
      * Configures the declared plugins.
      *
      * @param action the configuration action to invoke on the plugins
+     * @since 2.14
      */
     public void plugins(Action<? super NamedDomainObjectContainer<PluginDeclaration>> action) {
-        action.execute(plugins);
+        action.execute(getPlugins());
     }
 
     /**
      * Whether the plugin should automatically configure the publications for the plugins.
      * @return true if publishing should be automated, false otherwise
+     * @since 2.14
      */
     @ToBeReplacedByLazyProperty
     public boolean isAutomatedPublishing() {
@@ -190,6 +172,7 @@ public abstract class GradlePluginDevelopmentExtension {
     /**
      * Configures whether the plugin should automatically configure the publications for the plugins.
      * @param automatedPublishing whether to automated publication
+     * @since 2.14
      */
     public void setAutomatedPublishing(boolean automatedPublishing) {
         this.automatedPublishing = automatedPublishing;

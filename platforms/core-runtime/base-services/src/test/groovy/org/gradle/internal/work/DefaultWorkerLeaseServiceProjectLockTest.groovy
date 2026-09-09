@@ -16,13 +16,10 @@
 
 package org.gradle.internal.work
 
-
-import org.gradle.internal.InternalTransformer
 import org.gradle.internal.MutableBoolean
+import org.gradle.internal.operations.TestBuildOperationRunner
 import org.gradle.internal.resources.ResourceLock
 import org.gradle.internal.resources.ResourceLockState
-import org.gradle.util.SetSystemProperties
-import org.junit.Rule
 
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.locks.ReentrantLock
@@ -33,12 +30,11 @@ import static org.gradle.internal.resources.DefaultResourceLockCoordinationServi
 import static org.gradle.util.Path.path
 
 class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServiceTest {
-    @Rule
-    SetSystemProperties properties = new SetSystemProperties()
+
     def workerLeaseService = workerLeaseService(1)
 
     def "can lock and unlock a project"() {
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         given:
         assert !lockIsHeld(projectLock)
@@ -64,7 +60,7 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
                 start {
                     started.countDown()
                     thread.blockUntil.releaseAll
-                    def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+                    def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
                     workerLeaseService.withLocks([projectLock]) {
                         assert lockIsHeld(projectLock)
                     }
@@ -89,7 +85,7 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
                     started.countDown()
                     thread.blockUntil.releaseAll
                     while (true) {
-                        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+                        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
                         boolean success = coordinationService.withStateLock(tryLock(projectLock))
                         try {
                             if (success) {
@@ -120,7 +116,7 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
         async {
             threadCount.times { i ->
                 start {
-                    def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project${i}"))
+                    def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project${i}"))
                     workerLeaseService.withLocks([projectLock]) {
                         started.countDown()
                         thread.blockUntil.releaseAll
@@ -148,7 +144,7 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
                 start {
                     started.countDown()
                     thread.blockUntil.releaseAll
-                    def projectLock = projectLockService.getProjectLock(path("root"), path(":project${i}"))
+                    def projectLock = projectLockService.getProjectLock(path(":"), path(":project${i}"))
                     workerLeaseService.withLocks([projectLock]) {
                         assert testLock.tryLock()
                         try {
@@ -182,7 +178,7 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
                     started.countDown()
                     thread.blockUntil.releaseAll
                     def buildIndex = i % buildCount
-                    def projectLock = projectLockService.getProjectLock(path("build${buildIndex}"), path(":project${i}"))
+                    def projectLock = projectLockService.getProjectLock(path(":build${buildIndex}"), path(":project${i}"))
                     workerLeaseService.withLocks([projectLock]) {
                         assert testLock[buildIndex].tryLock()
                         try {
@@ -203,8 +199,8 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
 
     def "locking task execution lease also locks project state when parallel execution disabled"() {
         def workerLeaseService = workerLeaseService(false)
-        def taskLease = workerLeaseService.getTaskExecutionLock(path("build"), path("project"))
-        def projectLock = workerLeaseService.getProjectLock(path("build"), path("project"))
+        def taskLease = workerLeaseService.getTaskExecutionLock(path(":"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         expect:
         !taskLease.is(projectLock)
@@ -220,8 +216,8 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
 
     def "can release and reacquire project lock while holding task execution lease"() {
         def workerLeaseService = workerLeaseService(false)
-        def taskLease = workerLeaseService.getTaskExecutionLock(path("build"), path("project"))
-        def projectLock = workerLeaseService.getProjectLock(path("build"), path("project"))
+        def taskLease = workerLeaseService.getTaskExecutionLock(path(":"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         expect:
         workerLeaseService.withLocks([taskLease]) {
@@ -238,8 +234,8 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
 
     def "can acquire task execution lease while holding the project lock"() {
         def workerLeaseService = workerLeaseService(false)
-        def taskLease = workerLeaseService.getTaskExecutionLock(path("build"), path("project"))
-        def projectLock = workerLeaseService.getProjectLock(path("build"), path("project"))
+        def taskLease = workerLeaseService.getTaskExecutionLock(path(":"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         expect:
         workerLeaseService.withLocks([projectLock]) {
@@ -257,7 +253,7 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
 
     def "locking task execution lease blocks when other thread holds task execution lease"() {
         def workerLeaseService = workerLeaseService(false)
-        def taskLease = workerLeaseService.getTaskExecutionLock(path("build"), path("project"))
+        def taskLease = workerLeaseService.getTaskExecutionLock(path(":"), path(":project"))
 
         when:
         async {
@@ -283,8 +279,8 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
 
     def "locking task execution lease blocks when other thread holds project lock"() {
         def workerLeaseService = workerLeaseService(false)
-        def taskLease = workerLeaseService.getTaskExecutionLock(path("build"), path("project"))
-        def projectLock = workerLeaseService.getProjectLock(path("build"), path("project"))
+        def taskLease = workerLeaseService.getTaskExecutionLock(path(":"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         when:
         async {
@@ -309,42 +305,35 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
         instant.taskLeaseLocked > instant.projectUnlocked
     }
 
-    def "can lock and unlock all projects for a build"() {
-        def allProjectsLock = workerLeaseService.getAllProjectsLock(path("root"))
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
-        def otherBuildAllProjectsLock = workerLeaseService.getAllProjectsLock(path("other"))
-        def otherBuildProjectLock = workerLeaseService.getProjectLock(path("other"), path(":project"))
+    def "can lock and unlock all projects of a build"() {
+        def projectLocks = allProjectLocksOf(":", [":a", ":b"])
+        def otherBuildProjectLocks = allProjectLocksOf(":other", [":other:a", ":other:b"])
 
         given:
-        assert !lockIsHeld(allProjectsLock)
         assert workerLeaseService.currentProjectLocks.empty
 
         when:
-        workerLeaseService.withLocks([allProjectsLock]) {
-            assert lockIsHeld(allProjectsLock)
-            assert !lockIsHeld(projectLock)
-            assert !lockIsHeld(otherBuildAllProjectsLock)
-            assert !lockIsHeld(otherBuildProjectLock)
-            assert workerLeaseService.currentProjectLocks == [allProjectsLock]
+        workerLeaseService.withLocks(projectLocks) {
+            projectLocks.each { assert lockIsHeld(it) }
+            otherBuildProjectLocks.each { assert !lockIsHeld(it) }
+            assert workerLeaseService.currentProjectLocks as Set == projectLocks as Set
         }
 
         then:
-        !lockIsHeld(allProjectsLock)
-        assert workerLeaseService.currentProjectLocks.empty
+        projectLocks.every { !lockIsHeld(it) }
+        workerLeaseService.currentProjectLocks.empty
     }
 
-    def "cannot acquire project lock while all projects lock for build is held by another thread"() {
-        def allProjectsLock = workerLeaseService.getAllProjectsLock(path("root"))
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+    def "cannot acquire the lock of a project while all project locks of its build are held by another thread"() {
+        def projectLocks = allProjectLocksOf(":", [":a", ":b"])
+        def projectLock = projectLocks[0]
 
         when:
         async {
             start {
-                workerLeaseService.withLocks([allProjectsLock]) {
+                workerLeaseService.withLocks(projectLocks) {
                     instant.allLocked
-                    assert lockIsHeld(allProjectsLock)
-                    assert !lockIsHeld(projectLock)
-                    assert workerLeaseService.currentProjectLocks == [allProjectsLock]
+                    projectLocks.each { assert lockIsHeld(it) }
                     thread.block()
                 }
             }
@@ -360,16 +349,15 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
         assert instant.projectLocked > instant.allLocked
     }
 
-    def "can acquire project lock while all projects lock for another build is held by another thread"() {
-        def allProjectsLock = workerLeaseService.getAllProjectsLock(path("other"))
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+    def "can acquire the lock of a project while all project locks of another build are held by another thread"() {
+        def otherBuildProjectLocks = allProjectLocksOf(":other", [":other:a", ":other:b"])
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":a"))
 
         when:
         async {
             start {
-                workerLeaseService.withLocks([allProjectsLock]) {
+                workerLeaseService.withLocks(otherBuildProjectLocks) {
                     instant.allLocked
-                    assert lockIsHeld(allProjectsLock)
                     assert !lockIsHeld(projectLock)
                     thread.blockUntil.projectLocked
                 }
@@ -386,24 +374,23 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
         assert instant.projectLocked > instant.allLocked
     }
 
-    def "cannot acquire all projects lock for build while it is held by another thread"() {
-        def allProjectsLock = workerLeaseService.getAllProjectsLock(path("root"))
+    def "cannot acquire all project locks of a build while they are held by another thread"() {
+        def projectLocks = allProjectLocksOf(":", [":a", ":b"])
 
         when:
         async {
             start {
-                workerLeaseService.withLocks([allProjectsLock]) {
+                workerLeaseService.withLocks(projectLocks) {
                     instant.allLocked
-                    assert lockIsHeld(allProjectsLock)
-                    assert workerLeaseService.currentProjectLocks == [allProjectsLock]
+                    projectLocks.each { assert lockIsHeld(it) }
                     thread.block()
                 }
             }
             start {
                 thread.blockUntil.allLocked
-                workerLeaseService.withLocks([allProjectsLock]) {
+                workerLeaseService.withLocks(projectLocks) {
                     instant.projectLocked
-                    assert workerLeaseService.currentProjectLocks == [allProjectsLock]
+                    assert workerLeaseService.currentProjectLocks as Set == projectLocks as Set
                 }
             }
         }
@@ -412,23 +399,23 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
         assert instant.projectLocked > instant.allLocked
     }
 
-    def "can acquire all projects lock for build while another is held by another thread"() {
-        def allProjectsLock = workerLeaseService.getAllProjectsLock(path("root"))
-        def otherLock = workerLeaseService.getAllProjectsLock(path("other"))
+    def "can acquire all project locks of a build while those of another build are held by another thread"() {
+        def projectLocks = allProjectLocksOf(":", [":a", ":b"])
+        def otherBuildProjectLocks = allProjectLocksOf(":other", [":other:a", ":other:b"])
 
         when:
         async {
             start {
-                workerLeaseService.withLocks([otherLock]) {
+                workerLeaseService.withLocks(otherBuildProjectLocks) {
                     instant.allLocked
-                    assert lockIsHeld(otherLock)
+                    otherBuildProjectLocks.each { assert lockIsHeld(it) }
                 }
             }
             start {
                 thread.blockUntil.allLocked
-                workerLeaseService.withLocks([allProjectsLock]) {
+                workerLeaseService.withLocks(projectLocks) {
                     instant.projectLocked
-                    assert lockIsHeld(allProjectsLock)
+                    projectLocks.each { assert lockIsHeld(it) }
                 }
             }
         }
@@ -437,9 +424,41 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
         assert instant.projectLocked > instant.allLocked
     }
 
+    def "a thread blocked on all project locks of a build acquires none of them until all are free"() {
+        def projectLocks = allProjectLocksOf(":", [":a", ":b"])
+        def contendedLock = projectLocks[1]
+
+        when:
+        async {
+            start {
+                workerLeaseService.withLocks([contendedLock]) {
+                    instant.oneLocked
+                    thread.blockUntil.blockingOnAll
+                    // The other thread cannot hold :a either, as the locks are acquired all at once or not at all
+                    assert !lockIsHeld(projectLocks[0])
+                    instant.checked
+                }
+            }
+            start {
+                thread.blockUntil.oneLocked
+                instant.blockingOnAll
+                workerLeaseService.withLocks(projectLocks) {
+                    instant.allLocked
+                }
+            }
+        }
+
+        then:
+        assert instant.allLocked > instant.checked
+    }
+
+    private List<ResourceLock> allProjectLocksOf(String buildIdentityPath, Collection<String> projectIdentityPaths) {
+        return projectIdentityPaths.collect { workerLeaseService.getProjectLock(path(buildIdentityPath), path(it)) }
+    }
+
     def "can use runAsIsolatedTask to temporarily release project lock"() {
         boolean executed = false
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         given:
         assert !lockIsHeld(projectLock)
@@ -461,8 +480,8 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
 
     def "can use runAsIsolatedTask to temporarily release multiple locks"() {
         boolean executed = false
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
-        def otherProjectLock = workerLeaseService.getProjectLock(path("root"), path(":otherProject"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
+        def otherProjectLock = workerLeaseService.getProjectLock(path(":"), path(":otherProject"))
 
         given:
         assert !lockIsHeld(projectLock)
@@ -499,7 +518,7 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
     }
 
     def "runAsIsolatedTask releases worker leases when waiting on a project lock"() {
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         when:
         async {
@@ -533,10 +552,12 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
     }
 
     def "gathers statistics when acquiring a project lock and statistics flag is set"() {
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         when:
-        System.setProperty(DefaultWorkerLeaseService.PROJECT_LOCK_STATS_PROPERTY, "")
+        def buildOperationRunner = new TestBuildOperationRunner()
+        def statistics = new DefaultResourceLockStatistics(buildOperationRunner)
+        def workerLeaseService = workerLeaseService(true, 1, statistics)
         boolean thread2Executed = false
         async {
             start {
@@ -556,11 +577,16 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
         }
 
         then:
-        workerLeaseService.projectLockStatistics.totalWaitTimeMillis > -1
+        statistics.totalBlockedTime.get() > -1
+        (buildOperationRunner.operations.collect {it.displayName} as Set) == ([
+            "Acquired [state of project :project]",
+            "Blocked on [state of project :project]",
+            "Acquired [state of project :project]"
+        ] as Set)
     }
 
     def "fails when attempting to acquire a project lock and changes are disallowed"() {
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         when:
         workerLeaseService.whileDisallowingProjectLockChanges {
@@ -585,7 +611,7 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
     }
 
     def "fails when attempting to release a project lock and changes are disallowed"() {
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         when:
         workerLeaseService.withLocks([projectLock]) {
@@ -601,7 +627,7 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
 
     def "releases worker lease but does not release project locks in blocking action when changes to locks are disallowed"() {
         def lease = workerLeaseService.newWorkerLease()
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         expect:
         workerLeaseService.withLocks([projectLock, lease]) {
@@ -620,7 +646,7 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
 
     def "releases and reacquires project locks in blocking action when changes to locks are allowed"() {
         def lease = workerLeaseService.newWorkerLease()
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
+        def projectLock = workerLeaseService.getProjectLock(path(":"), path(":project"))
 
         expect:
         workerLeaseService.withLocks([projectLock, lease]) {
@@ -635,71 +661,13 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
         }
     }
 
-    def "thread can be granted uncontrolled access to any project"() {
-        expect:
-        !workerLeaseService.isAllowedUncontrolledAccessToAnyProject()
-        def result = workerLeaseService.allowUncontrolledAccessToAnyProject {
-            assert workerLeaseService.isAllowedUncontrolledAccessToAnyProject()
-            workerLeaseService.allowUncontrolledAccessToAnyProject {
-                assert workerLeaseService.isAllowedUncontrolledAccessToAnyProject()
-            }
-            assert workerLeaseService.isAllowedUncontrolledAccessToAnyProject()
-            "result"
-        }
-        result == "result"
-        !workerLeaseService.isAllowedUncontrolledAccessToAnyProject()
-    }
-
-    def "releases worker lease but does not release project locks in blocking action when thread has uncontrolled access to any project"() {
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
-        def lease = workerLeaseService.newWorkerLease()
-
-        expect:
-        workerLeaseService.withLocks([projectLock, lease]) {
-            workerLeaseService.allowUncontrolledAccessToAnyProject {
-                assert lockIsHeld(lease)
-                assert lockIsHeld(projectLock)
-                workerLeaseService.blocking {
-                    assert !lockIsHeld(lease)
-                    assert lockIsHeld(projectLock)
-                }
-                assert lockIsHeld(lease)
-                assert lockIsHeld(projectLock)
-            }
-        }
-    }
-
-    def "does not gather statistics when statistics flag is not set"() {
-        def projectLock = workerLeaseService.getProjectLock(path("root"), path(":project"))
-
-        when:
-        boolean thread2Executed = false
-        async {
-            start {
-                workerLeaseService.withLocks([projectLock]) {
-                    instant.thread1
-                    thread.blockUntil.thread2
-                    sleep 10
-                }
-            }
-            start {
-                thread.blockUntil.thread1
-                instant.thread2
-                workerLeaseService.withLocks([projectLock]) {
-                    thread2Executed = true
-                }
-            }
-        }
-
-        then:
-        workerLeaseService.projectLockStatistics.totalWaitTimeMillis == -1
-    }
-
-    def "does not gather statistics when not acquiring project lock"() {
+    def "does not track blocking on worker leases"() {
         def workerLease = workerLeaseService.newWorkerLease()
 
         when:
-        System.setProperty(DefaultWorkerLeaseService.PROJECT_LOCK_STATS_PROPERTY, "")
+        def buildOperationRunner = new TestBuildOperationRunner()
+        def statistics = new DefaultResourceLockStatistics(buildOperationRunner)
+        def workerLeaseService = workerLeaseService(true, 1, statistics)
         boolean thread2Executed = false
         async {
             start {
@@ -719,18 +687,19 @@ class DefaultWorkerLeaseServiceProjectLockTest extends AbstractWorkerLeaseServic
         }
 
         then:
-        workerLeaseService.projectLockStatistics.totalWaitTimeMillis == -1
+        statistics.totalBlockedTime.get() == -1
+        (buildOperationRunner.operations.collect {it.displayName} as Set) == ([
+            "Acquired [worker lease]",
+            "Acquired [worker lease]"
+        ] as Set)
     }
 
     boolean lockIsHeld(final ResourceLock resourceLock) {
         MutableBoolean held = new MutableBoolean()
-        coordinationService.withStateLock(new InternalTransformer<ResourceLockState.Disposition, ResourceLockState>() {
-            @Override
-            ResourceLockState.Disposition transform(ResourceLockState resourceLockState) {
-                held.set(resourceLock.locked && resourceLock.isLockedByCurrentThread())
-                return ResourceLockState.Disposition.FINISHED
-            }
-        })
+        coordinationService.withStateLock {
+            held.set(resourceLock.locked && resourceLock.isLockedByCurrentThread())
+            return ResourceLockState.Disposition.FINISHED
+        }
         return held.get()
     }
 }

@@ -17,16 +17,18 @@
 package org.gradle.cache.internal;
 
 import org.gradle.StartParameter;
-import org.gradle.api.UncheckedIOException;
 import org.gradle.api.internal.SettingsInternal;
 import org.gradle.initialization.GradleUserHomeDirProvider;
 import org.gradle.initialization.layout.BuildLayout;
+import org.gradle.internal.UncheckedException;
 import org.gradle.internal.hash.Hashing;
 
 import java.io.File;
+import java.io.IOException;
 
 public class BuildScopeCacheDir {
     public static final String UNDEFINED_BUILD = "undefined-build/";
+    private static final String DEFAULT_BUILD_SCOPE_CACHE_DIR = ".gradle";
 
     private final File cacheDir;
 
@@ -43,10 +45,10 @@ public class BuildScopeCacheDir {
             cacheDir = new File(userHomeDirProvider.getGradleUserHomeDirectory(), UNDEFINED_BUILD + Hashing.hashString(buildLayout.getRootDirectory().getAbsolutePath()));
         } else {
             // Use the .gradle directory in the build root directory
-            cacheDir = new File(buildLayout.getRootDirectory(), ".gradle");
+            cacheDir = new File(buildLayout.getRootDirectory(), DEFAULT_BUILD_SCOPE_CACHE_DIR);
         }
         if (cacheDir.exists() && !cacheDir.isDirectory()) {
-            throw new UncheckedIOException(String.format("Cache directory '%s' exists and is not a directory.", cacheDir));
+            throw UncheckedException.throwAsUncheckedException(new IOException(String.format("Cache directory '%s' exists and is not a directory.", cacheDir)), true);
         }
     }
 

@@ -17,6 +17,9 @@
 package org.gradle.api.artifacts;
 
 import org.gradle.api.Action;
+import org.gradle.api.artifacts.component.ModuleComponentSelector;
+import org.gradle.api.provider.Provider;
+import org.gradle.api.provider.ProviderConvertible;
 
 /**
  * Provides details about a dependency when it is resolved.
@@ -30,6 +33,7 @@ public interface DependencyResolveDetails {
      * The module, before it is resolved.
      * The requested module does not change even if there are multiple dependency resolve rules
      * that manipulate the dependency metadata.
+     * @since 1.4
      */
     ModuleVersionSelector getRequested();
 
@@ -44,6 +48,7 @@ public interface DependencyResolveDetails {
      *
      * @param version to use when resolving this dependency, cannot be null.
      * It is valid to configure the same version as requested.
+     * @since 1.4
      */
     void useVersion(String version);
 
@@ -55,11 +60,18 @@ public interface DependencyResolveDetails {
      * In many cases users are interested in changing the version.
      * For such scenario you can use the {@link #useVersion(String)} method.
      *
-     * @param notation the notation that gets parsed into an instance of {@link ModuleVersionSelector}.
-     * You can pass Strings like 'org.gradle:gradle-core:1.4',
-     * Maps like [group: 'org.gradle', name: 'gradle-core', version: '1.4'],
-     * or instances of ModuleVersionSelector.
+     * <p>
+     * It accepts the following notations:
+     * <ul>
+     *   <li>String in a format of: 'group:name:version', for example: 'org.gradle:gradle-core:1.0'</li>
+     *   <li>Map with keys 'group', 'name' and 'version'; for example: [group: 'org.gradle', name: 'gradle-core', version: '1.0']</li>
+     *   <li>{@link Provider} and {@link ProviderConvertible} of {@link MinimalExternalModuleDependency}</li>
+     *   <li>instance of {@link ExternalDependency}</li>
+     *   <li>instance of {@link ModuleComponentSelector}</li>
+     *   <li>instance of {@link ModuleVersionSelector} (deprecated)</li>
+     * </ul>
      *
+     * @param notation the notation that gets parsed into an instance of {@link ModuleComponentSelector}
      * @since 1.5
      */
     void useTarget(Object notation);
@@ -67,6 +79,7 @@ public interface DependencyResolveDetails {
     /**
      * The target module selector used to resolve the dependency.
      * Never returns null. Target module is updated when methods like {@link #useVersion(String)} are used.
+     * @since 1.4
      */
     ModuleVersionSelector getTarget();
 

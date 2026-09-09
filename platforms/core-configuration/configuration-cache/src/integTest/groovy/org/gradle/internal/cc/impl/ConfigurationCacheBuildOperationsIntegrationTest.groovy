@@ -71,6 +71,7 @@ class ConfigurationCacheBuildOperationsIntegrationTest extends AbstractConfigura
             status == "NOT_FOUND"
             buildInvalidationReasons == []
             projectInvalidationReasons == []
+            originBuildInvocationId == null
         }
         with(storeOp.result) {
             cacheEntrySize > 0
@@ -89,6 +90,7 @@ class ConfigurationCacheBuildOperationsIntegrationTest extends AbstractConfigura
             status == "VALID"
             buildInvalidationReasons == []
             projectInvalidationReasons == []
+            originBuildInvocationId == buildInvocationId
         }
 
         def loadOpInCcHitBuild = operations.only(ConfigurationCacheLoadBuildOperationType)
@@ -173,9 +175,9 @@ class ConfigurationCacheBuildOperationsIntegrationTest extends AbstractConfigura
 
         and:
         def cacheDir = file('lib/.gradle/configuration-cache')
-        def entryDir = single(subDirsOf(cacheDir))
+        def entryDir = single(subDirsOf(cacheDir).findAll { containsFileNamed("entry.bin", it) })
         def entryFiles = entryDir.listFiles().toList()
-            .findAll { it.name !in ['entry.bin', 'buildfingerprint.bin', 'projectfingerprint.bin'] } // TODO: include fingerprints as well
+            .findAll { it.name !in ['entry.bin', 'buildfingerprint.bin', 'projectfingerprint.bin', 'classloaderscopes.bin'] } // TODO: include fingerprints as well
 
         entryFiles.size() > 0
         entryFiles.every { it.name.endsWith(".bin") } // sanity check
@@ -241,13 +243,6 @@ class ConfigurationCacheBuildOperationsIntegrationTest extends AbstractConfigura
 
         then:
         outputContains('In script plugin')
-        buildLogicBuiltAndWorkGraphStoredAndLoaded()
-
-        // TODO - should get a cache hit for this build (https://github.com/gradle/gradle/issues/23267)
-        when:
-        configurationCacheRun 'help'
-
-        then:
         buildLogicBuiltAndWorkGraphStoredAndLoaded()
 
         when:
@@ -330,7 +325,7 @@ class ConfigurationCacheBuildOperationsIntegrationTest extends AbstractConfigura
 
 1 problem was found storing the configuration cache.
 - Build file 'build.gradle': line 6: registration of listener on 'Gradle.buildFinished' is unsupported
-  See https://docs.gradle.org/${GradleVersion.current().version}/userguide/configuration_cache.html#config_cache:requirements:build_listeners
+  See https://docs.gradle.org/${GradleVersion.current().version}/userguide/configuration_cache_requirements.html#config_cache:requirements:build_listeners
 """
     }
 
@@ -777,8 +772,12 @@ class ConfigurationCacheBuildOperationsIntegrationTest extends AbstractConfigura
 
     private static <T> T single(List<T> list) {
         list.with {
-            assert size() == 1
+            assert size() == 1, "Expecting a singleton list, got $list"
             get(0)
         }
+    }
+
+    private static boolean containsFileNamed(String name, TestFile dir) {
+        dir.listFiles().any { file -> file.name == name }
     }
 }

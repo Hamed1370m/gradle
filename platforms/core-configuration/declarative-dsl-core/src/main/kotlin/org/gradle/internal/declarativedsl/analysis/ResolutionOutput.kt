@@ -2,7 +2,6 @@ package org.gradle.internal.declarativedsl.analysis
 
 import org.gradle.declarative.dsl.schema.ConfigureAccessor
 import org.gradle.declarative.dsl.schema.DataBuilderFunction
-import org.gradle.declarative.dsl.schema.DataClass
 import org.gradle.declarative.dsl.schema.DataConstructor
 import org.gradle.declarative.dsl.schema.DataParameter
 import org.gradle.declarative.dsl.schema.DataProperty
@@ -13,6 +12,7 @@ import org.gradle.declarative.dsl.schema.ExternalObjectProviderKey
 import org.gradle.declarative.dsl.schema.FunctionSemantics
 import org.gradle.declarative.dsl.schema.SchemaFunction
 import org.gradle.declarative.dsl.schema.SchemaMemberFunction
+import org.gradle.internal.declarativedsl.language.AugmentationOperatorKind
 import org.gradle.internal.declarativedsl.language.FunctionCall
 import org.gradle.internal.declarativedsl.language.LanguageTreeElement
 import org.gradle.internal.declarativedsl.language.Literal
@@ -33,15 +33,16 @@ data class PropertyReferenceResolution(
 data class AssignmentRecord(
     val lhs: PropertyReferenceResolution,
     val rhs: ObjectOrigin,
-    val operationId: OperationId,
+    override val operationId: OperationId,
     val assignmentMethod: AssignmentMethod,
     val originElement: LanguageTreeElement
-)
+) : IdentifiedOperation
 
 
 sealed interface AssignmentMethod {
     data object Property : AssignmentMethod
     data object AsConstructed : AssignmentMethod
+    data object Augmentation : AssignmentMethod
     data class BuilderFunction(val function: DataBuilderFunction) : AssignmentMethod
 }
 
@@ -100,10 +101,7 @@ sealed interface ObjectOrigin {
         val entryName: String
             get() = namedReference.name
 
-        val javaTypeName: String
-            get() = type.javaTypeName
-
-        override fun toString(): String = "(enum $javaTypeName.$entryName)"
+        override fun toString(): String = "(enum ${type.javaTypeName}.$entryName)"
     }
 
     data class NullObjectOrigin(override val originElement: Null) : ObjectOrigin
@@ -148,7 +146,7 @@ sealed interface ObjectOrigin {
         override val originElement: FunctionCall,
         override val invocationId: OperationId
     ) : FunctionInvocationOrigin {
-        override val receiver: ObjectOrigin?
+        override val receiver: Nothing?
             get() = null
 
         override fun toString(): String = functionInvocationString(function, null, invocationId, parameterBindings)
@@ -196,7 +194,7 @@ sealed interface ObjectOrigin {
         val accessor: ConfigureAccessor.Custom,
         override val originElement: LanguageTreeElement
     ) : ObjectOrigin, HasReceiver {
-        override fun toString(): String = "$receiver${'.'}${accessor.customAccessorIdentifier}"
+        override fun toString(): String = "$receiver${'.'}${accessor.accessorIdentifier}"
         val accessedType: DataTypeRef
             get() = accessor.objectType
     }
@@ -244,6 +242,23 @@ sealed interface ObjectOrigin {
         }
     }
 
+    data class AugmentationOrigin(
+        val augmentedProperty: PropertyReference,
+        val augmentationOperand: ObjectOrigin,
+        val assignmentAugmentationKind: AugmentationOperatorKind,
+        val augmentationResult: ObjectOrigin,
+        override val originElement: LanguageTreeElement
+    ) : ObjectOrigin, DelegatingObjectOrigin {
+        override val delegate: ObjectOrigin = augmentationResult
+    }
+
+    data class GroupedVarargValue(
+        override val originElement: LanguageTreeElement,
+        val elementValues: List<ObjectOrigin>,
+        val elementType: DataType,
+        val varargArrayType: DataType
+    ) : ObjectOrigin
+
     data class External(val key: ExternalObjectProviderKey, override val originElement: NamedReference) : ObjectOrigin {
         override fun toString(): String = "${key.objectType}"
     }
@@ -251,7 +266,7 @@ sealed interface ObjectOrigin {
 
 
 data class ParameterValueBinding(
-    val bindingMap: Map<DataParameter, ObjectOrigin>,
+    val bindingMap: Map<DataParameter, TypedOrigin>,
     val providesConfigureBlock: Boolean
 )
 
@@ -260,19 +275,14 @@ private
 fun functionInvocationString(function: SchemaFunction, receiver: ObjectOrigin?, invocationId: OperationId, parameterBindings: ParameterValueBinding) =
     receiver?.toString()?.plus(".").orEmpty() + buildString {
         if (function is DataConstructor) {
-            val fqn = when (val ref = function.dataClass) {
-                is DataTypeRef.Name -> ref.fqName.toString()
-                is DataTypeRef.Type -> (ref.dataType as? DataClass)?.name?.qualifiedName
-                    ?: ref.dataType.toString()
-            }
-            append(fqn)
+            append(function.dataClass.toString())
             append(".")
         }
         append(function.simpleName)
         append("#")
         append(invocationId)
         append("(")
-        append(parameterBindings.bindingMap.entries.joinToString { (k, v) -> "${k.name} = $v" })
+        append(parameterBindings.bindingMap.entries.joinToString { (k, v) -> "${k.name} = ${v.objectOrigin}" })
         append(")")
         if (parameterBindings.providesConfigureBlock) {
             append(" { ... }")

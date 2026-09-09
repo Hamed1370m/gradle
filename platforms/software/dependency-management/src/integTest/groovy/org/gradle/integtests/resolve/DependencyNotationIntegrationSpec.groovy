@@ -17,7 +17,7 @@
 package org.gradle.integtests.resolve
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
 import org.hamcrest.CoreMatchers
 import spock.lang.Issue
 
@@ -37,7 +37,7 @@ def someDependency = project.dependencies.create(files('foo.txt'))
 dependencies {
     conf someDependency
     conf "org.mockito:mockito-core:1.8"
-    conf group: 'org.spockframework', name: 'spock-core', version: '1.0'
+    conf("org.spockframework:spock-core:1.0")
     conf provider { "junit:junit:4.12" }
 
     conf('org.test:configured') {
@@ -46,8 +46,6 @@ dependencies {
         }
         transitive = false
     }
-
-    conf module('org.foo:moduleOne:1.0'), module('org.foo:moduleTwo:1.0')
 
     gradleStuff gradleApi()
 
@@ -65,12 +63,6 @@ task checkDeps {
         assert configuredDep.version == '1.1'
         assert configuredDep.transitive == false
 
-        assert deps.find { it instanceof ClientModule && it.name == 'moduleOne' && it.group == 'org.foo' }
-        assert deps.find { it instanceof ClientModule && it.name == 'moduleTwo' && it.version == '1.0' }
-
-        deps = configurations.gradleStuff.dependencies
-        assert deps.findAll { it instanceof SelfResolvingDependency }.size() > 0 : "should include gradle api jars"
-
         deps = configurations.allowsCollections.dependencies
         assert deps.size() == 2
         assert deps.find { it instanceof ExternalDependency && it.group == 'org.mockito' }
@@ -79,89 +71,44 @@ task checkDeps {
 }
 """
         then:
-        executer.expectDocumentedDeprecationWarning("Declaring client module dependencies has been deprecated. This is scheduled to be removed in Gradle 9.0. Please use component metadata rules instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#declaring_client_module_dependencies")
-        succeeds 'checkDeps'
-    }
-
-    def "understands project notations"() {
-        when:
-        createDirs("otherProject")
-        settingsFile << "include 'otherProject'"
-
-        buildFile <<  """
-configurations {
-    conf
-    confTwo
-}
-
-project(':otherProject') {
-    configurations {
-        otherConf
-    }
-}
-
-dependencies {
-    conf project(':otherProject')
-    confTwo project(path: ':otherProject', configuration: 'otherConf')
-}
-
-task checkDeps {
-    def rootOne = configurations.conf.incoming.resolutionResult.rootComponent
-    def rootTwo = configurations.confTwo.incoming.resolutionResult.rootComponent
-    doLast {
-        def depsOne = rootOne.get().dependencies*.requested
-        assert depsOne.size() == 1
-        assert depsOne.find { it.projectPath == ':otherProject' }
-
-        def depsTwo = rootTwo.get().dependencies*.requested
-        assert depsTwo.size() == 1
-        assert depsTwo.find { it.projectPath == ':otherProject' }
-    }
-}
-"""
-        then:
         succeeds 'checkDeps'
     }
 
     @ToBeFixedForConfigurationCache(because = "Task uses the Configuration API")
-    def "understands client module notation with dependencies"() {
+    def "understands project notations"() {
         when:
+        settingsFile << "include 'otherProject'"
+
         buildFile <<  """
-configurations {
-    conf
-}
+            configurations {
+                conf
+                confTwo
+            }
+            dependencies {
+                conf project(':otherProject')
+                confTwo project(path: ':otherProject', configuration: 'otherConf')
+            }
 
-dependencies {
-    conf module('org.foo:moduleOne:1.0') {
-        dependency 'org.foo:bar:1.0'
-        dependencies ('org.foo:one:1', 'org.foo:two:1')
-        dependency ('high:five:5') { transitive = false }
-        dependency('org.test:lateversion') {
-               version {
-                  prefer '1.0'
-                  strictly '1.1' // intentionally overriding "prefer"
-               }
-           }
-    }
-}
+            task checkDeps {
+                doLast {
+                    def deps = configurations.conf.incoming.dependencies
+                    assert deps.size() == 1
+                    assert deps.find { it.path == ':otherProject' && it.targetConfiguration == null }
 
-task checkDeps {
-    doLast {
-        def deps = configurations.conf.incoming.dependencies
-        assert deps.size() == 1
-        def dep = deps.find { it instanceof ClientModule && it.name == 'moduleOne' }
-        assert dep
-        assert dep.dependencies.size() == 5
-        assert dep.dependencies.find { it.group == 'org.foo' && it.name == 'bar' && it.version == '1.0' && it.transitive == true }
-        assert dep.dependencies.find { it.group == 'org.foo' && it.name == 'one' && it.version == '1' }
-        assert dep.dependencies.find { it.group == 'org.foo' && it.name == 'two' && it.version == '1' }
-        assert dep.dependencies.find { it.group == 'high' && it.name == 'five' && it.version == '5' && it.transitive == false }
-        assert dep.dependencies.find { it.group == 'org.test' && it.name == 'lateversion' && it.version == '1.1' }
-    }
-}
-"""
+                    deps = configurations.confTwo.incoming.dependencies
+                    assert deps.size() == 1
+                    assert deps.find { it.path == ':otherProject' && it.targetConfiguration == 'otherConf' }
+                }
+            }
+        """
+
+        file("otherProject/build.gradle") << """
+            configurations {
+                otherConf
+            }
+        """
+
         then:
-        executer.expectDocumentedDeprecationWarning("Declaring client module dependencies has been deprecated. This is scheduled to be removed in Gradle 9.0. Please use component metadata rules instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#declaring_client_module_dependencies")
         succeeds 'checkDeps'
     }
 
@@ -231,14 +178,12 @@ task checkDeps
                 conf gradleApi()
             }
 
-            assert dependencies.gradleApi().contentEquals(dependencies.gradleApi())
             assert dependencies.gradleApi().is(dependencies.gradleApi())
             assert dependencies.gradleApi() == dependencies.gradleApi()
             assert configurations.conf.dependencies.contains(dependencies.gradleApi())
         """
 
         then:
-        executer.expectDocumentedDeprecationWarning("The Dependency.contentEquals(Dependency) method has been deprecated. This is scheduled to be removed in Gradle 9.0. Use Object.equals(Object) instead Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_content_equals")
         succeeds("help")
     }
 
@@ -285,24 +230,4 @@ task checkDeps
         result.hasErrorOutput("Adding a Configuration as a dependency is no longer allowed as of Gradle 8.0.")
     }
 
-    def "contentEquals is deprecated"() {
-        buildFile << """
-            def d1 = dependencies.create(files())
-            def d2 = dependencies.module('org.foo:bar:1.0')
-            def d3 = dependencies.create('org.foo:baz:1.0')
-            def d4 = dependencies.create(project)
-
-            def other = dependencies.create('org.other:foo:1.0')
-
-            d1.contentEquals(other)
-            d2.contentEquals(other)
-            d3.contentEquals(other)
-            d4.contentEquals(other)
-        """
-
-        expect:
-        executer.expectDocumentedDeprecationWarning("Declaring client module dependencies has been deprecated. This is scheduled to be removed in Gradle 9.0. Please use component metadata rules instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#declaring_client_module_dependencies")
-        4.times { executer.expectDocumentedDeprecationWarning("The Dependency.contentEquals(Dependency) method has been deprecated. This is scheduled to be removed in Gradle 9.0. Use Object.equals(Object) instead Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_content_equals") }
-        succeeds("help")
-    }
 }

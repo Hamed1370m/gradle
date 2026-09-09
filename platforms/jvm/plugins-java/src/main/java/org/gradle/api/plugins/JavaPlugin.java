@@ -21,15 +21,19 @@ import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.Dependency;
+import org.gradle.api.artifacts.ProjectDependency;
 import org.gradle.api.attributes.Usage;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.internal.artifacts.configurations.RoleBasedConfigurationContainerInternal;
+import org.gradle.api.internal.artifacts.configurations.TasksFromDependentProjects;
+import org.gradle.api.internal.artifacts.configurations.TasksFromProjectDependencies;
 import org.gradle.api.internal.component.SoftwareComponentContainerInternal;
-import org.gradle.api.internal.plugins.DefaultArtifactPublicationSet;
 import org.gradle.api.internal.plugins.DslObject;
 import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.api.internal.project.ProjectStateRegistry;
 import org.gradle.api.internal.tasks.JvmConstants;
+import org.gradle.api.internal.tasks.TaskDependencyFactory;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.plugins.internal.JavaConfigurationVariantMapping;
 import org.gradle.api.plugins.jvm.JvmTestSuite;
@@ -45,10 +49,11 @@ import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskCollection;
 import org.gradle.api.tasks.TaskContainer;
+import org.gradle.api.tasks.TaskDependency;
 import org.gradle.api.tasks.bundling.Jar;
 import org.gradle.api.tasks.diagnostics.DependencyInsightReportTask;
 import org.gradle.api.tasks.testing.Test;
-import org.gradle.internal.execution.BuildOutputCleanupRegistry;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.jvm.component.internal.DefaultJvmSoftwareComponent;
 import org.gradle.jvm.component.internal.JvmSoftwareComponentInternal;
 import org.gradle.testing.base.TestingExtension;
@@ -64,50 +69,60 @@ import java.util.Collections;
  *
  * @see <a href="https://docs.gradle.org/current/userguide/java_plugin.html">Java plugin reference</a>
  * @see <a href="https://docs.gradle.org/current/userguide/jvm_test_suite_plugin.html">JVM test suite plugin reference</a>
+ * @since 0.7
  */
 public abstract class JavaPlugin implements Plugin<Project> {
     /**
      * The name of the task that processes resources.
+     * @since 0.7
      */
     public static final String PROCESS_RESOURCES_TASK_NAME = JvmConstants.PROCESS_RESOURCES_TASK_NAME;
 
     /**
      * The name of the lifecycle task which outcome is that all the classes of a component are generated.
+     * @since 0.8
      */
     public static final String CLASSES_TASK_NAME = JvmConstants.CLASSES_TASK_NAME;
 
     /**
      * The name of the task which compiles Java sources.
+     * @since 0.8
      */
     public static final String COMPILE_JAVA_TASK_NAME = JvmConstants.COMPILE_JAVA_TASK_NAME;
 
     /**
      * The name of the task which processes the test resources.
+     * @since 0.7
      */
     public static final String PROCESS_TEST_RESOURCES_TASK_NAME = JvmConstants.PROCESS_TEST_RESOURCES_TASK_NAME;
 
     /**
      * The name of the lifecycle task which outcome is that all test classes of a component are generated.
+     * @since 0.8
      */
     public static final String TEST_CLASSES_TASK_NAME = JvmConstants.TEST_CLASSES_TASK_NAME;
 
     /**
      * The name of the task which compiles the test Java sources.
+     * @since 0.8
      */
     public static final String COMPILE_TEST_JAVA_TASK_NAME = JvmConstants.COMPILE_TEST_JAVA_TASK_NAME;
 
     /**
      * The name of the task which triggers execution of tests.
+     * @since 0.7
      */
     public static final String TEST_TASK_NAME = JvmConstants.TEST_TASK_NAME;
 
     /**
      * The name of the task which generates the component main jar.
+     * @since 0.7
      */
     public static final String JAR_TASK_NAME = JvmConstants.JAR_TASK_NAME;
 
     /**
      * The name of the task which generates the component javadoc.
+     * @since 0.7
      */
     public static final String JAVADOC_TASK_NAME = JvmConstants.JAVADOC_TASK_NAME;
 
@@ -138,6 +153,7 @@ public abstract class JavaPlugin implements Plugin<Project> {
     /**
      * The name of the configuration that is used to declare dependencies which are only required to compile a component,
      * but not at runtime.
+     * @since 2.12
      */
     public static final String COMPILE_ONLY_CONFIGURATION_NAME = JvmConstants.COMPILE_ONLY_CONFIGURATION_NAME;
 
@@ -189,7 +205,7 @@ public abstract class JavaPlugin implements Plugin<Project> {
     /**
      * The name of the compile classpath configuration.
      *
-     * @since 3.4
+     * @since 2.12
      */
     public static final String COMPILE_CLASSPATH_CONFIGURATION_NAME = JvmConstants.COMPILE_CLASSPATH_CONFIGURATION_NAME;
 
@@ -210,6 +226,7 @@ public abstract class JavaPlugin implements Plugin<Project> {
     /**
      * The name of the configuration that should be used to declare dependencies which are only required
      * to compile the tests, but not when running them.
+     * @since 2.12
      */
     public static final String TEST_COMPILE_ONLY_CONFIGURATION_NAME = JvmConstants.TEST_COMPILE_ONLY_CONFIGURATION_NAME;
 
@@ -223,7 +240,7 @@ public abstract class JavaPlugin implements Plugin<Project> {
     /**
      * The name of the test compile classpath configuration.
      *
-     * @since 3.4
+     * @since 2.12
      */
     public static final String TEST_COMPILE_CLASSPATH_CONFIGURATION_NAME = JvmConstants.TEST_COMPILE_CLASSPATH_CONFIGURATION_NAME;
 
@@ -254,23 +271,26 @@ public abstract class JavaPlugin implements Plugin<Project> {
 
         project.getPluginManager().apply(JavaBasePlugin.class);
         project.getPluginManager().apply("org.gradle.jvm-test-suite"); // TODO: change to reference plugin class by name after project dependency cycles untangled; this will affect ApplyPluginBuildOperationIntegrationTest (will have to remove id)
+
         SourceSetContainer sourceSets = project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
 
+        project.getComponents().registerBinding(JvmSoftwareComponentInternal.class, DefaultJvmSoftwareComponent.class);
         JvmSoftwareComponentInternal javaComponent = createJavaComponent(projectInternal, sourceSets);
 
         configurePublishing(project.getPlugins(), project.getExtensions(), javaComponent.getMainFeature().getSourceSet());
 
         // Set the 'java' component as the project's default.
-        Configuration defaultConfiguration = project.getConfigurations().getByName(Dependency.DEFAULT_CONFIGURATION);
-        defaultConfiguration.extendsFrom(javaComponent.getMainFeature().getRuntimeElementsConfiguration());
+        project.getConfigurations().named(Dependency.DEFAULT_CONFIGURATION).configure(conf -> {
+            conf.extendsFrom(javaComponent.getMainFeature().getRuntimeElementsConfiguration().get());
+        });
         ((SoftwareComponentContainerInternal) project.getComponents()).getMainComponent().convention(javaComponent);
 
         // Build the main jar when running `assemble`.
-        DefaultArtifactPublicationSet publicationSet = project.getExtensions().getByType(DefaultArtifactPublicationSet.class);
-        publicationSet.addCandidate(javaComponent.getMainFeature().getRuntimeElementsConfiguration().getArtifacts().iterator().next());
-
-        BuildOutputCleanupRegistry buildOutputCleanupRegistry = projectInternal.getServices().get(BuildOutputCleanupRegistry.class);
-        configureSourceSets(buildOutputCleanupRegistry, sourceSets);
+        DeprecationLogger.whileDisabled(() -> {
+            project.getConfigurations().getByName(Dependency.ARCHIVES_CONFIGURATION).getArtifacts()
+                .addAllLater(javaComponent.getMainFeature().getRuntimeElementsConfiguration().map(conf -> conf.getArtifacts())
+            );
+        });
 
         configureTestTaskOrdering(project.getTasks());
         configureDiagnostics(project, javaComponent.getMainFeature());
@@ -285,7 +305,6 @@ public abstract class JavaPlugin implements Plugin<Project> {
             sourceSet,
             Collections.emptySet(),
             project,
-            false,
             false
         );
 
@@ -296,22 +315,19 @@ public abstract class JavaPlugin implements Plugin<Project> {
     }
 
     private static JvmSoftwareComponentInternal createJavaComponent(ProjectInternal project, SourceSetContainer sourceSets) {
-        DefaultJvmSoftwareComponent component = project.getObjects().newInstance(DefaultJvmSoftwareComponent.class, JvmConstants.JAVA_MAIN_COMPONENT_NAME);
-        project.getComponents().add(component);
+        return project.getComponents().register(JvmConstants.JAVA_MAIN_COMPONENT_NAME, JvmSoftwareComponentInternal.class, component -> {
+            // Create the main feature
+            JvmFeatureInternal mainFeature = createMainFeature(project, sourceSets);
+            component.getFeatures().add(mainFeature);
 
-        // Create the main feature
-        JvmFeatureInternal mainFeature = createMainFeature(project, sourceSets);
-        component.getFeatures().add(mainFeature);
+            // TODO: This process of manually adding variants to the component should be handled automatically when adding the feature to the component.
+            ((DefaultJvmSoftwareComponent) component).addVariantsFromConfiguration(mainFeature.getApiElementsConfiguration(), new JavaConfigurationVariantMapping("compile", false, mainFeature.getCompileClasspathConfiguration()));
+            ((DefaultJvmSoftwareComponent) component).addVariantsFromConfiguration(mainFeature.getRuntimeElementsConfiguration(), new JavaConfigurationVariantMapping("runtime", false, mainFeature.getRuntimeClasspathConfiguration()));
 
-        // TODO: This process of manually adding variants to the component should be handled automatically when adding the feature to the component.
-        component.addVariantsFromConfiguration(mainFeature.getApiElementsConfiguration(), new JavaConfigurationVariantMapping("compile", false, mainFeature.getCompileClasspathConfiguration()));
-        component.addVariantsFromConfiguration(mainFeature.getRuntimeElementsConfiguration(), new JavaConfigurationVariantMapping("runtime", false, mainFeature.getRuntimeClasspathConfiguration()));
-
-        // Create the default test suite
-        JvmTestSuite defaultTestSuite = createDefaultTestSuite(mainFeature, project.getConfigurations(), project.getTasks(), project.getExtensions(), project.getObjects());
-        component.getTestSuites().add(defaultTestSuite);
-
-        return component;
+            // Create the default test suite
+            JvmTestSuite defaultTestSuite = createDefaultTestSuite(mainFeature, project.getConfigurations(), project.getTasks(), project.getExtensions(), project.getObjects());
+            component.getTestSuites().add(defaultTestSuite);
+        }).get();
     }
 
     // TODO: This approach is not necessarily correct for non-main features. All publications will attempt to use the main feature's
@@ -334,11 +350,6 @@ public abstract class JavaPlugin implements Plugin<Project> {
         });
     }
 
-    private static void configureSourceSets(final BuildOutputCleanupRegistry buildOutputCleanupRegistry, SourceSetContainer sourceSets) {
-        // Register the project's source set output directories
-        sourceSets.all(sourceSet -> buildOutputCleanupRegistry.registerOutputs(sourceSet.getOutput()));
-    }
-
     /**
      * Unless there are other concerns, we'd prefer to run jar tasks prior to test tasks, as this might offer a small performance improvement
      * for common usage.  In practice, running test tasks tends to take longer than building a jar; especially as a project matures. If tasks
@@ -354,7 +365,7 @@ public abstract class JavaPlugin implements Plugin<Project> {
 
     private static JvmTestSuite createDefaultTestSuite(
         JvmFeatureInternal mainFeature,
-        RoleBasedConfigurationContainerInternal configurations,
+        ConfigurationContainer configurations,
         TaskContainer tasks,
         ExtensionContainer extensions,
         ObjectFactory objectFactory
@@ -396,26 +407,37 @@ public abstract class JavaPlugin implements Plugin<Project> {
         });
     }
 
+    @SuppressWarnings("deprecation")
     private static void configureBuild(Project project) {
-        project.getTasks().named(JavaBasePlugin.BUILD_NEEDED_TASK_NAME, task -> addDependsOnTaskInOtherProjects(task, true,
-            JavaBasePlugin.BUILD_NEEDED_TASK_NAME, JvmConstants.TEST_RUNTIME_CLASSPATH_CONFIGURATION_NAME));
-        project.getTasks().named(JavaBasePlugin.BUILD_DEPENDENTS_TASK_NAME, task -> addDependsOnTaskInOtherProjects(task, false,
-            JavaBasePlugin.BUILD_DEPENDENTS_TASK_NAME, JvmConstants.TEST_RUNTIME_CLASSPATH_CONFIGURATION_NAME));
+        project.getTasks().named(JavaBasePlugin.BUILD_NEEDED_TASK_NAME, task ->
+            task.dependsOn(buildNeededTaskDependency(task))
+        );
+        project.getTasks().named(JavaBasePlugin.BUILD_DEPENDENTS_TASK_NAME, task ->
+            task.dependsOn(buildDependentsTaskDependency(task))
+        );
     }
 
-    /**
-     * Adds a dependency on tasks with the specified name in other projects.  The other projects are determined from
-     * project lib dependencies using the specified configuration name. These may be projects this project depends on or
-     * projects that depend on this project based on the useDependOn argument.
-     *
-     * @param task Task to add dependencies to
-     * @param useDependedOn if true, add tasks from projects this project depends on, otherwise use projects that depend on this one.
-     * @param otherProjectTaskName name of task in other projects
-     * @param configurationName name of configuration to use to find the other projects
-     */
-    private static void addDependsOnTaskInOtherProjects(final Task task, boolean useDependedOn, String otherProjectTaskName, String configurationName) {
-        Project project = task.getProject();
-        final Configuration configuration = project.getConfigurations().getByName(configurationName);
-        task.dependsOn(configuration.getTaskDependencyFromProjectDependency(useDependedOn, otherProjectTaskName));
+    @Deprecated
+    private static TaskDependency buildDependentsTaskDependency(Task task) {
+        ProjectInternal project = (ProjectInternal) task.getProject();
+        Configuration configuration = project.getConfigurations().getByName(JvmConstants.TEST_RUNTIME_CLASSPATH_CONFIGURATION_NAME);
+        return new TasksFromDependentProjects(
+            JavaBasePlugin.BUILD_DEPENDENTS_TASK_NAME,
+            configuration.getName(),
+            project.getServices().get(TaskDependencyFactory.class)
+        );
     }
+
+    @Deprecated
+    private static TaskDependency buildNeededTaskDependency(Task task) {
+        ProjectInternal project = (ProjectInternal) task.getProject();
+        final Configuration configuration = project.getConfigurations().getByName(JvmConstants.TEST_RUNTIME_CLASSPATH_CONFIGURATION_NAME);
+        return new TasksFromProjectDependencies(
+            JavaBasePlugin.BUILD_NEEDED_TASK_NAME,
+            () -> configuration.getAllDependencies().withType(ProjectDependency.class),
+            project.getServices().get(TaskDependencyFactory.class),
+            project.getServices().get(ProjectStateRegistry.class)
+        );
+    }
+
 }

@@ -20,17 +20,13 @@ import org.gradle.api.internal.DocumentationRegistry;
 import org.gradle.buildinit.plugins.internal.model.Description;
 import org.gradle.buildinit.plugins.internal.modifiers.ComponentType;
 
+import java.util.Collections;
 import java.util.List;
-
-import static com.google.common.collect.Lists.newArrayList;
 
 public class JvmLibraryProjectInitDescriptor extends JvmProjectInitDescriptor {
 
-    private final TemplateLibraryVersionProvider libraryVersionProvider;
-
     public JvmLibraryProjectInitDescriptor(Description description, TemplateLibraryVersionProvider libraryVersionProvider, DocumentationRegistry documentationRegistry) {
         super(description, libraryVersionProvider, documentationRegistry);
-        this.libraryVersionProvider = libraryVersionProvider;
     }
 
     @Override
@@ -43,6 +39,11 @@ public class JvmLibraryProjectInitDescriptor extends JvmProjectInitDescriptor {
         super.generateProjectBuildScript(projectName, settings, buildScriptBuilder);
 
         applyLibraryPlugin(buildScriptBuilder);
+        if(!isSingleProject(settings)){
+            buildScriptBuilder.plugin(
+                "Apply the java conventions plugin from build-logic.",
+                "buildlogic.java-library-conventions");
+        }
         buildScriptBuilder.dependency(
             "api",
             "This dependency is exported to consumers, that is to say found on their compile classpath.",
@@ -53,12 +54,12 @@ public class JvmLibraryProjectInitDescriptor extends JvmProjectInitDescriptor {
 
     @Override
     protected List<String> getSourceTemplates(String subproject, InitSettings settings, TemplateFactory templateFactory) {
-        return newArrayList("Library");
+        return Collections.singletonList("Library");
     }
 
     @Override
     protected List<String> getTestSourceTemplates(String subproject, InitSettings settings, TemplateFactory templateFactory) {
-        return newArrayList(getUnitTestSourceTemplateName(settings));
+        return Collections.singletonList(getUnitTestSourceTemplateName(settings));
     }
 
     private static String getUnitTestSourceTemplateName(InitSettings settings) {

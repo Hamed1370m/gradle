@@ -16,6 +16,8 @@
 
 package org.gradle.internal.operations;
 
+import org.jspecify.annotations.Nullable;
+
 import java.io.ObjectStreamException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -41,16 +43,21 @@ public class BuildOperationState implements BuildOperationRef {
         this.running.set(running);
     }
 
+    /**
+     * @return the time when the operation started.
+     */
     public long getStartTime() {
         return startTime;
     }
 
     @Override
+    @Nullable
     public OperationIdentifier getId() {
         return description.getId();
     }
 
     @Override
+    @Nullable
     public OperationIdentifier getParentId() {
         return description.getParentId();
     }

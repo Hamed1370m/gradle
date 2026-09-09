@@ -35,8 +35,8 @@ import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.resolve.result.BuildableArtifactSetResolveResult;
 import org.gradle.internal.resource.local.FileStore;
 import org.gradle.internal.resource.local.LocallyAvailableResourceFinder;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 public class IvyResolver extends ExternalResourceResolver {
@@ -56,7 +56,9 @@ public class IvyResolver extends ExternalResourceResolver {
         @Nullable InstantiatingAction<ComponentMetadataListerDetails> componentMetadataVersionListerFactory,
         ImmutableMetadataSources metadataSources,
         MetadataArtifactProvider metadataArtifactProvider,
-        Instantiator injector, ChecksumService checksumService
+        Instantiator injector,
+        ChecksumService checksumService,
+        boolean continueOnConnectionFailure
     ) {
         super(
             descriptor,
@@ -70,7 +72,8 @@ public class IvyResolver extends ExternalResourceResolver {
             componentMetadataSupplierFactory,
             componentMetadataVersionListerFactory,
             injector,
-            checksumService);
+            checksumService,
+            continueOnConnectionFailure);
         this.dynamicResolve = dynamicResolve;
         this.m2Compatible = descriptor.isM2Compatible();
         this.localRepositoryAccess = new IvyLocalRepositoryAccess();

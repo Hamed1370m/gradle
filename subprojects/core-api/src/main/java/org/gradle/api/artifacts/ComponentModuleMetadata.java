@@ -16,7 +16,7 @@
 
 package org.gradle.api.artifacts;
 
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contains immutable component module metadata information.
@@ -27,12 +27,14 @@ public interface ComponentModuleMetadata {
 
     /**
      * The identifier of the module.
+     * @since 2.2
      */
     ModuleIdentifier getId();
 
     /**
      * The identifier of module that replaces this module.
      * A real world example: 'com.google.collections:google-collections' is replaced by 'com.google.guava:guava'.
+     * @since 2.2
      */
     @Nullable ModuleIdentifier getReplacedBy();
 }

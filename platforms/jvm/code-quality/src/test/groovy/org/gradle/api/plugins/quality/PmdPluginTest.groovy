@@ -21,9 +21,11 @@ import org.gradle.api.attributes.Category
 import org.gradle.api.attributes.LibraryElements
 import org.gradle.api.attributes.Usage
 import org.gradle.api.attributes.java.TargetJvmEnvironment
+import org.gradle.api.attributes.java.TargetJvmVersion
 import org.gradle.api.plugins.JavaBasePlugin
 import org.gradle.api.plugins.ReportingBasePlugin
 import org.gradle.api.tasks.SourceSet
+import org.gradle.internal.jvm.Jvm
 import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 
 import static org.gradle.api.tasks.TaskDependencyMatchers.dependsOn
@@ -73,7 +75,6 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
 
         expect:
         config != null
-        !config.visible
         config.transitive
         config.description == 'The PMD libraries to be used for this project.'
     }
@@ -84,7 +85,7 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
         extension.ruleSets == ["category/java/errorprone.xml"]
         extension.ruleSetConfig == null
         extension.ruleSetFiles.empty
-        extension.reportsDir == project.file("build/reports/pmd")
+        extension.reportsDirectory.get().asFile == project.file("build/reports/pmd")
         !extension.ignoreFailures
         extension.maxFailures.get() == 0
         extension.rulesMinimumPriority.get() == 5
@@ -105,46 +106,23 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
         configuresPmdTask("pmdOther", project.sourceSets.other)
     }
 
-    def "configures pmd targetjdk based on sourcecompatibilityLevel"() {
-        project.pluginManager.apply(JavaBasePlugin)
-        when:
-        project.setSourceCompatibility(sourceCompatibility)
-        project.sourceSets {
-            main
-        }
-        then:
-        project.tasks.getByName("pmdMain").targetJdk == targetJdk
-
-        where:
-        sourceCompatibility | targetJdk
-        1.3                 | TargetJdk.VERSION_1_3
-        1.4                 | TargetJdk.VERSION_1_4
-        1.5                 | TargetJdk.VERSION_1_5
-        1.6                 | TargetJdk.VERSION_1_6
-        1.7                 | TargetJdk.VERSION_1_7
-        // 1.4 is the default in the pmd plugin so we use it as a default too
-        1.8                 | TargetJdk.VERSION_1_4
-        1.1                 | TargetJdk.VERSION_1_4
-        1.2                 | TargetJdk.VERSION_1_4
-    }
-
     private void configuresPmdTask(String taskName, SourceSet sourceSet) {
         def task = project.tasks.findByName(taskName)
         assert task instanceof Pmd
-        task.with {
-            assert description == "Run PMD analysis for ${sourceSet.name} classes"
+        verifyAll(task) {
+            description == "Run PMD analysis for ${sourceSet.name} classes"
             source as List == sourceSet.allJava as List
-            assert pmdClasspath == project.configurations.pmd
-            assert ruleSets == ["category/java/errorprone.xml"]
-            assert ruleSetConfig == null
-            assert ruleSetFiles.empty
-            assert reports.xml.outputLocation.asFile.get() == project.file("build/reports/pmd/${sourceSet.name}.xml")
-            assert reports.html.outputLocation.asFile.get() == project.file("build/reports/pmd/${sourceSet.name}.html")
-            assert ignoreFailures == false
-            assert maxFailures.get() == 0
-            assert rulesMinimumPriority.get() == 5
-            assert incrementalAnalysis.get() == true
-            assert threads.get() == 1
+            pmdClasspath == project.configurations.pmd
+            ruleSets == ["category/java/errorprone.xml"]
+            ruleSetConfig == null
+            ruleSetFiles.empty
+            reports.xml.outputLocation.asFile.get() == project.file("build/reports/pmd/${sourceSet.name}.xml")
+            reports.html.outputLocation.asFile.get() == project.file("build/reports/pmd/${sourceSet.name}.html")
+            ignoreFailures == false
+            maxFailures.get() == 0
+            rulesMinimumPriority.get() == 5
+            incrementalAnalysis.get() == true
+            threads.get() == 1
         }
     }
 
@@ -210,18 +188,18 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
     private void hasCustomizedSettings(String taskName, SourceSet sourceSet) {
         def task = project.tasks.findByName(taskName)
         assert task instanceof Pmd
-        task.with {
-            assert description == "Run PMD analysis for ${sourceSet.name} classes"
+        verifyAll(task) {
+            description == "Run PMD analysis for ${sourceSet.name} classes"
             source as List == sourceSet.allJava as List
-            assert pmdClasspath == project.configurations.pmd
-            assert ruleSets == ["java-braces", "java-unusedcode"]
-            assert ruleSetConfig.asString() == "ruleset contents"
-            assert ruleSetFiles.singleFile == project.file("my-ruleset.xml")
-            assert reports.xml.outputLocation.asFile.get() == project.file("pmd-reports/${sourceSet.name}.xml")
-            assert reports.html.outputLocation.asFile.get() == project.file("pmd-reports/${sourceSet.name}.html")
-            assert ignoreFailures == true
-            assert maxFailures.get() == 17
-            assert rulesMinimumPriority.get() == 3
+            pmdClasspath == project.configurations.pmd
+            ruleSets == ["java-braces", "java-unusedcode"]
+            ruleSetConfig.asString() == "ruleset contents"
+            ruleSetFiles.singleFile == project.file("my-ruleset.xml")
+            reports.xml.outputLocation.asFile.get() == project.file("pmd-reports/${sourceSet.name}.xml")
+            reports.html.outputLocation.asFile.get() == project.file("pmd-reports/${sourceSet.name}.html")
+            ignoreFailures == true
+            maxFailures.get() == 17
+            rulesMinimumPriority.get() == 3
             task.threads.get() == 2
         }
     }
@@ -253,6 +231,36 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
         task.maxFailures.get() == 5
         task.rulesMinimumPriority.get() == 3
         task.threads.get() == 2
+    }
+
+    def "can enable PMD CSV report via extension"() {
+        def task = project.tasks.create("pmdCustom", Pmd)
+        task.reports {
+            csv.required = true
+        }
+
+        expect:
+        task.reports.csv.required.get() == true
+    }
+
+    def "can enable PMD code climate report via extension"() {
+        def task = project.tasks.create("pmdCustom", Pmd)
+        task.reports {
+            codeClimate.required = true
+        }
+
+        expect:
+        task.reports.codeClimate.required.get() == true
+    }
+
+    def "can enable PMD sarif report via extension"() {
+        def task = project.tasks.create("pmdCustom", Pmd)
+        task.reports {
+            sarif.required = true
+        }
+
+        expect:
+        task.reports.sarif.required.get() == true
     }
 
     def "configures pmd classpath based on sourcesets"() {
@@ -305,6 +313,7 @@ class PmdPluginTest extends AbstractProjectBuilderSpec {
             assert getAttribute(Bundling.BUNDLING_ATTRIBUTE).name == Bundling.EXTERNAL
             assert getAttribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE).name == LibraryElements.JAR
             assert getAttribute(TargetJvmEnvironment.TARGET_JVM_ENVIRONMENT_ATTRIBUTE).name == TargetJvmEnvironment.STANDARD_JVM
+            assert getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE) == Jvm.current().getJavaVersionMajor()
         }
     }
 }

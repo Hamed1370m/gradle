@@ -16,15 +16,16 @@
 
 package org.gradle.internal.resolve.caching
 
+import com.google.common.collect.HashMultimap
 import com.google.common.collect.ImmutableMultimap
 import org.gradle.api.Action
 import org.gradle.api.Transformer
 import org.gradle.api.artifacts.CacheableRule
-import org.gradle.api.internal.artifacts.configurations.dynamicversion.CachePolicy
+import org.gradle.api.internal.artifacts.ivyservice.CacheExpirationControl
 import org.gradle.cache.CacheBuilder
 import org.gradle.cache.CacheDecorator
-import org.gradle.cache.PersistentCache
 import org.gradle.cache.IndexedCache
+import org.gradle.cache.PersistentCache
 import org.gradle.cache.internal.DefaultInMemoryCacheDecoratorFactory
 import org.gradle.cache.scopes.GlobalScopedCacheBuilderFactory
 import org.gradle.internal.action.DefaultConfigurableRule
@@ -32,19 +33,20 @@ import org.gradle.internal.action.DefaultConfigurableRules
 import org.gradle.internal.action.InstantiatingAction
 import org.gradle.internal.hash.Hashing
 import org.gradle.internal.reflect.Instantiator
+import org.gradle.internal.serialize.BaseSerializerFactory
 import org.gradle.internal.serialize.Serializer
+import org.gradle.internal.serialize.SerializerSpec
 import org.gradle.internal.service.ServiceRegistry
 import org.gradle.internal.snapshot.ValueSnapshot
 import org.gradle.internal.snapshot.ValueSnapshotter
 import org.gradle.internal.snapshot.impl.StringValueSnapshot
 import org.gradle.util.TestUtil
 import org.gradle.util.internal.BuildCommencedTimeProvider
-import spock.lang.Specification
 import spock.lang.Subject
 
 import javax.inject.Inject
 
-class CrossBuildCachingRuleExecutorTest extends Specification {
+class CrossBuildCachingRuleExecutorTest extends SerializerSpec {
 
     GlobalScopedCacheBuilderFactory cacheBuilderFactory = Mock()
     DefaultInMemoryCacheDecoratorFactory cacheDecoratorFactory = Mock()
@@ -70,7 +72,7 @@ class CrossBuildCachingRuleExecutorTest extends Specification {
             new Details(name: id.name)
         }
     }
-    CachePolicy cachePolicy = Mock()
+    CacheExpirationControl cacheExpirationControl = Mock()
     ServiceRegistry serviceRegistry = Mock()
     InstantiatingAction<Details> rule
 
@@ -120,7 +122,7 @@ class CrossBuildCachingRuleExecutorTest extends Specification {
         def id = new Id('Alicia')
 
         when:
-        executor.execute(id, null, detailsToResult, onCacheMiss, cachePolicy)
+        executor.execute(id, null, detailsToResult, onCacheMiss, cacheExpirationControl)
 
         then:
         0 * _
@@ -229,7 +231,7 @@ class CrossBuildCachingRuleExecutorTest extends Specification {
         }
         1 * implicitInput.getInput() >> '/foo/bar'
         1 * implicitInput.getOutput() >> 'abcdef012'
-        1 * validator.isValid(cachePolicy, _) >> true
+        1 * validator.isValid(cacheExpirationControl, _) >> true
         1 * service.isUpToDate('/foo/bar', 'abcdef012') >> false
         1 * serviceRegistry.find(SomeService) >> service
         1 * service.withImplicitInputRecorder(_) >> service
@@ -265,7 +267,7 @@ class CrossBuildCachingRuleExecutorTest extends Specification {
         1 * implicitInput1.getOutput() >> 'abcdef012'
         1 * implicitInput2.getInput() >> '/foo/baz'
         1 * implicitInput2.getOutput() >> 'abcdef987'
-        1 * validator.isValid(cachePolicy, _) >> true
+        1 * validator.isValid(cacheExpirationControl, _) >> true
         1 * service.isUpToDate('/foo/bar', 'abcdef012') >> true
         1 * service.isUpToDate('/foo/baz', 'abcdef987') >> false
         2 * serviceRegistry.find(SomeService) >> service
@@ -275,9 +277,41 @@ class CrossBuildCachingRuleExecutorTest extends Specification {
         result.length == 6
     }
 
+    def "cache entry serializer round-trips #description"() {
+        def implicits = HashMultimap.<String, ImplicitInputRecord<?, ?>>create()
+        records.each { serviceName, serviceRecords ->
+            serviceRecords.each { input, output ->
+                implicits.put(serviceName, implicitInputRecord(input, output))
+            }
+        }
+        def serializer = new CrossBuildCachingRuleExecutor.CacheEntrySerializer<String>(BaseSerializerFactory.STRING_SERIALIZER)
+        def entry = new CrossBuildCachingRuleExecutor.CachedEntry<String>(123L, implicits, "result")
+
+        when:
+        def result = serialize(entry, serializer)
+
+        then:
+        result.timestamp == 123L
+        result.result == "result"
+        result.implicits.asMap().keySet() == implicits.asMap().keySet()
+        result.implicits.asMap().collectEntries { serviceName, serviceRecords ->
+            [(serviceName): serviceRecords.collect { [it.input, it.output] } as Set]
+        } == records.collectEntries { serviceName, serviceRecords ->
+            [(serviceName): serviceRecords.collect { [it[0], it[1]] } as Set]
+        }
+
+        where:
+        description                         | records
+        "zero implicit inputs"             | [:]
+        "one service key with one input"   | [service: [["input1", 1L]]]
+        "multiple service keys"            | [service1: [["input1", 1L]], service2: [["input2", 2L]]]
+        "one service key with two inputs"  | [service: [["input1", 1L], ["input2", 2L]]]
+    }
+
+
 
     void execute(Id id) {
-        def executionResult = executor.execute(id, rule, detailsToResult, onCacheMiss, cachePolicy)
+        def executionResult = executor.execute(id, rule, detailsToResult, onCacheMiss, cacheExpirationControl)
         result = executionResult
     }
 
@@ -314,6 +348,20 @@ class CrossBuildCachingRuleExecutorTest extends Specification {
             @Override
             void handleException(Details target, Throwable throwable) {
                 throw new AssertionError("Expected the test not to fail, but it did", throwable)
+            }
+        }
+    }
+
+    static ImplicitInputRecord<String, Long> implicitInputRecord(String input, Long output) {
+        return new ImplicitInputRecord<String, Long>() {
+            @Override
+            String getInput() {
+                return input
+            }
+
+            @Override
+            Long getOutput() {
+                return output
             }
         }
     }

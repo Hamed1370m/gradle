@@ -77,7 +77,6 @@ class MavenPublishHttpsIntegTest extends AbstractMavenPublishIntegTest {
 
         when:
         keyStore.configureIncorrectServerCert(executer)
-        executer.withStackTraceChecksDisabled() // Jetty logs stuff to console
         fails 'publish'
 
         then:
@@ -90,7 +89,6 @@ class MavenPublishHttpsIntegTest extends AbstractMavenPublishIntegTest {
         initBuild()
 
         when:
-        executer.withStackTraceChecksDisabled() // Jetty logs stuff to console
         keyStore.configureServerAndClientCerts(executer)
 
         fails 'publish'
@@ -133,7 +131,7 @@ class MavenPublishHttpsIntegTest extends AbstractMavenPublishIntegTest {
             publishing {
                 repositories {
                     maven {
-                        url '${mavenRemoteRepo.uri}'
+                        url = "${mavenRemoteRepo.uri}"
                     }
                 }
                 publications {

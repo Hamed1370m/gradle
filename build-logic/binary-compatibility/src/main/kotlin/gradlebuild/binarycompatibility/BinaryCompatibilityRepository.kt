@@ -20,6 +20,7 @@ import com.google.common.annotations.VisibleForTesting
 import gradlebuild.binarycompatibility.sources.ApiSourceFile
 import gradlebuild.binarycompatibility.sources.JavaSourceQueries
 import gradlebuild.binarycompatibility.sources.KotlinSourceQueries
+import gradlebuild.binarycompatibility.sources.SinceTagStatus
 import gradlebuild.binarycompatibility.sources.SourcesRepository
 import japicmp.model.JApiClass
 import japicmp.model.JApiCompatibility
@@ -43,8 +44,8 @@ class BinaryCompatibilityRepository internal constructor(
     companion object {
 
         @JvmStatic
-        fun openRepositoryFor(sourceRoots: List<File>, compilationClasspath: List<File>) =
-            BinaryCompatibilityRepository(SourcesRepository(sourceRoots, compilationClasspath))
+        fun openRepositoryFor(sourceRoots: List<File>) =
+            BinaryCompatibilityRepository(SourcesRepository(sourceRoots))
     }
 
     @VisibleForTesting
@@ -62,11 +63,19 @@ class BinaryCompatibilityRepository internal constructor(
             }
         }
 
-    fun isSince(version: String, member: JApiCompatibility): Boolean =
+    fun getSince(member: JApiCompatibility): SinceTagStatus =
         apiSourceFileFor(member).let { apiSourceFile ->
             when (apiSourceFile) {
-                is ApiSourceFile.Java -> sources.executeQuery(apiSourceFile, JavaSourceQueries.isSince(version, member))
-                is ApiSourceFile.Kotlin -> sources.executeQuery(apiSourceFile, KotlinSourceQueries.isSince(version, member))
+                is ApiSourceFile.Java -> sources.executeQuery(apiSourceFile, JavaSourceQueries.getSince(member))
+                is ApiSourceFile.Kotlin -> sources.executeQuery(apiSourceFile, KotlinSourceQueries.getSince(member))
+            }
+        }
+
+    fun isGenerated(member: JApiCompatibility): Boolean =
+        apiSourceFileFor(member).let { apiSourceFile ->
+            when (apiSourceFile) {
+                is ApiSourceFile.Java -> sources.executeQuery(apiSourceFile, JavaSourceQueries.isGenerated(member))
+                is ApiSourceFile.Kotlin -> sources.executeQuery(apiSourceFile, KotlinSourceQueries.isGenerated(member))
             }
         }
 
@@ -99,6 +108,6 @@ class BinaryCompatibilityRepository internal constructor(
 
     private
     val JApiClass.bytecodeSourceFilename: String
-        get() = newClass.orNull()?.classFile?.getAttribute("SourceFile")?.let { it as? SourceFileAttribute }?.fileName
+        get() = newClass.orElse(null)?.classFile?.getAttribute("SourceFile")?.let { it as? SourceFileAttribute }?.fileName
             ?: error("Bytecode for $fullyQualifiedName is missing the 'SourceFile' attribute")
 }

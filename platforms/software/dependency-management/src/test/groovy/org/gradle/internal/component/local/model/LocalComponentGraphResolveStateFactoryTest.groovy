@@ -17,10 +17,7 @@
 package org.gradle.internal.component.local.model
 
 import org.gradle.api.artifacts.ConfigurationVariant
-import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.DependencyConstraint
-import org.gradle.api.artifacts.ExternalModuleDependency
-import org.gradle.api.artifacts.FileCollectionDependency
 import org.gradle.api.artifacts.ModuleDependency
 import org.gradle.api.artifacts.ModuleVersionIdentifier
 import org.gradle.api.artifacts.PublishArtifact
@@ -34,7 +31,6 @@ import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies
 import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies.DefaultLocalVariantGraphResolveStateBuilder
 import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies.DependencyMetadataFactory
 import org.gradle.api.internal.artifacts.publish.DefaultPublishArtifact
-import org.gradle.api.internal.attributes.AttributeDesugaring
 import org.gradle.api.internal.attributes.immutable.ImmutableAttributesSchema
 import org.gradle.api.internal.initialization.StandaloneDomainObjectContext
 import org.gradle.internal.component.external.model.DefaultModuleComponentIdentifier
@@ -60,7 +56,6 @@ class LocalComponentGraphResolveStateFactoryTest extends AbstractProjectBuilderS
     )
 
     LocalComponentGraphResolveStateFactory stateFactory = new LocalComponentGraphResolveStateFactory(
-        Stub(AttributeDesugaring),
         new ComponentIdGenerator(),
         metadataBuilder,
         TestUtil.calculatedValueContainerFactory()
@@ -282,51 +277,6 @@ class LocalComponentGraphResolveStateFactoryTest extends AbstractProjectBuilderS
         config2.prepareForArtifactResolution().artifactVariants.find { it.name == "conf2-variant2" }.artifacts.size() == 2
     }
 
-    def "files attached to configuration and its children"() {
-        def files1 = Stub(FileCollectionDependency)
-        def files2 = Stub(FileCollectionDependency)
-        def files3 = Stub(FileCollectionDependency)
-
-        given:
-        def conf1 = dependencyScope("conf1")
-        def conf2 = dependencyScope("conf2")
-        def conf3 = dependencyScope("conf3", [conf1, conf2])
-        resolvable("child1", [conf3])
-        resolvable("child2", [conf1])
-
-        and:
-        conf1.getDependencies().add(files1)
-        conf2.getDependencies().add(files2)
-        conf3.getDependencies().add(files3)
-
-        expect:
-        state.getConfigurationLegacy("child1").files*.source == [files1, files2, files3]
-        state.getConfigurationLegacy("child2").files*.source == [files1]
-    }
-
-    def "dependency is attached to configuration and its children"() {
-        def dependency1 = Mock(ExternalModuleDependency)
-        def dependency2 = Mock(ExternalModuleDependency)
-        def dependency3 = Mock(ExternalModuleDependency)
-
-        when:
-        def conf1 = dependencyScope("conf1")
-        def conf2 = dependencyScope("conf2")
-        def conf3 = dependencyScope("conf3", [conf1, conf2])
-        consumable("child1", [conf3])
-        consumable("child2", [conf1])
-        consumable("other")
-
-        conf1.getDependencies().add(dependency1)
-        conf2.getDependencies().add(dependency2)
-        conf3.getDependencies().add(dependency3)
-
-        then:
-        state.candidatesForGraphVariantSelection.getVariantByConfigurationName("child1").dependencies*.source == [dependency1, dependency2, dependency3]
-        state.candidatesForGraphVariantSelection.getVariantByConfigurationName("child2").dependencies*.source == [dependency1]
-        state.candidatesForGraphVariantSelection.getVariantByConfigurationName("other").dependencies.isEmpty()
-    }
-
     def "builds and caches exclude rules for a configuration"() {
         given:
         def conf = dependencyScope("conf")
@@ -353,12 +303,6 @@ class LocalComponentGraphResolveStateFactoryTest extends AbstractProjectBuilderS
         }.get() as ConfigurationInternal
     }
 
-    ConfigurationInternal resolvable(String name, List<ConfigurationInternal> extendsFrom = []) {
-        project.configurations.resolvable(name) { conf ->
-            extendsFrom.each { conf.extendsFrom(it) }
-        }.get() as ConfigurationInternal
-    }
-
     ConfigurationInternal dependencyScope(String name, List<ConfigurationInternal> extendsFrom = []) {
         project.configurations.dependencyScope(name) { conf ->
             extendsFrom.each { conf.extendsFrom(it) }
@@ -370,14 +314,14 @@ class LocalComponentGraphResolveStateFactoryTest extends AbstractProjectBuilderS
         configuration.artifacts.add(publishArtifact)
     }
 
-    LocalOriginDependencyMetadata dependencyMetadata(Dependency dependency) {
-        return new DslOriginDependencyMetadataWrapper(Mock(LocalOriginDependencyMetadata), dependency)
+    LocalOriginDependencyMetadata mockDependencyMetadata() {
+        Mock(LocalOriginDependencyMetadata)
     }
 
     class TestDependencyMetadataFactory implements DependencyMetadataFactory {
         @Override
         LocalOriginDependencyMetadata createDependencyMetadata(ModuleDependency dependency) {
-            return dependencyMetadata(dependency)
+            return mockDependencyMetadata()
         }
 
         @Override

@@ -17,6 +17,7 @@
 package org.gradle.api.tasks;
 
 import org.gradle.internal.HasInternalProtocol;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Represents the files or directories that represent the local state of a {@link org.gradle.api.Task}.
@@ -31,6 +32,7 @@ public interface TaskLocalState {
      * Registers files and directories as local state of this task.
      *
      * @param paths The files that represent the local state. The given paths are evaluated as per {@link org.gradle.api.Project#files(Object...)}.
+     * @since 4.3
      */
-    void register(Object... paths);
+    void register(@Nullable Object... paths);
 }

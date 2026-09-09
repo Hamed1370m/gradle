@@ -16,6 +16,7 @@
 package org.gradle.nativeplatform.tasks;
 
 import org.gradle.api.DefaultTask;
+import org.gradle.api.Project;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.Directory;
 import org.gradle.api.file.DirectoryProperty;
@@ -23,7 +24,6 @@ import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileSystemOperations;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.file.RegularFileProperty;
-import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.InputFile;
@@ -45,22 +45,18 @@ import org.gradle.nativeplatform.toolchain.Gcc;
 import org.gradle.nativeplatform.toolchain.NativeToolChain;
 import org.gradle.util.internal.GFileUtils;
 import org.gradle.work.DisableCachingByDefault;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.io.File;
 import java.util.Collection;
 
 /**
  * Installs an executable with it's dependent libraries so it can be easily executed.
+ * @since 2.2
  */
 @DisableCachingByDefault(because = "Not worth caching")
 public abstract class InstallExecutable extends DefaultTask {
-    private final Property<NativePlatform> targetPlatform;
-    private final Property<NativeToolChain> toolChain;
-    private final DirectoryProperty installDirectory;
-    private final RegularFileProperty executable;
-    private final RegularFileProperty installedExecutable;
     private final ConfigurableFileCollection libs;
     private final WorkerLeaseService workerLeaseService;
 
@@ -69,19 +65,14 @@ public abstract class InstallExecutable extends DefaultTask {
      *
      * @since 4.2
      */
+    @SuppressWarnings("this-escape")
     @Inject
     public InstallExecutable(WorkerLeaseService workerLeaseService) {
-        ObjectFactory objectFactory = getProject().getObjects();
         this.workerLeaseService = workerLeaseService;
         this.libs = getProject().files();
-        this.installDirectory = objectFactory.directoryProperty();
-        this.installedExecutable = objectFactory.fileProperty();
-        this.executable = objectFactory.fileProperty();
-        this.installedExecutable.set(getLibDirectory().map(directory -> directory.file(executable.getAsFile().get().getName())));
+        this.getInstalledExecutable().convention(getLibDirectory().map(directory -> directory.file(getExecutableFile().getAsFile().get().getName())));
         // A further work around for missing ability to skip task when input file is missing (see #getInputFileIfExists below)
-        getInputs().file(executable);
-        this.targetPlatform = objectFactory.property(NativePlatform.class);
-        this.toolChain = objectFactory.property(NativeToolChain.class);
+        getInputs().file(getExecutableFile());
     }
 
     /**
@@ -90,9 +81,7 @@ public abstract class InstallExecutable extends DefaultTask {
      * @since 4.7
      */
     @Internal
-    public Property<NativeToolChain> getToolChain() {
-        return toolChain;
-    }
+    public abstract Property<NativeToolChain> getToolChain();
 
     /**
      * The platform being linked for.
@@ -100,9 +89,7 @@ public abstract class InstallExecutable extends DefaultTask {
      * @since 4.7
      */
     @Nested
-    public Property<NativePlatform> getTargetPlatform() {
-        return targetPlatform;
-    }
+    public abstract Property<NativePlatform> getTargetPlatform();
 
     /**
      * The directory to install files into.
@@ -110,20 +97,15 @@ public abstract class InstallExecutable extends DefaultTask {
      * @since 4.1
      */
     @OutputDirectory
-    public DirectoryProperty getInstallDirectory() {
-        return installDirectory;
-    }
+    public abstract DirectoryProperty getInstallDirectory();
 
     /**
      * The executable file to install.
      *
      * @since 4.7
-     *
      */
     @Internal("Covered by inputFileIfExists")
-    public RegularFileProperty getExecutableFile() {
-        return executable;
-    }
+    public abstract RegularFileProperty getExecutableFile();
 
     /**
      * The location of the installed executable file.
@@ -131,16 +113,14 @@ public abstract class InstallExecutable extends DefaultTask {
      * @since 4.7
      */
     @OutputFile
-    public RegularFileProperty getInstalledExecutable() {
-        return installedExecutable;
-    }
+    public abstract RegularFileProperty getInstalledExecutable();
 
+    // TODO - allow @InputFile and @SkipWhenEmpty to be attached to getExecutableFile()
     /**
      * Workaround for when the task is given an input file that doesn't exist
      *
      * @since 4.3
      */
-    // TODO - allow @InputFile and @SkipWhenEmpty to be attached to getExecutableFile()
     @SkipWhenEmpty
     @Nullable
     @Optional
@@ -157,6 +137,7 @@ public abstract class InstallExecutable extends DefaultTask {
 
     /**
      * The library files that should be installed.
+     * @since 2.2
      */
     @PathSensitive(PathSensitivity.RELATIVE)
     @InputFiles
@@ -164,12 +145,18 @@ public abstract class InstallExecutable extends DefaultTask {
         return libs;
     }
 
+    /**
+     * Sets the libs.
+     *
+     * @since 2.2
+     */
     public void setLibs(FileCollection libs) {
         this.libs.setFrom(libs);
     }
 
     /**
-     * Adds a set of library files to be installed. The provided libs object is evaluated as per {@link org.gradle.api.Project#files(Object...)}.
+     * Adds a set of library files to be installed. The provided libs object is evaluated as per {@link Project#files(Object...)}.
+     * @since 2.2
      */
     public void lib(Object libs) {
         this.libs.from(libs);
@@ -182,22 +169,23 @@ public abstract class InstallExecutable extends DefaultTask {
      */
     @Internal("covered by getInstallDirectory")
     public Provider<RegularFile> getRunScriptFile() {
-        return installDirectory.file(executable.getLocationOnly().map(executableFile -> OperatingSystem.forName(targetPlatform.get().getOperatingSystem().getName()).getScriptName(executableFile.getAsFile().getName())));
+        return getInstallDirectory().file(getExecutableFile().getLocationOnly().map(executableFile -> OperatingSystem.forName(getTargetPlatform().get().getOperatingSystem().getName()).getScriptName(executableFile.getAsFile().getName())));
     }
 
     @Inject
-    protected FileSystem getFileSystem() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract FileSystem getFileSystem();
 
     @Inject
-    protected FileSystemOperations getFileSystemOperations() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract FileSystemOperations getFileSystemOperations();
 
+    /**
+     * Install.
+     *
+     * @since 2.2
+     */
     @TaskAction
     protected void install() {
-        NativePlatform nativePlatform = targetPlatform.get();
+        NativePlatform nativePlatform = getTargetPlatform().get();
         File executable = getExecutableFile().get().getAsFile();
         File libDirectory = getLibDirectory().get().getAsFile();
         File runScript = getRunScriptFile().get().getAsFile();
@@ -233,26 +221,26 @@ public abstract class InstallExecutable extends DefaultTask {
         }
 
         String runScriptText =
-              "\n@echo off"
-            + "\nSETLOCAL"
-            + "\n" + toolChainPath
-            + "\nCALL \"%~dp0lib\\" + executable.getName() + "\" %*"
-            + "\nEXIT /B %ERRORLEVEL%"
-            + "\nENDLOCAL"
-            + "\n";
+            "\n@echo off"
+                + "\nSETLOCAL"
+                + "\n" + toolChainPath
+                + "\nCALL \"%~dp0lib\\" + executable.getName() + "\" %*"
+                + "\nEXIT /B %ERRORLEVEL%"
+                + "\nENDLOCAL"
+                + "\n";
         GFileUtils.writeFile(runScriptText, runScript);
     }
 
     private void installUnix(File executable, File runScript) {
         String runScriptText =
-              "#!/bin/sh"
-            + "\nAPP_BASE_NAME=`dirname \"$0\"`"
-            + "\nDYLD_LIBRARY_PATH=\"$APP_BASE_NAME/lib\""
-            + "\nexport DYLD_LIBRARY_PATH"
-            + "\nLD_LIBRARY_PATH=\"$APP_BASE_NAME/lib\""
-            + "\nexport LD_LIBRARY_PATH"
-            + "\nexec \"$APP_BASE_NAME/lib/" + executable.getName() + "\" \"$@\""
-            + "\n";
+            "#!/bin/sh"
+                + "\nAPP_BASE_NAME=`dirname \"$0\"`"
+                + "\nDYLD_LIBRARY_PATH=\"$APP_BASE_NAME/lib\""
+                + "\nexport DYLD_LIBRARY_PATH"
+                + "\nLD_LIBRARY_PATH=\"$APP_BASE_NAME/lib\""
+                + "\nexport LD_LIBRARY_PATH"
+                + "\nexec \"$APP_BASE_NAME/lib/" + executable.getName() + "\" \"$@\""
+                + "\n";
 
         GFileUtils.writeFile(runScriptText, runScript);
 

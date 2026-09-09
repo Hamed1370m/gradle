@@ -15,16 +15,15 @@
  */
 package org.gradle.plugins.ide.eclipse
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 
 class EclipseWtpEmptyProjectIntegrationTest extends AbstractEclipseIntegrationSpec {
-    @ToBeFixedForConfigurationCache
     def "generates configuration files for an empty project"() {
         settingsFile << "rootProject.name = 'empty'"
 
         buildFile << "apply plugin: 'eclipse-wtp'"
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseProject", "eclipseWtp", "eclipseWtpComponent", "eclipseWtpFacet")
         run "eclipse"
 
         then:

@@ -23,7 +23,6 @@ import org.gradle.api.attributes.AttributesSchema
 import org.gradle.api.component.SoftwareComponentContainer
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.ConfigurableFileTree
-import org.gradle.api.initialization.ProjectDescriptor
 import org.gradle.api.internal.GradleInternal
 import org.gradle.api.internal.MutationGuard
 import org.gradle.api.internal.file.DefaultFilePropertyFactory
@@ -41,15 +40,25 @@ import org.gradle.api.internal.tasks.TaskContainerInternal
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.tasks.util.internal.PatternSets
 import org.gradle.configuration.internal.ListenerBuildOperationDecorator
-import org.gradle.internal.Factory
+import org.gradle.features.internal.binding.ProjectFeatureApplicator
+import org.gradle.features.internal.binding.ProjectFeatureDeclarations
+import org.gradle.features.internal.binding.ProjectFeaturesDynamicObject
+import org.gradle.internal.Describables
 import org.gradle.internal.build.BuildState
+import org.gradle.internal.buildoption.DefaultInternalOptions
+import org.gradle.internal.buildoption.FeatureFlags
+import org.gradle.internal.buildoption.InternalOptions
+import org.gradle.internal.configuration.problems.IsolatedProjectsProblemsReporter
+import org.gradle.internal.configuration.problems.NoOpIsolatedProjectsProblemsReporter
 import org.gradle.internal.instantiation.InstantiatorFactory
 import org.gradle.internal.management.DependencyResolutionManagementInternal
+import org.gradle.internal.project.ImmutableProjectDescriptor
 import org.gradle.internal.resource.DefaultTextFileResourceLoader
 import org.gradle.internal.scripts.ProjectScopedScriptResolution
 import org.gradle.internal.service.DefaultServiceRegistry
 import org.gradle.internal.service.Provides
 import org.gradle.internal.service.ServiceRegistrationProvider
+import org.gradle.internal.service.ServiceRegistry
 import org.gradle.internal.service.scopes.ServiceRegistryFactory
 import org.gradle.invocation.GradleLifecycleActionExecutor
 import org.gradle.model.internal.registry.ModelRegistry
@@ -64,12 +73,13 @@ import javax.annotation.Nullable
 
 @UsesNativeServices
 class DefaultProjectSpec extends Specification {
+
     @Rule
     TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
 
     def "can create file collection configured with an Action"() {
         given:
-        def project = project('root', null, Stub(GradleInternal))
+        def project = project('root', null, build(Path.ROOT))
         def action = { files -> files.builtBy('something') } as Action<ConfigurableFileCollection>
 
         when:
@@ -81,7 +91,7 @@ class DefaultProjectSpec extends Specification {
 
     def "can create file tree configured with an Action"() {
         given:
-        def project = project('root', null, Stub(GradleInternal))
+        def project = project('root', null, build(Path.ROOT))
         def action = { fileTree -> fileTree.builtBy('something') } as Action<ConfigurableFileTree>
 
         when:
@@ -93,7 +103,7 @@ class DefaultProjectSpec extends Specification {
 
     def "can configure ant tasks with an Action"() {
         given:
-        def project = project('root', null, Stub(GradleInternal))
+        def project = project('root', null, build(Path.ROOT))
 
         when:
         project.ant({ AntBuilder ant -> ant.importBuild('someAntBuild') } as Action<AntBuilder>)
@@ -104,7 +114,7 @@ class DefaultProjectSpec extends Specification {
 
     def "can configure artifacts with an Action"() {
         given:
-        def project = project('root', null, Stub(GradleInternal))
+        def project = project('root', null, build(Path.ROOT))
 
         when:
         project.artifacts({ artifacts -> artifacts.add('foo', 'bar') } as Action<ArtifactHandler>)
@@ -115,8 +125,7 @@ class DefaultProjectSpec extends Specification {
 
     def "can view as an IsolatedProject"() {
         given:
-        def rootBuild = Stub(GradleInternal)
-        rootBuild.identityPath >> Path.ROOT
+        def rootBuild = build(Path.ROOT)
         def project = project('root', null, rootBuild)
 
         when:
@@ -131,20 +140,12 @@ class DefaultProjectSpec extends Specification {
     }
 
     def "has useful toString and displayName and paths"() {
-        def rootBuild = Stub(GradleInternal)
-        rootBuild.isRootBuild() >> true
-        rootBuild.parent >> null
-        rootBuild.identityPath >> Path.ROOT
-
-        def nestedBuild = Stub(GradleInternal)
-        rootBuild.isRootBuild() >> false
-        nestedBuild.parent >> rootBuild
-        nestedBuild.identityPath >> Path.path(":nested")
-
+        def rootBuild = build(Path.ROOT)
         def rootProject = project("root", null, rootBuild)
         def child1 = project("child1", rootProject, rootBuild)
         def child2 = project("child2", child1, rootBuild)
 
+        def nestedBuild = build(Path.path(":nested"), rootBuild)
         def nestedRootProject = project("root", null, nestedBuild)
         def nestedChild1 = project("child1", nestedRootProject, nestedBuild)
         def nestedChild2 = project("child2", nestedChild1, nestedBuild)
@@ -194,20 +195,12 @@ class DefaultProjectSpec extends Specification {
     }
 
     def "isolated project view preserves the path and build tree path"() {
-        def rootBuild = Stub(GradleInternal)
-        rootBuild.isRootBuild() >> true
-        rootBuild.parent >> null
-        rootBuild.identityPath >> Path.ROOT
-
-        def nestedBuild = Stub(GradleInternal)
-        rootBuild.isRootBuild() >> false
-        nestedBuild.parent >> rootBuild
-        nestedBuild.identityPath >> Path.path(":nested")
-
+        def rootBuild = build(Path.ROOT)
         def rootProject = project("root", null, rootBuild)
         def child1 = project("child1", rootProject, rootBuild)
         def child2 = project("child2", child1, rootBuild)
 
+        def nestedBuild = build(Path.path(":nested"), rootBuild)
         def nestedRootProject = project("root", null, nestedBuild)
         def nestedChild1 = project("child1", nestedRootProject, nestedBuild)
         def nestedChild2 = project("child2", nestedChild1, nestedBuild)
@@ -232,7 +225,26 @@ class DefaultProjectSpec extends Specification {
         nestedChild2.isolated.buildTreePath == ":nested:child1:child2"
     }
 
-    ProjectInternal project(String name, @Nullable ProjectInternal parent, GradleInternal build) {
+    BuildState build(Path path, BuildState parent = null) {
+        ServiceRegistry services = Mock(ServiceRegistry) {
+            get(DependencyResolutionManagementInternal) >> Mock(DependencyResolutionManagementInternal)
+        }
+        GradleInternal build = Mock(GradleInternal) {
+            isRootBuild() >> (path == Path.ROOT)
+            getParent() >> parent?.mutableModel
+            getIdentityPath() >> path
+            getServices() >> services
+        }
+        BuildState state = Mock(BuildState) {
+            getMutableModel() >> build
+            getParent() >> parent
+            getIdentityPath() >> path
+        }
+        build.getOwner() >> state
+        state
+    }
+
+    ProjectInternal project(String name, @Nullable ProjectInternal parent, BuildState buildState) {
         def fileOperations = Stub(FileOperations) {
             fileTree(_) >> TestFiles.fileOperations(tmpDir.testDirectory, new DefaultTemporaryFileProvider(() -> new File(tmpDir.testDirectory, "cache"))).fileTree('tree')
         }
@@ -240,6 +252,7 @@ class DefaultProjectSpec extends Specification {
         def objectFactory = Stub(ObjectFactory) {
             fileCollection() >> TestFiles.fileCollectionFactory().configurableFiles()
             property(Object) >> propertyFactory.property(Object)
+            newInstance(ProjectFeaturesDynamicObject, _) >> Stub(ProjectFeaturesDynamicObject)
         }
 
         def serviceRegistry = new DefaultServiceRegistry()
@@ -251,8 +264,8 @@ class DefaultProjectSpec extends Specification {
         serviceRegistry.add(AttributesSchema, Stub(AttributesSchema))
         serviceRegistry.add(ModelRegistry, Stub(ModelRegistry))
         serviceRegistry.add(CrossProjectModelAccess, Stub(CrossProjectModelAccess))
+        serviceRegistry.add(IsolatedProjectsProblemsReporter, new NoOpIsolatedProjectsProblemsReporter())
         serviceRegistry.add(DependencyResolutionManagementInternal, Stub(DependencyResolutionManagementInternal))
-        serviceRegistry.add(DynamicLookupRoutine, new DefaultDynamicLookupRoutine())
         serviceRegistry.add(SoftwareComponentContainer, Mock(SoftwareComponentContainer))
         serviceRegistry.add(CrossProjectConfigurator, Mock(CrossProjectConfigurator) {
             getLazyBehaviorGuard() >> Mock(MutationGuard)
@@ -262,20 +275,30 @@ class DefaultProjectSpec extends Specification {
         serviceRegistry.add(FileResolver, Stub(FileResolver))
         serviceRegistry.add(FileCollectionFactory, Stub(FileCollectionFactory))
         serviceRegistry.add(GradleLifecycleActionExecutor, Stub(GradleLifecycleActionExecutor))
+        serviceRegistry.add(ProjectFeatureDeclarations, Stub(ProjectFeatureDeclarations))
+        serviceRegistry.add(ProjectFeatureApplicator, Stub(ProjectFeatureApplicator))
+        serviceRegistry.add(InternalOptions, new DefaultInternalOptions([:]))
+        serviceRegistry.add(FeatureFlags, Stub(FeatureFlags))
 
         def antBuilder = Mock(AntBuilder)
-        serviceRegistry.addProvider(new ServiceRegistrationProvider() {
-            @Provides
-            Factory<AntBuilder> createAntBuilder() {
-                return () -> antBuilder
-            }
+        serviceRegistry.add(AntBuilderFactory, Mock(AntBuilderFactory) {
+            createAntBuilder() >> antBuilder
         })
 
         serviceRegistry.addProvider(new ServiceRegistrationProvider() {
             @Provides
             DefaultProjectLayout createProjectLayout(FileResolver fileResolver, FileCollectionFactory fileCollectionFactory) {
                 def filePropertyFactory = new DefaultFilePropertyFactory(PropertyHost.NO_OP, fileResolver, fileCollectionFactory)
-                return new DefaultProjectLayout(fileResolver.resolve("."), fileResolver, DefaultTaskDependencyFactory.withNoAssociatedProject(), PatternSets.getNonCachingPatternSetFactory(), PropertyHost.NO_OP, fileCollectionFactory, filePropertyFactory, filePropertyFactory)
+                return new DefaultProjectLayout(
+                    fileResolver.resolve("."),
+                    fileResolver.resolve("."),
+                    fileResolver,
+                    DefaultTaskDependencyFactory.withNoAssociatedProject(),
+                    PatternSets.getNonCachingPatternSetFactory(),
+                    PropertyHost.NO_OP,
+                    fileCollectionFactory,
+                    filePropertyFactory,
+                    filePropertyFactory)
             }
         })
 
@@ -283,25 +306,51 @@ class DefaultProjectSpec extends Specification {
             createFor(_) >> serviceRegistry
         }
 
+        def build = buildState.mutableModel
         build.services >> serviceRegistry
 
-        def container = Mock(ProjectState)
-        _ * container.projectPath >> (parent == null ? Path.ROOT : parent.projectPath.child(name))
-        _ * container.identityPath >> (parent == null ? build.identityPath : build.identityPath.append(parent.projectPath).child(name))
-        _ * container.owner >> Mock(BuildState)
+        def projectPath = parent == null ? Path.ROOT : parent.projectPath.child(name)
+        def buildPath
+        if (build.identityPath.asString().isEmpty()) {
+            // No identity path was configured
+            buildPath = Path.ROOT
+        } else {
+            buildPath = build.identityPath
+        }
 
-        def descriptor = Mock(ProjectDescriptor) {
-            getName() >> name
+        ProjectIdentity identity
+        if (projectPath == Path.ROOT) {
+            identity = ProjectIdentity.forRootProject(buildPath, name)
+        } else {
+            identity = ProjectIdentity.forSubproject(buildPath, projectPath)
+        }
+
+        def descriptor = Mock(ImmutableProjectDescriptor) {
+            getIdentity() >> identity
             getProjectDir() >> new File("project")
             getBuildFile() >> new File("build file")
         }
 
+        def container = Mock(ProjectState)
+        _ * container.name >> name
+        _ * container.projectPath >> identity.projectPath
+        _ * container.identityPath >> identity.buildTreePath
+        _ * container.owner >> build.owner
+        _ * container.displayName >> Describables.of(name)
+        _ * container.identity >> identity
+        _ * container.isolated >> { new DefaultIsolatedProject(container) }
+        _ * container.rootProject >> { parent == null }
+        _ * container.projectDir >> descriptor.projectDir
+
         def scriptResolution = Stub(ProjectScopedScriptResolution) {
-            resolveScriptsForProject(_, _, _, _) >> { identityPath, buildPath, projectPath, action -> action.get() }
+            resolveScriptsForProject(_, _) >> { project, action -> action.get() }
         }
 
         def instantiator = TestUtil.instantiatorFactory().decorateLenient(serviceRegistry)
         def factory = new ProjectFactory(instantiator, new DefaultTextFileResourceLoader(null), scriptResolution)
-        return factory.createProject(build, descriptor, container, parent, serviceRegistryFactory, Stub(ClassLoaderScope), Stub(ClassLoaderScope))
+        def project = factory.createProject(buildState, descriptor, container, serviceRegistryFactory, Stub(ClassLoaderScope), Stub(ClassLoaderScope))
+        _ * container.mutableModel >> project
+        return project
     }
+
 }

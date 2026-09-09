@@ -20,22 +20,22 @@ import org.gradle.api.artifacts.component.BuildIdentifier
 import org.gradle.api.internal.BuildDefinition
 import org.gradle.api.internal.GradleInternal
 import org.gradle.api.internal.SettingsInternal
+import org.gradle.api.internal.artifacts.DependencyManagementParameters
 import org.gradle.api.internal.initialization.ClassLoaderScope
 import org.gradle.api.internal.initialization.ScriptHandlerFactory
-import org.gradle.api.internal.initialization.StandaloneDomainObjectContext
-import org.gradle.api.internal.project.ProjectInternal
+import org.gradle.api.internal.project.ProjectState
 import org.gradle.api.internal.project.ProjectStateRegistry
-import org.gradle.execution.plan.ScheduledWork
+import org.gradle.api.problems.Problems
 import org.gradle.groovy.scripts.TextResourceScriptSource
 import org.gradle.initialization.ClassLoaderScopeRegistry
 import org.gradle.initialization.DefaultProjectDescriptor
 import org.gradle.initialization.DefaultSettings
+import org.gradle.initialization.ProjectDescriptorInternal
 import org.gradle.initialization.SettingsState
 import org.gradle.initialization.layout.BuildLayout
-import org.gradle.internal.Factory
+import org.gradle.internal.build.BuildIdentity
 import org.gradle.internal.build.BuildState
 import org.gradle.internal.build.BuildStateRegistry
-import org.gradle.internal.build.RootBuildState
 import org.gradle.internal.cc.base.serialize.service
 import org.gradle.internal.file.PathToFileResolver
 import org.gradle.internal.reflect.Instantiator
@@ -53,42 +53,18 @@ class DefaultConfigurationCacheHost internal constructor(
     private val classLoaderScopeRegistry: ClassLoaderScopeRegistry,
 ) : ConfigurationCacheHost {
 
-    override val currentBuild: VintageGradleBuild =
-        DefaultVintageGradleBuild(gradle.owner)
+    override val currentBuild: BuildState
+        get() = gradle.owner
 
-    override fun visitBuilds(visitor: (VintageGradleBuild) -> Unit) {
-        service<BuildStateRegistry>().visitBuilds { build ->
-            visitor(DefaultVintageGradleBuild(build))
-        }
+    override fun visitBuilds(visitor: (BuildState) -> Unit) {
+        service<BuildStateRegistry>().visitBuilds(visitor)
     }
 
     override fun createBuild(settingsFile: File?): ConfigurationCacheBuild =
         DefaultConfigurationCacheBuild(gradle.owner, service(), service(), settingsFile)
 
-    override fun <T> service(serviceType: Class<T>): T =
+    override fun <T : Any> service(serviceType: Class<T>): T =
         gradle.services.get(serviceType)
-
-    override fun <T> factory(serviceType: Class<T>): Factory<T> =
-        gradle.services.getFactory(serviceType)
-
-    private
-    class DefaultVintageGradleBuild(override val state: BuildState) : VintageGradleBuild {
-        override val isRootBuild: Boolean
-            get() = state is RootBuildState
-
-        override val gradle: GradleInternal
-            get() = state.mutableModel
-
-        override val hasScheduledWork: Boolean
-            get() = gradle.taskGraph.size() > 0
-
-        override val scheduledWork: ScheduledWork
-            get() {
-                lateinit var work: ScheduledWork
-                gradle.taskGraph.visitScheduledNodes { nodes, entryNodes -> work = ScheduledWork(nodes, entryNodes) }
-                return work
-            }
-    }
 
     private
     inner class DefaultConfigurationCacheBuild(
@@ -122,13 +98,15 @@ class DefaultConfigurationCacheHost internal constructor(
         override fun registerProject(projectPath: Path, dir: File, buildDir: File) {
             val name = projectPath.name
             require(name != null)
+
             // Adds the descriptor to the registry as a side effect
             DefaultProjectDescriptor(
                 getProjectDescriptor(projectPath.parent),
                 name,
                 dir,
                 projectDescriptorRegistry,
-                fileResolver
+                fileResolver,
+                service<Problems>().reporter
             )
             buildDirs[projectPath] = buildDir
         }
@@ -142,38 +120,39 @@ class DefaultConfigurationCacheHost internal constructor(
 
         private
         fun createRootProject() {
-            val rootProject = createProject(rootProjectDescriptor())
-            gradle.rootProject = rootProject
-            gradle.defaultProject = rootProject
+            val rootProjectState = createProject(rootProjectDescriptor())
+            gradle.defaultProjectState = rootProjectState
         }
 
         private
         fun rootProjectDescriptor() = projectDescriptorRegistry.rootProject!!
 
         private
-        fun createProject(descriptor: DefaultProjectDescriptor): ProjectInternal {
+        fun createProject(descriptor: ProjectDescriptorInternal): ProjectState {
             val projectState = state.projects.getProject(descriptor.path())
             projectState.createMutableModel(coreAndPluginsScope, coreAndPluginsScope)
-            val project = projectState.mutableModel
             // Build dir is restored in order to use the correct workspace directory for transforms of project dependencies when the build dir has been customized
-            buildDirs[project.projectPath]?.let {
-                project.layout.buildDirectory.set(it)
+            buildDirs[projectState.projectPath]?.let { buildDir ->
+                projectState.applyToMutableState { project ->
+                    project.layout.buildDirectory.set(buildDir)
+                }
             }
             for (child in descriptor.children()) {
                 createProject(child)
             }
-            return project
+            return projectState
         }
-
-        override fun getProject(path: String): ProjectInternal =
-            state.projects.getProject(Path.path(path)).mutableModel
 
         override fun addIncludedBuild(buildDefinition: BuildDefinition, settingsFile: File?, buildPath: Path): ConfigurationCacheBuild {
             return DefaultConfigurationCacheBuild(buildStateRegistry.addIncludedBuild(buildDefinition, buildPath), fileResolver, buildStateRegistry, settingsFile)
         }
 
-        override fun getBuildSrcOf(ownerId: BuildIdentifier): ConfigurationCacheBuild {
-            return DefaultConfigurationCacheBuild(buildStateRegistry.getBuildSrcNestedBuild(buildStateRegistry.getBuild(ownerId))!!, fileResolver, buildStateRegistry, null)
+        override fun addImplicitIncludedBuild(buildDefinition: BuildDefinition, settingsFile: File?, buildPath: Path): ConfigurationCacheBuild {
+            return DefaultConfigurationCacheBuild(buildStateRegistry.addImplicitIncludedBuild(buildDefinition, buildPath), fileResolver, buildStateRegistry, settingsFile)
+        }
+
+        override fun getBuildSrcOf(ownerId: BuildIdentity): ConfigurationCacheBuild {
+            return DefaultConfigurationCacheBuild(buildStateRegistry.getBuildSrcNestedBuild(buildStateRegistry.getBuild(ownerId.buildPath))!!, fileResolver, buildStateRegistry, null)
         }
 
         private
@@ -194,7 +173,7 @@ class DefaultConfigurationCacheHost internal constructor(
                 gradle,
                 classLoaderScope,
                 baseClassLoaderScope,
-                service<ScriptHandlerFactory>().create(settingsSource, classLoaderScope, StandaloneDomainObjectContext.forScript(settingsSource)),
+                service<ScriptHandlerFactory>().create(settingsSource, classLoaderScope, DependencyManagementParameters(settingsSource.shortDisplayName, "settings-", true, true, true)),
                 settingsDir(),
                 settingsSource,
                 gradle.startParameter
@@ -207,8 +186,8 @@ class DefaultConfigurationCacheHost internal constructor(
             service<BuildLayout>().settingsDir
 
         private
-        fun getProjectDescriptor(parentPath: Path?): DefaultProjectDescriptor? =
-            parentPath?.let { projectDescriptorRegistry.getProject(it.path) }
+        fun getProjectDescriptor(parentPath: Path?): ProjectDescriptorInternal? =
+            parentPath?.let { projectDescriptorRegistry.getProject(it.asString()) }
 
         private
         val projectDescriptorRegistry

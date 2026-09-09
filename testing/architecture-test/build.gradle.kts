@@ -1,4 +1,8 @@
+@file:Suppress("UnstableApiUsage")
+
 import com.gradle.develocity.agent.gradle.test.DevelocityTestConfiguration
+import gradlebuild.basics.ArchitectureDataType
+import gradlebuild.basics.DistributionArtifactScope
 import gradlebuild.basics.FlakyTestStrategy
 import gradlebuild.basics.PublicApi
 import gradlebuild.basics.PublicKotlinDslApi
@@ -13,7 +17,41 @@ description = """Verifies that Gradle code complies with architectural rules.
     | For example that nullable annotations are used consistently or that or that public api classes do not extend internal types.
 """.trimMargin()
 
+val rootProjectDependency = configurations.dependencyScope("rootProjectDependency")
+val platformsDataResolvable = configurations.resolvable("platformsDataResolvable") {
+    extendsFrom(rootProjectDependency.get())
+    attributes {
+        attribute(Category.CATEGORY_ATTRIBUTE, objects.named<Category>(ArchitectureDataType.PLATFORMS))
+    }
+}
+
+val packageInfoDataResolvable = configurations.resolvable("packageInfoDataResolvable") {
+    extendsFrom(rootProjectDependency.get())
+    attributes {
+        attribute(Category.CATEGORY_ATTRIBUTE, objects.named<Category>(ArchitectureDataType.PACKAGE_INFO))
+    }
+}
+
+// Bucket for declaring the runtime-only distribution dependency, extended by the resolvable below.
+val distributionRuntimeDependencies = configurations.dependencyScope("distributionRuntimeDependencies")
+
+// Resolves to the module JARs of the full distribution WITHOUT triggering the packaging metadata
+// pipeline (runtime-api-info jar and its whole-codebase-scanning derivation tasks).
+// Selects the `runtimeJarsOnly` variant exposed by gradlebuild.distributions via the
+// DistributionArtifactScope attribute. Transitive projects that do not advertise this attribute
+// remain compatible via Gradle's default compatibility process.
+val distributionRuntime = configurations.resolvable("distributionRuntime") {
+    extendsFrom(distributionRuntimeDependencies)
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named<Usage>(Usage.JAVA_RUNTIME))
+        attribute(Category.CATEGORY_ATTRIBUTE, objects.named<Category>(Category.LIBRARY))
+        attribute(DistributionArtifactScope.attribute, DistributionArtifactScope.RUNTIME_ONLY)
+    }
+}
+
 dependencies {
+    add(rootProjectDependency.name, projects.gradle)
+
     currentClasspath(projects.distributionsFull)
     testImplementation(projects.baseServices)
     testImplementation(projects.modelCore)
@@ -22,12 +60,15 @@ dependencies {
     testImplementation(libs.kotlinStdlib)
     testImplementation(libs.inject)
 
-    testImplementation(libs.archunitJunit5)
+    testImplementation(testLibs.archunitJunit5)
     testImplementation(libs.guava)
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testImplementation(libs.assertj)
+    testImplementation(libs.gson)
+    testImplementation(testLibs.junitJupiter)
+    testImplementation(testLibs.assertj)
 
-    testRuntimeOnly(projects.distributionsFull)
+    add(distributionRuntimeDependencies.name, projects.distributionsFull)
+
+    testRuntimeOnly(testLibs.junitPlatform)
 }
 
 val acceptedApiChangesDirectory = layout.projectDirectory.dir("src/changes/accepted-changes")
@@ -47,21 +88,42 @@ val sortAcceptedApiChanges = tasks.register<gradlebuild.binarycompatibility.Sort
 val ruleStoreDir = layout.projectDirectory.dir("src/changes/archunit-store")
 
 tasks {
-    val reorderRuleStore by registering(ReorderArchUnitRulesTask::class) {
+    val reorderRuleStore = register<ReorderArchUnitRulesTask>("reorderRuleStore") {
         ruleFile = ruleStoreDir.file("stored.rules").asFile
     }
 
     test {
-        // Looks like loading all the classes requires more than the default 512M
-        maxHeapSize = "1g"
+        // Loading all the classes requires more than the default 512M,
+        // and the per-module package cycle checks need additional headroom on top of that
+        maxHeapSize = "2g"
 
         // Only use one fork, so freezing doesn't have concurrency issues
         maxParallelForks = 1
 
-        inputs.dir(ruleStoreDir)
+        // Provide the whole-distribution module bytecode via the leaner `runtimeJarsOnly`
+        // variant. This is the classpath the ArchUnit @AnalyzeClasses(packages = "org.gradle")
+        // scan reflects on.
+        classpath += files(distributionRuntime)
+
+        inputs.dir(ruleStoreDir).withPathSensitivity(PathSensitivity.RELATIVE)
 
         systemProperty("org.gradle.public.api.includes", (PublicApi.includes + PublicKotlinDslApi.includes).joinToString(":"))
         systemProperty("org.gradle.public.api.excludes", (PublicApi.excludes + PublicKotlinDslApi.excludes).joinToString(":"))
+
+        jvmArgumentProviders.add(
+            ArchUnitPlatformsData(
+                layout.settingsDirectory.dir("platforms"),
+                files(platformsDataResolvable),
+            )
+        )
+
+        jvmArgumentProviders.add(
+            PackageInfoData(
+                layout.settingsDirectory,
+                files(packageInfoDataResolvable),
+            )
+        )
+
         jvmArgumentProviders.add(
             ArchUnitFreezeConfiguration(
                 ruleStoreDir.asFile,
@@ -78,6 +140,34 @@ tasks {
 
         finalizedBy(reorderRuleStore)
     }
+}
+
+class PackageInfoData(
+    @get:Internal
+    val basePath: Directory,
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    val json: FileCollection,
+) : CommandLineArgumentProvider {
+
+    override fun asArguments(): Iterable<String> = listOf(
+        "-Dorg.gradle.architecture.package-info-base-path=${basePath.asFile.absolutePath}",
+        "-Dorg.gradle.architecture.package-info-json=${json.singleFile}",
+    )
+}
+
+class ArchUnitPlatformsData(
+    @get:Internal
+    val basePath: Directory,
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    val json: FileCollection,
+) : CommandLineArgumentProvider {
+
+    override fun asArguments(): Iterable<String> = listOf(
+        "-Dorg.gradle.architecture.platforms-base-path=${basePath.asFile.absolutePath}",
+        "-Dorg.gradle.architecture.platforms-json=${json.singleFile}",
+    )
 }
 
 class ArchUnitFreezeConfiguration(
@@ -118,4 +208,8 @@ abstract class ReorderArchUnitRulesTask : DefaultTask() {
             ruleFile.writeText(sortedLines.joinToString("\n"))
         }
     }
+}
+
+errorprone {
+    nullawayEnabled = true
 }

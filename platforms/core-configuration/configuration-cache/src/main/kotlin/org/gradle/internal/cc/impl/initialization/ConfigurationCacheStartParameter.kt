@@ -20,15 +20,11 @@ import org.gradle.StartParameter
 import org.gradle.api.internal.StartParameterInternal
 import org.gradle.api.logging.LogLevel
 import org.gradle.initialization.StartParameterBuildOptions.ConfigurationCacheProblemsOption
-import org.gradle.initialization.layout.BuildLayout
-import org.gradle.internal.Factory
 import org.gradle.internal.buildoption.InternalOptions
 import org.gradle.internal.buildtree.BuildModelParameters
-import org.gradle.internal.cc.impl.ConfigurationCacheLoggingParameters
 import org.gradle.internal.cc.impl.Workarounds
-import org.gradle.internal.deprecation.DeprecationLogger
-import org.gradle.internal.extensions.core.getInternalFlag
 import org.gradle.internal.extensions.stdlib.unsafeLazy
+import org.gradle.internal.initialization.layout.BuildTreeLocations
 import org.gradle.internal.service.scopes.Scope
 import org.gradle.internal.service.scopes.ServiceScope
 import org.gradle.util.internal.IncubationLogger
@@ -37,35 +33,29 @@ import java.io.File
 
 @ServiceScope(Scope.BuildTree::class)
 class ConfigurationCacheStartParameter internal constructor(
-    private val buildLayout: BuildLayout,
+    private val buildTreeLocations: BuildTreeLocations,
     private val startParameter: StartParameterInternal,
-    options: InternalOptions,
+    internalOptions: InternalOptions,
     private val modelParameters: BuildModelParameters,
-    private val loggingParameters: ConfigurationCacheLoggingParameters,
 ) {
-
-    /**
-     * On a CC miss, should we load the newly stored state in the same invocation?
-     *
-     * This provides a benefit of discarding a lot of state (e.g. project state) earlier in the build,
-     * potentially reducing the memory consumption.
-     * Another key benefit is that this eliminates discrepancies in behavior between cache hits and misses.
-     *
-     * We disable load-after-store when tooling model builders are involved.
-     * This is because the builders can be executed after the tasks (if any) in a build action,
-     * and these builders may access project state as well as the task state.
-     * Doing load-after-store would have discarded the project state and isolated the task state,
-     * providing the builders with an incomplete view of the build.
-     */
-    val loadAfterStore: Boolean = !modelParameters.isRequiresToolingModels && options.getInternalFlag("org.gradle.configuration-cache.internal.load-after-store", true)
-
-    val taskExecutionAccessPreStable: Boolean = options.getInternalFlag("org.gradle.configuration-cache.internal.task-execution-access-pre-stable")
 
     /**
      * Should be provided if a link to the report is expected even if no errors were found.
      * Useful in testing.
      */
-    val alwaysLogReportLinkAsWarning: Boolean = options.getInternalFlag("org.gradle.configuration-cache.internal.report-link-as-warning", false)
+    val alwaysLogReportLinkAsWarning: Boolean = internalOptions.getBoolean("org.gradle.internal.configuration-cache.report-link-as-warning", false)
+
+    /**
+     * Custom output directory for the Configuration Cache report relative to the build tree root directory.
+     * Useful in testing.
+     *
+     * The default (when null) is to write the report under `<root build buildDir>/reports/configuration-cache`.
+     */
+    val customReportOutputDirectory: File? by lazy {
+        internalOptions.getStringOrNull("org.gradle.internal.configuration-cache.report-output-directory")?.let {
+            buildTreeLocations.buildTreeRootDirectory.resolve(it)
+        }
+    }
 
     /**
      * Whether strings stored to the configuration cache should be deduplicated
@@ -73,7 +63,7 @@ class ConfigurationCacheStartParameter internal constructor(
      *
      * The default is `true`.
      */
-    val isDeduplicatingStrings: Boolean = options.getInternalFlag("org.gradle.configuration-cache.internal.deduplicate-strings", true)
+    val isDeduplicatingStrings: Boolean = internalOptions.getBoolean("org.gradle.internal.configuration-cache.deduplicate-strings", true)
 
     /**
      * Whether shareable objects in the configuration cache should be shared
@@ -81,46 +71,24 @@ class ConfigurationCacheStartParameter internal constructor(
      *
      * The default is `true`.
      */
-    val isSharingObjects: Boolean = options.getInternalFlag("org.gradle.configuration-cache.internal.share-objects", true)
+    val isSharingObjects: Boolean = internalOptions.getBoolean("org.gradle.internal.configuration-cache.share-objects", true)
 
     /**
-     * Whether configuration cache storing/loading should be done in parallel.
-     *
-     * Same as [StartParameterInternal.configurationCacheParallel].
-     *
-     * @see StartParameterInternal.configurationCacheParallel
+     * See [org.gradle.initialization.StartParameterBuildOptions.ConfigurationCacheFineGrainedPropertyTracking].
      */
-    val isParallelCache: Boolean by lazy {
-        startParameter.isConfigurationCacheParallel.also { enabled ->
-            if (enabled) {
-                IncubationLogger.incubatingFeatureUsed("Parallel Configuration Cache")
-            }
-        }
-    }
-
-    /**
-     * Whether configuration should be stored in parallel.
-     *
-     * The default is the value of [isParallelCache].
-     */
-    val isParallelStore = isParallelCache && options.getInternalFlag("org.gradle.configuration-cache.internal.parallel-store", true)
-
-    /**
-     * Whether configuration should be loaded in parallel.
-     *
-     * The default is `true`.
-     */
-    val isParallelLoad = options.getInternalFlag("org.gradle.configuration-cache.internal.parallel-load", true)
+    val isFineGrainedPropertyTracking: Boolean
+        get() = startParameter.isConfigurationCacheFineGrainedPropertyTracking
 
     val gradleProperties: Map<String, Any?>
-        get() = startParameter.projectProperties
+        get() = startParameter.projectPropertiesUntracked
             .filterKeys { !Workarounds.isIgnoredStartParameterProperty(it) }
 
-    val configurationCacheLogLevel: LogLevel
-        get() = loggingParameters.logLevel
+    val configurationCacheLogLevel: LogLevel by lazy {
+        if (startParameter.isConfigurationCacheQuiet) LogLevel.INFO else LogLevel.LIFECYCLE
+    }
 
-    val isIgnoreInputsInTaskGraphSerialization: Boolean
-        get() = startParameter.isConfigurationCacheIgnoreInputsInTaskGraphSerialization
+    val isIgnoreInputsDuringStore: Boolean
+        get() = startParameter.isConfigurationCacheIgnoreInputsDuringStore
 
     val maxProblems: Int
         get() = startParameter.configurationCacheMaxProblems
@@ -131,11 +99,25 @@ class ConfigurationCacheStartParameter internal constructor(
     val isDebug: Boolean
         get() = startParameter.isConfigurationCacheDebug
 
-    val failOnProblems: Boolean
-        get() = startParameter.configurationCacheProblems == ConfigurationCacheProblemsOption.Value.FAIL
+    val isWarningMode: Boolean
+        get() = startParameter.configurationCacheProblems == ConfigurationCacheProblemsOption.Value.WARN
 
     val recreateCache: Boolean
         get() = startParameter.isConfigurationCacheRecreateCache
+
+    /**
+     * Whether we should skip creating an entry in case of a cache miss.
+     */
+    val isReadOnlyCache: Boolean by lazy {
+        startParameter.isConfigurationCacheReadOnly.also { enabled ->
+            if (enabled) {
+                IncubationLogger.incubatingFeatureUsed("Read-only Configuration Cache")
+            }
+        }
+    }
+
+    val isIntegrityCheckEnabled: Boolean
+        get() = startParameter.isConfigurationCacheIntegrityCheckEnabled
 
     /**
      * See [StartParameter.getProjectDir].
@@ -146,18 +128,19 @@ class ConfigurationCacheStartParameter internal constructor(
     val currentDirectory: File
         get() = startParameter.currentDir
 
-    val settingsDirectory: File
-        get() = buildLayout.settingsDir
-
-    @Suppress("DEPRECATION")
-    val settingsFile: File?
-        get() = DeprecationLogger.whileDisabled(Factory { startParameter.settingsFile })
-
-    val rootDirectory: File
-        get() = buildLayout.rootDirectory
+    val buildTreeRootDirectory: File
+        get() = buildTreeLocations.buildTreeRootDirectory
 
     val isOffline
         get() = startParameter.isOffline
+
+    /**
+     * Whether the local Maven settings.xml applies to this build's Maven repositories. Part of the cache
+     * key rather than a fingerprint input: with the feature off nothing reads the settings, so there is no
+     * input to invalidate when it is turned on.
+     */
+    val isSharedMavenMirrorSettings
+        get() = startParameter.isSharedMavenMirrorSettings
 
     val isRefreshDependencies
         get() = startParameter.isRefreshDependencies
@@ -190,6 +173,12 @@ class ConfigurationCacheStartParameter internal constructor(
     val isNoBuildScan: Boolean
         get() = startParameter.isNoBuildScan
 
+    val develocityUrl: String?
+        get() = startParameter.develocityUrl
+
+    val develocityPluginVersion: String?
+        get() = startParameter.develocityPluginVersion
+
     /**
      * Determines whether Isolated Projects option was enabled.
      *
@@ -197,4 +186,31 @@ class ConfigurationCacheStartParameter internal constructor(
      */
     val isIsolatedProjects: Boolean
         get() = modelParameters.isIsolatedProjects
+
+    /**
+     * Determines whether Isolated Projects Diagnostics mode is enabled.
+     *
+     * In Diagnostics mode, project configuration runs sequentially so that all IP violations can be collected
+     * deterministically. Outside Diagnostics mode, IP runs in optimistic-parallel mode and violations should
+     * fail the build as soon as they are discovered.
+     *
+     * Uses a build model parameter rather than a start parameter as the latter is not final and can be affected by other options of the build.
+     */
+    val isIsolatedProjectsDiagnostics: Boolean
+        get() = modelParameters.isIsolatedProjectsDiagnostics
+
+    /**
+     * Determines whether Isolated Projects "dangerously ignore problems" option is enabled.
+     *
+     * With this option, IP violations are reported but do not fail the build, so it can be timed to
+     * estimate the speedup before the violations are fixed. Outputs may be incorrect and the build
+     * may crash.
+     *
+     * Uses a build model parameter rather than a start parameter as the latter is not final and can be affected by other options of the build.
+     */
+    val isIsolatedProjectsDangerouslyIgnoreProblems: Boolean
+        get() = modelParameters.isIsolatedProjectsDangerouslyIgnoreProblems
+
+    val entriesPerKey: Int
+        get() = startParameter.configurationCacheEntriesPerKey
 }

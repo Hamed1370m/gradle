@@ -17,6 +17,7 @@
 package org.gradle.nativeplatform.test.xctest
 
 import org.gradle.integtests.fixtures.SourceFile
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.language.swift.SwiftTaskNames
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
@@ -40,10 +41,11 @@ import org.gradle.nativeplatform.fixtures.app.XCTestSourceElement
 import org.gradle.nativeplatform.fixtures.app.XCTestSourceFileElement
 import org.gradle.test.fixtures.file.DoesNotSupportNonAsciiPaths
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.TestEnvironmentPreconditions
+
 
 @RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5_OR_OLDER)
-@Requires(UnitTestPreconditions.HasXCTest)
+@Requires(TestEnvironmentPreconditions.HasXCTest)
 @DoesNotSupportNonAsciiPaths(reason = "swiftc does not support these paths")
 class SwiftXCTestIntegrationTest extends AbstractInstalledToolChainIntegrationSpec implements XCTestExecutionResult, SwiftTaskNames {
     def setup() {
@@ -63,7 +65,7 @@ apply plugin: 'xctest'
         fails("test")
 
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest")
         testBundle.assertTestCasesRan(testExecutionResult)
     }
 
@@ -78,7 +80,7 @@ apply plugin: 'xctest'
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
         lib.assertTestCasesRan(testExecutionResult)
     }
 
@@ -95,7 +97,7 @@ apply plugin: 'xctest'
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
         testBundle.assertTestCasesRan(testExecutionResult)
 
         when:
@@ -103,7 +105,7 @@ apply plugin: 'xctest'
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
         testBundle.assertAlternateTestCasesRan(testExecutionResult)
         testBundle.getFooTestSuite().getTestCount()
     }
@@ -121,7 +123,7 @@ apply plugin: 'xctest'
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
         testBundle.assertTestCasesRan(testExecutionResult)
 
         when:
@@ -129,7 +131,7 @@ apply plugin: 'xctest'
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
         testBundle.assertAlternateTestCasesRan(testExecutionResult)
     }
 
@@ -155,13 +157,14 @@ apply plugin: 'xctest'
 
         expect:
         succeeds "test"
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
 
         file("build/obj/test").assertIsDir()
         executable("build/exe/test/${lib.test.moduleName}").assertExists()
         lib.assertTestCasesRan(testExecutionResult)
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Swift build")
     def "can specify a test dependency on another library"() {
         def lib = new SwiftLib()
         def test = new SwiftLibTest(lib, lib.greeter, lib.sum, lib.multiply)
@@ -190,7 +193,7 @@ dependencies {
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks(':greeter').debug.allToLink, tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks(':greeter').debug.allToLink, tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
     }
 
     def "does not build or run any of the tests when assemble task executes"() {
@@ -203,7 +206,7 @@ dependencies {
         succeeds("assemble")
 
         then:
-        result.assertTasksExecuted(":assemble")
+        result.assertTasksScheduled(":assemble")
         result.assertTasksSkipped(":assemble")
     }
 
@@ -215,7 +218,7 @@ dependencies {
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
         result.assertTasksSkipped(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
     }
 
@@ -229,7 +232,7 @@ apply plugin: 'swift-application'
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.relocate, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.relocate, tasks.test.allToInstall, ":xcTest", ":test")
         result.assertTasksSkipped(tasks.debug.compile, tasks.test.relocate, tasks.test.allToInstall, ":xcTest", ":test")
     }
 
@@ -248,7 +251,7 @@ apply plugin: 'swift-application'
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.relocate, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.relocate, tasks.test.allToInstall, ":xcTest", ":test")
         assertMainSymbolIsAbsent(objectFiles(maybeWithLinuxMain(test), "build/obj/test"))
         test.assertTestCasesRan(testExecutionResult)
     }
@@ -266,7 +269,7 @@ apply plugin: 'swift-application'
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.relocate, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.relocate, tasks.test.allToInstall, ":xcTest", ":test")
         assertMainSymbolIsAbsent(objectFiles(maybeWithLinuxMain(app.test), "build/obj/test"))
         app.assertTestCasesRan(testExecutionResult)
     }
@@ -285,7 +288,7 @@ apply plugin: 'swift-library'
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
         assertMainSymbolIsAbsent(objectFiles(maybeWithLinuxMain(lib.test), "build/obj/test"))
         assertMainSymbolIsAbsent(machOBundle("build/exe/test/${lib.test.moduleName}"))
         lib.assertTestCasesRan(testExecutionResult)
@@ -304,15 +307,15 @@ apply plugin: 'swift-library'
         when:
         succeeds("test")
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
 
         when:
         file("src/main/swift/combined.swift").replace("Hello,", "Goodbye,")
         then:
         succeeds("test")
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
         result.assertTasksSkipped(renameLinuxMainTasks(), tasks.test.compile)
-        result.assertTasksNotSkipped(tasks.debug.compile, tasks.test.link, tasks.test.install, ":xcTest", ":test")
+        result.assertTasksExecuted(tasks.debug.compile, tasks.test.link, tasks.test.install, ":xcTest", ":test")
     }
 
     def "recompiles when main sources change in non-ABI compatible way"() {
@@ -328,7 +331,7 @@ apply plugin: 'swift-library'
         when:
         succeeds("test")
         then:
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
 
         when:
         file("src/main/swift/combined.swift").replace("sayHello", "sayAloha")
@@ -340,8 +343,8 @@ apply plugin: 'swift-library'
         file("src/test/swift/CombinedTests.swift").replace("sayHello", "sayAloha")
         then:
         succeeds("test")
-        result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
-        result.assertTasksNotSkipped(tasks.test.compile, tasks.test.link, tasks.test.install, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksExecuted(tasks.test.compile, tasks.test.link, tasks.test.install, ":xcTest", ":test")
     }
 
     def "build passes when tests have unicode characters"() {
@@ -377,7 +380,7 @@ apply plugin: 'swift-library'
         succeeds("test")
 
         then:
-        result.assertTasksExecuted(tasks.test.allToInstall, ":xcTest", ":test")
+        result.assertTasksScheduled(tasks.test.allToInstall, ":xcTest", ":test")
         test.assertTestCasesRan(testExecutionResult)
     }
 
@@ -414,10 +417,11 @@ apply plugin: 'swift-library'
         fails("test")
 
         then:
-        result.assertTasksExecuted(tasks.test.allToInstall, ":xcTest")
+        result.assertTasksScheduled(tasks.test.allToInstall, ":xcTest")
         test.assertTestCasesRan(testExecutionResult)
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Swift build")
     def 'can build xctest bundle which transitively depends on other Swift libraries'() {
         given:
         def app = new SwiftAppWithLibraries()
@@ -453,11 +457,12 @@ apply plugin: 'swift-library'
         succeeds 'test'
 
         then:
-        result.assertTasksExecuted(tasks(':log').debug.allToLink,
+        result.assertTasksScheduled(tasks(':log').debug.allToLink,
             tasks(':hello').debug.allToLink,
             tasks.debug.compile, tasks.test.relocate, tasks.test.allToInstall, ':xcTest', ':test')
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Swift build")
     def 'can run xctest in swift package manager layout'() {
         given:
         def app = new SwiftAppWithLibraries()
@@ -506,7 +511,7 @@ apply plugin: 'swift-library'
         succeeds 'test'
 
         then:
-        result.assertTasksExecuted(tasks(':log').debug.allToLink,
+        result.assertTasksScheduled(tasks(':log').debug.allToLink,
             tasks(':hello').debug.allToLink,
             tasks.debug.compile, tasks.test.relocate, tasks.test.allToInstall, ':xcTest', ':test')
     }
@@ -522,8 +527,8 @@ apply plugin: 'swift-library'
         runAndFail('xcTest', '--tests', testFilter)
 
         then:
+        result.assertTasksScheduled(tasks.debug.compile, tasks.test.allToInstall, ":xcTest")
         result.assertTasksExecuted(tasks.debug.compile, tasks.test.allToInstall, ":xcTest")
-        result.assertTasksNotSkipped(tasks.debug.compile, tasks.test.allToInstall, ":xcTest")
         failure.assertHasCause("No tests found for given includes: [$testFilter](--tests filter)")
 
         where:

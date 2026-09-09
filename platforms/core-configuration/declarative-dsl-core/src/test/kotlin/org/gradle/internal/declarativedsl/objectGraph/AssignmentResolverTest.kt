@@ -16,7 +16,6 @@
 
 package org.gradle.internal.declarativedsl.objectGraph
 
-import org.gradle.declarative.dsl.model.annotations.Restricted
 import org.gradle.internal.declarativedsl.demo.resolve
 import org.gradle.internal.declarativedsl.language.Literal
 import org.gradle.internal.declarativedsl.schemaBuilder.schemaFromTypes
@@ -29,7 +28,7 @@ class AssignmentResolverTest {
 
     @Test
     fun `reports and does not record reassignment`() {
-        val impl = AssignmentResolver()
+        val impl = PropertyLinksResolver()
 
         val resolution = schema.resolve(
             """
@@ -40,10 +39,10 @@ class AssignmentResolverTest {
         )
 
         val additionResults = resolution.assignments.map { impl.addAssignment(it.lhs, it.rhs, it.assignmentMethod, it.operationId.generationId) }
-        assertIs<AssignmentResolver.AssignmentAdditionResult.Reassignment>(additionResults[2])
+        assertIs<PropertyLinksResolver.AssignmentAdditionResult.Reassignment>(additionResults[2])
 
-        val resultMap = impl.getAssignmentResults()
-        val xAssigned = assertIs<AssignmentResolver.AssignmentResolutionResult.Assigned>(resultMap.entries.single { it.key.property.name == "x" }.value)
+        val resultMap = impl.getFinalAssignmentResults()
+        val xAssigned = assertIs<PropertyLinksResolver.AssignmentResolutionResult.Assigned>(resultMap.entries.single { it.key.property.name == "x" }.value)
         assertEquals(1, (xAssigned.objectOrigin.originElement as Literal.IntLiteral).value)
     }
 
@@ -51,10 +50,7 @@ class AssignmentResolverTest {
 
     private
     interface Receiver {
-        @get:Restricted
         var x: Int
-
-        @get:Restricted
         var y: Int
     }
 }

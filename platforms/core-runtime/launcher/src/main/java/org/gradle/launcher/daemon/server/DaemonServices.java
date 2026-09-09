@@ -19,6 +19,7 @@ import com.google.common.collect.ImmutableList;
 import org.gradle.api.internal.tasks.userinput.UserInputReader;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
+import org.gradle.cache.internal.locklistener.FileLockContentionHandler;
 import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.event.ListenerManager;
 import org.gradle.internal.instrumentation.agent.AgentStatus;
@@ -33,7 +34,6 @@ import org.gradle.internal.service.Provides;
 import org.gradle.internal.service.ServiceRegistrationProvider;
 import org.gradle.internal.service.scopes.GradleUserHomeScopeServiceRegistry;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
-import org.gradle.launcher.daemon.configuration.DaemonServerConfiguration;
 import org.gradle.launcher.daemon.context.DaemonContext;
 import org.gradle.launcher.daemon.context.DefaultDaemonContext;
 import org.gradle.launcher.daemon.diagnostics.DaemonDiagnostics;
@@ -44,6 +44,7 @@ import org.gradle.launcher.daemon.server.api.DaemonCommandAction;
 import org.gradle.launcher.daemon.server.api.HandleInvalidateVirtualFileSystem;
 import org.gradle.launcher.daemon.server.api.HandleReportStatus;
 import org.gradle.launcher.daemon.server.api.HandleStop;
+import org.gradle.launcher.daemon.server.exec.ApplyClientEnvironmentVariables;
 import org.gradle.launcher.daemon.server.exec.CleanUpVirtualFileSystemAfterBuild;
 import org.gradle.launcher.daemon.server.exec.DaemonCommandExecuter;
 import org.gradle.launcher.daemon.server.exec.EstablishBuildEnvironment;
@@ -64,13 +65,14 @@ import org.gradle.launcher.daemon.server.health.gc.GarbageCollectorMonitoringStr
 import org.gradle.launcher.daemon.server.scaninfo.DaemonScanInfo;
 import org.gradle.launcher.daemon.server.scaninfo.DefaultDaemonScanInfo;
 import org.gradle.launcher.daemon.server.stats.DaemonRunningStats;
+import org.gradle.launcher.daemon.startup.DaemonServerConfiguration;
 import org.gradle.launcher.exec.BuildExecutor;
 import org.gradle.tooling.internal.provider.action.BuildActionSerializer;
 
 import java.io.File;
-import java.util.UUID;
 
 import static org.gradle.internal.FileUtils.canonicalize;
+import static org.gradle.launcher.daemon.server.DaemonLogFile.getDaemonLogFileName;
 
 /**
  * Takes care of instantiating and wiring together the services required by the daemon server.
@@ -105,8 +107,7 @@ public class DaemonServices implements ServiceRegistrationProvider {
     @Provides
     protected DaemonLogFile createDaemonLogFile(DaemonContext daemonContext, DaemonDir daemonDir) {
         final Long pid = daemonContext.getPid();
-        String fileName = "daemon-" + (pid == null ? UUID.randomUUID() : pid) + ".out.log";
-        return new DaemonLogFile(new File(daemonDir.getVersionedDir(), fileName));
+        return new DaemonLogFile(new File(daemonDir.getVersionedDir(), getDaemonLogFileName(pid)));
     }
 
     @Provides
@@ -125,8 +126,8 @@ public class DaemonServices implements ServiceRegistrationProvider {
     }
 
     @Provides
-    protected MasterExpirationStrategy createMasterExpirationStrategy(Daemon daemon, HealthExpirationStrategy healthExpirationStrategy, ListenerManager listenerManager) {
-        return new MasterExpirationStrategy(daemon, configuration, healthExpirationStrategy, listenerManager);
+    protected MasterExpirationStrategy createMasterExpirationStrategy(Daemon daemon, HealthExpirationStrategy healthExpirationStrategy, FileLockContentionHandler fileLockContentionHandler, ListenerManager listenerManager) {
+        return new MasterExpirationStrategy(daemon, configuration, healthExpirationStrategy, fileLockContentionHandler, listenerManager);
     }
 
     @Provides
@@ -170,6 +171,7 @@ public class DaemonServices implements ServiceRegistrationProvider {
             new StartBuildOrRespondWithBusy(daemonDiagnostics), // from this point down, the daemon is 'busy'
             new EstablishBuildEnvironment(processEnvironment),
             new LogToClient(loggingManager, daemonDiagnostics), // from this point down, logging is sent back to the client
+            new ApplyClientEnvironmentVariables(processEnvironment),
             new LogAndCheckHealth(healthStats, healthCheck, runningStats),
             new ForwardClientInput(inputReader, eventDispatch),
             new RequestStopIfSingleUsedDaemon(),

@@ -23,17 +23,51 @@ import spock.lang.TempDir
 class FindBrokenInternalLinksTest extends Specification {
     @TempDir
     private File projectDir
-
     private File docsRoot
     private File sampleDoc
+    private File sampleSampleDoc
+    private File releaseNotes
     private File linkErrors
 
     private setup() {
         docsRoot = new File(projectDir, "docsRoot")
         new File(docsRoot, 'javadoc').mkdirs()
         sampleDoc = new File(docsRoot, "sample.adoc")
+
+        new File(projectDir,"build/working/samples/docs").mkdirs()
+        sampleSampleDoc = new File(projectDir, "build/working/samples/docs/sample_sample.adoc")
+
+        new File(projectDir,"build/working/release-notes").mkdirs()
+        releaseNotes = new File(projectDir, "build/working/release-notes/raw.html")
+
         linkErrors = new File(projectDir, "build/reports/dead-internal-links.txt")
 
+        new File(projectDir, "gradle.properties") << """
+            org.jetbrains.dokka.experimental.gradle.pluginMode=V2Enabled
+            org.jetbrains.dokka.experimental.gradle.pluginMode.noWarn=true
+        """.stripIndent()
+
+        new File(projectDir, "settings.gradle") << """
+            dependencyResolutionManagement {
+                versionCatalogs {
+                    create('buildLibs') {
+                        version('asciidoctor', '3.0.1')
+                        version('asciidoctorPdf', '2.3.23')
+                    }
+                }
+            }
+        """.stripIndent()
+
+        // `repoRoot()` walks up the tree looking for `version.txt`; `released-versions.json` is the
+        // source for the `gradleVersion8` Asciidoctor attribute. Provide both so the documentation
+        // plugin applies cleanly in this minimal TestKit project.
+        new File(projectDir, "version.txt") << "test"
+        new File(projectDir, "released-versions.json") << '{"finalReleases":[{"version":"8.99.99","buildTime":"20260101000000+0000"}]}'
+
+        new File(projectDir, "src/docs/javaPackageList/8").mkdirs()
+        new File(projectDir, "src/docs/javaPackageList/8/package-list") << """
+        java.lang
+        """.stripIndent()
 
         new File(projectDir, "build.gradle") << """
             plugins {
@@ -42,12 +76,20 @@ class FindBrokenInternalLinksTest extends Specification {
                 id 'gradlebuild.documentation'
             }
 
+            repositories {
+                mavenCentral()
+            }
+
             gradleDocumentation {
                 javadocs {
                     javaApi = project.uri("https://docs.oracle.com/javase/8/docs/api")
-                    groovyApi = project.uri("https://docs.groovy-lang.org/docs/groovy-3/html/gapi")
+                    javaPackageListLoc = project.layout.projectDirectory.dir("src/docs/javaPackageList/8/")
+                    groovyApi = project.uri("https://docs.groovy-lang.org/docs/groovy-4.0.28/html/gapi")
+                    groovyPackageListSrc = "org.apache.groovy:groovy-all:4.0.28:groovydoc"
                 }
             }
+
+            tasks.register('assembleSamples')
 
             javadocAll {
                 enabled = false
@@ -56,6 +98,7 @@ class FindBrokenInternalLinksTest extends Specification {
             tasks.named('checkDeadInternalLinks').configure {
                 documentationRoot = project.layout.projectDirectory.dir('docsRoot')
                 javadocRoot = documentationRoot.dir('javadoc')
+                releaseNotesFile = project.layout.buildDirectory.file('working/release-notes/raw.html')
             }
         """
     }
@@ -66,6 +109,16 @@ class FindBrokenInternalLinksTest extends Specification {
 === Dead Section Links
 This section doesn't exist: <<missing_section>>
 Also see this one, which is another dead link: <<other_missing_section>>
+        """
+
+        and:
+        releaseNotes << """
+Nothing to write about
+        """
+
+        and:
+        sampleSampleDoc << """
+Nothing to write about
         """
 
         when:
@@ -89,6 +142,16 @@ This section comes later: <<subsequent_section>>
 More text
         """
 
+        and:
+        releaseNotes << """
+Nothing to write about
+        """
+
+        and:
+        sampleSampleDoc << """
+This sample does exist <<sample_sample.adoc,sample>>.
+        """
+
         when:
         run('checkDeadInternalLinks').build()
 
@@ -102,6 +165,11 @@ More text
 === Invalid Javadoc Links
 
 The `link:{javadocPath}/nowhere/gradle/api/attributes/AttributesSchema.html#setAttributeDisambiguationPrecedence(List)--[AttributeSchema.setAttributeDisambiguationPrecedence(List)]` and `link:{javadocPath}/org/gradle/api/nowhere/AttributesSchema.html#getAttributeDisambiguationPrecedence()--[AttributeSchema.getAttributeDisambiguationPrecedence()]` methods now accept and return `List` instead of `Collection` to better indicate that the order of the elements in those collection is significant.
+        """
+
+        and:
+        releaseNotes << """
+Nothing to write about
         """
 
         when:
@@ -119,6 +187,11 @@ The `link:{javadocPath}/nowhere/gradle/api/attributes/AttributesSchema.html#setA
 Be sure to see: `@link:{javadocPath}/org/gradle/nowhere/tasks/InputDirectory.html[InputDirectory]`
         """
 
+        and:
+        releaseNotes << """
+Nothing to write about
+        """
+
         when:
         run('checkDeadInternalLinks').buildAndFail()
 
@@ -132,6 +205,11 @@ Be sure to see: `@link:{javadocPath}/org/gradle/nowhere/tasks/InputDirectory.htm
 === Invalid Javadoc Links
 
 The `link:{javadocPath}/javadoc/org/gradle/api/attributes/AttributesSchema.html#setAttributeDisambiguationPrecedence(List)--[AttributeSchema.setAttributeDisambiguationPrecedence(List)]` and `link:{javadocPath}/javadoc/org/gradle/api/attributes/AttributesSchema.html#getAttributeDisambiguationPrecedence()--[AttributeSchema.getAttributeDisambiguationPrecedence()]` methods now accept and return `List` instead of `Collection` to better indicate that the order of the elements in those collection is significant.
+        """
+
+        and:
+        releaseNotes << """
+Nothing to write about
         """
 
         when:
@@ -153,6 +231,11 @@ The `link:{javadocPath}/org/gradle/api/attributes/AttributesSchema.html#setAttri
         createJavadocForClass("org/gradle/api/tasks/InputDirectory")
         createJavadocForClass("org/gradle/api/attributes/AttributesSchema")
 
+        and:
+        releaseNotes << """
+Nothing to write about
+        """
+
         when:
         run('checkDeadInternalLinks').build()
 
@@ -167,11 +250,39 @@ The `link:{javadocPath}/org/gradle/api/attributes/AttributesSchema.html#setAttri
 [Invalid markdown link](https://docs.gradle.org/nowhere)
         """
 
+        and:
+        releaseNotes << """
+Nothing to write about
+        """
+
         when:
         run('checkDeadInternalLinks').buildAndFail()
 
         then:
         assertFoundDeadLinks([DeadLink.forMarkdownLink(sampleDoc, "[Invalid markdown link](https://docs.gradle.org/nowhere)")])
+    }
+
+    def "finds Release notes broken links"() {
+        given:
+        sampleDoc << """
+Nothing to write about
+        """
+
+        and:
+        releaseNotes << """
+<p>The Gradle team is excited to announce Gradle @version@.</p>
+<p>This release features <a href="">1</a>, <a href="">2</a>, ... <a href="">n</a>, and more.</p>
+<p>We would like to thank the following community members for their contributions to this release of Gradle:</p>
+<p>Be sure to check out the <a href="https://blog.gradle.org/roadmap-announcement">public roadmap</a> for insight into what's planned for future releases.</p>
+<h2>Upgrade instructions</h2>
+<p>Switch your build to use Gradle @version@ by updating the <a href="userguide/gradle_super_wrapper.html">Wrapper</a> in your project:</p>
+        """
+
+        when:
+        run('checkDeadInternalLinks').buildAndFail()
+
+        then:
+        assertFoundDeadLinks()
     }
 
     private File createJavadocForClass(String path) {

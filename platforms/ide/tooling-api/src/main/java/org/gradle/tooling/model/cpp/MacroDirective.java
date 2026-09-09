@@ -16,7 +16,7 @@
 
 package org.gradle.tooling.model.cpp;
 
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Represent a macro directive.
@@ -26,11 +26,13 @@ import javax.annotation.Nullable;
 public interface MacroDirective {
     /**
      * Returns the name of the macro.
+     * @since 4.10
      */
     String getName();
 
     /**
      * Returns the value of the macro, if any.
+     * @since 4.10
      */
     @Nullable
     String getValue();

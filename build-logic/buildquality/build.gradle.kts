@@ -10,24 +10,34 @@ dependencies {
     implementation(projects.cleanup)
     implementation(projects.documentation)
     implementation(projects.integrationTesting)
+    implementation(projects.jvm)
     implementation(projects.performanceTesting)
     implementation(projects.profiling)
     implementation(projects.binaryCompatibility)
+    implementation(projects.dependencyModules)
 
-    implementation("org.codenarc:CodeNarc") {
+    implementation(buildLibs.codenarc) {
         exclude(group = "org.apache.groovy")
         exclude(group = "org.codehaus.groovy")
     }
-    implementation("com.github.javaparser:javaparser-symbol-solver-core") {
+    implementation(buildLibs.javaParserSymbolSolver) {
         exclude(group = "com.google.guava")
     }
-    implementation(kotlin("gradle-plugin"))
-    implementation(kotlin("compiler-embeddable") as String) {
-        because("Required by IncubatingApiReportTask")
+    implementation(buildLibs.kgp)
+    compileOnly(buildLibs.kotlinCompilerEmbeddable) {
+        because("Required by IncubatingApiReportTask and Gradle10RemovalReportTask")
     }
-    implementation("com.gradle:develocity-gradle-plugin") {
+    implementation(buildLibs.develocityPlugin) {
         because("Arch-test plugin configures the PTS extension")
     }
 
-    testImplementation("org.junit.jupiter:junit-jupiter-engine")
+    testImplementation(buildLibs.commonsLang3)
+    testImplementation(buildLibs.kotlinCompilerEmbeddable) {
+        because("RemovalReportWorkActionTest parses Kotlin sources via KotlinSourceParser")
+    }
+}
+
+configurations.testRuntimeClasspath {
+    // https://youtrack.jetbrains.com/issue/KT-87492/KGP-jar-bundles-a-partial-and-unshaded-copy-of-org.jetbrains.kotlin.com.intellij.-classes-that-collide-with-kotlin-compiler
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-gradle-plugin")
 }

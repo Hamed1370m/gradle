@@ -24,6 +24,7 @@ import org.gradle.internal.collect.PersistentList;
 import org.gradle.internal.file.Stat;
 import org.gradle.internal.snapshot.CaseSensitivity;
 import org.gradle.internal.snapshot.VfsRelativePath;
+import org.jspecify.annotations.Nullable;
 
 import javax.annotation.concurrent.ThreadSafe;
 import java.io.File;
@@ -55,7 +56,7 @@ public class ExecutionNodeAccessHierarchy {
      *
      * That includes node which access ancestors or children of the location.
      */
-    public <T> T visitNodesAccessing(String location, T initialValue, BiFunction<T, ? super Node, T> visitor) {
+    public <T extends @Nullable Object> T visitNodesAccessing(String location, T initialValue, BiFunction<T, ? super Node, T> visitor) {
         return visitValues(location, new AbstractNodeAccessVisitor<T>() {
             T currentValue = initialValue;
 
@@ -88,13 +89,11 @@ public class ExecutionNodeAccessHierarchy {
     }
 
     /**
-     * Records that a node accesses the given locations.
+     * Records that a node accesses the given location.
      */
-    public synchronized void recordNodeAccessingLocations(Node node, Iterable<String> accessedLocations) {
-        for (String location : accessedLocations) {
-            VfsRelativePath relativePath = VfsRelativePath.of(location);
-            root = root.recordValue(relativePath, new DefaultNodeAccess(node));
-        }
+    public synchronized void recordNodeAccessingLocation(Node node, String accessedLocation) {
+        VfsRelativePath relativePath = VfsRelativePath.of(accessedLocation);
+        root = root.recordValue(relativePath, new DefaultNodeAccess(node));
     }
 
     /**
@@ -115,12 +114,12 @@ public class ExecutionNodeAccessHierarchy {
         root = root.empty();
     }
 
-    private <T> T visitValues(String location, AbstractNodeAccessVisitor<T> visitor) {
+    private <T extends @Nullable Object> T visitValues(String location, AbstractNodeAccessVisitor<T> visitor) {
         root.visitValues(location, visitor);
         return visitor.getResult();
     }
 
-    private abstract static class AbstractNodeAccessVisitor<T> implements ValueVisitor<NodeAccess> {
+    private abstract static class AbstractNodeAccessVisitor<T extends @Nullable Object> implements ValueVisitor<NodeAccess> {
         @Override
         public void visitExact(NodeAccess value) {
             visit(value);
@@ -140,6 +139,7 @@ public class ExecutionNodeAccessHierarchy {
             }
         }
 
+        @SuppressWarnings("UnusedVariable")
         boolean acceptChildren(Supplier<String> relativePathSupplier) {
             return true;
         }

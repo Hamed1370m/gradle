@@ -30,18 +30,16 @@ class CppMissingToolchainIntegrationTest extends AbstractIntegrationSpec impleme
         given:
         buildFile << """
             apply plugin: 'cpp-application'
-            model {
-                toolChains {
-                    withType(Gcc) {
-                        path(file('gcc-bin'))
-                    }
-                    withType(Clang) {
-                        path(file('clang-bin'))
-                    }
-                    withType(VisualCpp) {
-                        installDir = file('vs-install')
-                        windowsSdkDir = file('sdk-install')
-                    }
+            toolChains {
+                withType(Gcc) {
+                    path(file('gcc-bin'))
+                }
+                withType(Clang) {
+                    path(file('clang-bin'))
+                }
+                withType(VisualCpp) {
+                    installDir = file('vs-install')
+                    windowsSdkDir = file('sdk-install')
                 }
             }
 """
@@ -57,7 +55,7 @@ class CppMissingToolchainIntegrationTest extends AbstractIntegrationSpec impleme
         fails("assemble")
 
         then:
-        failure.assertHasDescription("Execution failed for task ':compileDebugCpp'.")
+        failure.assertHasDescription("Execution failed for task ':compileDebugCpp' (registered by plugin class 'org.gradle.language.cpp.plugins.CppBasePlugin').")
         if (OperatingSystem.current().windows) {
             failure.assertHasCause("""No tool chain is available to build C++ for host operating system '${osName}' architecture '${archName}':
   - Tool chain 'visualCpp' (Visual Studio):
@@ -89,12 +87,10 @@ class CppMissingToolchainIntegrationTest extends AbstractIntegrationSpec impleme
 
         buildFile << """
             apply plugin: 'cpp-application'
-            model {
-                toolChains {
-                    withType(Gcc) {
-                        eachPlatform {
-                            cppCompiler.executable = 'does-not-exist'
-                        }
+            toolChains {
+                withType(Gcc) {
+                    eachPlatform {
+                        cppCompiler.executable = 'does-not-exist'
                     }
                 }
             }

@@ -16,7 +16,7 @@
 
 package org.gradle.api.tasks.console
 
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+
 import org.gradle.integtests.fixtures.console.AbstractConsoleGroupedTaskFunctionalTest
 import spock.lang.Issue
 import spock.util.environment.OperatingSystem
@@ -25,41 +25,6 @@ import spock.util.environment.OperatingSystem
 abstract class AbstractExecOutputIntegrationTest extends AbstractConsoleGroupedTaskFunctionalTest {
     private static final String EXPECTED_OUTPUT = "Hello, World!"
     private static final String EXPECTED_ERROR = "Goodbye, World!"
-
-    @UnsupportedWithConfigurationCache(because = "Task.getProject() during execution")
-    def "Project.javaexec output is grouped with its task output"() {
-        given:
-        generateMainJavaFileEchoing(EXPECTED_OUTPUT, EXPECTED_ERROR)
-        buildFile << """
-            apply plugin: 'java'
-
-            task run {
-                dependsOn 'compileJava'
-                doLast {
-                    project.javaexec {
-                        classpath = sourceSets.main.runtimeClasspath
-                        mainClass = 'Main'
-                    }
-                }
-            }
-        """
-
-        when:
-        if (shouldCheckDeprecations()) {
-            executer.expectDocumentedDeprecationWarning("The Project.javaexec(Closure) method has been deprecated. " +
-                "This is scheduled to be removed in Gradle 9.0. " +
-                "Use ExecOperations.javaexec(Action) or ProviderFactory.javaexec(Action) instead. " +
-                "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_project_exec")
-        }
-        executer.withConsole(consoleType)
-        succeeds("run")
-
-        then:
-        def output = result.groupedOutput.task(':run').output
-        output.contains(EXPECTED_OUTPUT)
-        def errorOutput = errorsShouldAppearOnStdout() ? output : result.getError()
-        errorOutput.contains(EXPECTED_ERROR)
-    }
 
     def "ExecOperations.javaexec output is grouped with its task output"() {
         given:
@@ -113,33 +78,6 @@ abstract class AbstractExecOutputIntegrationTest extends AbstractConsoleGroupedT
         output.contains(EXPECTED_OUTPUT)
         def errorOutput = errorsShouldAppearOnStdout() ? output : result.getError()
         errorOutput.contains(EXPECTED_ERROR)
-    }
-
-    @UnsupportedWithConfigurationCache(because = "Task.getProject() during execution")
-    def "Project.exec output is grouped with its task output"() {
-        given:
-        buildFile << """
-            task run {
-                doLast {
-                    project.exec {
-                        commandLine ${echo(EXPECTED_OUTPUT)}
-                    }
-                }
-            }
-        """
-
-        when:
-        executer.withConsole(consoleType)
-        if (shouldCheckDeprecations()) {
-            executer.expectDocumentedDeprecationWarning("The Project.exec(Closure) method has been deprecated. " +
-                "This is scheduled to be removed in Gradle 9.0. " +
-                "Use ExecOperations.exec(Action) or ProviderFactory.exec(Action) instead. " +
-                "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_project_exec")
-        }
-        succeeds("run")
-
-        then:
-        result.groupedOutput.task(':run').output.contains(EXPECTED_OUTPUT)
     }
 
     def "ExecOperations.exec output is grouped with its task output"() {

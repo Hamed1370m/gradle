@@ -20,18 +20,16 @@ import org.gradle.api.JavaVersion;
 import org.gradle.api.internal.jvm.JavaVersionParser;
 import org.gradle.internal.os.OperatingSystem;
 import org.gradle.internal.serialization.Cached;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.nio.file.Path;
-import java.text.MessageFormat;
 import java.util.Collections;
 import java.util.EnumSet;
-import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 
 public interface JvmInstallationMetadata {
-
     static DefaultJvmInstallationMetadata from(
         File javaHome,
         String javaVersion,
@@ -216,8 +214,7 @@ public interface JvmInstallationMetadata {
         @Override
         public String getDisplayName() {
             final String vendor = determineVendorName();
-            String installationType = determineInstallationType(vendor);
-            return MessageFormat.format("{0}{1}", vendor, installationType);
+            return vendor + " " + determineInstallationType() + " " + getJavaMajorVersion() + " (" + getRuntimeVersion() + ")";
         }
 
         private String determineVendorName() {
@@ -230,14 +227,12 @@ public interface JvmInstallationMetadata {
             return getVendor().getDisplayName();
         }
 
-        private String determineInstallationType(String vendor) {
-            if (getCapabilities().contains(JavaInstallationCapability.JAVA_COMPILER)) {
-                if (!vendor.toLowerCase(Locale.ROOT).contains("jdk")) {
-                    return " JDK";
-                }
-                return "";
+        private String determineInstallationType() {
+            if (getCapabilities().containsAll(JavaInstallationCapability.JDK_CAPABILITIES)) {
+                return "JDK";
+            } else {
+                return "JRE";
             }
-            return " JRE";
         }
 
         @Override
@@ -253,11 +248,32 @@ public interface JvmInstallationMetadata {
             if (getToolByExecutable("javadoc").exists()) {
                 capabilities.add(JavaInstallationCapability.JAVADOC_TOOL);
             }
+            if (getToolByExecutable("jar").exists()) {
+                capabilities.add(JavaInstallationCapability.JAR_TOOL);
+            }
+            if (hasNativeImageTool()) {
+                capabilities.add(JavaInstallationCapability.NATIVE_IMAGE);
+            }
             boolean isJ9vm = jvmName.contains("J9");
             if (isJ9vm) {
                 capabilities.add(JavaInstallationCapability.J9_VIRTUAL_MACHINE);
             }
             return capabilities;
+        }
+
+        /**
+         * Checks for the native-image tool, which may be shipped as either an executable
+         * (native-image / native-image.exe) or a command script (native-image.cmd) on Windows.
+         */
+        private boolean hasNativeImageTool() {
+            if (getToolByExecutable("native-image").exists()) {
+                return true;
+            }
+            // GraalVM and Liberica distributions ship native-image as a .cmd script on Windows
+            if (OperatingSystem.current().isWindows()) {
+                return new File(new File(javaHome.toFile(), "bin"), "native-image.cmd").exists();
+            }
+            return false;
         }
 
         private File getToolByExecutable(String name) {
@@ -292,6 +308,23 @@ public interface JvmInstallationMetadata {
                     ", jvmVendor='" + jvmVendor + '\'' +
                     ", architecture='" + architecture + '\'' +
                     '}';
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            DefaultJvmInstallationMetadata that = (DefaultJvmInstallationMetadata) o;
+            return Objects.equals(javaHome, that.javaHome) && Objects.equals(javaVersion, that.javaVersion) && Objects.equals(javaVendor, that.javaVendor) && Objects.equals(runtimeName, that.runtimeName) && Objects.equals(runtimeVersion, that.runtimeVersion) && Objects.equals(jvmName, that.jvmName) && Objects.equals(jvmVersion, that.jvmVersion) && Objects.equals(jvmVendor, that.jvmVendor) && Objects.equals(architecture, that.architecture);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(javaHome, javaVersion, javaVendor, runtimeName, runtimeVersion, jvmName, jvmVersion, jvmVendor, architecture);
         }
     }
 

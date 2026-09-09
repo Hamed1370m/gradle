@@ -17,7 +17,6 @@
 package org.gradle.internal.cc.impl
 
 import org.gradle.api.DefaultTask
-import org.gradle.api.project.IsolatedProject
 import org.gradle.api.JavaVersion
 import org.gradle.api.Project
 import org.gradle.api.Task
@@ -41,11 +40,6 @@ import org.gradle.api.artifacts.dsl.DependencyLockingHandler
 import org.gradle.api.artifacts.dsl.RepositoryHandler
 import org.gradle.api.artifacts.query.ArtifactResolutionQuery
 import org.gradle.api.artifacts.repositories.ArtifactRepository
-import org.gradle.api.artifacts.result.ArtifactResolutionResult
-import org.gradle.api.artifacts.result.ArtifactResult
-import org.gradle.api.artifacts.result.ComponentArtifactsResult
-import org.gradle.api.artifacts.result.ResolutionResult
-import org.gradle.api.artifacts.result.UnresolvedComponentResult
 import org.gradle.api.artifacts.type.ArtifactTypeContainer
 import org.gradle.api.attributes.AttributeMatchingStrategy
 import org.gradle.api.attributes.AttributesSchema
@@ -60,8 +54,8 @@ import org.gradle.api.internal.artifacts.DefaultResolvedArtifact
 import org.gradle.api.internal.artifacts.DefaultResolvedDependency
 import org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.ConfigurationResolvableDependencies
 import org.gradle.api.internal.artifacts.configurations.DefaultConfigurationContainer
+import org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration
 import org.gradle.api.internal.artifacts.configurations.DefaultResolvableConfiguration
-import org.gradle.api.internal.artifacts.configurations.DefaultUnlockedConfiguration
 import org.gradle.api.internal.artifacts.dependencies.DefaultExternalModuleDependency
 import org.gradle.api.internal.artifacts.dsl.DefaultComponentMetadataHandler
 import org.gradle.api.internal.artifacts.dsl.DefaultComponentModuleMetadataHandler
@@ -69,16 +63,11 @@ import org.gradle.api.internal.artifacts.dsl.DefaultRepositoryHandler
 import org.gradle.api.internal.artifacts.dsl.dependencies.DefaultDependencyConstraintHandler
 import org.gradle.api.internal.artifacts.dsl.dependencies.DefaultDependencyHandler
 import org.gradle.api.internal.artifacts.ivyservice.DefaultResolvedConfiguration
-import org.gradle.api.internal.artifacts.ivyservice.ShortCircuitEmptyConfigurationResolver.EmptyLenientConfiguration
+import org.gradle.api.internal.artifacts.ivyservice.ShortCircuitingResolutionExecutor.EmptyLenientConfiguration
 import org.gradle.api.internal.artifacts.ivyservice.resolutionstrategy.DefaultResolutionStrategy
 import org.gradle.api.internal.artifacts.query.DefaultArtifactResolutionQuery
 import org.gradle.api.internal.artifacts.repositories.DefaultMavenArtifactRepository
 import org.gradle.api.internal.artifacts.resolver.DefaultResolutionOutputs.DefaultArtifactView
-import org.gradle.api.internal.artifacts.result.DefaultArtifactResolutionResult
-import org.gradle.api.internal.artifacts.result.DefaultComponentArtifactsResult
-import org.gradle.api.internal.artifacts.result.DefaultResolutionResult
-import org.gradle.api.internal.artifacts.result.DefaultResolvedArtifactResult
-import org.gradle.api.internal.artifacts.result.DefaultUnresolvedComponentResult
 import org.gradle.api.internal.artifacts.type.DefaultArtifactTypeContainer
 import org.gradle.api.internal.attributes.DefaultAttributeMatchingStrategy
 import org.gradle.api.internal.attributes.DefaultAttributesSchema
@@ -92,6 +81,7 @@ import org.gradle.api.internal.tasks.DefaultSourceSet
 import org.gradle.api.internal.tasks.DefaultSourceSetContainer
 import org.gradle.api.internal.tasks.DefaultTaskContainer
 import org.gradle.api.invocation.Gradle
+import org.gradle.api.project.IsolatedProject
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.SourceSet
@@ -103,12 +93,22 @@ import org.gradle.internal.jvm.Jvm
 import org.gradle.internal.locking.DefaultDependencyLockingHandler
 import org.gradle.invocation.DefaultGradle
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
 import spock.lang.Shared
 
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Exchanger
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors.DefaultThreadFactory
+import java.util.concurrent.Phaser
+import java.util.concurrent.Semaphore
+import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadFactory
+import java.util.concurrent.locks.Lock
+import java.util.concurrent.locks.ReadWriteLock
+import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.locks.ReentrantReadWriteLock
 
 class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigurationCacheIntegrationTest {
 
@@ -137,7 +137,7 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         then:
         problems.assertResultHasProblems(result) {
-            withTotalProblemsCount(1)
+            totalProblemsCount = 1
             withUniqueProblems(
                 "Build file 'build.gradle': line 9: accessing non-serializable type '${serviceType.name}'"
             )
@@ -176,7 +176,7 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         then:
         problems.assertResultHasProblems(result) {
-            withTotalProblemsCount(1)
+            totalProblemsCount = 1
             withUniqueProblems(
                 "Build file 'build.gradle': line 14: accessing non-serializable type '${serviceType.name}'"
             )
@@ -227,12 +227,12 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         then:
         problems.assertResultHasProblems(result) {
-            withTotalProblemsCount(6)
+            totalProblemsCount = 6
             withUniqueProblems(
                 "Task `:broken` of type `SomeTask`: cannot deserialize object of type '${baseType.name}' as these are not supported with the configuration cache.",
                 "Task `:broken` of type `SomeTask`: cannot serialize object of type '$concreteTypeName', a subtype of '${baseType.name}', as these are not supported with the configuration cache."
             )
-            withProblemsWithStackTraceCount(0)
+            problemsWithStackTraceCount = 0
         }
 
         and:
@@ -245,11 +245,11 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         then:
         problems.assertResultHasProblems(result) {
-            withTotalProblemsCount(3)
+            totalProblemsCount = 3
             withUniqueProblems(
                 "Task `:broken` of type `SomeTask`: cannot deserialize object of type '${baseType.name}' as these are not supported with the configuration cache."
             )
-            withProblemsWithStackTraceCount(0)
+            problemsWithStackTraceCount = 0
         }
 
         and:
@@ -264,6 +264,15 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
         Thread                                | Thread                         | "Thread.currentThread()"
         DefaultThreadFactory                  | ThreadFactory                  | "java.util.concurrent.Executors.defaultThreadFactory()"
         executorServiceTypeOnCurrentJvm()     | Executor                       | "java.util.concurrent.Executors.newSingleThreadExecutor().tap { shutdown() }"
+        // Concurrency primitives
+        ReentrantLock                         | Lock                           | "new java.util.concurrent.locks.ReentrantLock()"
+        ReentrantReadWriteLock                | ReadWriteLock                  | "new java.util.concurrent.locks.ReentrantReadWriteLock()"
+        CountDownLatch                        | CountDownLatch                 | "new java.util.concurrent.CountDownLatch(1)"
+        CyclicBarrier                         | CyclicBarrier                  | "new java.util.concurrent.CyclicBarrier(1)"
+        Phaser                                | Phaser                         | "new java.util.concurrent.Phaser()"
+        Semaphore                             | Semaphore                      | "new java.util.concurrent.Semaphore(1)"
+        Exchanger                             | Exchanger                      | "new java.util.concurrent.Exchanger()"
+        SynchronousQueue                      | SynchronousQueue               | "new java.util.concurrent.SynchronousQueue()"
         ByteArrayInputStream                  | InputStream                    | "new java.io.ByteArrayInputStream([] as byte[])"
         ByteArrayOutputStream                 | OutputStream                   | "new java.io.ByteArrayOutputStream()"
         FileDescriptor                        | FileDescriptor                 | "FileDescriptor.in"
@@ -285,7 +294,6 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
         DefaultResolvedConfiguration          | ResolvedConfiguration          | "project.configurations.maybeCreate('some').resolvedConfiguration"
         EmptyLenientConfiguration             | LenientConfiguration           | "project.configurations.maybeCreate('some').resolvedConfiguration.lenientConfiguration"
         ConfigurationResolvableDependencies   | ResolvableDependencies         | "project.configurations.maybeCreate('some').incoming"
-        DefaultResolutionResult               | ResolutionResult               | "project.configurations.maybeCreate('some').incoming.resolutionResult"
         DefaultDependencyConstraintSet        | DependencyConstraintSet        | "project.configurations.maybeCreate('some').dependencyConstraints"
         DefaultRepositoryHandler              | RepositoryHandler              | "project.repositories"
         DefaultMavenArtifactRepository        | ArtifactRepository             | "project.repositories.mavenCentral()"
@@ -305,10 +313,6 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
         DefaultResolvedDependency             | ResolvedDependency             | "project.configurations.create(java.util.UUID.randomUUID().toString()).tap { project.dependencies.add(name, 'junit:junit:4.13') }.resolvedConfiguration.firstLevelModuleDependencies.first()"
         DefaultResolvedArtifact               | ResolvedArtifact               | "project.configurations.create(java.util.UUID.randomUUID().toString()).tap { project.dependencies.add(name, 'junit:junit:4.13') }.resolvedConfiguration.resolvedArtifacts.first()"
         DefaultArtifactView                   | ArtifactView                   | "project.configurations.maybeCreate('some').incoming.artifactView {}"
-        DefaultArtifactResolutionResult       | ArtifactResolutionResult       | "project.dependencies.createArtifactResolutionQuery().forModule('junit', 'junit', '4.13').withArtifacts(JvmLibrary).execute()"
-        DefaultComponentArtifactsResult       | ComponentArtifactsResult       | "project.dependencies.createArtifactResolutionQuery().forModule('junit', 'junit', '4.13').withArtifacts(JvmLibrary).execute().components.first()"
-        DefaultUnresolvedComponentResult      | UnresolvedComponentResult      | "project.dependencies.createArtifactResolutionQuery().forModule('junit', 'junit', '100').withArtifacts(JvmLibrary).execute().components.first()"
-        DefaultResolvedArtifactResult         | ArtifactResult                 | "project.dependencies.createArtifactResolutionQuery().forModule('junit', 'junit', '4.13').withArtifacts(JvmLibrary, SourcesArtifact).execute().components.first().getArtifacts(SourcesArtifact).first()"
 
         // direct BuildService reference, build services must always be referenced via their providers
         'SomeBuildService'                    | BuildService                   | "project.gradle.sharedServices.registerIfAbsent('service', SomeBuildService) {}.get()"
@@ -360,13 +364,13 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         then:
         problems.assertResultHasProblems(result) {
-            withTotalProblemsCount(9)
+            totalProblemsCount = 9
             withUniqueProblems(
                 "Task `:broken` of type `SomeTask`: cannot deserialize object of type '${baseType.name}' as these are not supported with the configuration cache.",
                 "Task `:broken` of type `SomeTask`: cannot serialize object of type '${concreteType.name}', a subtype of '${baseType.name}', as these are not supported with the configuration cache.",
                 "Task `:broken` of type `SomeTask`: value '$deserializedValue' is not assignable to '${baseType.name}'"
             )
-            withProblemsWithStackTraceCount(0)
+            problemsWithStackTraceCount = 0
         }
 
         when:
@@ -379,12 +383,12 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         then:
         problems.assertResultHasProblems(result) {
-            withTotalProblemsCount(6)
+            totalProblemsCount = 6
             withUniqueProblems(
                 "Task `:broken` of type `SomeTask`: cannot deserialize object of type '${baseType.name}' as these are not supported with the configuration cache.",
                 "Task `:broken` of type `SomeTask`: value '$deserializedValue' is not assignable to '${baseType.name}'"
             )
-            withProblemsWithStackTraceCount(0)
+            problemsWithStackTraceCount = 0
         }
 
         and:
@@ -394,12 +398,12 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         where:
         concreteType                   | baseType           | creator                                     | reference                                            | deserializedValue
-        DefaultUnlockedConfiguration   | Configuration      | "project.configurations.create('some')"     | "project.configurations.getByName('some')"           | 'file collection'
-        DefaultResolvableConfiguration | Configuration      | "project.configurations.resolvable('some')" | "project.configurations.getByName('some')"           | 'file collection'
+        DefaultLegacyConfiguration     | Configuration      | "project.configurations.create('some')"     | "project.configurations.getByName('some')"           | "configuration ':some'"
+        DefaultResolvableConfiguration | Configuration      | "project.configurations.resolvable('some')" | "project.configurations.getByName('some')"           | "configuration ':some'"
         DefaultSourceDirectorySet      | SourceDirectorySet | ""                                          | "project.objects.sourceDirectorySet('some', 'more')" | 'file tree'
     }
 
-    @Requires(UnitTestPreconditions.Jdk14OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk14OrLater)
     def "reports when task field references a record containing type #baseType"() {
         file("buildSrc/src/main/java/JavaRecord.java") << """
             public record JavaRecord(${baseType.name} value, int filler) {}
@@ -438,12 +442,12 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         then:
         problems.assertResultHasProblems(result) {
-            withTotalProblemsCount(4)
+            totalProblemsCount = 4
             withUniqueProblems(
                 "Task `:broken` of type `SomeTask`: cannot deserialize object of type '${baseType.name}' as these are not supported with the configuration cache.",
                 "Task `:broken` of type `SomeTask`: cannot serialize object of type '$concreteTypeName', a subtype of '${baseType.name}', as these are not supported with the configuration cache."
             )
-            withProblemsWithStackTraceCount(0)
+            problemsWithStackTraceCount = 0
         }
 
         and:
@@ -455,11 +459,11 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         then:
         problems.assertResultHasProblems(result) {
-            withTotalProblemsCount(2)
+            totalProblemsCount = 2
             withUniqueProblems(
                 "Task `:broken` of type `SomeTask`: cannot deserialize object of type '${baseType.name}' as these are not supported with the configuration cache."
             )
-            withProblemsWithStackTraceCount(0)
+            problemsWithStackTraceCount = 0
         }
 
         and:
@@ -480,7 +484,7 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
         concreteTypeName = concreteType instanceof Class ? concreteType.name : concreteType
     }
 
-    @Requires(UnitTestPreconditions.Jdk14OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk14OrLater)
     def "reports when task field is declared with record containing type #baseType"() {
         file("buildSrc/src/main/java/JavaRecord.java") << """
             public record JavaRecord(${baseType.name} value, int filler) {}
@@ -520,13 +524,13 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         then:
         problems.assertResultHasProblems(result) {
-            withTotalProblemsCount(6)
+            totalProblemsCount = 6
             withUniqueProblems(
                 "Task `:broken` of type `SomeTask`: cannot deserialize object of type '${baseType.name}' as these are not supported with the configuration cache.",
                 "Task `:broken` of type `SomeTask`: cannot serialize object of type '${concreteType.name}', a subtype of '${baseType.name}', as these are not supported with the configuration cache.",
                 "Task `:broken` of type `SomeTask`: value '$deserializedValue' is not assignable to '${baseType.name}'"
             )
-            withProblemsWithStackTraceCount(0)
+            problemsWithStackTraceCount = 0
         }
 
         when:
@@ -538,12 +542,12 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         then:
         problems.assertResultHasProblems(result) {
-            withTotalProblemsCount(4)
+            totalProblemsCount = 4
             withUniqueProblems(
                 "Task `:broken` of type `SomeTask`: cannot deserialize object of type '${baseType.name}' as these are not supported with the configuration cache.",
                 "Task `:broken` of type `SomeTask`: value '$deserializedValue' is not assignable to '${baseType.name}'"
             )
-            withProblemsWithStackTraceCount(0)
+            problemsWithStackTraceCount = 0
         }
 
         and:
@@ -552,8 +556,8 @@ class ConfigurationCacheUnsupportedTypesIntegrationTest extends AbstractConfigur
 
         where:
         concreteType                   | baseType           | creator                                     | reference                                            | deserializedValue
-        DefaultUnlockedConfiguration   | Configuration      | "project.configurations.create('some')"     | "project.configurations.getByName('some')"           | 'file collection'
-        DefaultResolvableConfiguration | Configuration      | "project.configurations.resolvable('some')" | "project.configurations.getByName('some')"           | 'file collection'
+        DefaultLegacyConfiguration     | Configuration      | "project.configurations.create('some')"     | "project.configurations.getByName('some')"           | "configuration ':some'"
+        DefaultResolvableConfiguration | Configuration      | "project.configurations.resolvable('some')" | "project.configurations.getByName('some')"           | "configuration ':some'"
         DefaultSourceDirectorySet      | SourceDirectorySet | ""                                          | "project.objects.sourceDirectorySet('some', 'more')" | 'file tree'
     }
 }

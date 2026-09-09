@@ -16,14 +16,17 @@
 
 package org.gradle.internal.logging.console
 
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.modes.UnsupportedWithIsolatedProjects
 import org.gradle.integtests.fixtures.console.AbstractConsoleGroupedTaskFunctionalTest
 import org.gradle.integtests.fixtures.executer.GradleHandle
+import org.gradle.integtests.fixtures.flow.FlowActionsFixture
 import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
 import org.junit.Rule
 import spock.lang.Issue
 
-abstract class AbstractConsoleBuildPhaseFunctionalTest extends AbstractConsoleGroupedTaskFunctionalTest {
+abstract class AbstractConsoleBuildPhaseFunctionalTest extends AbstractConsoleGroupedTaskFunctionalTest implements FlowActionsFixture {
     @Rule
     BlockingHttpServer server = new BlockingHttpServer()
     GradleHandle gradle
@@ -32,6 +35,7 @@ abstract class AbstractConsoleBuildPhaseFunctionalTest extends AbstractConsoleGr
         server.start()
     }
 
+    @UnsupportedWithIsolatedProjects(because = "test verifies cross-project configuration ordering via HTTP-blocking checkpoints; BlockingHttpServer teardown failures escape ToBeFixed's catch")
     def "shows progress bar and percent phase completion"() {
         createDirs("a", "b", "c", "d")
         settingsFile << """
@@ -283,6 +287,7 @@ abstract class AbstractConsoleBuildPhaseFunctionalTest extends AbstractConsoleGr
         waitForFinish()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "multi-project tests via BlockingHttpServer/parallel fail under IP")
     def "shows progress bar and percent phase completion with artifact transforms"() {
         given:
         setupTransformBuild()
@@ -325,6 +330,7 @@ abstract class AbstractConsoleBuildPhaseFunctionalTest extends AbstractConsoleGr
     }
 
     @Issue("https://github.com/gradle/gradle/issues/24370")
+    @ToBeFixedForIsolatedProjects(because = "multi-project tests via BlockingHttpServer/parallel fail under IP")
     def "shows progress bar and percent phase completion with non-planned planned artifact transforms"() {
         given:
         setupTransformBuild()
@@ -434,7 +440,7 @@ abstract class AbstractConsoleBuildPhaseFunctionalTest extends AbstractConsoleGr
                     }
                 }
                 artifacts {
-                    compile jar
+                    compile tasks.jar
                 }
             }
 
@@ -490,7 +496,7 @@ abstract class AbstractConsoleBuildPhaseFunctionalTest extends AbstractConsoleGr
     }
 
     String regexFor(String message) {
-        /<.*> $message \[[\dms ]+]/
+        /$ProgressBar.UNICODE_PROGRESS_BAR_PREFIX.*$ProgressBar.UNICODE_PROGRESS_BAR_SUFFIX $message \[[\dms ]+]/
     }
 
     void waitForFinish() {
@@ -499,24 +505,6 @@ abstract class AbstractConsoleBuildPhaseFunctionalTest extends AbstractConsoleGr
     }
 
     String buildFinishedCall(String name) {
-        """
-            abstract class BuildFinishCall implements FlowAction<Parameters> {
-                interface Parameters extends FlowParameters {
-                    @Input
-                    Property<String> getBuildSuccess();
-                }
-
-                @Override
-                void execute(Parameters ignored) {
-                    ${server.callFromBuild(name)}
-                }
-            }
-
-            def flowScope = gradle.services.get(FlowScope)
-            def flowProviders = gradle.services.get(FlowProviders)
-            flowScope.always(BuildFinishCall) {
-                parameters.buildSuccess = flowProviders.buildWorkResult.map { result -> "Finished" }
-            }
-        """
+        buildFinishedFlowAction(server.callFromBuild(name))
     }
 }

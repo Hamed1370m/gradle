@@ -19,7 +19,6 @@ package org.gradle.swiftpm.tasks;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.file.RegularFileProperty;
-import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.OutputFile;
@@ -38,7 +37,7 @@ import org.gradle.work.DisableCachingByDefault;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
@@ -51,34 +50,47 @@ import java.util.TreeSet;
  */
 @DisableCachingByDefault(because = "Not made cacheable, yet")
 public abstract class GenerateSwiftPackageManagerManifest extends DefaultTask {
-    private final RegularFileProperty manifestFile;
-    private final Property<Package> packageProperty;
+    private final String projectName;
 
+    /**
+     * Creates a new {@code GenerateSwiftPackageManagerManifest}.
+     *
+     * @since 4.6
+     */
+    @SuppressWarnings("this-escape")
     public GenerateSwiftPackageManagerManifest() {
-        ObjectFactory objectFactory = getProject().getObjects();
-        manifestFile = objectFactory.fileProperty();
-        packageProperty = objectFactory.property(Package.class);
+        projectName = getProject().getName();
     }
 
+    /**
+     * Returns the package.
+     *
+     * @since 4.6
+     */
     @Input
-    public Property<Package> getPackage() {
-        return packageProperty;
-    }
+    public abstract Property<Package> getPackage();
 
+    /**
+     * Returns the manifest file.
+     *
+     * @since 4.6
+     */
     @OutputFile
-    public RegularFileProperty getManifestFile() {
-        return manifestFile;
-    }
+    public abstract RegularFileProperty getManifestFile();
 
+    /**
+     * Generate.
+     *
+     * @since 4.6
+     */
     @TaskAction
     public void generate() {
-        DefaultPackage srcPackage = (DefaultPackage) packageProperty.get();
-        Path manifest = manifestFile.get().getAsFile().toPath();
+        DefaultPackage srcPackage = (DefaultPackage) getPackage().get();
+        Path manifest = getManifestFile().get().getAsFile().toPath();
         try {
             Path baseDir = manifest.getParent();
             Files.createDirectories(baseDir);
-            PrintWriter writer = new PrintWriter(Files.newBufferedWriter(manifest, Charset.forName("utf-8")));
-            try {
+            try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(manifest, StandardCharsets.UTF_8))) {
                 writer.println("// swift-tools-version:4.0");
                 writer.println("//");
                 writer.println("// GENERATED FILE - do not edit");
@@ -86,7 +98,7 @@ public abstract class GenerateSwiftPackageManagerManifest extends DefaultTask {
                 writer.println("import PackageDescription");
                 writer.println();
                 writer.println("let package = Package(");
-                writer.println("    name: \"" + getProject().getName() + "\",");
+                writer.println("    name: \"" + projectName + "\",");
                 writer.println("    products: [");
                 for (AbstractProduct product : srcPackage.getProducts()) {
                     if (product.isExecutable()) {
@@ -126,13 +138,13 @@ public abstract class GenerateSwiftPackageManagerManifest extends DefaultTask {
                                 writer.print("from: \"");
                                 writer.print(versionDependency.getLowerBound());
                                 writer.print("\"");
-                            } else if (versionDependency.isUpperInclusive()){
+                            } else if (versionDependency.isUpperInclusive()) {
                                 writer.print("\"");
                                 writer.print(versionDependency.getLowerBound());
                                 writer.print("\"...\"");
                                 writer.print(versionDependency.getUpperBound());
                                 writer.print("\"");
-                            }  else {
+                            } else {
                                 writer.print("\"");
                                 writer.print(versionDependency.getLowerBound());
                                 writer.print("\"..<\"");
@@ -202,8 +214,6 @@ public abstract class GenerateSwiftPackageManagerManifest extends DefaultTask {
                 }
                 writer.println();
                 writer.println(")");
-            } finally {
-                writer.close();
             }
         } catch (IOException e) {
             throw new GradleException(String.format("Could not write manifest file %s.", manifest), e);

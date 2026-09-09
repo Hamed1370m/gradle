@@ -38,6 +38,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.junit.Rule
+import spock.lang.Issue
 import spock.lang.Specification
 import spock.lang.Subject
 import spock.lang.Unroll
@@ -62,16 +63,26 @@ class HtmlDependencyVerificationReportRendererTest extends Specification {
     Document report
 
     @Subject
-    HtmlDependencyVerificationReportRenderer renderer = new HtmlDependencyVerificationReportRenderer(
+    HtmlDependencyVerificationReportRenderer noKeyServerRenderer = new HtmlDependencyVerificationReportRenderer(
         Mock(DocumentationRegistry),
         verificationFile,
         ["pgp", "sha512"],
-        reportsDir
+        reportsDir,
+        false
+    )
+
+    @Subject
+    HtmlDependencyVerificationReportRenderer useKeyServerRenderer = new HtmlDependencyVerificationReportRenderer(
+        Mock(DocumentationRegistry),
+        verificationFile,
+        ["pgp", "sha512"],
+        reportsDir,
+        true
     )
 
     def "copies required resources"() {
         when:
-        generateReport()
+        generateReport(noKeyServerRenderer)
 
         then:
         ['css': ['uikit.min.css'],
@@ -86,18 +97,18 @@ class HtmlDependencyVerificationReportRendererTest extends Specification {
 
     def "can add different sections"() {
         given:
-        renderer.startNewSection("First section")
+        noKeyServerRenderer.startNewSection("First section")
 
         when:
-        generateReport()
+        generateReport(noKeyServerRenderer)
 
         then:
         bodyContains("First section")
         bodyContainsExact("First section 0 error")
 
         when:
-        renderer.startNewSection("Second section")
-        generateReport()
+        noKeyServerRenderer.startNewSection("Second section")
+        generateReport(noKeyServerRenderer)
 
         then:
         bodyContains("First section")
@@ -106,20 +117,78 @@ class HtmlDependencyVerificationReportRendererTest extends Specification {
         bodyContainsExact("Second section 0 error")
     }
 
-    @Unroll("reports verification errors (#failure)")
-    def "reports verification errors"() {
+    @Issue("https://github.com/gradle/gradle/issues/20135")
+    @Unroll("reports sticky tip for (#failure) using a key server")
+    def "reports sticky tip for (#failure) using a key server"() {
         given:
-        renderer.startNewSection(":someConfiguration")
-        renderer.startNewArtifact(artifact()) {
-            renderer.reportFailure(failure)
+        useKeyServerRenderer.startNewSection(":someConfiguration")
+        useKeyServerRenderer.startNewArtifact(artifact()) {
+            useKeyServerRenderer.reportFailure(failure)
         }
 
         when:
-        generateReport()
+        generateReport(useKeyServerRenderer)
+
+        then:
+        bodyContains(stickyTipMessage)
+
+        where:
+        failure                                                                 | stickyTipMessage
+        checksumFailure()                                                       |'./gradlew --write-verification-metadata pgp,sha512 help'
+        missingChecksums()                                                      |'./gradlew --write-verification-metadata pgp,sha512 help'
+        deletedArtifact()                                                       |'./gradlew --write-verification-metadata pgp,sha512 help'
+        missingSignature()                                                      |'./gradlew --write-verification-metadata pgp,sha512 help'
+        onlyIgnoredKeys()                                                       |'./gradlew --write-verification-metadata pgp,sha512 help'
+        signatureFailure()                                                      |'./gradlew --write-verification-metadata pgp,sha512 help'
+        signatureFailure("Maven", ['abcd': signatureError(FAILED)])             |'./gradlew --write-verification-metadata pgp,sha512 help'
+        signatureFailure("Maven", ['abcd': signatureError(IGNORED_KEY)])        |'./gradlew --write-verification-metadata pgp,sha512 help'
+        signatureFailure("Maven", ['abcd': signatureError(PASSED_NOT_TRUSTED)]) |'./gradlew --write-verification-metadata pgp,sha512 help'
+        signatureFailure("Maven", ['abcd': signatureError(MISSING_KEY)])        |'./gradlew --write-verification-metadata pgp,sha512 help'
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/20135")
+    @Unroll("reports sticky tip for (#failure) without using a key server")
+    def "reports sticky tip for (#failure) without using a key server"() {
+        given:
+        noKeyServerRenderer.startNewSection(":someConfiguration")
+        noKeyServerRenderer.startNewArtifact(artifact()) {
+            noKeyServerRenderer.reportFailure(failure)
+        }
+
+        when:
+        generateReport(noKeyServerRenderer)
+
+        then:
+        bodyContains(stickyTipMessage)
+
+        where:
+        failure                                                                 | stickyTipMessage
+        checksumFailure()                                                       | './gradlew --write-verification-metadata pgp,sha512 help'
+        missingChecksums()                                                      | './gradlew --write-verification-metadata pgp,sha512 help'
+        deletedArtifact()                                                       | './gradlew --write-verification-metadata pgp,sha512 help'
+        missingSignature()                                                      | './gradlew --write-verification-metadata pgp,sha512 help'
+        onlyIgnoredKeys()                                                       | './gradlew --write-verification-metadata pgp,sha512 help'
+        signatureFailure()                                                      | './gradlew --write-verification-metadata pgp,sha512 --export-keys help'
+        signatureFailure("Maven", ['abcd': signatureError(FAILED)])             | './gradlew --write-verification-metadata pgp,sha512 help'
+        signatureFailure("Maven", ['abcd': signatureError(IGNORED_KEY)])        | './gradlew --write-verification-metadata pgp,sha512 help'
+        signatureFailure("Maven", ['abcd': signatureError(PASSED_NOT_TRUSTED)]) | './gradlew --write-verification-metadata pgp,sha512 help'
+        signatureFailure("Maven", ['abcd': signatureError(MISSING_KEY)])        | './gradlew --write-verification-metadata pgp,sha512 --export-keys help'
+    }
+
+    @Unroll("reports verification errors without key server (#failure)")
+    def "reports verification errors without key server"() {
+        given:
+        noKeyServerRenderer.startNewSection(":someConfiguration")
+        noKeyServerRenderer.startNewArtifact(artifact()) {
+            noKeyServerRenderer.reportFailure(failure)
+        }
+
+        when:
+        generateReport(noKeyServerRenderer)
 
         def errors = errorsFor(":someConfiguration")
         then:
-
+        bodyContains("./gradlew --write-verification-metadata")
         verifyAll(errors[0]) {
             module == 'org:foo:1.0'
             artifact == 'foo-1.0.jar'
@@ -134,7 +203,62 @@ class HtmlDependencyVerificationReportRendererTest extends Specification {
         deletedArtifact()                                                       | 'Artifact has been deleted from dependency cache'
         missingSignature()                                                      | 'Signature file is missing'
         onlyIgnoredKeys()                                                       | 'All public keys have been ignored'
-        signatureFailure()                                                      | "Key abcd123 (not found) couldn't be found in any key server so verification couldn't be performed"
+        signatureFailure()                                                      | 'Key abcd123 (not found) couldn\'t be found in local key file so verification couldn\'t be performed. Enable key resolution with --export-keys.'
+        signatureFailure("Maven", ['abcd': signatureError(FAILED)])             | 'Artifact was signed with key abcd (not found) but signature didn\'t match'
+        signatureFailure("Maven", ['abcd': signatureError(IGNORED_KEY)])        | 'Artifact was signed with an ignored key: abcd (not found)'
+        signatureFailure("Maven", ['abcd': signatureError(PASSED_NOT_TRUSTED)]) | 'Artifact was signed with key abcd (not found) but this key is not in your trusted key list'
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/20100")
+    def "missing key error includes the other-trusted-keys note in the HTML report"() {
+        given:
+        def trustedKeys = new SignatureVerificationFailure.TrustedKeys("org", "foo",
+            ["AAAA1111AAAA1111AAAA1111AAAA1111AAAA1111"] as Set,
+            ["BBBB2222BBBB2222BBBB2222BBBB2222BBBB2222"] as Set)
+        noKeyServerRenderer.startNewSection(":someConfiguration")
+        noKeyServerRenderer.startNewArtifact(artifact()) {
+            noKeyServerRenderer.reportFailure(signatureFailureWithTrustedKeys(trustedKeys))
+        }
+
+        when:
+        generateReport(noKeyServerRenderer)
+
+        def errors = errorsFor(":someConfiguration")
+        then:
+        verifyAll(errors[0]) {
+            problem == "Key abcd123 (not found) couldn't be found in local key file so verification couldn't be performed. Enable key resolution with --export-keys. (1 other key is already trusted for module 'org:foo'; 1 other key is already trusted for group 'org')"
+        }
+    }
+
+    @Unroll("reports verification errors with key server (#failure)")
+    def "reports verification errors with key server"() {
+        given:
+        useKeyServerRenderer.startNewSection(":someConfiguration")
+        useKeyServerRenderer.startNewArtifact(artifact()) {
+            useKeyServerRenderer.reportFailure(failure)
+        }
+
+        when:
+        generateReport(useKeyServerRenderer)
+
+        def errors = errorsFor(":someConfiguration")
+        then:
+        bodyContains("./gradlew --write-verification-metadata")
+        verifyAll(errors[0]) {
+            module == 'org:foo:1.0'
+            artifact == 'foo-1.0.jar'
+            artifactTooltip == "From repository 'Maven'"
+            problem == expectedProblem
+        }
+
+        where:
+        failure                                                                 | expectedProblem
+        checksumFailure()                                                       | 'Expected a sha256 checksum of 0abcd but was 0000'
+        missingChecksums()                                                      | 'Checksums are missing from verification metadata'
+        deletedArtifact()                                                       | 'Artifact has been deleted from dependency cache'
+        missingSignature()                                                      | 'Signature file is missing'
+        onlyIgnoredKeys()                                                       | 'All public keys have been ignored'
+        signatureFailure()                                                      | 'Key abcd123 (not found) couldn\'t be found in local key file or remote key servers so verification couldn\'t be performed.'
         signatureFailure("Maven", ['abcd': signatureError(FAILED)])             | 'Artifact was signed with key abcd (not found) but signature didn\'t match'
         signatureFailure("Maven", ['abcd': signatureError(IGNORED_KEY)])        | 'Artifact was signed with an ignored key: abcd (not found)'
         signatureFailure("Maven", ['abcd': signatureError(PASSED_NOT_TRUSTED)]) | 'Artifact was signed with key abcd (not found) but this key is not in your trusted key list'
@@ -142,17 +266,17 @@ class HtmlDependencyVerificationReportRendererTest extends Specification {
 
     def "reports multiple verification errors on single configuration"() {
         given:
-        renderer.startNewSection(":someConfiguration")
-        renderer.startNewArtifact(artifact()) {
-            renderer.reportFailure(checksumFailure())
-            renderer.reportFailure(missingSignature())
+        noKeyServerRenderer.startNewSection(":someConfiguration")
+        noKeyServerRenderer.startNewArtifact(artifact()) {
+            noKeyServerRenderer.reportFailure(checksumFailure())
+            noKeyServerRenderer.reportFailure(missingSignature())
         }
-        renderer.startNewArtifact(artifact("com", "acme", "2.0", "acme-2.0.pom")) {
-            renderer.reportFailure(onlyIgnoredKeys("Ivy"))
+        noKeyServerRenderer.startNewArtifact(artifact("com", "acme", "2.0", "acme-2.0.pom")) {
+            noKeyServerRenderer.reportFailure(onlyIgnoredKeys("Ivy"))
         }
 
         when:
-        generateReport()
+        generateReport(noKeyServerRenderer)
 
         def errors = errorsFor(":someConfiguration")
 
@@ -173,18 +297,18 @@ class HtmlDependencyVerificationReportRendererTest extends Specification {
 
     def "reports multiple verification errors on different configurations"() {
         given:
-        renderer.startNewSection(":someConfiguration")
-        renderer.startNewArtifact(artifact()) {
-            renderer.reportFailure(checksumFailure())
-            renderer.reportFailure(missingSignature())
+        noKeyServerRenderer.startNewSection(":someConfiguration")
+        noKeyServerRenderer.startNewArtifact(artifact()) {
+            noKeyServerRenderer.reportFailure(checksumFailure())
+            noKeyServerRenderer.reportFailure(missingSignature())
         }
-        renderer.startNewSection(":other:configuration")
-        renderer.startNewArtifact(artifact("com", "acme", "2.0", "acme-2.0.pom")) {
-            renderer.reportFailure(onlyIgnoredKeys("Ivy"))
+        noKeyServerRenderer.startNewSection(":other:configuration")
+        noKeyServerRenderer.startNewArtifact(artifact("com", "acme", "2.0", "acme-2.0.pom")) {
+            noKeyServerRenderer.reportFailure(onlyIgnoredKeys("Ivy"))
         }
 
         when:
-        generateReport()
+        generateReport(noKeyServerRenderer)
 
         def errors1 = errorsFor(":someConfiguration")
         def errors2 = errorsFor(":other:configuration")
@@ -206,21 +330,21 @@ class HtmlDependencyVerificationReportRendererTest extends Specification {
 
     def "aggregates errors on the same configurations"() {
         given:
-        renderer.startNewSection(":someConfiguration")
-        renderer.startNewArtifact(artifact()) {
-            renderer.reportFailure(checksumFailure())
+        noKeyServerRenderer.startNewSection(":someConfiguration")
+        noKeyServerRenderer.startNewArtifact(artifact()) {
+            noKeyServerRenderer.reportFailure(checksumFailure())
         }
-        renderer.startNewSection(":other:configuration")
-        renderer.startNewArtifact(artifact("com", "acme", "2.0", "acme-2.0.pom")) {
-            renderer.reportFailure(onlyIgnoredKeys("Ivy"))
+        noKeyServerRenderer.startNewSection(":other:configuration")
+        noKeyServerRenderer.startNewArtifact(artifact("com", "acme", "2.0", "acme-2.0.pom")) {
+            noKeyServerRenderer.reportFailure(onlyIgnoredKeys("Ivy"))
         }
-        renderer.startNewSection(":someConfiguration")
-        renderer.startNewArtifact(artifact()) {
-            renderer.reportFailure(missingSignature())
+        noKeyServerRenderer.startNewSection(":someConfiguration")
+        noKeyServerRenderer.startNewArtifact(artifact()) {
+            noKeyServerRenderer.reportFailure(missingSignature())
         }
 
         when:
-        generateReport()
+        generateReport(noKeyServerRenderer)
 
         def errors1 = errorsFor(":someConfiguration")
         def errors2 = errorsFor(":other:configuration")
@@ -270,6 +394,10 @@ class HtmlDependencyVerificationReportRendererTest extends Specification {
         return wrap(repo, new SignatureVerificationFailure(dummyFile, dummyFileSig, errors, new DummyKeyService()))
     }
 
+    private static RepositoryAwareVerificationFailure signatureFailureWithTrustedKeys(SignatureVerificationFailure.TrustedKeys trustedKeys, Map<String, SignatureVerificationFailure.SignatureError> errors = ['abcd123': signatureError()], String repo = "Maven") {
+        return wrap(repo, new SignatureVerificationFailure(dummyFile, dummyFileSig, errors, new DummyKeyService(), trustedKeys))
+    }
+
     private static SignatureVerificationFailure.SignatureError signatureError(SignatureVerificationFailure.FailureKind kind = MISSING_KEY) {
         return new SignatureVerificationFailure.SignatureError(null, kind)
     }
@@ -285,7 +413,7 @@ class HtmlDependencyVerificationReportRendererTest extends Specification {
         )
     }
 
-    private void generateReport() {
+    private void generateReport(HtmlDependencyVerificationReportRenderer renderer) {
         currentReportFile = renderer.writeReport()
         currentReportDir = currentReportFile.parentFile
         Jsoup.parse(currentReportFile, UTF_8.name())

@@ -30,7 +30,7 @@ import org.gradle.util.internal.VersionNumber
 
 import static org.junit.Assume.assumeTrue
 
-@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5_OR_OLDER)
+@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC)
 @DoesNotSupportNonAsciiPaths(reason = "swiftc does not support these paths")
 class AbstractSwiftMixedLanguageIntegrationTest extends AbstractIntegrationSpec {
     public static final String SHARED = "SHARED"
@@ -48,17 +48,13 @@ class AbstractSwiftMixedLanguageIntegrationTest extends AbstractIntegrationSpec 
         File initScript = file("init.gradle") << """
         allprojects { p ->
             p.plugins.withType(${swiftToolChain.pluginClass}) {
-                model {
-                    toolChains {
-                        ${swiftToolChain.buildScriptConfig}
-                    }
+                toolChains {
+                    ${swiftToolChain.buildScriptConfig}
                 }
             }
             p.plugins.withType(${cppToolChain.pluginClass}) {
-                model {
-                    toolChains {
-                        ${cppToolChain.buildScriptConfig}
-                    }
+                toolChains {
+                    ${cppToolChain.buildScriptConfig}
                 }
             }
         }

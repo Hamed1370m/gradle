@@ -33,7 +33,6 @@ import org.gradle.api.publish.internal.DefaultPublicationContainer;
 import org.gradle.api.publish.internal.DefaultPublishingExtension;
 import org.gradle.api.publish.internal.PublicationInternal;
 import org.gradle.internal.Cast;
-import org.gradle.internal.model.RuleBasedPluginListener;
 import org.gradle.internal.reflect.Instantiator;
 
 import javax.inject.Inject;
@@ -46,7 +45,17 @@ import javax.inject.Inject;
  */
 public abstract class PublishingPlugin implements Plugin<Project> {
 
+    /**
+     * The publish task group.
+     *
+     * @since 1.7
+     */
     public static final String PUBLISH_TASK_GROUP = "publishing";
+    /**
+     * The publish lifecycle task name.
+     *
+     * @since 1.3
+     */
     public static final String PUBLISH_LIFECYCLE_TASK_NAME = "publish";
     private static final String VALID_NAME_REGEX = "[A-Za-z0-9_\\-.]+";
 
@@ -81,7 +90,6 @@ public abstract class PublishingPlugin implements Plugin<Project> {
             PublicationInternal<?> internalPublication = Cast.uncheckedNonnullCast(publication);
             projectPublicationRegistry.registerPublication(projectIdentity, internalPublication);
         });
-        bridgeToSoftwareModelIfNeeded((ProjectInternal) project);
         validatePublishingModelWhenComplete(project, extension);
     }
 
@@ -98,15 +106,6 @@ public abstract class PublishingPlugin implements Plugin<Project> {
                 if (!publicationName.matches(VALID_NAME_REGEX)) {
                     throw new InvalidUserDataException("Publication name '" + publicationName + "' is not valid for publication. Must match regex " + VALID_NAME_REGEX + ".");
                 }
-            }
-        });
-    }
-
-    private void bridgeToSoftwareModelIfNeeded(ProjectInternal project) {
-        project.addRuleBasedPluginListener(new RuleBasedPluginListener() {
-            @Override
-            public void prepareForRuleBasedPlugins(Project project) {
-                project.getPluginManager().apply(PublishingPluginRules.class);
             }
         });
     }

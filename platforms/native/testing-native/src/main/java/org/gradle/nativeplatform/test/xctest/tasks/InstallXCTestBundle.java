@@ -24,7 +24,6 @@ import org.gradle.api.file.FileSystemOperations;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.internal.lambdas.SerializableLambdas;
-import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.Internal;
@@ -39,8 +38,8 @@ import org.gradle.nativeplatform.toolchain.internal.xcode.SwiftStdlibToolLocator
 import org.gradle.process.ExecOperations;
 import org.gradle.util.internal.GFileUtils;
 import org.gradle.work.DisableCachingByDefault;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.io.File;
 import java.io.IOException;
@@ -53,36 +52,35 @@ import java.nio.charset.Charset;
  */
 @DisableCachingByDefault(because = "Not worth caching")
 public abstract class InstallXCTestBundle extends DefaultTask {
-    private final DirectoryProperty installDirectory;
-    private final RegularFileProperty bundleBinaryFile;
-
+    /**
+     * Creates a new {@code InstallXCTestBundle}.
+     *
+     * @since 4.4
+     */
+    @SuppressWarnings("this-escape")
     public InstallXCTestBundle() {
-        ObjectFactory objectFactory = getProject().getObjects();
-        installDirectory = objectFactory.directoryProperty();
-        bundleBinaryFile = objectFactory.fileProperty();
         // A work around for not being able to skip the task when an input _file_ does not exist
-        dependsOn(bundleBinaryFile);
+        dependsOn(getBundleBinaryFile());
     }
 
     @Inject
-    protected SwiftStdlibToolLocator getSwiftStdlibToolLocator() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract SwiftStdlibToolLocator getSwiftStdlibToolLocator();
 
     @Inject
-    protected FileSystem getFileSystem() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract FileSystem getFileSystem();
 
     @Inject
-    protected FileSystemOperations getFileSystemOperations() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract FileSystemOperations getFileSystemOperations();
 
+    /**
+     * Install.
+     *
+     * @since 6.0
+     */
     @TaskAction
     protected void install() throws IOException {
-        File bundleFile = bundleBinaryFile.get().getAsFile();
-        File bundleDir = installDirectory.get().file(bundleFile.getName() + ".xctest").getAsFile();
+        File bundleFile = getBundleBinaryFile().get().getAsFile();
+        File bundleDir = getInstallDirectory().get().file(bundleFile.getName() + ".xctest").getAsFile();
         installToDir(bundleDir, bundleFile);
 
         File runScript = getRunScriptFile().get().getAsFile();
@@ -112,7 +110,7 @@ public abstract class InstallXCTestBundle extends DefaultTask {
             + "</plist>");
 
         getExecOperations().exec(SerializableLambdas.action(execSpec -> {
-            execSpec.setWorkingDir(bundleDir);
+            execSpec.getWorkingDirectory().set(bundleDir);
             execSpec.executable(getSwiftStdlibToolLocator().find());
             execSpec.args(
                 "--copy",
@@ -127,20 +125,25 @@ public abstract class InstallXCTestBundle extends DefaultTask {
 
     /**
      * Returns the script file that can be used to run the install image.
+     * @since 4.4
      */
     @Internal
     public Provider<RegularFile> getRunScriptFile() {
-        return installDirectory.file(bundleBinaryFile.getLocationOnly().map(SerializableLambdas.transformer(file -> FilenameUtils.removeExtension(file.getAsFile().getName()))));
+        return getInstallDirectory().file(getBundleBinaryFile().getLocationOnly().map(SerializableLambdas.transformer(file -> FilenameUtils.removeExtension(file.getAsFile().getName()))));
     }
 
     /**
      * Returns the bundle binary file property.
+     * @since 4.4
      */
     @Internal("covered by getBundleBinary()")
-    public RegularFileProperty getBundleBinaryFile() {
-        return bundleBinaryFile;
-    }
+    public abstract RegularFileProperty getBundleBinaryFile();
 
+    /**
+     * Returns the bundle binary.
+     *
+     * @since 4.4
+     */
     @SkipWhenEmpty
     @Nullable
     @Optional
@@ -157,11 +160,10 @@ public abstract class InstallXCTestBundle extends DefaultTask {
 
     /**
      * Returns the install directory property.
+     * @since 4.4
      */
     @OutputDirectory
-    public DirectoryProperty getInstallDirectory() {
-        return installDirectory;
-    }
+    public abstract DirectoryProperty getInstallDirectory();
 
     @Inject
     protected abstract ExecOperations getExecOperations();

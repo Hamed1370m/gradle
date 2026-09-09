@@ -37,8 +37,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -82,7 +82,7 @@ configurations {
 }
 
 dependencies {
-    lockedConf name: 'my-dep-1.0'
+    lockedConf(":my-dep-1.0")
 }
 """
         when:
@@ -106,8 +106,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -152,8 +152,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -196,8 +196,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -223,6 +223,37 @@ dependencies {
         succeeds 'dependencies'
     }
 
+    def 'does not warn about changing modules when all are ignored'() {
+        mavenRepo.module('org', 'bar', '1.0-SNAPSHOT').publish()
+
+        buildFile << """
+dependencyLocking {
+    lockAllConfigurations()
+    ignoredDependencies.add('org:bar')
+}
+
+repositories {
+    maven {
+        name = 'repo'
+        url = "${mavenRepo.uri}"
+    }
+}
+configurations {
+    lockedConf
+}
+
+dependencies {
+    lockedConf 'org:bar:1.0-SNAPSHOT'
+}
+"""
+
+        when:
+        succeeds 'dependencies', '--write-locks'
+
+        then:
+        outputDoesNotContain('contains changing modules')
+    }
+
     def "can update a single lock entry when using #version"() {
         ['bar', 'baz', 'foo'].each { artifactId ->
             mavenRepo.module('org', artifactId, '1.0').publish()
@@ -238,8 +269,8 @@ dependencyLocking {
 }
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -280,8 +311,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 
@@ -323,8 +354,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -368,8 +399,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -413,8 +444,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -466,8 +497,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 
@@ -495,22 +526,30 @@ task resolve {
         mavenHttpRepo.module('org', 'foo', '1.1').publish()
         mavenHttpRepo.module('org', 'foo', '2.0').publish()
         def bar10 = mavenHttpRepo.module('org', 'bar', '1.0').dependsOn('org', 'foo', '[1.0,2.0)').publish()
+        def bar21 = mavenHttpRepo.module('org', 'bar', '2.1').dependsOn('org', 'foo', '[1.0,2.0)').publish()
 
-        lockfileFixture.createLockfile('lockedConf', ['org:bar:1.0', 'org:foo:1.0'], false)
+        lockfileFixture.createLockfile('lockedConf', ['org:bar:2.1', 'org:foo:1.0'], false)
 
         buildFile << """
+plugins {
+    id 'jvm-ecosystem' // We need variant derivation to illustrate #33593
+}
 dependencyLocking {
     lockAllConfigurations()
 }
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenHttpRepo.uri}'
+        name = 'repo'
+        url = "${mavenHttpRepo.uri}"
     }
 }
 configurations {
-    lockedConf
+    lockedConf {
+        attributes {
+            attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY)) // We need request attributes to illustrate #33593
+        }
+    }
 }
 
 dependencies {
@@ -519,7 +558,8 @@ dependencies {
 """
         when:
         foo10.pom.expectGet()
-        bar10.pom.expectGet()
+        bar21.rootMetaData.expectGet()
+        bar21.pom.expectGet()
 
         then:
         succeeds 'dependencies'

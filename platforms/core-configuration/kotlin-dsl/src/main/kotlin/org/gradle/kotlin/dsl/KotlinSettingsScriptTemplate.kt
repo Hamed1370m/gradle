@@ -20,20 +20,22 @@ import org.gradle.api.Incubating
 import org.gradle.api.initialization.Settings
 import org.gradle.api.initialization.dsl.ScriptHandler
 import org.gradle.api.plugins.PluginAware
-import org.gradle.kotlin.dsl.resolver.KotlinBuildScriptDependenciesResolver
 import org.gradle.kotlin.dsl.support.DefaultKotlinScript
 import org.gradle.kotlin.dsl.support.KotlinScriptHost
 import org.gradle.kotlin.dsl.support.defaultKotlinScriptHostForSettings
+import org.gradle.kotlin.dsl.support.internalError
 import org.gradle.plugin.use.PluginDependenciesSpec
 import kotlin.script.experimental.annotations.KotlinScript
 import kotlin.script.experimental.api.baseClass
 import kotlin.script.experimental.api.filePathPattern
 import kotlin.script.experimental.api.implicitReceivers
-import kotlin.script.templates.ScriptTemplateDefinition
 
 
+/**
+ * @since 8.11
+ */
 class KotlinSettingsScriptTemplateCompilationConfiguration : KotlinDslStandaloneScriptCompilationConfiguration({
-    filePathPattern.put("(?:.+\\.)?settings\\.gradle\\.kts")
+    filePathPattern.put(".*/(?:.+\\.)?settings\\.gradle\\.kts")
     baseClass(KotlinSettingsScriptTemplate::class)
     implicitReceivers(Settings::class)
 })
@@ -42,14 +44,15 @@ class KotlinSettingsScriptTemplateCompilationConfiguration : KotlinDslStandalone
 /**
  * Base class for Gradle Kotlin DSL standalone [Settings] scripts IDE support.
  *
+ * This class has the [Incubating]-level compatibility guarantees but is not annotated as such to avoid Unstable API warnings caused by the IDE
+ * using this class as the Kotlin DSL script template. When the IDE chooses to use this script template, there is no direct usage of an incubating
+ * API by the build author, but usages of the members, such as [plugins], are still reported as unstable API usages.
+ * See: [issue 34820](https://github.com/gradle/gradle/issues/34820).
+ *
  * @since 8.1
  */
-@Incubating
 @KotlinScript(
     compilationConfiguration = KotlinSettingsScriptTemplateCompilationConfiguration::class
-)
-@ScriptTemplateDefinition(
-    resolver = KotlinBuildScriptDependenciesResolver::class,
 )
 @GradleDsl
 abstract class KotlinSettingsScriptTemplate(
@@ -58,12 +61,24 @@ abstract class KotlinSettingsScriptTemplate(
 
     /**
      * The [ScriptHandler] for this script.
+     *
+     * @since 8.1
      */
     fun getBuildscript(): ScriptHandler =
         host.scriptHandler
 
     /**
-     * Configures the plugin dependencies for the project's settings.
+     * Configures the build script classpath for settings.
+     *
+     * @see [Settings.buildscript]
+     * @since 9.7.0
+     */
+    @Suppress("unused")
+    open fun buildscript(block: ScriptHandlerScope.() -> Unit): Unit =
+        internalError()
+
+    /**
+     * Configures the plugin dependencies for settings.
      *
      * @see [PluginDependenciesSpec]
      * @since 6.0

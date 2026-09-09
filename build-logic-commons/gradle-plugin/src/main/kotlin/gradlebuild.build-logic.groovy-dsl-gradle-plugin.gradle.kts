@@ -1,5 +1,3 @@
-import gradlebuild.commons.configureJavaToolChain
-
 /*
  * Copyright 2020 the original author or authors.
  *
@@ -19,22 +17,31 @@ import gradlebuild.commons.configureJavaToolChain
 plugins {
     id("java-library")
     id("groovy-gradle-plugin")
+    id("gradlebuild.build-platform")
     id("gradlebuild.code-quality")
     id("gradlebuild.ci-reporting")
     id("gradlebuild.test-retry")
     id("gradlebuild.private-javadoc")
 }
 
-java.configureJavaToolChain()
+val buildLibs = project.versionCatalogs.named("buildLibs")
 
 dependencies {
-    api(platform("gradlebuild:build-platform"))
     implementation("gradlebuild:gradle-plugin")
 
     implementation(localGroovy())
-    testImplementation("org.spockframework:spock-core")
-    testImplementation("net.bytebuddy:byte-buddy")
-    testImplementation("org.objenesis:objenesis")
+}
+
+@Suppress("UnstableApiUsage")
+testing {
+    suites {
+        named<JvmTestSuite>("test") {
+            dependencies {
+                implementation(buildLibs.findLibrary("bytebuddy").get())
+                implementation(buildLibs.findLibrary("objenesis").get())
+            }
+        }
+    }
 }
 
 tasks.withType<GroovyCompile>().configureEach {
@@ -67,7 +74,4 @@ tasks.withType<Test>().configureEach {
             emptyList()
         }
     })
-    useJUnitPlatform()
 }
-
-

@@ -21,12 +21,14 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import org.gradle.api.Action;
+import org.gradle.api.GradleException;
 import org.gradle.api.JavaVersion;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.component.BuildIdentifier;
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
+import org.gradle.api.configuration.BuildFeatures;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.ConventionMapping;
 import org.gradle.api.internal.IConventionAware;
@@ -34,6 +36,7 @@ import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.internal.project.ProjectStateRegistry;
 import org.gradle.api.internal.tasks.TaskDependencyContainer;
 import org.gradle.api.internal.tasks.TaskDependencyResolveContext;
+import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.plugins.JavaBasePlugin;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
@@ -45,7 +48,7 @@ import org.gradle.api.plugins.jvm.internal.JvmFeatureInternal;
 import org.gradle.api.plugins.scala.ScalaBasePlugin;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskProvider;
-import org.gradle.internal.reflect.Instantiator;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.xml.XmlTransformer;
 import org.gradle.plugins.ide.api.XmlFileContentMerger;
 import org.gradle.plugins.ide.idea.internal.IdeaModuleInternal;
@@ -64,6 +67,7 @@ import org.gradle.plugins.ide.idea.model.internal.GeneratedIdeaScope;
 import org.gradle.plugins.ide.idea.model.internal.IdeaDependenciesProvider;
 import org.gradle.plugins.ide.internal.IdeArtifactRegistry;
 import org.gradle.plugins.ide.internal.IdePlugin;
+import org.gradle.plugins.ide.internal.IdePluginHelper;
 import org.gradle.plugins.ide.internal.configurer.UniqueProjectNameProvider;
 import org.gradle.testing.base.TestingExtension;
 
@@ -85,6 +89,7 @@ import java.util.concurrent.Callable;
  * configuration.
  *
  * @see <a href="https://docs.gradle.org/current/userguide/idea_plugin.html">IDEA plugin reference</a>
+ * @since 1.0
  */
 public abstract class IdeaPlugin extends IdePlugin {
     private static final Predicate<Project> HAS_IDEA_AND_JAVA_PLUGINS = new Predicate<Project>() {
@@ -93,12 +98,22 @@ public abstract class IdeaPlugin extends IdePlugin {
             return project.getPlugins().hasPlugin(IdeaPlugin.class) && project.getPlugins().hasPlugin(JavaBasePlugin.class);
         }
     };
+    /**
+     * The source compatibility.
+     *
+     * @since 3.2
+     */
     public static final Function<Project, JavaVersion> SOURCE_COMPATIBILITY = new Function<Project, JavaVersion>() {
         @Override
         public JavaVersion apply(Project p) {
             return p.getExtensions().getByType(JavaPluginExtension.class).getSourceCompatibility();
         }
     };
+    /**
+     * The target compatibility.
+     *
+     * @since 3.2
+     */
     public static final Function<Project, JavaVersion> TARGET_COMPATIBILITY = new Function<Project, JavaVersion>() {
         @Override
         public JavaVersion apply(Project p) {
@@ -110,7 +125,6 @@ public abstract class IdeaPlugin extends IdePlugin {
     private static final String IDEA_PROJECT_TASK_NAME = "ideaProject";
     private static final String IDEA_WORKSPACE_TASK_NAME = "ideaWorkspace";
 
-    private final Instantiator instantiator;
     private IdeaModel ideaModel;
     private List<Project> allJavaProjects;
     private final UniqueProjectNameProvider uniqueProjectNameProvider;
@@ -118,13 +132,20 @@ public abstract class IdeaPlugin extends IdePlugin {
     private final ProjectStateRegistry projectPathRegistry;
 
     @Inject
-    public IdeaPlugin(Instantiator instantiator, UniqueProjectNameProvider uniqueProjectNameProvider, IdeArtifactRegistry artifactRegistry, ProjectStateRegistry projectPathRegistry) {
-        this.instantiator = instantiator;
+    protected abstract ObjectFactory getObjectFactory();
+
+    @Inject
+    public IdeaPlugin(UniqueProjectNameProvider uniqueProjectNameProvider, IdeArtifactRegistry artifactRegistry, ProjectStateRegistry projectPathRegistry) {
         this.uniqueProjectNameProvider = uniqueProjectNameProvider;
         this.artifactRegistry = artifactRegistry;
         this.projectPathRegistry = projectPathRegistry;
     }
 
+    /**
+     * Returns the model.
+     *
+     * @since 1.0
+     */
     public IdeaModel getModel() {
         return ideaModel;
     }
@@ -135,8 +156,14 @@ public abstract class IdeaPlugin extends IdePlugin {
     }
 
     @Override
+    protected boolean shouldDeprecateLifecycleTask() {
+        return true;
+    }
+
+    @Override
     protected void onApply(final Project project) {
         getLifecycleTask().configure(withDescription("Generates IDEA project files (IML, IPR, IWS)"));
+        getLifecycleTask().configure(IdePluginHelper.withGracefulDegradation());
         getCleanTask().configure(withDescription("Cleans IDEA project files (IML, IPR)"));
 
         ideaModel = project.getExtensions().create("idea", IdeaModel.class);
@@ -151,9 +178,15 @@ public abstract class IdeaPlugin extends IdePlugin {
         linkCompositeBuildDependencies((ProjectInternal) project);
     }
 
+    @SuppressWarnings("deprecation")
     private void configureIdeaWorkspace(final Project project) {
-        final IdeaWorkspace workspace = project.getObjects().newInstance(IdeaWorkspace.class);
-        ideaModel.setWorkspace(workspace);
+        final IdeaWorkspace workspace = DeprecationLogger.whileDisabled(
+            () -> {
+                IdeaWorkspace iw = getObjectFactory().newInstance(IdeaWorkspace.class);
+                ideaModel.setWorkspace(iw);
+                return iw;
+            }
+        );
 
         if (isRoot()) {
             workspace.setIws(new XmlFileContentMerger(new XmlTransformer()));
@@ -170,11 +203,12 @@ public abstract class IdeaPlugin extends IdePlugin {
         }
     }
 
+    @SuppressWarnings("deprecation")
     private void configureIdeaProject(final Project project) {
         if (isRoot()) {
             XmlFileContentMerger ipr = new XmlFileContentMerger(new XmlTransformer());
             // Instantiating an internal subclass is required for Isolated Projects-safe model building
-            final IdeaProject ideaProject = instantiator.newInstance(IdeaProjectInternal.class, project, ipr);
+            final IdeaProject ideaProject = getObjectFactory().newInstance(IdeaProjectInternal.class, project, ipr);
             final TaskProvider<GenerateIdeaProject> projectTask = project.getTasks().register(IDEA_PROJECT_TASK_NAME, GenerateIdeaProject.class, ideaProject);
             projectTask.configure(new Action<GenerateIdeaProject>() {
                 @Override
@@ -182,6 +216,7 @@ public abstract class IdeaPlugin extends IdePlugin {
                     projectTask.setDescription("Generates IDEA project file (IPR)");
                 }
             });
+            projectTask.configure(IdePluginHelper.withGracefulDegradation());
             ideaModel.setProject(ideaProject);
 
             ideaProject.setOutputFile(new File(project.getProjectDir(), project.getName() + ".ipr"));
@@ -262,10 +297,12 @@ public abstract class IdeaPlugin extends IdePlugin {
         return allJavaProjects;
     }
 
+    @SuppressWarnings("deprecation")
     private void configureIdeaModule(final ProjectInternal project) {
-        IdeaModuleIml iml = new IdeaModuleIml(new XmlTransformer(), project.getProjectDir());
         // Instantiating an internal subclass is required for Isolated Projects-safe model building
-        final IdeaModule module = instantiator.newInstance(IdeaModuleInternal.class, project, iml);
+        final IdeaModule module = DeprecationLogger.whileDisabled(() ->
+            getObjectFactory().newInstance(IdeaModuleInternal.class, project, new IdeaModuleIml(new XmlTransformer(), project.getProjectDir()))
+        );
 
         final TaskProvider<GenerateIdeaModule> task = project.getTasks().register(IDEA_MODULE_TASK_NAME, GenerateIdeaModule.class, module);
         task.configure(new Action<GenerateIdeaModule>() {
@@ -274,9 +311,10 @@ public abstract class IdeaPlugin extends IdePlugin {
                 task.setDescription("Generates IDEA module files (IML)");
             }
         });
+        task.configure(IdePluginHelper.withGracefulDegradation());
         ideaModel.setModule(module);
 
-        final String defaultModuleName = uniqueProjectNameProvider.getUniqueName(project);
+        final String defaultModuleName = uniqueProjectNameProvider.getUniqueName(project.getProjectIdentity());
         module.setName(defaultModuleName);
 
         ConventionMapping conventionMapping = ((IConventionAware) module).getConventionMapping();
@@ -293,13 +331,6 @@ public abstract class IdeaPlugin extends IdePlugin {
                 return project.getProjectDir();
             }
         });
-        Set<File> testSourceDirs = new LinkedHashSet<>();
-        conventionMapping.map("testSourceDirs", new Callable<Set<File>>() {
-            @Override
-            public Set<File> call() {
-                return testSourceDirs;
-            }
-        });
         Set<File> resourceDirs = new LinkedHashSet<>();
         conventionMapping.map("resourceDirs", new Callable<Set<File>>() {
             @Override
@@ -307,17 +338,13 @@ public abstract class IdeaPlugin extends IdePlugin {
                 return resourceDirs;
             }
         });
-        Set<File> testResourceDirs = new LinkedHashSet<>();
-        conventionMapping.map("testResourceDirs", new Callable<Set<File>>() {
-            @Override
-            public Set<File> call() throws Exception {
-                return testResourceDirs;
-            }
-        });
         Set<File> excludeDirs = new LinkedHashSet<>();
         conventionMapping.map("excludeDirs", new Callable<Set<File>>() {
             @Override
             public Set<File> call() {
+                // ".gradle" is the default project cache dir name (see BuildScopeCacheDir). Hardcoding it here is a
+                // historical accident: it should honor the user-configurable --project-cache-dir instead.
+                // We deliberately leave it as-is, as this IDE model generation is scheduled for removal in Gradle 10.
                 excludeDirs.add(project.file(".gradle"));
                 excludeDirs.add(project.getLayout().getBuildDirectory().getAsFile().get());
                 return excludeDirs;
@@ -329,7 +356,7 @@ public abstract class IdeaPlugin extends IdePlugin {
             public PathFactory call() {
                 final PathFactory factory = new PathFactory();
                 factory.addPathVariable("MODULE_DIR", task.get().getOutputFile().getParentFile());
-                for (Map.Entry<String, File> entry : module.getPathVariables().entrySet()) {
+                for (Map.Entry<String, File> entry : DeprecationLogger.whileDisabled(() -> module.getPathVariables()).entrySet()) {
                     factory.addPathVariable(entry.getKey(), entry.getValue());
                 }
                 return factory;
@@ -369,6 +396,7 @@ public abstract class IdeaPlugin extends IdePlugin {
         });
     }
 
+    @SuppressWarnings("deprecation")
     private void configureIdeaModuleForJava(final Project project) {
         JvmFeatureInternal mainFeature = JavaPluginHelper.getJavaComponent(project).getMainFeature();
         JvmTestSuite defaultTestSuite = JavaPluginHelper.getDefaultTestSuite(project);
@@ -465,6 +493,7 @@ public abstract class IdeaPlugin extends IdePlugin {
         });
     }
 
+    @SuppressWarnings("deprecation")
     private void configureIdeaModuleForWar(final Project project) {
         project.getTasks().withType(GenerateIdeaModule.class).configureEach(new Action<GenerateIdeaModule>() {
             @Override
@@ -499,21 +528,35 @@ public abstract class IdeaPlugin extends IdePlugin {
         return !moduleLanguageLevel.equals(ideaProject.getLanguageLevel());
     }
 
+    @SuppressWarnings("deprecation")
     private void configureForScalaPlugin() {
+        boolean isolatedProjects = getBuildFeatures().getIsolatedProjects().getActive().get();
         project.getPlugins().withType(ScalaBasePlugin.class, new Action<ScalaBasePlugin>() {
             @Override
             public void execute(ScalaBasePlugin scalaBasePlugin) {
-                ideaModuleDependsOnRoot();
+                ideaModuleDependsOnRoot(isolatedProjects);
             }
         });
         if (isRoot()) {
-            new IdeaScalaConfigurer(project).configure();
+            new IdeaScalaConfigurer(project, scalaProjects -> {
+                if (!scalaProjects.isEmpty() && isolatedProjects) {
+                    failOnIncompatibleWithIsolatedProjects();
+                }
+            }).configure();
         }
     }
 
-    private void ideaModuleDependsOnRoot() {
+    private void ideaModuleDependsOnRoot(boolean isolatedProjects) {
+        if (isolatedProjects) {
+            failOnIncompatibleWithIsolatedProjects();
+        }
+
         // see IdeaScalaConfigurer which requires the ipr to be generated first
         project.getTasks().named(IDEA_MODULE_TASK_NAME, dependsOn(project.getRootProject().getTasks().named(IDEA_PROJECT_TASK_NAME)));
+    }
+
+    private static void failOnIncompatibleWithIsolatedProjects() {
+        throw new GradleException("Applying 'idea' plugin to Scala projects is not supported with Isolated Projects. Disable Isolated Projects to use this integration.");
     }
 
     private void linkCompositeBuildDependencies(final ProjectInternal project) {
@@ -526,6 +569,7 @@ public abstract class IdeaPlugin extends IdePlugin {
         }
     }
 
+    @SuppressWarnings("deprecation")
     private void visitAllImlArtifactsInComposite(ProjectInternal project, IdeaProject ideaProject, TaskDependencyResolveContext context) {
         ProjectComponentIdentifier thisProjectId = projectPathRegistry.stateFor(project).getComponentIdentifier();
         for (IdeArtifactRegistry.Reference<IdeaModuleMetadata> reference : artifactRegistry.getIdeProjects(IdeaModuleMetadata.class)) {
@@ -546,4 +590,13 @@ public abstract class IdeaPlugin extends IdePlugin {
             reference.visitDependencies(context);
         }
     }
+
+    /**
+     * Injects and returns an instance of {@link BuildFeatures}.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     */
+    @Deprecated
+    @Inject
+    protected abstract BuildFeatures getBuildFeatures();
 }

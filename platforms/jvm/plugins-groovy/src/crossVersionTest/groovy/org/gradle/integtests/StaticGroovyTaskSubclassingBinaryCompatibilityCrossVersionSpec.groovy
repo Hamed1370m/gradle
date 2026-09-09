@@ -17,6 +17,8 @@ package org.gradle.integtests
 
 import org.gradle.integtests.fixtures.CrossVersionIntegrationSpec
 import org.gradle.integtests.fixtures.TargetVersions
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.gradle.util.GradleVersion
 import spock.lang.Issue
 
@@ -35,6 +37,7 @@ import spock.lang.Issue
 class StaticGroovyTaskSubclassingBinaryCompatibilityCrossVersionSpec extends CrossVersionIntegrationSpec {
 
     @Issue("https://github.com/gradle/gradle/issues/6027")
+    @Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = "explicitly requests a daemon")
     def "task can use project.file() from statically typed Groovy"() {
         when:
         def apiDepConf = "implementation"
@@ -61,10 +64,14 @@ class StaticGroovyTaskSubclassingBinaryCompatibilityCrossVersionSpec extends Cro
             import org.gradle.api.tasks.TaskAction
 
             @CompileStatic
-            class SubclassTask extends DefaultTask {
-                @TaskAction
-                void doGet() {
+            abstract class SubclassTask extends DefaultTask {
+                SubclassTask() {
+                    // access at configuration time to be CC-compatible
                     project.file("file.txt")
+                }
+                @TaskAction
+                void doIt() {
+                    println("Done")
                 }
             }
         """

@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableSet;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentSelector;
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier;
+import org.gradle.api.internal.artifacts.NamedVariantIdentifier;
 import org.gradle.api.internal.artifacts.dsl.dependencies.PlatformSupport;
 import org.gradle.api.internal.attributes.ImmutableAttributes;
 import org.gradle.internal.Describables;
@@ -30,10 +31,10 @@ import org.gradle.internal.component.model.ConfigurationMetadata;
 import org.gradle.internal.component.model.ExcludeMetadata;
 import org.gradle.internal.component.model.IvyArtifactName;
 import org.gradle.internal.component.model.ModuleConfigurationMetadata;
+import org.gradle.internal.component.model.VariantIdentifier;
 import org.gradle.internal.component.model.VariantResolveMetadata;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -41,11 +42,14 @@ import java.util.Set;
  * An immutable {@link ConfigurationMetadata} wrapper around a {@link ComponentVariant}.
  */
 class AbstractVariantBackedConfigurationMetadata implements ModuleConfigurationMetadata {
+
+    private final VariantIdentifier id;
     private final ModuleComponentIdentifier componentId;
     private final ComponentVariant variant;
     private final List<? extends ModuleDependencyMetadata> dependencies;
 
     AbstractVariantBackedConfigurationMetadata(ModuleComponentIdentifier componentId, ComponentVariant variant) {
+        this.id = new NamedVariantIdentifier(componentId, variant.getName());
         this.componentId = componentId;
         this.variant = variant;
         List<GradleDependencyMetadata> dependencies = new ArrayList<>(variant.getDependencies().size());
@@ -55,14 +59,14 @@ class AbstractVariantBackedConfigurationMetadata implements ModuleConfigurationM
         boolean forcedDependencies = PlatformSupport.hasForcedDependencies(variant);
         for (ComponentVariant.Dependency dependency : variant.getDependencies()) {
             ModuleComponentSelector selector = DefaultModuleComponentSelector.newSelector(DefaultModuleIdentifier.newId(dependency.getGroup(), dependency.getModule()), dependency.getVersionConstraint(), dependency.getAttributes(), dependency.getCapabilitySelectors());
-            List<ExcludeMetadata> excludes = dependency.getExcludes();
+            ImmutableList<ExcludeMetadata> excludes = dependency.getExcludes();
             IvyArtifactName dependencyArtifact = dependency.getDependencyArtifact();
             dependencies.add(new GradleDependencyMetadata(selector, excludes, false, dependency.isEndorsingStrictVersions(), dependency.getReason(), forcedDependencies, dependencyArtifact));
         }
         for (ComponentVariant.DependencyConstraint dependencyConstraint : variant.getDependencyConstraints()) {
             dependencies.add(new GradleDependencyMetadata(
                 DefaultModuleComponentSelector.newSelector(DefaultModuleIdentifier.newId(dependencyConstraint.getGroup(), dependencyConstraint.getModule()), dependencyConstraint.getVersionConstraint(), dependencyConstraint.getAttributes(), ImmutableSet.of()),
-                Collections.emptyList(),
+                ImmutableList.of(),
                 true,
                 false,
                 dependencyConstraint.getReason(),
@@ -74,9 +78,15 @@ class AbstractVariantBackedConfigurationMetadata implements ModuleConfigurationM
     }
 
     AbstractVariantBackedConfigurationMetadata(ModuleComponentIdentifier componentId, ComponentVariant variant, List<? extends ModuleDependencyMetadata> dependencies) {
+        this.id = new NamedVariantIdentifier(componentId, variant.getName());
         this.componentId = componentId;
         this.variant = variant;
         this.dependencies = dependencies;
+    }
+
+    @Override
+    public VariantIdentifier getId() {
+        return id;
     }
 
     @Override
@@ -101,7 +111,7 @@ class AbstractVariantBackedConfigurationMetadata implements ModuleConfigurationM
 
     @Override
     public DisplayName asDescribable() {
-        return Describables.of(componentId, "variant", variant.getName());
+        return Describables.of(id.getComponentId(), "variant", variant.getName());
     }
 
     @Override

@@ -48,7 +48,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         def ideaModel = fetchModel(IdeaProject)
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             modelsCreated(":", models(IdeaProject, pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
         }
 
@@ -60,7 +60,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         fetchModel(IdeaProject)
 
         then:
-        fixture.assertStateLoaded()
+        fixture.assertModelLoaded()
     }
 
     def "can fetch BasicIdeaProject model for root and re-fetch cached"() {
@@ -73,7 +73,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         def ideaModel = fetchModel(BasicIdeaProject)
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             modelsCreated(":", models(BasicIdeaProject, pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
         }
 
@@ -85,15 +85,14 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         fetchModel(BasicIdeaProject)
 
         then:
-        fixture.assertStateLoaded()
+        fixture.assertModelLoaded()
     }
 
     def "can fetch IdeaProject model for empty projects"() {
         settingsFile << """
             rootProject.name = 'root'
-            include(":lib1")
-            include(":lib1:lib11")
         """
+        includeProjects("lib1", "lib1:lib11")
 
         when: "fetching without Isolated Projects"
         def originalIdeaModel = fetchModel(IdeaProject)
@@ -108,7 +107,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         def ideaModel = fetchModel(IdeaProject)
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             // IdeaProject, plugin application "model", intermediate IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal
             modelsCreated(":", models(IdeaProject, pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
             // plugin application "model", intermediate IsolatedGradleProject, IsolatedIdeaModule
@@ -122,8 +121,8 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
     def "fetching IdeaProject model for non-root project fails"() {
         settingsFile << """
             rootProject.name = "root"
-            include("a")
         """
+        includeProjects("a")
 
         when:
         withIsolatedProjects()
@@ -163,7 +162,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         def ideaModel = fetchModel(IdeaProject)
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             modelsCreated(":", models(IdeaProject, pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
             modelsCreated(":lib1", models(pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
         }
@@ -216,7 +215,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         def ideaModel = fetchModel(IdeaProject)
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             modelsCreated(":", models(IdeaProject, pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
             modelsCreated(":lib1", models(pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
             modelsCreated(":lib2", models(pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
@@ -260,7 +259,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         def ideaModel = fetchModel(IdeaProject)
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             modelsCreated(":", models(IdeaProject, pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
             modelsCreated(":a", models(pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
             modelsCreated(":b", models(pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
@@ -286,7 +285,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         def updatedModel = fetchModel(IdeaProject)
 
         then:
-        fixture.assertStateUpdated {
+        fixture.assertModelUpdated {
             fileChanged("a/build.gradle")
             modelsCreated(":", models(IdeaProject, pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
             modelsCreated(":a", models(pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
@@ -338,7 +337,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         def ideaModel = fetchModel(BasicIdeaProject)
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             modelsCreated(":", models(BasicIdeaProject, pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
             modelsCreated(":api", models(pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
             modelsCreated(":impl", models(pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
@@ -425,7 +424,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         def result = runBuildAction(new FetchAllIdeaProjects())
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             buildModelCreated()
             modelsCreated(
                 [":", ":buildB", ":buildC", ":buildD"],
@@ -447,7 +446,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         def anotherResult = runBuildAction(new FetchAllIdeaProjects())
 
         then:
-        fixture.assertStateLoaded()
+        fixture.assertModelLoaded()
 
         checkModel(anotherResult, originalResult, [
             [{ it.allIdeaProjects }, { a, e -> checkIdeaProject(a, e) }]
@@ -461,7 +460,7 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         def afterChangeResult = runBuildAction(new FetchAllIdeaProjects())
 
         then:
-        fixture.assertStateUpdated {
+        fixture.assertModelUpdated {
             fileChanged("buildC/build.gradle")
             projectsConfigured(":buildB", ":buildB:b1", ":buildB:b2", ":buildC", ":buildD", ":buildD:b1", ":buildD:buildC")
             modelsCreated(":buildC", models(IdeaProject, pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
@@ -499,15 +498,14 @@ class IsolatedProjectsToolingApiIdeaProjectIntegrationTest extends AbstractIsola
         fetchModelFails(IdeaProject)
 
         then:
-        fixture.assertStateStoredAndDiscarded {
-            modelsCreated(":", models(IdeaProject, pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
-            modelsCreated(":lib1", models(pluginApplyingModel, IsolatedGradleProjectInternal, IsolatedIdeaModuleInternal))
-            // TODO:isolated there should be no violation
-            problem("Plugin class 'org.gradle.plugins.ide.idea.IdeaPlugin': Project ':lib1' cannot access 'Project.tasks' functionality on another project ':'")
-        }
-
+        // From Gradle 9.7 the plugin application failure captured during resilient model building is propagated,
+        // so the build fails with it while the client still receives the per-model failures.
+        failure.assertHasFailures(1)
+        failureHasCause("Applying 'idea' plugin to Scala projects is not supported with Isolated Projects. Disable Isolated Projects to use this integration.")
+        failureHasCause("Failed to apply plugin class 'org.gradle.plugins.ide.idea.IdeaPlugin'.")
+        // TODO:isolated assert model stored successfully
         // TODO:isolated check the model matches the vintage model
-//        checkIdeaProject(ideaModel, originalIdeaModel)
+        // checkIdeaProject(ideaModel, originalIdeaModel)
     }
 
     private static void checkIdeaProject(IdeaProject actual, IdeaProject expected) {

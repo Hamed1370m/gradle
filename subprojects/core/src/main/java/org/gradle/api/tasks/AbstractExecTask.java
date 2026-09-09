@@ -15,10 +15,12 @@
  */
 package org.gradle.api.tasks;
 
+import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.internal.ConventionTask;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
+import org.gradle.internal.instrumentation.api.annotations.NotToBeReplacedByLazyProperty;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 import org.gradle.process.CommandLineArgumentProvider;
 import org.gradle.process.ExecResult;
@@ -28,8 +30,8 @@ import org.gradle.process.internal.DefaultExecSpec;
 import org.gradle.process.internal.ExecAction;
 import org.gradle.process.internal.ExecActionFactory;
 import org.gradle.work.DisableCachingByDefault;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.io.File;
 import java.io.InputStream;
@@ -41,6 +43,7 @@ import java.util.Map;
  * {@code AbstractExecTask} is the base class for all exec tasks.
  *
  * @param <T> The concrete type of the class.
+ * @since 2.1
  */
 @DisableCachingByDefault(because = "Abstract super-class, not to be instantiated directly")
 public abstract class AbstractExecTask<T extends AbstractExecTask> extends ConventionTask implements ExecSpec {
@@ -49,6 +52,12 @@ public abstract class AbstractExecTask<T extends AbstractExecTask> extends Conve
     private final Property<ExecResult> execResult;
     private final DefaultExecSpec execSpec;
 
+    /**
+     * Creates a new {@code AbstractExecTask}.
+     *
+     * @since 2.1
+     */
+    @SuppressWarnings("this-escape")
     public AbstractExecTask(Class<T> taskType) {
         execSpec = getObjectFactory().newInstance(DefaultExecSpec.class);
         execResult = getObjectFactory().property(ExecResult.class);
@@ -56,15 +65,16 @@ public abstract class AbstractExecTask<T extends AbstractExecTask> extends Conve
     }
 
     @Inject
-    protected ObjectFactory getObjectFactory() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract ObjectFactory getObjectFactory();
 
     @Inject
-    protected ExecActionFactory getExecActionFactory() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract ExecActionFactory getExecActionFactory();
 
+    /**
+     * Exec.
+     *
+     * @since 2.1
+     */
     @TaskAction
     protected void exec() {
         ExecAction execAction = getExecActionFactory().newExecAction();
@@ -121,7 +131,7 @@ public abstract class AbstractExecTask<T extends AbstractExecTask> extends Conve
      * {@inheritDoc}
      */
     @Override
-    public T setArgs(@Nullable Iterable<?> arguments) {
+    public T setArgs(Iterable<?> arguments) {
         execSpec.setArgs(arguments);
         return taskType.cast(this);
     }
@@ -129,7 +139,6 @@ public abstract class AbstractExecTask<T extends AbstractExecTask> extends Conve
     /**
      * {@inheritDoc}
      */
-    @Nullable
     @Optional
     @Input
     @Override
@@ -224,7 +233,16 @@ public abstract class AbstractExecTask<T extends AbstractExecTask> extends Conve
      */
     @Override
     @Internal
-    @ToBeReplacedByLazyProperty
+    public DirectoryProperty getWorkingDirectory() {
+        return execSpec.getWorkingDirectory();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    @Internal
+    @NotToBeReplacedByLazyProperty(because = "Bridge for backward compatibility, use getWorkingDirectory() instead", willBeDeprecated = true)
     // TODO:LPTR Should be a content-less @InputDirectory
     public File getWorkingDir() {
         return execSpec.getWorkingDir();

@@ -15,7 +15,7 @@
  */
 package org.gradle.api.plugins.quality.pmd
 
-
+import org.gradle.test.fixtures.Flaky
 import org.hamcrest.Matcher
 import spock.lang.Issue
 
@@ -36,12 +36,12 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
 
             ${mavenCentralRepository()}
 
-            testing.suites.test.useJUnit()
+            // The default rule set's WrongTestAnnotation rule (PMD 7.26.0+) assumes JUnit Jupiter,
+            // so the analyzed test sources must not use JUnit 4 annotations.
+            testing.suites.test.useJUnitJupiter()
 
             pmd {
                 toolVersion = '$version'
-                // Set target JDK for PMD <5.x tests, so the test code is accepted
-                targetJdk = TargetJdk.VERSION_1_7
                 ${supportIncrementalAnalysis() ? "" : "incrementalAnalysis = false"}
             }
 
@@ -50,9 +50,7 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
                 // clear the classpath to avoid file locking issues on PMD version < 5.5.1
                 classpath = files()
             }"""}
-
-            ${requiredSourceCompatibility()}
-        """.stripIndent()
+        """
     }
 
     def "analyze good code"() {
@@ -69,7 +67,7 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
 
         expect:
         fails("check")
-        failure.assertHasDescription("Execution failed for task ':pmdTest'.")
+        failure.assertHasDescription("Execution failed for task ':pmdTest' (registered by plugin 'org.gradle.pmd').")
         failure.assertThatCause(containsString("2 PMD rule violations were found. See the report at:"))
         failure.assertHasResolutions(SCAN)
         file("build/reports/pmd/main.xml").assertContents(not(containsClass("org.gradle.Class1")))
@@ -91,6 +89,7 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
         output.contains("2 PMD rule violations were found. See the report at:")
     }
 
+    @Flaky(because = "https://github.com/gradle/gradle-private/issues/4688")
     void "can set max failures"() {
         badCode()
         buildFile << """
@@ -116,7 +115,7 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
 
         expect:
         fails("check")
-        failure.assertHasDescription("Execution failed for task ':pmdTest'.")
+        failure.assertHasDescription("Execution failed for task ':pmdTest' (registered by plugin 'org.gradle.pmd').")
         failure.assertThatCause(containsString("2 PMD rule violations were found. See the report at:"))
         file("build/reports/pmd/main.xml").assertContents(not(containsClass("org.gradle.Class1")))
         file("build/reports/pmd/test.xml").assertContents(containsClass("org.gradle.Class1Test"))
@@ -174,6 +173,12 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
                 reports {
                     xml.required = false
                     html.outputLocation = file("htmlReport.html")
+                    csv.required = true
+                    csv.outputLocation = file("csvReport.csv")
+                    codeClimate.required = true
+                    codeClimate.outputLocation = file("codeClimateReport.json")
+                    sarif.required = true
+                    sarif.outputLocation = file("sarifReport.json")
                 }
             }
         """
@@ -182,6 +187,42 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
         succeeds("check")
         !file("build/reports/pmd/main.xml").exists()
         file("htmlReport.html").exists()
+        file("csvReport.csv").exists()
+        file("codeClimateReport.json").exists()
+        file("sarifReport.json").exists()
+    }
+
+    def "default file locations for reports are sensible"() {
+        goodCode()
+        buildFile << """
+            pmdMain {
+                reports {
+                    xml.required = true
+                    html.required = true
+                    csv.required = true
+                    codeClimate.required = true
+                    sarif.required = true
+                }
+            }
+        """
+
+        expect:
+        succeeds("check")
+        file("build/reports/pmd/main.xml").exists()
+        file("build/reports/pmd/main.html").exists()
+        file("build/reports/pmd/main.csv").exists()
+        file("build/reports/pmd/main.codeclimate.json").exists()
+        file("build/reports/pmd/main.sarif.json").exists()
+    }
+
+    def "only xml and html reports are required by default"() {
+        goodCode()
+
+        expect:
+        succeeds("check")
+        file("build/reports/pmd/").assertHasDescendants(
+            "main.xml", "main.html", "test.xml", "test.html"
+        )
     }
 
     def "use custom rule set files"() {
@@ -198,7 +239,7 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
 
         expect:
         fails("pmdMain")
-        failure.assertHasDescription("Execution failed for task ':pmdMain'.")
+        failure.assertHasDescription("Execution failed for task ':pmdMain' (registered by plugin 'org.gradle.pmd').")
         failure.assertThatCause(containsString("1 PMD rule violations were found. See the report at:"))
         file("build/reports/pmd/main.xml").assertContents(not(containsClass("org.gradle.Class1")))
         file("build/reports/pmd/main.xml").assertContents(containsClass("org.gradle.Class2"))
@@ -219,7 +260,7 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
 
         expect:
         fails("pmdMain")
-        failure.assertHasDescription("Execution failed for task ':pmdMain'.")
+        failure.assertHasDescription("Execution failed for task ':pmdMain' (registered by plugin 'org.gradle.pmd').")
         failure.assertThatCause(containsString("1 PMD rule violations were found. See the report at:"))
         file("build/reports/pmd/main.xml").assertContents(not(containsClass("org.gradle.Class1")))
         file("build/reports/pmd/main.xml").assertContents(containsClass("org.gradle.Class2"))
@@ -236,7 +277,7 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
 
         expect:
         fails("pmdMain")
-        failure.assertHasDescription("Execution failed for task ':pmdMain'.")
+        failure.assertHasDescription("Execution failed for task ':pmdMain' (registered by plugin 'org.gradle.pmd').")
         failure.assertThatCause(containsString("1 PMD rule violations were found. See the report at:"))
         file("build/reports/pmd/main.xml").assertContents(not(containsClass("org.gradle.Class1")))
         file("build/reports/pmd/main.xml").assertContents(containsClass("org.gradle.Class2"))
@@ -253,7 +294,7 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
 
         expect:
         fails("check")
-        failure.assertHasDescription("Execution failed for task ':pmdTest'.")
+        failure.assertHasDescription("Execution failed for task ':pmdTest' (registered by plugin 'org.gradle.pmd').")
         failure.assertThatCause(containsString("2 PMD rule violations were found. See the report at:"))
         file("build/reports/pmd/test.xml").assertContents(containsClass("org.gradle.Class1Test"))
         output.contains "\tUsing multiple unary operators may be a bug"
@@ -284,7 +325,7 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
 
         expect:
         fails("check")
-        failure.assertHasDescription("Execution failed for task ':pmdTest'.")
+        failure.assertHasDescription("Execution failed for task ':pmdTest' (registered by plugin 'org.gradle.pmd').")
         failure.assertThatCause(containsString("2 PMD rule violations were found. See the report at:"))
         file("build/reports/pmd/main.xml").assertContents(not(containsClass("org.gradle.Class1")))
         file("build/reports/pmd/test.xml").assertContents(containsClass("org.gradle.Class1Test"))
@@ -357,9 +398,9 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
             """
             package org.gradle;
 
-            import static org.junit.Assert.assertTrue;
+            import static org.junit.jupiter.api.Assertions.assertTrue;
 
-            import org.junit.Test;
+            import org.junit.jupiter.api.Test;
 
             public class Class1Test {
                 @Test
@@ -381,9 +422,9 @@ class PmdPluginVersionIntegrationTest extends AbstractPmdPluginVersionIntegratio
             """
             package org.gradle;
 
-            import static org.junit.Assert.assertTrue;
+            import static org.junit.jupiter.api.Assertions.assertTrue;
 
-            import org.junit.Test;
+            import org.junit.jupiter.api.Test;
 
             public class Class1Test {
                 @Test

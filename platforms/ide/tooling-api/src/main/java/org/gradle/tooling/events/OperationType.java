@@ -17,12 +17,12 @@
 package org.gradle.tooling.events;
 
 import org.gradle.api.Incubating;
-import org.gradle.tooling.events.problems.ProblemEvent;
 
 /**
  * Enumerates the different types of operations for which progress events can be received.
  *
  * @see org.gradle.tooling.LongRunningOperation#addProgressListener(ProgressListener, java.util.Set)
+ * @since 2.5
  */
 public enum OperationType {
 
@@ -35,6 +35,7 @@ public enum OperationType {
      *     <li>{@link org.gradle.tooling.events.test.TestStartEvent}</li>
      *     <li>{@link org.gradle.tooling.events.test.TestFinishEvent}</li>
      * </ul>
+     * @since 2.5
      */
     TEST,
 
@@ -48,6 +49,7 @@ public enum OperationType {
      *     <li>{@link org.gradle.tooling.events.task.TaskFinishEvent}</li>
      * </ul>
      *
+     * @since 2.5
      */
     TASK,
 
@@ -62,6 +64,7 @@ public enum OperationType {
      *     <li>{@link StatusEvent}</li>
      * </ul>
      *
+     * @since 2.5
      */
     GENERIC,
 
@@ -123,6 +126,22 @@ public enum OperationType {
     TEST_OUTPUT,
 
     /**
+     * Flag for test metadata events.
+     * <p>
+     * Clients must subscribe to {@link #TEST} events too if they want to receive test metadata events.
+     * </p>
+     *
+     * The following events are currently issued for this operation type.
+     * <ul>
+     *     <li>{@link org.gradle.tooling.events.test.TestMetadataEvent}</li>
+     * </ul>
+     *
+     * @since 8.13
+     */
+    @Incubating
+    TEST_METADATA,
+
+    /**
      * Flag for file download progress events. This includes various types of files, for example files downloaded during dependency resolution,
      * Gradle distribution downloads, and Java toolchain downloads.
      *
@@ -160,11 +179,28 @@ public enum OperationType {
      * <p>
      * The following events are currently issued for this operation type.
      * <ul>
-     *     <li>{@link ProblemEvent}</li>
+     *     <li>{@link org.gradle.tooling.events.problems.ProblemEvent}</li>
+     *     <li>{@link org.gradle.tooling.events.problems.SingleProblemEvent}</li>
+     *     <li>{@link org.gradle.tooling.events.problems.ProblemSummariesEvent}</li>
      * </ul>
      *
      * @since 8.4
      */
     @Incubating
-    PROBLEMS
+    PROBLEMS,
+
+    /**
+     * Flag for the topmost progress event.
+     * <p>
+     * Using this operation type is useful for capturing the build failure details from the finish event.
+     *
+     * The following events are currently issued for this operation type.
+     * <ul>
+     *     <li>{@link StartEvent}</li>
+     *     <li>{@link FinishEvent}</li>
+     * </ul>
+     * @since 8.12
+     */
+    @Incubating
+    ROOT
 }

@@ -15,8 +15,9 @@
  */
 
 import gradlebuild.basics.gradleProperty
-import gradlebuild.identity.extension.ModuleIdentityExtension
-import org.gradle.api.publish.maven.MavenPublication
+import gradlebuild.identity.extension.GradleModuleExtension
+import org.gradle.api.credentials.HttpHeaderCredentials
+import org.gradle.authentication.http.HttpHeaderAuthentication
 
 plugins {
     id("publishing")
@@ -25,32 +26,27 @@ plugins {
 val artifactoryUrl
     get() = System.getenv("GRADLE_INTERNAL_REPO_URL") ?: ""
 
-val artifactoryUserName
-    get() = project.providers.gradleProperty("artifactoryUserName").orNull
-
-val artifactoryUserPassword
-    get() = project.providers.gradleProperty("artifactoryUserPassword").orNull
+val artifactoryToken
+    get() = project.providers.gradleProperty("artifactoryToken").orNull
 
 tasks.withType<AbstractPublishToMaven>().configureEach {
     val noUpload = project.gradleProperty("noUpload")
     this.onlyIf { !noUpload.map { it == "true" }.orElse(false).get() }
     if (name.endsWith("ToRemoteRepository")) {
         failEarlyIfUrlOrCredentialsAreNotSet(this)
+        // packageBuild task executes tests, so we must run after it
+        mustRunAfter(":packageBuild")
     }
 }
 
-@Suppress("ThrowsCount")
 fun Project.failEarlyIfUrlOrCredentialsAreNotSet(publish: Task) {
     gradle.taskGraph.whenReady {
         if (hasTask(publish)) {
             if (artifactoryUrl.isEmpty()) {
                 throw GradleException("artifactoryUrl is not set!")
             }
-            if (artifactoryUserName.isNullOrEmpty()) {
-                throw GradleException("artifactoryUserName is not set!")
-            }
-            if (artifactoryUserPassword.isNullOrEmpty()) {
-                throw GradleException("artifactoryUserPassword is not set!")
+            if (artifactoryToken.isNullOrEmpty()) {
+                throw GradleException("artifactoryToken is not set!")
             }
         }
     }
@@ -60,11 +56,14 @@ publishing {
     repositories {
         maven {
             name = "remote"
-            val libsType = the<ModuleIdentityExtension>().snapshot.map { if (it) "snapshots" else "releases" }
+            val libsType = the<GradleModuleExtension>().identity.snapshot.map { if (it) "snapshots" else "releases" }
             url = uri("$artifactoryUrl/libs-${libsType.get()}-local")
-            credentials {
-                username = artifactoryUserName
-                password = artifactoryUserPassword
+            credentials(HttpHeaderCredentials::class) {
+                name = "Authorization"
+                value = "Bearer $artifactoryToken"
+            }
+            authentication {
+                create<HttpHeaderAuthentication>("header")
             }
         }
     }
@@ -85,7 +84,7 @@ publishing {
             developers {
                 developer {
                     name = "The Gradle team"
-                    organization = "Gradle Inc."
+                    organization = "Gradle, Inc."
                     organizationUrl = "https://gradle.org"
                 }
             }

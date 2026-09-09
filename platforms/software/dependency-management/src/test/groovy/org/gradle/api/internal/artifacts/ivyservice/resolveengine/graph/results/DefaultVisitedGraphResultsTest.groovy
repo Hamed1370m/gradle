@@ -16,64 +16,42 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.results
 
-import org.gradle.api.artifacts.ResolveException
 import org.gradle.api.artifacts.UnresolvedDependency
-import org.gradle.api.internal.artifacts.result.MinimalResolutionResult
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.GraphStructure
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ResolvedDependencyGraph
 import org.gradle.api.internal.attributes.ImmutableAttributes
 import spock.lang.Specification
-
-import java.util.function.Supplier
 
 /**
  * Tests {@link DefaultVisitedGraphResults}
  */
 class DefaultVisitedGraphResultsTest extends Specification {
 
-    MinimalResolutionResult resolutionResult = new MinimalResolutionResult(0, Mock(Supplier), ImmutableAttributes.EMPTY)
+    ResolvedDependencyGraph resolvedDependencyGraph = new ResolvedDependencyGraph(ImmutableAttributes.EMPTY, () -> Mock(GraphStructure), null)
 
     def "hasResolutionFailure returns true if there is a failure"() {
         given:
-        def results1 = new DefaultVisitedGraphResults(resolutionResult, Collections.emptySet(), null)
-        def results2 = new DefaultVisitedGraphResults(resolutionResult, Collections.singleton(Mock(UnresolvedDependency)), null)
-        def results3 = new DefaultVisitedGraphResults(resolutionResult, Collections.emptySet(), Mock(ResolveException))
+        def results1 = new DefaultVisitedGraphResults(resolvedDependencyGraph, Collections.emptySet())
+        def results2 = new DefaultVisitedGraphResults(resolvedDependencyGraph, Collections.singleton(Mock(UnresolvedDependency)))
 
         expect:
         !results1.hasAnyFailure()
         results2.hasAnyFailure()
-        results3.hasAnyFailure()
     }
 
     def "visits all resolution failures"() {
         given:
         def throwable = Mock(Throwable)
-        def resolveEx = Mock(ResolveException)
-
         def unresolved = Mock(UnresolvedDependency) {
             getProblem() >> throwable
         }
 
-        def results1 = new DefaultVisitedGraphResults(resolutionResult, Collections.emptySet(), null)
-        def results2 = new DefaultVisitedGraphResults(resolutionResult, Collections.singleton(unresolved), null)
-        def results3 = new DefaultVisitedGraphResults(resolutionResult, Collections.emptySet(), resolveEx)
-        def results4 = new DefaultVisitedGraphResults(resolutionResult, Collections.singleton(unresolved), resolveEx)
+        def results1 = new DefaultVisitedGraphResults(resolvedDependencyGraph, Collections.emptySet())
+        def results2 = new DefaultVisitedGraphResults(resolvedDependencyGraph, Collections.singleton(unresolved))
 
         expect:
         visitFailures(results1) == []
         visitFailures(results2) == [throwable]
-        visitFailures(results3) == [resolveEx]
-        visitFailures(results4) == [throwable, resolveEx]
-    }
-
-    def "getters return the values passed to the constructor"() {
-        given:
-        def resolveEx = Mock(ResolveException)
-        def unresolved = Mock(UnresolvedDependency)
-        def results = new DefaultVisitedGraphResults(resolutionResult, Collections.singleton(unresolved), resolveEx)
-
-        expect:
-        results.resolutionResult == resolutionResult
-        results.unresolvedDependencies == ([unresolved] as Set)
-        results.resolutionFailure.get() == resolveEx
     }
 
     private List<Throwable> visitFailures(VisitedGraphResults results) {
@@ -81,4 +59,5 @@ class DefaultVisitedGraphResultsTest extends Specification {
         results.visitFailures { result.add(it) }
         return result
     }
+
 }

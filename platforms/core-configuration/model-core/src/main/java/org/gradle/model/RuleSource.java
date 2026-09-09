@@ -24,7 +24,7 @@ import org.gradle.api.Incubating;
  * A rule source is not used like a regular Java object.
  * It is a stateless container of methods and possibly constants.
  * <p>
- * Please consult the “Rule based model configuration” chapter of the Gradle User Manual for general information about “rules”.
+ * Please consult the "Rule based model configuration" chapter of the Gradle User Manual for general information about "rules".
  *
  * <h2>Rule methods</h2>
  * <p>
@@ -36,9 +36,9 @@ import org.gradle.api.Incubating;
  * <li>{@link Finalize}</li>
  * <li>{@link Validate}</li>
  * <li>{@link Rules}</li>
- * <li>{@link org.gradle.platform.base.ComponentType}</li>
- * <li>{@link org.gradle.platform.base.ComponentBinaries}</li>
- * <li>{@link org.gradle.platform.base.BinaryTasks}</li>
+ * <li>{@code org.gradle.platform.base.ComponentType}</li>
+ * <li>{@code org.gradle.platform.base.ComponentBinaries}</li>
+ * <li>{@code org.gradle.platform.base.BinaryTasks}</li>
  * </ul>
  * <p>
  * Each annotation specifies the type of the rule, which affects when it will be executed.
@@ -62,7 +62,7 @@ import org.gradle.api.Incubating;
  * For a void {@link Model} method, the subject is the first method parameter.
  * <p>
  * The {@link Path} annotation can be placed on any parameter (except the subject of {@link Model} rules) to indicate the model element to bind to.
- * If there is no {@link Path} annotation, a “by-type” binding will be attempted.
+ * If there is no {@link Path} annotation, a "by-type" binding will be attempted.
  * The binding scope is determined by how the rule source is applied.
  *
  * <h2>General class constraints</h2>
@@ -76,7 +76,11 @@ import org.gradle.api.Incubating;
  * <li>Methods cannot be overloaded.</li>
  * <li>Implementations cannot be generic (i.e. cannot use type parameters).</li>
  * </ul>
+ *
+ * @deprecated The Gradle software model is deprecated and will be removed in Gradle 10. Use the new component model (e.g. {@code cpp-application}, {@code cpp-library}, {@code swift-application}, {@code swift-library}, {@code xctest}) instead.
+ * @since 2.1
  */
 @Incubating
+@Deprecated
 public class RuleSource {
 }

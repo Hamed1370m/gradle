@@ -17,6 +17,7 @@
 package org.gradle.api;
 
 import org.gradle.internal.instrumentation.api.annotations.NotToBeMigratedToLazy;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Allows specification of configuration for some action.
@@ -44,20 +45,23 @@ public interface ActionConfiguration {
      * Adds initialization parameters to use when constructing an instance of the implementation class.
      *
      * @param params - the parameters to use during construction
+     * @since 4.0
      */
-    void params(Object... params);
+    void params(@Nullable Object... params);
 
     /**
      * Sets any initialization parameters to use when constructing an instance of the implementation class.
      *
      * @param params - the parameters to use during construction
+     * @since 4.0
      */
-    void setParams(Object... params);
+    void setParams(@Nullable Object... params);
 
     /**
      * Gets the initialization parameters that will be used when constructing an instance of the implementation class.
      *
      * @return the parameters to use during construction
+     * @since 4.0
      */
-    Object[] getParams();
+    @Nullable Object[] getParams();
 }

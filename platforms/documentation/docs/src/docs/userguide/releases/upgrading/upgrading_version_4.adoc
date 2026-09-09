@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Gradle, Inc.
+// Copyright (C) 2024 Gradle, Inc.
 //
 // Licensed under the Creative Commons Attribution-Noncommercial-ShareAlike 4.0 International License.;
 // you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 // limitations under the License.
 
 [[upgrading_version_4]]
-= Upgrading your build from Gradle 4.x to 5.0
+= Upgrading from Gradle 4.x to 5.0
 
 This chapter provides the information you need to migrate your older Gradle 4.x builds to Gradle 5.0.
 In most cases, you will need to apply the changes from all versions that come after the one you're upgrading from.
@@ -21,12 +21,13 @@ For example, if you're upgrading from Gradle 4.3 to 5.0, you will also need to a
 
 TIP: If you are using Gradle for Android, you need to move to version 3.3 or higher of both the Android Gradle Plugin and Android Studio.
 
+[[for_all_users]]
 == For all users
 
  . If you are not already on the latest 4.10.x release, read the sections <<#changes_4.10,below>> for help upgrading your project to the latest 4.10.x release.
 We recommend upgrading to the latest 4.10.x release to get the most useful warnings and deprecations information before moving to 5.0.
 Avoid upgrading Gradle and migrating to Kotlin DSL at the same time in order to ease troubleshooting in case of potential issues.
- . Try running `gradle help --scan` and view the https://gradle.com/enterprise/releases/2018.4/#identify-usages-of-deprecated-gradle-functionality[deprecations view] of the generated build scan.
+ . Try running `gradle help --scan` and view the https://docs.gradle.com/develocity/get-started/#identifying_deprecated_gradle_functionality[deprecations view] of the generated Build Scan.
 If there are no warnings, the Deprecations tab will not appear.
 +
 image::deprecations.png[Deprecations View of a Gradle Build Scan]
@@ -40,8 +41,8 @@ Alternatively, you can run `gradle help --warning-mode=all` to see the deprecati
 Some plugins will break with this new version of Gradle, for example because they use internal APIs that have been removed or changed.
 The previous step will help you identify potential problems by issuing deprecation warnings when a plugin does try to use a deprecated part of the API.
 +
-In particular, you will need to use at least a 2.x version of the https://plugins.gradle.org/plugin/com.github.johnrengelman.shadow[*Shadow Plugin*].
-. Run `gradle wrapper --gradle-version 5.0` to update the project to 5.0
+In particular, you will need to use at least a 2.x version of the https://plugins.gradle.org/plugin/com.gradleup.shadow[*Shadow Plugin*].
+. Run `gradle :wrapper --gradle-version 5.0` to update the project to 5.0
 . Move to Java 8 or higher if you haven't already. Whereas Gradle 4.x requires Java 7, Gradle 5 requires Java 8 to run.
 . Read the <<#changes_5.0, Upgrading from 4.10>> section and make any necessary changes.
 . Try to run the project and debug any errors using the <<troubleshooting.adoc#troubleshooting, Troubleshooting Guide>>.
@@ -68,11 +69,13 @@ Other notable changes to be aware of that may break your build include:
 
 If you are not already on version 4.10, skip down to the section that applies to your current Gradle version and work your way up until you reach here. Then, apply these changes when moving from Gradle 4.10 to 5.0.
 
+[[other_changes_5_0]]
 === Other changes
 
  * The `enableFeaturePreview('IMPROVED_POM_SUPPORT')` and `enableFeaturePreview('STABLE_PUBLISHING')` flags are no longer necessary. These features are now enabled by default.
  * Gradle now bundles <<#rel5.0:jaxb_and_java9, JAXB>> for Java 9 and above. You can remove the `--add-modules java.xml.bind` option from `org.gradle.jvmargs`, if set.
 
+[[potential_breaking_changes_5_0]]
 === Potential breaking changes
 
 The changes in this section have the potential to break your build, but the vast majority have been deprecated for quite some time and few builds will be affected by a large number of them.
@@ -101,6 +104,7 @@ General::
 +
 Use the link:{groovyDslPath}/org.gradle.api.Task.html#org.gradle.api.Task:doLast(org.gradle.api.Action)[Task.doLast()] method instead, like this:
 +
+[source,groovy]
 ----
 task myTask {
     doLast {
@@ -134,9 +138,9 @@ Java builds::
  * Gradle will no longer automatically apply annotation processors that are on the compile classpath — use link:{groovyDslPath}/org.gradle.api.tasks.compile.CompileOptions.html#org.gradle.api.tasks.compile.CompileOptions:annotationProcessorPath[CompileOptions.annotationProcessorPath] instead.
  * The `testClassesDir` property has been removed from the link:{groovyDslPath}/org.gradle.api.tasks.testing.Test.html[Test] task — use link:{groovyDslPath}/org.gradle.api.tasks.testing.Test.html#org.gradle.api.tasks.testing.Test:testClassesDirs[testClassesDirs] instead.
  * The `classesDir` property has been removed from both the _JDepend_ task and link:{groovyDslPath}/org.gradle.api.tasks.SourceSetOutput.html[SourceSetOutput]. Use the _JDepend.classesDirs_ and link:{groovyDslPath}/org.gradle.api.tasks.SourceSetOutput.html#org.gradle.api.tasks.SourceSetOutput:classesDirs[SourceSetOutput.classesDirs] properties instead.
- * The `JavaLibrary(PublishArtifact, DependencySet)` constructor has been removed — this was used by the https://plugins.gradle.org/plugin/com.github.johnrengelman.shadow[Shadow Plugin], so make sure you upgrade to at least version 2.x of that plugin.
+ * The `JavaLibrary(PublishArtifact, DependencySet)` constructor has been removed — this was used by the https://plugins.gradle.org/plugin/com.gradleup.shadow[Shadow Plugin], so make sure you upgrade to at least version 2.x of that plugin.
  * The `JavaBasePlugin.configureForSourceSet()` method has been removed.
- * You can no longer create your own instances of link:{javadocPath}/org/gradle/api/plugins/JavaPluginConvention.html[JavaPluginConvention], link:{javadocPath}/org/gradle/api/plugins/ApplicationPluginConvention.html[ApplicationPluginConvention], link:{javadocPath}/org/gradle/api/plugins/WarPluginConvention.html[WarPluginConvention], link:{javadocPath}/org/gradle/plugins/ear/EarPluginConvention.html[EarPluginConvention], link:{javadocPath}/org/gradle/api/plugins/BasePluginConvention.html[BasePluginConvention], and link:{javadocPath}/org/gradle/api/plugins/ProjectReportsPluginConvention.html[ProjectReportsPluginConvention].
+ * You can no longer create your own instances of `JavaPluginConvention`, `ApplicationPluginConvention`, `WarPluginConvention`, `EarPluginConvention`, `BasePluginConvention`, and `ProjectReportsPluginConvention`.
  * The `Maven` Plugin used to publish the highly outdated Maven 2 metadata format. This has been changed and it will now publish Maven 3 metadata, just like the `Maven Publish` Plugin.
 +
 With the removal of Maven 2 support, the methods that configure unique snapshot behavior have also been removed. Maven 3 only supports unique snapshots, so we decided to remove them.
@@ -168,6 +172,7 @@ Tasks & properties::
 +
 Attempting to replace a built-in task will produce an error similar to the following:
 +
+[source,text]
 ----
 > Cannot add task 'wrapper' as a task with that name already exists.
 ----
@@ -206,12 +211,14 @@ Ideally you shouldn't use classes from this package, but, as a quick fix, you ca
 
 If you are not already on version 4.9, skip down to the section that applies to your current Gradle version and work your way up until you reach here. Then, apply these changes when upgrading to Gradle 4.10.
 
+[[deprecated_classes_methods_and_properties_4_10]]
 === Deprecated classes, methods and properties
 
 Follow the API links to learn how to deal with these deprecations (if no extra information is provided here):
 
  * `TaskContainer.add()` and `TaskContainer.addAll()` — use link:{javadocPath}/org/gradle/api/tasks/TaskContainer.html#create-java.lang.String-java.lang.Class-org.gradle.api.Action-[TaskContainer.create()] or link:{javadocPath}/org/gradle/api/tasks/TaskContainer.html#register-java.lang.String-java.lang.Class-org.gradle.api.Action-[TaskContainer.register()] instead
 
+[[potential_breaking_changes_4_10]]
 === Potential breaking changes
 
  * There have been several potentially breaking changes in Kotlin DSL — see the _Breaking changes_ section of https://github.com/gradle/kotlin-dsl/releases/tag/v1.0-RC3[that project's release notes].
@@ -227,6 +234,7 @@ Standard property assignment still works in that one case.
 
  * <<#rel4.9:lazy_task_creation,Consider trying the lazy API for task creation and configuration>>
 
+[[potential_breaking_changes_4_9]]
 === Potential breaking changes
 
  * You can no longer use GPath syntax with link:{javadocPath}/org/gradle/api/tasks/TaskCollection.html#withType-java.lang.Class-[tasks.withType()].
@@ -240,9 +248,10 @@ For example, you would replace `tasks.withType(JavaCompile).name` with `tasks.wi
  * <<#rel4.8:switch_to_publishing_plugins,Switch to the Maven Publish and Ivy Publish plugins>>
  * <<#rel4.8:deferred_configuration,Use deferred configuration with the publishing plugins>>
  * <<#rel4.8:configure_internal_tasks,Configure existing `wrapper` and `init` tasks>> rather than defining your own
- * Consider migrating to the built-in <<dependency_locking#dependency-locking,dependency locking mechanism>> if you are currently using a plugin or custom solution for this
+ * Consider migrating to the built-in <<dependency_locking.adoc#sec:dependency-locking,dependency locking mechanism>> if you are currently using a plugin or custom solution for this
 
 
+[[potential_breaking_changes_4_8]]
 === Potential breaking changes
 
  * Build will now fail if a specified init script is not found.
@@ -256,6 +265,7 @@ This may lead to compilation errors in the build script. See https://github.com/
 
 [[deprecations_4.8]]
 === Deprecations
+
 Prior to this release, builds were allowed to replace built-in tasks. link:https://docs.gradle.org/4.8/release-notes.html#overwriting-gradle\'s-built-in-tasks[This feature has been deprecated].
 
 The full list of built-in tasks that should not be replaced is:
@@ -264,6 +274,7 @@ The full list of built-in tasks that should not be replaced is:
 [[changes_4.7]]
 == Upgrading from 4.6 and earlier
 
+[[potential_breaking_changes_4_7]]
 === Potential breaking changes
 
  * Gradle will now, by convention, look for Checkstyle configuration files in the root project's _config/checkstyle_ directory.
@@ -281,6 +292,7 @@ Checkstyle configuration files in subprojects — the old by-convention location
 [[changes_4.6]]
 == Upgrading from 4.5 and earlier
 
+[[deprecations_4_6]]
 === Deprecations
 
 [[rel4.6:annotation_processor_configuration]]
@@ -290,6 +302,7 @@ They should be added to the `annotationProcessor` configuration instead.
 If you don't want any processing, but your compile classpath contains a processor unintentionally (e.g. as part of a library you depend on), use the `-proc:none` compiler argument to ignore it.
  * Use link:{javadocPath}/org/gradle/process/CommandLineArgumentProvider.html[CommandLineArgumentProvider] in place of link:https://docs.gradle.org/4.10.3/javadoc/org/gradle/api/tasks/compile/CompilerArgumentProvider.html[CompilerArgumentProvider].
 
+[[potential_breaking_changes_4_6]]
 === Potential breaking changes
 
  * The Java plugins now add a `__sourceSet__AnnotationProcessor` configuration for each source set, which might break if any of them match existing configurations you have. We recommend you remove your conflicting configuration declarations.
@@ -304,6 +317,7 @@ If you don't want any processing, but your compile classpath contains a processo
  * Make sure you have a _settings.gradle_ file: it avoids a performance penalty and allows you to set the root project's name.
  * Gradle now ignores the build cache configuration of included builds (<<composite_builds.adoc#composite_builds,composite builds>>) and instead uses the root build's configuration for all the builds.
 
+[[potential_breaking_changes_4_5]]
 === Potential breaking changes
 
  * Two overloaded `ValidateTaskProperties.setOutputFile()` methods were removed. They are replaced with auto-generated setters when the task is accessed from a build script, but that won't be the case from plugins and other code outside of the build script.
@@ -316,6 +330,7 @@ If you don't want any processing, but your compile classpath contains a processo
 [[changes_4.4]]
 == Upgrading from 4.3 and earlier
 
+[[potential_breaking_changes_4_4]]
 === Potential breaking changes
 
  * link:{groovyDslPath}/org.gradle.api.tasks.testing.AbstractTestTask.html[AbstractTestTask] is now extended by non-JVM test tasks as well as link:{groovyDslPath}/org.gradle.api.tasks.testing.Test.html[Test]. Plugins should beware configuring all tasks of type `AbstractTestTask` because of this.
@@ -333,14 +348,16 @@ You can bypass the toolchain discovery by specifying the installation directory 
 [[changes_4.3]]
 == Upgrading from 4.2 and earlier
 
- * The `plugins {}` block can now be <<plugins.adoc#sec:subprojects_plugins_dsl,used in subprojects>> and for <<plugins.adoc#sec:buildsrc_plugins_dsl,plugins in the _buildSrc_ directory>>.
+ * The `plugins {}` block can now be <<plugins_intermediate.adoc#sec:subprojects_plugins_dsl,used in subprojects>> and for <<plugins_intermediate.adoc#sec:buildsrc_plugins_dsl,plugins in the _buildSrc_ directory>>.
 
+[[other_deprecations_4_3]]
 === Other deprecations
 
  * You should no longer run Gradle versions older than 2.6 via the Tooling API.
  * You should no longer run any version of Gradle via an older version of the Tooling API than 3.0.
  * You should no longer chain link:{javadocPath}/org/gradle/api/tasks/TaskInputs.html#property-java.lang.String-java.lang.Object-[TaskInputs.property(String,Object)] and link:{javadocPath}/org/gradle/api/tasks/TaskInputs.html#properties-java.util.Map-[TaskInputs.properties(Map)] methods.
 
+[[potential_breaking_changes_4_3]]
 === Potential breaking changes
 
  * link:{javadocPath}/org/gradle/api/DefaultTask.html#newOutputDirectory--[DefaultTask.newOutputDirectory()] now returns a `DirectoryProperty` instead of a `DirectoryVar`.
@@ -362,6 +379,7 @@ Prefer using separate properties with `@OutputFile`/`@OutputDirectory` annotatio
 [[changes_4.2]]
 == Upgrading from 4.1 and earlier
 
+[[potential_breaking_changes_4_2]]
 === Potential breaking changes
 
  * The `withPathSensitivity()` methods on link:{javadocPath}/org/gradle/api/tasks/TaskFilePropertyBuilder.html[TaskFilePropertyBuilder] and link:{javadocPath}/org/gradle/api/tasks/TaskOutputFilePropertyBuilder.html[TaskOutputFilePropertyBuilder] have been removed.
@@ -373,15 +391,17 @@ Prefer using separate properties with `@OutputFile`/`@OutputDirectory` annotatio
 
  * Consider using the new <<worker_api.adoc#worker_api,Worker API>> to enable units of work within your build to run in parallel.
 
+[[deprecated_classes_methods_and_properties_4_1]]
 === Deprecated classes, methods and properties
 
 Follow the API links to learn how to deal with these deprecations (if no extra information is provided here):
 
  * link:https://docs.gradle.org/4.10.3/javadoc/org/gradle/api/Nullable.html[Nullable]
 
+[[potential_breaking_changes_4_1]]
 === Potential breaking changes
 
- * Non-Java projects that have a <<declaring_dependencies_adv.adoc#sub:project_dependencies,project dependency>> on a Java project now consume the `runtimeElements` configuration by default instead of the `default` configuration.
+ * Non-Java projects that have a <<declaring_dependencies_basics.adoc#sec:project-dependencies,project dependency>> on a Java project now consume the `runtimeElements` configuration by default instead of the `default` configuration.
 +
 To override this behavior, you can explicitly declare the configuration to use in the project dependency.
 For example: `project(path: ':myJavaProject', configuration: 'default')`.
@@ -389,6 +409,7 @@ For example: `project(path: ':myJavaProject', configuration: 'default')`.
  * [Kotlin DSL] Base package renamed from `org.gradle.script.lang.kotlin` to `org.gradle.kotlin.dsl`.
 
 
+[[changes_in_detail]]
 == Changes in detail
 
 [[rel5.0:default_memory_settings]]
@@ -412,7 +433,7 @@ The default tool versions of the following code quality plugins have been update
  * The http://checkstyle.sourceforge.net[Checkstyle Plugin] now uses http://checkstyle.sourceforge.net/releasenotes.html#Release_8.12[8.12] instead of 6.19 by default.
  * The https://codenarc.org/[CodeNarc Plugin] now uses https://github.com/CodeNarc/CodeNarc/blob/master/CHANGELOG.md#version-121-aug-2018[1.2.1] instead of 1.1 by default.
  * The https://www.jacoco.org/jacoco/[JaCoCo Plugin] now uses https://www.jacoco.org/jacoco/trunk/doc/changes.html[0.8.2] instead of 0.8.1 by default.
- * The https://pmd.github.io/[PMD Plugin] now uses https://pmd.github.io/pmd-6.8.0/pmd_release_notes.html#30-september-2018---680[6.8.0] instead of 5.6.1 by default.
+ * The https://pmd.github.io/[PMD Plugin] now uses https://pmd.github.io/2018/09/30/PMD-6.8.0/#30-september-2018---680[6.8.0] instead of 5.6.1 by default.
 +
 In addition, the default ruleset was changed from the now deprecated `java-basic` to `category/java/errorprone.xml`.
 +
@@ -420,6 +441,7 @@ We recommend configuring a ruleset explicitly, though.
 
 [[rel5.0:library_upgrades]]
 === [5.0] Library upgrades
+
 Several libraries that are used by Gradle have been upgraded:
 
  * Groovy was upgraded from 2.4.15 to https://groovy-lang.org/releasenotes/groovy-2.5.html[2.5.4].
@@ -447,6 +469,7 @@ Gradle now provides support for importing bill of materials (BOM) files, which a
 
 The following example picks the versions of the `gson` and `dom4j` dependencies from the declared Spring Boot BOM:
 
+[source,groovy]
 ----
 dependencies {
     // import a BOM
@@ -472,33 +495,21 @@ This is particularly useful if you develop and publish Java libraries with Gradl
 [[rel5.0:changes_to_default_task]]
 === [5.0] Changes to property factory methods on `DefaultTask`
 
+[[property_factory_methods_on_default_task_are_now_final]]
 ==== Property factory methods on `DefaultTask` are now final
+
 The property factory methods such as `newInputFile()` are intended to be called from the constructor of a type that extends `DefaultTask`.
 These methods are now final to avoid subclasses overriding these methods and using state that is not initialized.
 
+[[inputs_and_outputs_are_not_automatically_registered]]
 ==== Inputs and outputs are not automatically registered
+
 The Property instances that are returned by these methods are no longer automatically registered as inputs or outputs of the task.
 The Property instances need to be declared as inputs or outputs in the usual ways, such as attaching annotations such as `@OutputFile` or using the runtime API to register the property.
 
 For example, you could previously use the following syntax and have both outputFile instances registered as declared outputs:
 
 ====
-[.multi-language-sample]
-=====
-.build.gradle
-[source,groovy]
-----
-class MyTask extends DefaultTask {
-    // note: no annotation here
-    final RegularFileProperty outputFile = newOutputFile()
-}
-
-task myOtherTask {
-    def outputFile = newOutputFile()
-    doLast { ... }
-}
-----
-=====
 [.multi-language-sample]
 =====
 .build.gradle.kts
@@ -515,28 +526,27 @@ task("myOtherTask") {
 }
 ----
 =====
+[.multi-language-sample]
+=====
+.build.gradle
+[source,groovy]
+----
+class MyTask extends DefaultTask {
+    // note: no annotation here
+    final RegularFileProperty outputFile = newOutputFile()
+}
+
+task myOtherTask {
+    def outputFile = newOutputFile()
+    doLast { ... }
+}
+----
+=====
 ====
 
 Now you have to explicitly register `outputFile`, like this:
 
 ====
-[.multi-language-sample]
-=====
-.build.gradle
-[source, groovy]
-----
-class MyTask extends DefaultTask {
-    @OutputFile // property needs an annotation
-    final RegularFileProperty outputFile = project.objects.fileProperty()
-}
-
-task myOtherTask {
-    def outputFile = project.objects.fileProperty()
-    outputs.file(outputFile) // or to be registered using the runtime API
-    doLast { ... }
-}
-----
-=====
 [.multi-language-sample]
 =====
 .build.gradle.kts
@@ -549,6 +559,23 @@ open class MyTask : DefaultTask() {
 
 task("myOtherTask") {
     val outputFile = project.objects.fileProperty()
+    outputs.file(outputFile) // or to be registered using the runtime API
+    doLast { ... }
+}
+----
+=====
+[.multi-language-sample]
+=====
+.build.gradle
+[source, groovy]
+----
+class MyTask extends DefaultTask {
+    @OutputFile // property needs an annotation
+    final RegularFileProperty outputFile = project.objects.fileProperty()
+}
+
+task myOtherTask {
+    def outputFile = project.objects.fileProperty()
     outputs.file(outputFile) // or to be registered using the runtime API
     doLast { ... }
 }
@@ -578,13 +605,13 @@ If you are stuck with a bad plugin, you can work around by re-enabling JARs as m
 ====
 [.multi-language-sample]
 =====
-.settings.gradle
-[source,groovy]
+.settings.gradle.kts
+[source,kotlin]
 ----
 pluginManagement {
     repositories {
-        gradlePluginPortal().tap {
-            metadataSources {
+        gradlePluginPortal().apply {
+            (this as MavenArtifactRepository).metadataSources {
                 mavenPom()
                 artifact()
             }
@@ -593,16 +620,15 @@ pluginManagement {
 }
 ----
 =====
-
 [.multi-language-sample]
 =====
-.settings.gradle.kts
-[source,kotlin]
+.settings.gradle
+[source,groovy]
 ----
 pluginManagement {
     repositories {
-        gradlePluginPortal().apply {
-            (this as MavenArtifactRepository).metadataSources {
+        gradlePluginPortal().tap {
+            metadataSources {
                 mavenPom()
                 artifact()
             }
@@ -631,8 +657,8 @@ With the existing API, this example adds two tasks (`foo` and `bar`):
 ====
 [.multi-language-sample]
 =====
-.build.gradle
-[source, groovy]
+.build.gradle.kts
+[source,kotlin]
 ----
 tasks.create("foo") {
     tasks.create("bar")
@@ -641,8 +667,8 @@ tasks.create("foo") {
 =====
 [.multi-language-sample]
 =====
-.build.gradle.kts
-[source,kotlin]
+.build.gradle
+[source, groovy]
 ----
 tasks.create("foo") {
     tasks.create("bar")
@@ -658,8 +684,8 @@ so the `register()` for task `bar` only executes when `foo` is configured.
 ====
 [.multi-language-sample]
 =====
-.build.gradle
-[source, groovy]
+.build.gradle.kts
+[source,kotlin]
 ----
 tasks.register("foo") {
     tasks.register("bar") // WRONG
@@ -668,8 +694,8 @@ tasks.register("foo") {
 =====
 [.multi-language-sample]
 =====
-.build.gradle.kts
-[source,kotlin]
+.build.gradle
+[source, groovy]
 ----
 tasks.register("foo") {
     tasks.register("bar") // WRONG
@@ -715,7 +741,7 @@ Make sure that the AWS account used to publish artifacts has the `s3:PutObjectAc
 }
 ----
 
-See <<declaring_repositories_adv.adoc#sub:s3_cross_account,AWS S3 Cross Account Access>> for more information.
+See <<supported_repository_protocols.adoc#sec:s3-cross-account,AWS S3 Cross Account Access>> for more information.
 
 [[rel4.9:lazy_task_creation]]
 === [4.9] Consider trying the lazy API for task creation and configuration
@@ -745,18 +771,18 @@ The new, stable behavior can be switched on by adding the following to your sett
 ====
 [.multi-language-sample]
 =====
-.settings.gradle
-[source, groovy]
-----
-enableFeaturePreview('STABLE_PUBLISHING')
-----
-=====
-[.multi-language-sample]
-=====
 .settings.gradle.kts
 [source,kotlin]
 ----
 enableFeaturePreview("STABLE_PUBLISHING")
+----
+=====
+[.multi-language-sample]
+=====
+.settings.gradle
+[source, groovy]
+----
+enableFeaturePreview('STABLE_PUBLISHING')
 ----
 =====
 ====
@@ -768,23 +794,6 @@ However, your publishing block may rely on the implicit deferred configuration, 
 For example, under the new behavior, the following logic assumes that `jar.archiveBaseName` doesn't change after `artifactId` is set:
 
 ====
-[.multi-language-sample]
-=====
-.build.gradle
-[source, groovy]
-----
-subprojects {
-    publishing {
-        publications {
-            mavenJava {
-                from components.java
-                artifactId = jar.archiveBaseName
-            }
-        }
-    }
-}
-----
-=====
 [.multi-language-sample]
 =====
 .build.gradle.kts
@@ -802,11 +811,6 @@ subprojects {
 }
 ----
 =====
-====
-
-If that assumption is incorrect or might possibly be incorrect in the future, the `artifactId` must be set within an `afterEvaluate {}` block, like so:
-
-====
 [.multi-language-sample]
 =====
 .build.gradle
@@ -817,15 +821,18 @@ subprojects {
         publications {
             mavenJava {
                 from components.java
-                afterEvaluate {
-                    artifactId = jar.archiveBaseName
-                }
+                artifactId = jar.archiveBaseName
             }
         }
     }
 }
 ----
 =====
+====
+
+If that assumption is incorrect or might possibly be incorrect in the future, the `artifactId` must be set within an `afterEvaluate {}` block, like so:
+
+====
 [.multi-language-sample]
 =====
 .build.gradle.kts
@@ -845,6 +852,25 @@ subprojects {
 }
 ----
 =====
+[.multi-language-sample]
+=====
+.build.gradle
+[source, groovy]
+----
+subprojects {
+    publishing {
+        publications {
+            mavenJava {
+                from components.java
+                afterEvaluate {
+                    artifactId = jar.archiveBaseName
+                }
+            }
+        }
+    }
+}
+----
+=====
 ====
 
 [[rel4.8:configure_internal_tasks]]
@@ -855,20 +881,20 @@ You should no longer define your own `wrapper` and `init` tasks. Configure the e
 ====
 [.multi-language-sample]
 =====
-.build.gradle
-[source, groovy]
+.build.gradle.kts
+[source,kotlin]
 ----
-task wrapper(type: Wrapper) {
+task<Wrapper>("wrapper") {
     ...
 }
 ----
 =====
 [.multi-language-sample]
 =====
-.build.gradle.kts
-[source,kotlin]
+.build.gradle
+[source, groovy]
 ----
-task<Wrapper>("wrapper") {
+task wrapper(type: Wrapper) {
     ...
 }
 ----
@@ -880,20 +906,20 @@ to this:
 ====
 [.multi-language-sample]
 =====
-.build.gradle
-[source, groovy]
+.build.gradle.kts
+[source,kotlin]
 ----
-wrapper {
+tasks.wrapper {
     ...
 }
 ----
 =====
 [.multi-language-sample]
 =====
-.build.gradle.kts
-[source,kotlin]
+.build.gradle
+[source, groovy]
 ----
-tasks.wrapper {
+wrapper {
     ...
 }
 ----

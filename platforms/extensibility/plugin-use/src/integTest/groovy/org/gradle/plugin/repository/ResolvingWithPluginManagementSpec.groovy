@@ -51,7 +51,7 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
             $resolutionStrategy
             repositories {
                 maven {
-                    url "${mavenRepo.uri}"
+                    url = "${mavenRepo.uri}"
                 }
             }
           }
@@ -328,7 +328,7 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
               settings.pluginManagement {
                 repositories {
                     maven {
-                      url "${mavenRepo.uri}"
+                      url = "${mavenRepo.uri}"
                     }
                 }
               }
@@ -362,6 +362,27 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
 
         then:
         failureDescriptionContains("Cannot change the plugin resolution strategy after projects have been loaded.")
+    }
+
+    def "can't set default plugin version after projects have been loaded"() {
+        given:
+        def initScript = file('definePluginVersion.gradle')
+        initScript << """
+          Settings mySettings
+          settingsEvaluated { settings ->
+              mySettings = settings
+          }
+          projectsLoaded {
+            mySettings.pluginManagement.plugins.id('com.example.foo').version('1.0')
+          }
+        """
+        args('-I', initScript.absolutePath)
+
+        when:
+        fails('help')
+
+        then:
+        failureDescriptionContains("Cannot set a default plugin version for plugin 'com.example.foo' after projects have been loaded.")
     }
 
     def "fails build for unresolvable custom artifact"() {
@@ -427,11 +448,11 @@ class ResolvingWithPluginManagementSpec extends AbstractDependencyResolutionTest
             pluginManagement {
                 repositories {
                     ivy {
-                        url "${repo.uri}"
+                        url = "${repo.uri}"
                         patternLayout {
-                            ivy '[organisation]/[module]/[revision]/[module]-[revision].ivy'
-                            artifact '[organisation]/[module]/[revision]/[artifact]-[revision](-[classifier]).[ext]'
-                            m2compatible true
+                            ivy('[organisation]/[module]/[revision]/[module]-[revision].ivy')
+                            artifact('[organisation]/[module]/[revision]/[artifact]-[revision](-[classifier]).[ext]')
+                            m2compatible = true
                         }
                     }
                 }

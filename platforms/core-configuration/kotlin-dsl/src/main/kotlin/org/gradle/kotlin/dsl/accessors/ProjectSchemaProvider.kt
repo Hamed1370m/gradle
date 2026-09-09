@@ -16,6 +16,7 @@
 
 package org.gradle.kotlin.dsl.accessors
 
+import org.gradle.api.internal.initialization.ClassLoaderScope
 import org.gradle.api.reflect.TypeOf
 import org.gradle.internal.service.scopes.Scope
 import org.gradle.internal.service.scopes.ServiceScope
@@ -26,7 +27,7 @@ import java.io.Serializable
 @ServiceScope(Scope.UserHome::class)
 interface ProjectSchemaProvider {
 
-    fun schemaFor(scriptTarget: Any): TypedProjectSchema?
+    fun schemaFor(scriptTarget: Any, classLoaderScope: ClassLoaderScope): TypedProjectSchema?
 }
 
 
@@ -47,29 +48,30 @@ typealias TypedProjectSchema = ProjectSchema<SchemaType>
 
 data class ProjectSchema<out T>(
     val extensions: List<ProjectSchemaEntry<T>>,
-    val conventions: List<ProjectSchemaEntry<T>>,
     val tasks: List<ProjectSchemaEntry<T>>,
     val containerElements: List<ProjectSchemaEntry<T>>,
     val configurations: List<ConfigurationEntry<String>>,
     val modelDefaults: List<ProjectSchemaEntry<T>>,
     val containerElementFactories: List<ContainerElementFactoryEntry<T>>,
+    val projectFeatureEntries: List<ProjectFeatureEntry<T>>,
+    val nestedModelEntries: List<NestedModelEntry<T>>,
     val scriptTarget: Any? = null
 ) {
 
     fun <U> map(f: (T) -> U) = ProjectSchema(
         extensions.map { it.map(f) },
-        conventions.map { it.map(f) },
         tasks.map { it.map(f) },
         containerElements.map { it.map(f) },
         configurations,
         modelDefaults.map { it.map(f) },
         containerElementFactories.map { it.map(f) },
+        projectFeatureEntries.map { it.map(f) },
+        nestedModelEntries.map { it.map(f) },
         scriptTarget
     )
 
     fun isNotEmpty(): Boolean =
         extensions.isNotEmpty()
-            || conventions.isNotEmpty()
             || tasks.isNotEmpty()
             || containerElements.isNotEmpty()
             || configurations.isNotEmpty()
@@ -109,4 +111,24 @@ data class ContainerElementFactoryEntry<out T>(
 
     fun <U> map(f: (T) -> U) =
         ContainerElementFactoryEntry(factoryName, f(containerReceiverType), f(publicType))
+}
+
+data class NestedModelEntry<out T>(
+    val nestedModelPropertyName: String,
+    val ownerType: T,
+    val nestedModelType: T
+) : Serializable {
+
+    fun <U> map(f: (T) -> U) =
+        NestedModelEntry(nestedModelPropertyName, f(ownerType), f(nestedModelType))
+}
+
+data class ProjectFeatureEntry<out T>(
+    val featureName: String,
+    val ownDefinitionType: T,
+    val targetDefinitionType: T,
+) : Serializable {
+
+    fun <U> map(f: (T) -> U) =
+        ProjectFeatureEntry(featureName, f(ownDefinitionType), f(targetDefinitionType))
 }

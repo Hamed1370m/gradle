@@ -39,10 +39,19 @@ import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeS
 import gradlebuild.basics.util.KotlinSourceParser
 import org.gradle.workers.WorkAction
 import org.jetbrains.kotlin.psi.KtCallableDeclaration
+import org.jetbrains.kotlin.psi.KtClass
+import org.jetbrains.kotlin.psi.KtConstructor
+import org.jetbrains.kotlin.psi.KtDeclaration
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
+import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.KtObjectDeclaration
+import org.jetbrains.kotlin.psi.KtParameter
+import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.psiUtil.collectDescendantsOfType
+import org.jetbrains.kotlin.psi.psiUtil.startOffsetSkippingComments
 import java.io.File
+import java.nio.file.Path
 
 
 abstract class IncubatingApiReportWorkAction : WorkAction<IncubatingApiReportParameter> {
@@ -50,12 +59,13 @@ abstract class IncubatingApiReportWorkAction : WorkAction<IncubatingApiReportPar
     override fun execute() {
         try {
             val versionToIncubating = mutableMapOf<Version, MutableSet<IncubatingDescription>>()
+            val repositoryRoot = parameters.repositoryRoot.get().asFile.toPath()
             parameters.srcDirs.forEach { srcDir ->
                 if (srcDir.exists()) {
                     val collector = CompositeVersionsToIncubatingCollector(
                         listOf(
-                            JavaVersionsToIncubatingCollector(srcDir),
-                            KotlinVersionsToIncubatingCollector()
+                            JavaVersionsToIncubatingCollector(srcDir, repositoryRoot = repositoryRoot),
+                            KotlinVersionsToIncubatingCollector(repositoryRoot = repositoryRoot)
                         )
                     )
                     srcDir.walkTopDown().forEach { sourceFile ->
@@ -103,8 +113,8 @@ abstract class IncubatingApiReportWorkAction : WorkAction<IncubatingApiReportPar
                     "<h2>Incubating since $version (${versions[version]?.run { "released on $this" } ?: "unreleased"})</h2>"
                 )
                 writer.println("<ul>")
-                incubatingDescriptions.sorted().forEach { incubating ->
-                    writer.println("   <li>${incubating.escape()}</li>")
+                incubatingDescriptions.sortedBy { it.name }.forEach { incubating ->
+                    writer.println("   <li>${incubating.name.escape()}</li>")
                 }
                 writer.println("</ul>")
             }
@@ -120,30 +130,16 @@ abstract class IncubatingApiReportWorkAction : WorkAction<IncubatingApiReportPar
             val versions = versionsDates()
             versionToIncubating.toSortedMap().forEach { (version, incubatingDescriptions) ->
                 val releaseDate = versions[version] ?: "unreleased"
-                incubatingDescriptions.sorted().forEach { incubating ->
-                    writer.println("$version;$releaseDate;$incubating")
+                incubatingDescriptions.sortedBy { it.name }.forEach { incubating ->
+                    writer.println("$version;$releaseDate;${incubating.kind};${incubating.name};${incubating.sourceRelativePath};${incubating.lineNumber}")
                 }
             }
         }
     }
 
     private
-    fun versionsDates(): Map<Version, String> {
-        val versions = mutableMapOf<Version, String>()
-        var version: String? = null
-        parameters.releasedVersionsFile.get().asFile.forEachLine(Charsets.UTF_8) {
-            val line = it.trim()
-            if (line.startsWith("\"version\"")) {
-                version = line.substring(line.indexOf("\"", 11) + 1, line.lastIndexOf("\""))
-            }
-            if (line.startsWith("\"buildTime\"")) {
-                var date = line.substring(line.indexOf("\"", 12) + 1, line.lastIndexOf("\""))
-                date = date.substring(0, 4) + "-" + date.substring(4, 6) + "-" + date.substring(6, 8)
-                versions[version!!] = date
-            }
-        }
-        return versions
-    }
+    fun versionsDates(): Map<Version, String> =
+        ReleasedVersions.versionDates(parameters.releasedVersionsFile.get().asFile)
 
 
     private
@@ -156,7 +152,7 @@ typealias Version = String
 
 
 private
-typealias IncubatingDescription = String
+data class IncubatingDescription(val name: String, val kind: IncubatingApiKind, val sourceRelativePath: Path, val lineNumber: Int)
 
 
 private
@@ -190,7 +186,7 @@ const val VERSION_NOT_FOUND = "Not found"
 
 
 private
-class JavaVersionsToIncubatingCollector(srcDir: File) : VersionsToIncubatingCollector {
+class JavaVersionsToIncubatingCollector(srcDir: File, val repositoryRoot: Path) : VersionsToIncubatingCollector {
 
     private
     val solver = JavaSymbolSolver(CombinedTypeSolver(JavaParserTypeSolver(srcDir), ReflectionTypeSolver()))
@@ -203,7 +199,8 @@ class JavaVersionsToIncubatingCollector(srcDir: File) : VersionsToIncubatingColl
         JavaParser().parse(sourceFile).getResult().get().run {
             solver.inject(this)
             findAllIncubating()
-                .map { node -> toVersionIncubating(sourceFile, node) }
+                .map { node ->
+                    toVersionIncubating(sourceFile, node) }
                 .forEach { (version, incubating) ->
                     versionsToIncubating.getOrPut(version) { mutableSetOf() }.add(incubating)
                 }
@@ -226,8 +223,30 @@ class JavaVersionsToIncubatingCollector(srcDir: File) : VersionsToIncubatingColl
                 // This is needed to find the JavaDoc of a package declaration in 'package-info.java'
                 ?: (node as? PackageDeclaration)?.parentNode?.get()?.childNodes?.filterIsInstance<JavadocComment>()?.singleOrNull()?.parse()?.let { findVersionFromJavadoc(it) }
                 ?: VERSION_NOT_FOUND,
-            nodeName(node, this, sourceFile)
+            toIncubatingDescription(node, this, sourceFile)
         )
+
+    private
+    fun toIncubatingDescription(node: Node, unit: CompilationUnit, file: File): IncubatingDescription {
+        val nodeName = nodeName(node, unit, file)
+        return IncubatingDescription(
+            name = nodeName,
+            kind = kindOf(node),
+            sourceRelativePath = repositoryRoot.relativize(file.toPath()),
+            lineNumber = node.begin.map { it.line }.orElse(-1)
+        )
+    }
+
+    private
+    fun kindOf(node: Node): IncubatingApiKind = when (node) {
+        is EnumDeclaration -> IncubatingApiKind.ENUM
+        is AnnotationDeclaration -> IncubatingApiKind.ANNOTATION
+        is ClassOrInterfaceDeclaration -> if (node.isInterface) IncubatingApiKind.INTERFACE else IncubatingApiKind.CLASS
+        is MethodDeclaration -> IncubatingApiKind.METHOD
+        is FieldDeclaration -> IncubatingApiKind.FIELD
+        is PackageDeclaration -> IncubatingApiKind.PACKAGE
+        else -> IncubatingApiKind.OTHER
+    }
 
     private
     fun findVersionFromJavadoc(javadoc: Javadoc): String? =
@@ -266,7 +285,7 @@ val NEWLINE_REGEX = "\\n\\s*".toRegex()
 
 
 private
-class KotlinVersionsToIncubatingCollector : VersionsToIncubatingCollector {
+class KotlinVersionsToIncubatingCollector(val repositoryRoot: Path) : VersionsToIncubatingCollector {
 
     override fun collectFrom(sourceFile: File): VersionsToIncubating {
 
@@ -284,7 +303,7 @@ class KotlinVersionsToIncubatingCollector : VersionsToIncubatingCollector {
     }
 
     private
-    fun buildIncubatingDescription(sourceFile: File, ktFile: KtFile, declaration: KtNamedDeclaration): String {
+    fun buildIncubatingDescription(sourceFile: File, ktFile: KtFile, declaration: KtNamedDeclaration): IncubatingDescription {
         var incubating = "${declaration.typeParametersString}${declaration.fullyQualifiedName}"
         if (declaration is KtCallableDeclaration) {
             incubating += declaration.valueParametersString
@@ -295,7 +314,32 @@ class KotlinVersionsToIncubatingCollector : VersionsToIncubatingCollector {
                 incubating += ", top-level in ${sourceFile.name}"
             }
         }
-        return incubating.replace(NEWLINE_REGEX, " ")
+        return IncubatingDescription(
+            name = incubating.replace(NEWLINE_REGEX, " "),
+            kind = kindOf(declaration),
+            sourceRelativePath = repositoryRoot.relativize(sourceFile.toPath()),
+            lineNumber = getLineNumber(declaration, ktFile)
+        )
+    }
+
+    private
+    fun kindOf(declaration: KtNamedDeclaration): IncubatingApiKind = when {
+        declaration is KtClass && declaration.isInterface() -> IncubatingApiKind.INTERFACE
+        declaration is KtClass && declaration.isEnum() -> IncubatingApiKind.ENUM
+        declaration is KtClass && declaration.isAnnotation() -> IncubatingApiKind.ANNOTATION
+        declaration is KtClass -> IncubatingApiKind.CLASS
+        declaration is KtObjectDeclaration -> IncubatingApiKind.CLASS
+        declaration is KtConstructor<*> -> IncubatingApiKind.METHOD
+        declaration is KtNamedFunction -> IncubatingApiKind.METHOD
+        declaration is KtProperty -> IncubatingApiKind.PROPERTY
+        declaration is KtParameter -> IncubatingApiKind.PROPERTY
+        else -> IncubatingApiKind.OTHER
+    }
+
+    private
+    fun getLineNumber(declaration: KtDeclaration, ktFile: KtFile): Int {
+        val startOffset = declaration.startOffsetSkippingComments
+        return ktFile.viewProvider.document?.getLineNumber(startOffset)?.plus(1) ?: -1
     }
 
     private

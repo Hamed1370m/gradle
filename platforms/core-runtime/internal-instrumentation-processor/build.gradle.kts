@@ -15,15 +15,15 @@
  */
 
 plugins {
-    id("gradlebuild.distribution.implementation-java")
+    id("gradlebuild.internal.java")
 }
 
 dependencies {
     api(projects.internalInstrumentationApi)
 
     api(libs.asm)
-    api(libs.javaPoet)
-    api(libs.jsr305)
+    api(buildLibs.javaPoet)
+    api(libs.jspecify)
 
     implementation(libs.asmTree)
     implementation(libs.jacksonAnnotations)
@@ -35,7 +35,7 @@ dependencies {
 
     testCompileOnly(libs.jetbrainsAnnotations)
 
-    testImplementation(libs.compileTesting)
+    testImplementation(testLibs.compileTesting)
     testImplementation(projects.core)
     testImplementation(testFixtures(projects.core))
     // TODO remove this
@@ -58,6 +58,7 @@ tasks.named<Test>("test").configure {
         )
     }
 }
-tasks.isolatedProjectsIntegTest {
-    enabled = false
+
+errorprone {
+    nullawayEnabled = true
 }

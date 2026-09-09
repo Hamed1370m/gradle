@@ -34,6 +34,7 @@ import org.gradle.api.DomainObjectSet;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.repositories.UrlArtifactRepository;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.ConfigurableFileTree;
 import org.gradle.api.file.FileCollection;
@@ -51,7 +52,6 @@ import org.gradle.internal.instrumentation.api.annotations.NotToBeMigratedToLazy
 import org.gradle.internal.instrumentation.api.annotations.NotToBeReplacedByLazyProperty;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 import org.gradle.internal.reflect.PropertyAccessorType;
-import org.gradle.model.ModelElement;
 
 import javax.inject.Inject;
 import java.util.Arrays;
@@ -74,25 +74,14 @@ import static org.gradle.architecture.test.ArchUnitFixture.freeze;
 import static org.gradle.architecture.test.ArchUnitFixture.public_api_methods;
 
 @AnalyzeClasses(packages = "org.gradle")
+@SuppressWarnings("deprecation") // references deprecated software-model API
 public class ProviderMigrationArchitectureTest {
-    private static final DescribedPredicate<JavaMethod> getters = new DescribedPredicate<JavaMethod>("getters") {
-        @Override
-        public boolean test(JavaMethod input) {
-            PropertyAccessorType accessorType = PropertyAccessorType.fromName(input.getName());
-            if (accessorType == PropertyAccessorType.IS_GETTER) {
-                // PropertyAccessorType.IS_GETTER doesn't handle names that start with is
-                // but are not getters, e.g. issueManagement is detected as IS_GETTER
-                return !Character.isLowerCase(input.getName().charAt(2));
-            }
-            return accessorType == PropertyAccessorType.GET_GETTER;
-        }
-    };
 
     private static final DescribedPredicate<JavaClass> class_with_any_mutable_property = new DescribedPredicate<JavaClass>("class with any mutable property") {
         @Override
         public boolean test(JavaClass input) {
             return input.getAllMethods().stream()
-                .filter(getters)
+                .filter(ArchUnitFixture.getters)
                 .anyMatch(ProviderMigrationArchitectureTest::hasSetter);
         }
     };
@@ -104,15 +93,16 @@ public class ProviderMigrationArchitectureTest {
         .and(not(declaredIn(Configuration.class)))
         .and(not(declaredIn(FileCollection.class)))
         .and(not(declaredIn(ConfigurableFileCollection.class)))
+        .and(not(declaredIn(assignableTo(Exception.class)))) // exceptions are not migrated to lazy properties
         .and(are(declaredIn(class_with_any_mutable_property)))
-        .and(are(getters))
+        .and(are(ArchUnitFixture.getters))
         .and(not(annotatedWith(Inject.class)))
         .as("mutable public API properties");
 
     @SuppressWarnings({"deprecation", "UnnecessaryFullyQualifiedName"})
     private static final DescribedPredicate<JavaMethod> task_properties = ArchPredicates.<JavaMethod>are(public_api_methods)
         .and(declaredIn(assignableTo(Task.class)))
-        .and(are(getters))
+        .and(are(ArchUnitFixture.getters))
         .and(not(annotatedWith(Inject.class)))
         .and(not(annotatedWith(OptionValues.class)))
         .and(not(declaredIn(Task.class)))
@@ -125,6 +115,7 @@ public class ProviderMigrationArchitectureTest {
         .that(are(mutable_public_API_properties))
         .and().doNotHaveRawReturnType(TextResource.class)
         .and().doNotHaveRawReturnType(assignableTo(FileCollection.class))
+        .and(not(declaredIn(resideInAPackage("org.gradle.tooling.."))))
         .should(haveProviderReturnType()));
 
     @ArchTest
@@ -173,10 +164,12 @@ public class ProviderMigrationArchitectureTest {
         // Exceptions should not be upgraded
         .and(not(declaredIn(assignableTo(Exception.class))))
         // Dependency management
-        .and(not(declaredIn(resideInAPackage("org.gradle.api.artifacts.."))))
+        .and(
+            not(declaredIn(resideInAPackage("org.gradle.api.artifacts..").and(not(assignableTo(UrlArtifactRepository.class)))))
+        )
         .and(not(declaredIn(resideInAPackage("org.gradle.api.attributes"))))
         // Software model
-        .and(not(declaredIn(assignableTo(ModelElement.class))))
+        .and(not(declaredIn(assignableTo(org.gradle.model.ModelElement.class))))
         // IDE Plugins
         .and(not(declaredIn(resideInAPackage("org.gradle.ide.."))))
         .and(not(declaredIn(resideInAPackage("org.gradle.plugins.ide.."))))

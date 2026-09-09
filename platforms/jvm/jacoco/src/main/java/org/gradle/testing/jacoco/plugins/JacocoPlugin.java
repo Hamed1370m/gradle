@@ -15,29 +15,26 @@
  */
 package org.gradle.testing.jacoco.plugins;
 
-import org.apache.commons.lang.StringUtils;
-import org.gradle.api.ExtensiblePolymorphicDomainObjectContainer;
+import org.apache.commons.lang3.StringUtils;
+import org.gradle.api.NamedDomainObjectProvider;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.ConsumableConfiguration;
 import org.gradle.api.artifacts.type.ArtifactTypeDefinition;
 import org.gradle.api.attributes.Category;
 import org.gradle.api.attributes.TestSuiteName;
-import org.gradle.api.attributes.TestSuiteTargetName;
-import org.gradle.api.attributes.TestSuiteType;
 import org.gradle.api.attributes.VerificationType;
 import org.gradle.api.file.DirectoryProperty;
-import org.gradle.api.internal.artifacts.configurations.ConfigurationRolesForMigration;
 import org.gradle.api.internal.artifacts.configurations.RoleBasedConfigurationContainerInternal;
 import org.gradle.api.internal.file.FileOperations;
 import org.gradle.api.internal.project.ProjectInternal;
-import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JvmTestSuitePlugin;
 import org.gradle.api.plugins.ReportingBasePlugin;
 import org.gradle.api.plugins.jvm.JvmTestSuite;
-import org.gradle.api.plugins.jvm.JvmTestSuiteTarget;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.reporting.DirectoryReport;
 import org.gradle.api.reporting.Report;
 import org.gradle.api.reporting.ReportingExtension;
@@ -48,13 +45,13 @@ import org.gradle.api.tasks.testing.Test;
 import org.gradle.internal.jacoco.JacocoAgentJar;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.language.base.plugins.LifecycleBasePlugin;
-import org.gradle.testing.base.TestSuite;
 import org.gradle.testing.base.TestingExtension;
 import org.gradle.testing.jacoco.tasks.JacocoBase;
 import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification;
 import org.gradle.testing.jacoco.tasks.JacocoReport;
 
 import javax.inject.Inject;
+import java.io.File;
 
 import static org.gradle.api.internal.lambdas.SerializableLambdas.action;
 
@@ -62,6 +59,7 @@ import static org.gradle.api.internal.lambdas.SerializableLambdas.action;
  * Plugin that provides support for generating Jacoco coverage data.
  *
  * @see <a href="https://docs.gradle.org/current/userguide/jacoco_plugin.html">JaCoCo plugin reference</a>
+ * @since 1.6
  */
 public abstract class JacocoPlugin implements Plugin<Project> {
 
@@ -70,11 +68,25 @@ public abstract class JacocoPlugin implements Plugin<Project> {
      *
      * @since 3.4
      */
-    public static final String DEFAULT_JACOCO_VERSION = "0.8.12";
+    public static final String DEFAULT_JACOCO_VERSION = "0.8.15";
+    /**
+     * The agent configuration name.
+     *
+     * @since 2.14
+     */
     public static final String AGENT_CONFIGURATION_NAME = "jacocoAgent";
+    /**
+     * The ant configuration name.
+     *
+     * @since 2.14
+     */
     public static final String ANT_CONFIGURATION_NAME = "jacocoAnt";
+    /**
+     * The plugin extension name.
+     *
+     * @since 2.14
+     */
     public static final String PLUGIN_EXTENSION_NAME = "jacoco";
-    private static final String COVERAGE_DATA_ELEMENTS_VARIANT_PREFIX = "coverageDataElementsFor";
 
     private final Instantiator instantiator;
     private ProjectInternal project;
@@ -93,7 +105,7 @@ public abstract class JacocoPlugin implements Plugin<Project> {
         JacocoPluginExtension extension = project.getExtensions().create(PLUGIN_EXTENSION_NAME, JacocoPluginExtension.class, project, agent);
         extension.setToolVersion(DEFAULT_JACOCO_VERSION);
         final ReportingExtension reportingExtension = (ReportingExtension) project.getExtensions().getByName(ReportingExtension.NAME);
-        extension.getReportsDirectory().convention(project.getLayout().dir(project.provider(() -> reportingExtension.file("jacoco"))));
+        extension.getReportsDirectory().convention(reportingExtension.getBaseDirectory().dir("jacoco"));
 
         configureAgentDependencies(agent, extension);
         configureTaskClasspathDefaults(extension);
@@ -103,36 +115,50 @@ public abstract class JacocoPlugin implements Plugin<Project> {
         configureCoverageDataElementsVariants(project);
     }
 
-    private void configureCoverageDataElementsVariants(Project project) {
+    private static void configureCoverageDataElementsVariants(Project project) {
         project.getPlugins().withType(JvmTestSuitePlugin.class, p -> {
-            final TestingExtension testing = project.getExtensions().getByType(TestingExtension.class);
-            final ExtensiblePolymorphicDomainObjectContainer<TestSuite> testSuites = testing.getSuites();
+            TestingExtension testing = project.getExtensions().getByType(TestingExtension.class);
 
-            testSuites.withType(JvmTestSuite.class).configureEach(suite -> {
+            testing.getSuites().withType(JvmTestSuite.class).configureEach(suite -> {
+                // TODO: Eventually, we want a jacoco results variant for each target, but cannot do so now because:
+                // 1. Targets need a way to uniquely identify themselves via attributes. We do not have an API to describe
+                //    a target using attributes yet.
+                // 2. If a suite has multiple jacoco results variants, we get ambiguity when resolving the jacoco results variant.
+                //    We should add a feature to dependency management allowing ArtifactView to select multiple variants from the target component.
+                NamedDomainObjectProvider<ConsumableConfiguration> jacocoResultsVariant = createCoverageDataVariant((ProjectInternal) project, suite);
+
                 suite.getTargets().configureEach(target -> {
-                    createCoverageDataVariant((ProjectInternal) project, suite, target);
+                    jacocoResultsVariant.configure(variant -> {
+                        Provider<File> resultsDir = target.getTestTask().map(task ->
+                            task.getExtensions().getByType(JacocoTaskExtension.class).getDestinationFile()
+                        );
+
+                        variant.getOutgoing().artifact(
+                            resultsDir,
+                            artifact -> artifact.setType(ArtifactTypeDefinition.BINARY_DATA_TYPE)
+                        );
+                    });
                 });
+
             });
+
         });
     }
 
-    private void createCoverageDataVariant(ProjectInternal project, JvmTestSuite suite, JvmTestSuiteTarget target) {
-        @SuppressWarnings("deprecation") final Configuration variant = project.getConfigurations().migratingUnlocked(COVERAGE_DATA_ELEMENTS_VARIANT_PREFIX + StringUtils.capitalize(target.getName()), ConfigurationRolesForMigration.CONSUMABLE_DEPENDENCY_SCOPE_TO_CONSUMABLE);
-        variant.setDescription("Binary data file containing results of Jacoco test coverage reporting for the " + suite.getName() + " Test Suite's " + target.getName() + " target.");
-        variant.setVisible(false);
+    private static NamedDomainObjectProvider<ConsumableConfiguration> createCoverageDataVariant(ProjectInternal project, JvmTestSuite suite) {
+        String variantName = String.format("coverageDataElementsFor%s", StringUtils.capitalize(suite.getName()));
 
-        final ObjectFactory objects = project.getObjects();
-        variant.attributes(attributes -> {
-            attributes.attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category.class, Category.VERIFICATION));
-            attributes.attribute(TestSuiteName.TEST_SUITE_NAME_ATTRIBUTE, objects.named(TestSuiteName.class, suite.getName()));
-            attributes.attribute(TestSuiteTargetName.TEST_SUITE_TARGET_NAME_ATTRIBUTE, objects.named(TestSuiteTargetName.class, target.getName()));
-            attributes.attributeProvider(TestSuiteType.TEST_SUITE_TYPE_ATTRIBUTE, suite.getTestType().map(tt -> objects.named(TestSuiteType.class, tt)));
-            attributes.attribute(VerificationType.VERIFICATION_TYPE_ATTRIBUTE, objects.named(VerificationType.class, VerificationType.JACOCO_RESULTS));
-        });
+        return project.getConfigurations().consumable(variantName, conf -> {
+            conf.setDescription("Binary results containing Jacoco test coverage for all targets in the '" + suite.getName() + "' Test Suite.");
 
-        variant.getOutgoing().artifact(target.getTestTask().map(task -> task.getExtensions().getByType(JacocoTaskExtension.class).getDestinationFile()), artifact -> {
-            artifact.setType(ArtifactTypeDefinition.BINARY_DATA_TYPE);
-            artifact.builtBy(target.getTestTask());
+            conf.attributes(attributes -> {
+                attributes.attribute(Category.CATEGORY_ATTRIBUTE, attributes.named(Category.class, Category.VERIFICATION));
+                attributes.attribute(VerificationType.VERIFICATION_TYPE_ATTRIBUTE, attributes.named(VerificationType.class, VerificationType.JACOCO_RESULTS));
+
+                // TODO: Allow targets to define attributes uniquely identifying themselves.
+                // Then, create a jacoco results variant for each target instead of each suite.
+                attributes.attribute(TestSuiteName.TEST_SUITE_NAME_ATTRIBUTE, attributes.named(TestSuiteName.class, suite.getName()));
+            });
         });
     }
 
@@ -142,14 +168,12 @@ public abstract class JacocoPlugin implements Plugin<Project> {
     @SuppressWarnings("deprecation")
     private void addJacocoConfigurations() {
         RoleBasedConfigurationContainerInternal configurations = project.getConfigurations();
-        Configuration agentConf = configurations.resolvableDependencyScopeUnlocked(AGENT_CONFIGURATION_NAME);
-        agentConf.setVisible(false);
-        agentConf.setTransitive(true);
-        agentConf.setDescription("The Jacoco agent to use to get coverage data.");
-        Configuration antConf = configurations.resolvableDependencyScopeUnlocked(ANT_CONFIGURATION_NAME);
-        antConf.setVisible(false);
-        antConf.setTransitive(true);
-        antConf.setDescription("The Jacoco ant tasks to use to get execute Gradle tasks.");
+        configurations.resolvableDependencyScopeLocked(AGENT_CONFIGURATION_NAME, agentConf -> {
+            agentConf.setDescription("The Jacoco agent to use to get coverage data.");
+        });
+        configurations.resolvableDependencyScopeLocked(ANT_CONFIGURATION_NAME, antConf -> {
+            antConf.setDescription("The Jacoco ant tasks to use to get execute Gradle tasks.");
+        });
     }
 
     /**

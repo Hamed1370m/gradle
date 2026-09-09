@@ -17,6 +17,7 @@
 package org.gradle.api.attributes;
 
 import org.gradle.api.Action;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
 
 /**
  * Represents something that carries attributes by utilizing an
@@ -31,6 +32,8 @@ public interface HasConfigurableAttributes<SELF> extends HasAttributes {
     /**
      * Configure the attribute container that provides the attributes
      * associated with this domain object.
+     * @since 3.4
      */
+    @HiddenInDefinition
     SELF attributes(Action<? super AttributeContainer> action);
 }

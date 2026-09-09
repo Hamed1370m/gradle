@@ -21,7 +21,7 @@ import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import org.gradle.test.fixtures.server.http.MavenHttpModule
 
 class JavaLibraryPublishedTargetJvmVersionIntegrationTest extends AbstractHttpDependencyResolutionTest {
-    ResolveTestFixture resolve
+    ResolveTestFixture resolve = new ResolveTestFixture(testDirectory)
     MavenHttpModule module
 
     def setup() {
@@ -32,16 +32,15 @@ class JavaLibraryPublishedTargetJvmVersionIntegrationTest extends AbstractHttpDe
             apply plugin: 'java-library'
 
             repositories {
-                maven { url '${mavenHttpRepo.uri}' }
+                maven { url = '${mavenHttpRepo.uri}' }
             }
+
+            ${resolve.configureProject("compileClasspath")}
 
             dependencies {
                 api 'org:producer:1.0'
             }
         """
-
-        resolve = new ResolveTestFixture(buildFile, 'compileClasspath')
-        resolve.prepare()
 
         module = mavenHttpRepo.module('org', 'producer', '1.0')
                 .withModuleMetadata()
@@ -101,7 +100,7 @@ class JavaLibraryPublishedTargetJvmVersionIntegrationTest extends AbstractHttpDe
         failure.assertHasErrorOutput('''> Could not resolve all files for configuration ':compileClasspath'.
    > Could not resolve org:producer:1.0.
      Required by:
-         root project :
+         root project 'test'
       > Dependency resolution is looking for a library compatible with JVM runtime version 5, but 'org:producer:1.0' is only compatible with JVM runtime version 6 or newer.''')
         failure.assertHasResolution("Change the dependency on 'org:producer:1.0' to an earlier version that supports JVM runtime version 5.")
     }

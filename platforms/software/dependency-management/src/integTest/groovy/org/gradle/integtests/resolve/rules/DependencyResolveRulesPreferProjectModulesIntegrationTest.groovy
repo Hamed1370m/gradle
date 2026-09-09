@@ -21,7 +21,7 @@ import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 
 class DependencyResolveRulesPreferProjectModulesIntegrationTest extends AbstractIntegrationSpec {
-    def resolve = new ResolveTestFixture(buildFile, "conf")
+    def resolve = new ResolveTestFixture(testDirectory)
 
     def setup() {
         mavenRepo.module("myorg", "ModuleC", "2.0").publish()
@@ -30,56 +30,61 @@ class DependencyResolveRulesPreferProjectModulesIntegrationTest extends Abstract
         settingsFile << """
             rootProject.name = 'test'
         """
-        resolve.prepare()
     }
 
     def "preferProjectModules() only influence dependency declarations in the subproject it is used in"() {
-        createDirs("ModuleC", "Subproject_with_preferProjectModules", "Subproject_without_preferProjectModules")
-        settingsFile << 'include "ModuleC", "Subproject_with_preferProjectModules", "Subproject_without_preferProjectModules"'
+        settingsFile << """
+            include "ModuleC"
+            include "Subproject_with_preferProjectModules"
+            include "Subproject_without_preferProjectModules"
+        """
 
-        buildFile << """
-            project(":ModuleC") {
-                group "myorg"
-                version = "1.0"
+        file("ModuleC/build.gradle") << """
+            group = "myorg"
+            version = "1.0"
 
-                configurations { conf }
-                configurations.create("default").extendsFrom(configurations.conf)
+            configurations { conf }
+            configurations.create("default").extendsFrom(configurations.conf)
+        """
+
+        file("Subproject_with_preferProjectModules/build.gradle") << """
+            repositories { maven { url = "${mavenRepo.uri}" } }
+
+            configurations { conf }
+            configurations.create("default").extendsFrom(configurations.conf)
+
+            configurations.conf.resolutionStrategy {
+                preferProjectModules()
             }
 
-            project(":Subproject_with_preferProjectModules") {
-                repositories { maven { url "${mavenRepo.uri}" } }
+            ${resolve.configureProject("conf")}
 
-                configurations { conf }
-                configurations.create("default").extendsFrom(configurations.conf)
-
-                configurations.conf.resolutionStrategy {
-                    preferProjectModules()
-                }
-
-                dependencies {
-                    conf "myorg:ModuleB:1.0"
-                    conf project(":ModuleC")
-                }
+            dependencies {
+                conf "myorg:ModuleB:1.0"
+                conf project(":ModuleC")
             }
+        """
 
-            project(":Subproject_without_preferProjectModules") {
-                repositories { maven { url "${mavenRepo.uri}" } }
+        file("Subproject_without_preferProjectModules/build.gradle") << """
+            repositories { maven { url = "${mavenRepo.uri}" } }
 
-                configurations { conf }
-                configurations.create("default").extendsFrom(configurations.conf)
+            configurations { conf }
+            configurations.create("default").extendsFrom(configurations.conf)
 
-                dependencies {
-                    conf project(":Subproject_with_preferProjectModules")
-                    conf "myorg:ModuleB:1.0"
-                    conf project(":ModuleC")
-                }
+            ${resolve.configureProject("conf")}
+
+            dependencies {
+                conf project(":Subproject_with_preferProjectModules")
+                conf "myorg:ModuleB:1.0"
+                conf project(":ModuleC")
             }
-"""
+        """
+
         when:
         succeeds('Subproject_with_preferProjectModules:checkDeps')
 
         then:
-        resolve.expectGraph {
+        resolve.expectGraph(":Subproject_with_preferProjectModules") {
             root(":Subproject_with_preferProjectModules", "test:Subproject_with_preferProjectModules:") {
                 module("myorg:ModuleB:1.0") {
                     // Prefers project, regardless of version
@@ -97,7 +102,7 @@ class DependencyResolveRulesPreferProjectModulesIntegrationTest extends Abstract
         succeeds('Subproject_without_preferProjectModules:checkDeps')
 
         then:
-        resolve.expectGraph {
+        resolve.expectGraph(":Subproject_without_preferProjectModules") {
             root(":Subproject_without_preferProjectModules", "test:Subproject_without_preferProjectModules:") {
                 project(":Subproject_with_preferProjectModules", "test:Subproject_with_preferProjectModules:") {
                     noArtifacts()
@@ -108,58 +113,60 @@ class DependencyResolveRulesPreferProjectModulesIntegrationTest extends Abstract
                     }
                     // 'Subproject_with_preferProjectModules' config DOES NOT influence this dependency
                     // and hence the higher version is picked from repo
-                    edge("project :ModuleC", "myorg:ModuleC:2.0")
+                    edge("project ':ModuleC'", "myorg:ModuleC:2.0")
                 }
                 module("myorg:ModuleB:1.0")
-                edge("project :ModuleC", "myorg:ModuleC:2.0")
+                edge("project ':ModuleC'", "myorg:ModuleC:2.0")
             }
         }
     }
 
     def "preferProjectModules() does not propagate to extending configurations"() {
-        createDirs("ModuleC", "ProjectA")
-        settingsFile << 'include "ModuleC", "ProjectA"'
+        settingsFile << """
+            include "ModuleC"
+            include "ProjectA"
+        """
 
-        buildFile << """
-            project(":ModuleC") {
-                group "myorg"
-                version = "1.0"
+        file("ModuleC/build.gradle") << """
+            group = "myorg"
+            version = "1.0"
 
-                configurations {
-                    baseConf
-                    conf.extendsFrom(baseConf)
-                }
-                configurations.create("default").extendsFrom(configurations.baseConf)
+            configurations {
+                baseConf
+                conf.extendsFrom(baseConf)
+            }
+            configurations.create("default").extendsFrom(configurations.baseConf)
+        """
+
+        file("ProjectA/build.gradle") << """
+            repositories { maven { url = "${mavenRepo.uri}" } }
+
+            configurations {
+                baseConf
+                conf.extendsFrom(baseConf)
+            }
+            configurations.create("default").extendsFrom(configurations.baseConf)
+
+            ${resolve.configureProject("baseConf", "conf")}
+
+            configurations.baseConf.resolutionStrategy {
+                preferProjectModules()
             }
 
-            project(":ProjectA") {
-                repositories { maven { url "${mavenRepo.uri}" } }
+            dependencies {
+                conf "myorg:ModuleB:1.0"
+                conf project(":ModuleC")
 
-                configurations {
-                    baseConf
-                    conf.extendsFrom(baseConf)
-                }
-                configurations.create("default").extendsFrom(configurations.baseConf)
-
-                configurations.baseConf.resolutionStrategy {
-                    preferProjectModules()
-                }
-
-                dependencies {
-                    conf "myorg:ModuleB:1.0"
-                    conf project(":ModuleC")
-
-                    baseConf "myorg:ModuleB:1.0"
-                    baseConf project(":ModuleC")
-                }
+                baseConf "myorg:ModuleB:1.0"
+                baseConf project(":ModuleC")
             }
-"""
+        """
 
         when:
-        succeeds('ProjectA:checkDeps')
+        succeeds('ProjectA:checkConf')
 
         then:
-        resolve.expectGraph {
+        resolve.expectGraph(":ProjectA") {
             root(":ProjectA", "test:ProjectA:") {
                 module("myorg:ModuleB:1.0") {
                     module("myorg:ModuleC:2.0") {
@@ -168,23 +175,22 @@ class DependencyResolveRulesPreferProjectModulesIntegrationTest extends Abstract
                 }
                 // 'preferProjectModules()' is not inherited from 'baseConf'
                 // and hence the higher version is picked from repo
-                edge("project :ModuleC", "myorg:ModuleC:2.0")
+                edge("project ':ModuleC'", "myorg:ModuleC:2.0")
             }
         }
 
         when:
-        resolve.prepare('baseConf')
-        succeeds('ProjectA:checkDeps')
+        succeeds('ProjectA:checkBaseConf')
 
         then:
-        resolve.expectGraph {
+        resolve.expectGraph(":ProjectA") {
             root(":ProjectA", "test:ProjectA:") {
                 module("myorg:ModuleB:1.0") {
                     edge("myorg:ModuleC:2.0", ":ModuleC", "myorg:ModuleC:1.0") {
                         byConflictResolution("between versions 1.0 and 2.0")
                     }
                 }
-                project("project :ModuleC", "myorg:ModuleC:1.0") {
+                project("project ':ModuleC'", "myorg:ModuleC:1.0") {
                     noArtifacts()
                 }
             }

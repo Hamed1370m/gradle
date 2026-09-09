@@ -24,7 +24,7 @@ class IvyCustomStatusLatestVersionIntegrationTest extends AbstractHttpDependency
         buildFile << """
 repositories {
     ivy {
-        url "${ivyRepo.uri}"
+        url = "${ivyRepo.uri}"
     }
 }
 
@@ -71,7 +71,7 @@ task retrieve(type: Sync) {
         buildFile << """
 repositories {
     ivy {
-        url "${ivyHttpRepo.uri}"
+        url = "${ivyHttpRepo.uri}"
     }
 }
 configurations { compile }
@@ -132,7 +132,7 @@ task retrieve(type: Sync) {
         buildFile << """
 repositories {
     ivy {
-        url "${ivyHttpRepo.uri}"
+        url = "${ivyHttpRepo.uri}"
     }
 }
 class StatusRule implements ComponentMetadataRule {
@@ -217,12 +217,14 @@ task retrieve(type: Sync) {
         buildFile << """
 repositories {
     ivy {
-        url "${ivyHttpRepo.uri}"
+        url = "${ivyHttpRepo.uri}"
     }
 }
 configurations { compile }
 dependencies {
-    compile group: "org.test", name: "projectA", version: "latest.release", changing: true
+    compile("org.test:projectA:latest.release") {
+        changing = true
+    }
 }
 
 configurations.all {

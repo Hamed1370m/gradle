@@ -16,14 +16,14 @@
 
 package org.gradle.plugins.ide.idea
 
-import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import org.gradle.plugins.ide.AbstractIdeIntegrationSpec
 
 import static org.gradle.plugins.ide.fixtures.IdeaFixtures.parseIml
 import static org.gradle.plugins.ide.fixtures.IdeaFixtures.parseIpr
 
-class IdeMultiProjectBuildIntegrationTest extends AbstractIntegrationSpec {
-    @ToBeFixedForConfigurationCache
+@ToBeFixedForIsolatedProjects(because = "configure projects from root")
+class IdeMultiProjectBuildIntegrationTest extends AbstractIdeIntegrationSpec {
     def "includes module for each project in build"() {
         given:
         createDirs("api", "shared", "shared/api", "shared/model")
@@ -48,10 +48,11 @@ class IdeMultiProjectBuildIntegrationTest extends AbstractIntegrationSpec {
         """
 
         when:
+        expectTaskDeprecations("idea", "ideaModule", "ideaProject", "ideaWorkspace")
         succeeds ":idea"
 
         then:
-        result.assertTasksExecuted(":ideaModule", ":ideaProject", ":ideaWorkspace",
+        result.assertTasksScheduled(":ideaModule", ":ideaProject", ":ideaWorkspace",
             ":api:ideaModule",
             ":shared:ideaModule",
             ":shared:api:ideaModule",

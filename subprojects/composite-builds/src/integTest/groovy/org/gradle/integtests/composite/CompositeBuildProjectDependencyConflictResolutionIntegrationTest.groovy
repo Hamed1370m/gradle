@@ -27,7 +27,7 @@ class CompositeBuildProjectDependencyConflictResolutionIntegrationTest extends A
 
     @Override
     String getBuildId() {
-        "new org.gradle.api.internal.artifacts.DefaultBuildIdentifier(org.gradle.util.Path.path(':' + projectName))"
+        "org.gradle.util.Path.path(':' + projectName)"
     }
 
     @Override
@@ -54,7 +54,6 @@ class CompositeBuildProjectDependencyConflictResolutionIntegrationTest extends A
     void moduleDefinition(String name, String definition) {
         buildTestFixture.populate(name) {
             buildFile << definition
-            buildFile << checkHelper(buildId, projectPath)
         }
     }
 
@@ -62,4 +61,5 @@ class CompositeBuildProjectDependencyConflictResolutionIntegrationTest extends A
     boolean isAutoDependencySubstitution() {
         true
     }
+
 }

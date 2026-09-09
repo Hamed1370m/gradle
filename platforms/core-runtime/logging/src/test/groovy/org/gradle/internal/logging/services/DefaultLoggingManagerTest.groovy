@@ -18,6 +18,7 @@ package org.gradle.internal.logging.services
 import org.gradle.api.logging.LogLevel
 import org.gradle.api.logging.StandardOutputListener
 import org.gradle.api.logging.configuration.ConsoleOutput
+import org.gradle.api.logging.configuration.ConsoleUnicodeSupport
 import org.gradle.internal.logging.config.LoggingRouter
 import org.gradle.internal.logging.config.LoggingSourceSystem
 import org.gradle.internal.logging.config.LoggingSystem
@@ -434,14 +435,14 @@ class DefaultLoggingManagerTest extends Specification {
     def "attaches process console on start and restores on stop"() {
         def snapshot = Stub(LoggingSystem.Snapshot)
 
-        loggingManager.attachProcessConsole(ConsoleOutput.Auto)
+        loggingManager.attachProcessConsole(ConsoleOutput.Auto, ConsoleUnicodeSupport.Auto)
 
         when:
         loggingManager.start()
 
         then:
         1 * loggingRouter.snapshot() >> snapshot
-        1 * loggingRouter.attachProcessConsole(ConsoleOutput.Auto)
+        1 * loggingRouter.attachProcessConsole(ConsoleOutput.Auto, ConsoleUnicodeSupport.Auto)
         0 * loggingRouter._
 
         when:
@@ -463,10 +464,10 @@ class DefaultLoggingManagerTest extends Specification {
         0 * loggingRouter._
 
         when:
-        loggingManager.attachProcessConsole(ConsoleOutput.Auto)
+        loggingManager.attachProcessConsole(ConsoleOutput.Auto, ConsoleUnicodeSupport.Auto)
 
         then:
-        1 * loggingRouter.attachProcessConsole(ConsoleOutput.Auto)
+        1 * loggingRouter.attachProcessConsole(ConsoleOutput.Auto, ConsoleUnicodeSupport.Auto)
         0 * loggingRouter._
 
         when:
@@ -525,5 +526,34 @@ class DefaultLoggingManagerTest extends Specification {
         then:
         1 * loggingRouter.restore(snapshot)
         0 * loggingRouter._
+    }
+
+    public void "exposes registered standard output and error listeners in registration order"() {
+        def out1 = Mock(StandardOutputListener)
+        def out2 = Mock(StandardOutputListener)
+        def err1 = Mock(StandardOutputListener)
+
+        when:
+        loggingManager.addStandardOutputListener(out1)
+        loggingManager.addStandardOutputListener(out2)
+        loggingManager.addStandardErrorListener(err1)
+
+        then:
+        (loggingManager.standardOutputListeners as List) == [out1, out2]
+        (loggingManager.standardErrorListeners as List) == [err1]
+    }
+
+    public void "returned listener collections are independent copies of internal state"() {
+        given:
+        def out1 = Mock(StandardOutputListener)
+        loggingManager.addStandardOutputListener(out1)
+        def snapshot = loggingManager.standardOutputListeners as List
+
+        when:
+        loggingManager.removeStandardOutputListener(out1)
+
+        then:
+        snapshot == [out1]
+        (loggingManager.standardOutputListeners as List) == []
     }
 }

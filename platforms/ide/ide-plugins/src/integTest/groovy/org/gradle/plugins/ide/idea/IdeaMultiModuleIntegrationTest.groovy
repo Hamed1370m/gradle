@@ -15,8 +15,8 @@
  */
 package org.gradle.plugins.ide.idea
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.TestResources
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.plugins.ide.AbstractIdeIntegrationTest
 import org.junit.Rule
 import org.junit.Test
@@ -25,8 +25,8 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
     @Rule
     public final TestResources testResources = new TestResources(testDirectoryProvider)
 
+    @ToBeFixedForIsolatedProjects(because = "IDEA plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void buildsCorrectModuleDependencies() {
         def settingsFile = file("settings.gradle")
         createDirs("api", "shared", "shared/api", "shared/model", "util")
@@ -67,6 +67,7 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         """
 
         //when
+        expectTaskDeprecations("ideaModule")
         executer.withTasks("ideaModule").run()
 
         //then
@@ -81,16 +82,16 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
     }
 
 
+    @ToBeFixedForIsolatedProjects(because = "IDEA plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void buildsCorrectModuleDependenciesForDependencyOnRoot() {
         createDirs("api")
         file("settings.gradle") << """
             rootProject.name = 'root-project-1'
             include 'api'
-                    """
+        """
 
-                    file("build.gradle") << """
+        file("build.gradle") << """
             allprojects {
                 apply plugin: 'java'
                 apply plugin: 'idea'
@@ -104,6 +105,7 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         """
 
         //when
+        expectTaskDeprecations("ideaModule")
         executer.withTasks("ideaModule").run()
 
         //then
@@ -115,8 +117,8 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         assert dependencies.modules.size() == 0
     }
 
+    @ToBeFixedForIsolatedProjects(because = "IDEA plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void respectsApiOfJavaLibraries() {
         def settingsFile = file("settings.gradle")
         createDirs("api", "impl", "library", "application")
@@ -151,6 +153,7 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         """
 
         //when
+        expectTaskDeprecations("ideaModule")
         executer.withTasks("ideaModule").run()
 
         //then
@@ -168,8 +171,8 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         dependencies.assertHasModule('TEST', "impl")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "IDEA plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void buildsCorrectModuleDependenciesWhenRootProjectDoesNotApplyIdePlugin() {
         createDirs("api", "util", "other")
         file("settings.gradle") << """
@@ -207,6 +210,7 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         """
 
         //when
+        expectTaskDeprecations("ideaModule")
         executer.withTasks("ideaModule").run()
 
         //then
@@ -220,8 +224,8 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         utilDependencies.assertHasModule(['TEST'], "root-project-1")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "IDEA plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void dealsWithDuplicatedModuleNames() {
       /*
       This is the multi-module project structure the integration test works with:
@@ -283,6 +287,7 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         """
 
         //when
+        expectTaskDeprecations("idea", "ideaModule", "ideaProject", "ideaWorkspace")
         executer.withTasks("idea").run()
 
         //then
@@ -322,8 +327,8 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         }
     }
 
+    @ToBeFixedForIsolatedProjects(because = "IDEA plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void allowsFullyReconfiguredModuleNames() {
         //use case from the mailing list
         def settingsFile = file("settings.gradle")
@@ -354,6 +359,10 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         """
 
         //when
+        expectTaskDeprecations("idea", "ideaModule", "ideaProject", "ideaWorkspace")
+        expectTaskTypeDeprecations(
+                ("org.gradle.plugins.ide.idea.model.IdeaModuleIml"): 1,
+        )
         executer.withTasks("idea").run()
 
         //then
@@ -365,8 +374,8 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         assert moduleFileNames.contains("master.iml")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "IDEA plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void handlesModuleDependencyCycles() {
         def settingsFile = file("settings.gradle")
         createDirs("one", "two", "three")
@@ -404,6 +413,7 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         """
 
         //when
+        expectTaskDeprecations("idea", "ideaModule", "ideaProject", "ideaWorkspace")
         executer.withTasks("idea").run()
 
         //then
@@ -423,8 +433,8 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         dependencies.assertHasModule('COMPILE', "two")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "IDEA plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void classpathContainsConflictResolvedDependencies() {
         def someLib1Jar = mavenRepo.module('someGroup', 'someLib', '1.0').publish().artifactFile
         def someLib2Jar= mavenRepo.module('someGroup', 'someLib', '2.0').publish().artifactFile
@@ -443,7 +453,7 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
                 apply plugin: 'idea'
 
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
             }
 
@@ -468,6 +478,7 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         """
 
         //when
+        expectTaskDeprecations("idea", "ideaModule", "ideaProject", "ideaWorkspace")
         executer.withTasks("idea").run()
 
         //then
@@ -478,6 +489,7 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         dependencies = parseIml("two/two.iml").dependencies
         assert dependencies.libraries*.jarName as Set == [someLib2Jar.name] as Set
 
+        expectTaskDeprecations("idea", "ideaModule", "ideaProject", "ideaWorkspace")
         executer.withArgument("-PstrictDeps=true").withTasks("idea").run()
 
         //then
@@ -490,8 +502,8 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         assert dependencies.libraries*.jarName as Set == [someLib2Jar.name] as Set
     }
 
+    @ToBeFixedForIsolatedProjects(because = "IDEA plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void cleansCorrectlyWhenModuleNamesAreChangedOrDeduplicated() {
         def settingsFile = file("settings.gradle")
         createDirs("api", "shared", "shared/api", "contrib")
@@ -514,11 +526,13 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
             }
         """
 
+        expectTaskDeprecations("idea", "ideaModule", "ideaProject", "ideaWorkspace")
         executer.withTasks("idea").run()
         assert getFile(project: 'shared/api', "shared-api.iml").exists()
         assert getFile(project: 'contrib', "cool-contrib.iml").exists()
 
         //when
+        expectTaskDeprecations("cleanIdea", "cleanIdeaModule", "cleanIdeaProject")
         executer.withTasks("cleanIdea").run()
 
         //then
@@ -526,8 +540,8 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         assert !getFile(project: 'contrib', "cool-contrib.iml").exists()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "IDEA plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void handlesInternalDependenciesToNonIdeaProjects() {
         def settingsFile = file("settings.gradle")
         createDirs("api", "nonIdeaProject")
@@ -552,14 +566,15 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         """
 
         //when
+        expectTaskDeprecations("idea", "ideaModule")
         executer.withTasks("idea").run()
 
         //then
         assert getFile(project: 'api', 'api.iml').exists()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root")
     @Test
-    @ToBeFixedForConfigurationCache
     void doesNotCreateDuplicateEntriesInIpr() {
         def settingsFile = file("settings.gradle")
         createDirs("api", "iml")
@@ -577,15 +592,18 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         """
 
         //when
-        2.times { executer.withTasks("ideaProject").run() }
+        2.times {
+            expectTaskDeprecations("ideaProject")
+            executer.withTasks("ideaProject").run()
+        }
 
         //then
         String content = getFile(project: '.', 'master.ipr').text
         assert content.count('filepath="$PROJECT_DIR$/api/api.iml"') == 1
     }
 
+    @ToBeFixedForIsolatedProjects(because = "IDEA plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void buildsCorrectModuleDependenciesWithScopes() {
         def settingsFile = file("settings.gradle")
         createDirs("api", "impl", "app")
@@ -619,6 +637,7 @@ class IdeaMultiModuleIntegrationTest extends AbstractIdeIntegrationTest {
         """
 
         //when
+        expectTaskDeprecations("ideaModule")
         executer.withTasks("ideaModule").run()
 
         //then

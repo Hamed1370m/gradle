@@ -32,6 +32,8 @@ import org.gradle.api.provider.SetProperty
  * @return the created named object
  *
  * @see [ObjectFactory.named]
+ *
+ * @since 5.6
  */
 inline fun <reified T : Named> ObjectFactory.named(name: String): T =
     named(T::class.java, name)
@@ -45,8 +47,10 @@ inline fun <reified T : Named> ObjectFactory.named(name: String): T =
  * @return the created named object
  *
  * @see [ObjectFactory.newInstance]
+ *
+ * @since 5.6
  */
-inline fun <reified T> ObjectFactory.newInstance(vararg parameters: Any): T =
+inline fun <reified T : Any> ObjectFactory.newInstance(vararg parameters: Any): T =
     newInstance(T::class.java, *parameters)
 
 
@@ -54,8 +58,10 @@ inline fun <reified T> ObjectFactory.newInstance(vararg parameters: Any): T =
  * Creates a [Property] that holds values of the given type [T].
  *
  * @see [ObjectFactory.property]
+ *
+ * @since 5.6
  */
-inline fun <reified T> ObjectFactory.property(): Property<T> =
+inline fun <reified T : Any> ObjectFactory.property(): Property<T> =
     property(T::class.java)
 
 
@@ -63,8 +69,10 @@ inline fun <reified T> ObjectFactory.property(): Property<T> =
  * Creates a [SetProperty] that holds values of the given type [T].
  *
  * @see [ObjectFactory.setProperty]
+ *
+ * @since 5.6
  */
-inline fun <reified T> ObjectFactory.setProperty(): SetProperty<T> =
+inline fun <reified T : Any> ObjectFactory.setProperty(): SetProperty<T> =
     setProperty(T::class.java)
 
 
@@ -72,8 +80,10 @@ inline fun <reified T> ObjectFactory.setProperty(): SetProperty<T> =
  * Creates a [ListProperty] that holds values of the given type [T].
  *
  * @see [ObjectFactory.listProperty]
+ *
+ * @since 5.6
  */
-inline fun <reified T> ObjectFactory.listProperty(): ListProperty<T> =
+inline fun <reified T : Any> ObjectFactory.listProperty(): ListProperty<T> =
     listProperty(T::class.java)
 
 
@@ -81,6 +91,8 @@ inline fun <reified T> ObjectFactory.listProperty(): ListProperty<T> =
  * Creates a [MapProperty] that holds values of the given key type [K] and value type [V].
  *
  * @see [ObjectFactory.mapProperty]
+ *
+ * @since 5.6
  */
-inline fun <reified K, reified V> ObjectFactory.mapProperty(): MapProperty<K, V> =
+inline fun <reified K : Any, reified V : Any> ObjectFactory.mapProperty(): MapProperty<K, V> =
     mapProperty(K::class.java, V::class.java)

@@ -15,22 +15,21 @@
  */
 package org.gradle.plugins.ide.eclipse
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.junit.Test
 import spock.lang.Issue
 
 class EclipseWtpIntegrationTest extends AbstractEclipseIntegrationTest {
     @Test
     @Issue("GRADLE-1415")
-    @ToBeFixedForConfigurationCache
     void canUseSelfResolvingFiles() {
         def buildFile = """
-apply plugin: "war"
-apply plugin: "eclipse"
+            apply plugin: "war"
+            apply plugin: "eclipse"
 
-dependencies {
-    implementation fileTree(dir: "libs", includes: ["*.jar"])
-}
+            dependencies {
+                implementation fileTree(dir: "libs", includes: ["*.jar"])
+            }
         """
 
         def libsDir = file("libs")
@@ -38,15 +37,16 @@ dependencies {
         libsDir.createFile("foo.jar")
 
         // when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject", "eclipseWtp", "eclipseWtpComponent", "eclipseWtpFacet")
         runEclipseTask(buildFile)
 
         // then:
         libEntriesInClasspathFileHaveFilenames("foo.jar")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root")
     @Test
     @Issue("GRADLE-2526")
-    @ToBeFixedForConfigurationCache
     void overwritesDependentModules() {
         generateEclipseFilesForWebProject()
         def projectModules = parseComponentFile(project: "web")
@@ -65,8 +65,8 @@ dependencies {
         classpath2.lib("myartifactdep-1.0.jar")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Eclipse plugin uses allprojects/subprojects")
     @Test
-    @ToBeFixedForConfigurationCache
     void "respects dependency substitution rules"() {
         // given:
         mavenRepo.module("gradle", "foo").publish()
@@ -75,6 +75,7 @@ dependencies {
 
         // when:
         createDirs("sub")
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject", "eclipseWtp", "eclipseWtpComponent", "eclipseWtpFacet")
         runEclipseTask "include 'sub'",
         """apply plugin: 'java'
            apply plugin: 'war'
@@ -85,7 +86,7 @@ dependencies {
            }
 
            repositories {
-               maven { url "${mavenRepo.uri}" }
+               maven { url = "${mavenRepo.uri}" }
            }
 
            dependencies {
@@ -110,13 +111,13 @@ dependencies {
     }
 
     @Test
-    @ToBeFixedForConfigurationCache
     void "included build"() {
         // given:
         createRootProject()
         createIncludedBuild()
 
         // when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject", "eclipseWtp", "eclipseWtpComponent", "eclipseWtpFacet")
         def result = executer.withTasks("eclipse").run()
 
         // then:
@@ -195,10 +196,10 @@ dependencies {
         maven(repoDir).module("mygroup", "myartifactdep").publish()
 
         file("settings.gradle") << """
-include("web")
-include("java1")
-include("java2")
-include("groovy")
+            include("web")
+            include("java1")
+            include("java2")
+            include("groovy")
         """
 
         def webBuildFile = getFile(project: "web", "build.gradle")
@@ -206,51 +207,51 @@ include("groovy")
         webBuildFile.parentFile.file("src/main/webapp").createDir()
 
         webBuildFile << """
-apply plugin: "eclipse-wtp"
-apply plugin: "war"
+            apply plugin: "eclipse-wtp"
+            apply plugin: "war"
 
-repositories {
-    maven { url "${repoDir.toURI()}" }
-}
+            repositories {
+                maven { url = "${repoDir.toURI()}" }
+            }
 
-dependencies {
-    implementation project(":java1")
-    implementation project(":groovy")
-    runtimeOnly "mygroup:myartifact:$myArtifactVersion"
-}
+            dependencies {
+                implementation project(":java1")
+                implementation project(":groovy")
+                runtimeOnly "mygroup:myartifact:$myArtifactVersion"
+            }
         """
 
         def java1BuildFile = getFile(project: "java1", "build.gradle")
         createJavaSourceDirs(java1BuildFile)
 
         java1BuildFile << """
-apply plugin: "eclipse-wtp"
-apply plugin: "java"
+            apply plugin: "eclipse-wtp"
+            apply plugin: "java"
 
-repositories {
-    maven { url "${repoDir.toURI()}" }
-}
+            repositories {
+                maven { url = "${repoDir.toURI()}" }
+            }
 
-dependencies {
-    implementation project(":java2")
-    runtimeOnly "mygroup:myartifact:$myArtifactVersion"
-}
+            dependencies {
+                implementation project(":java2")
+                runtimeOnly "mygroup:myartifact:$myArtifactVersion"
+            }
         """
 
         def java2BuildFile = getFile(project: "java2", "build.gradle")
         createJavaSourceDirs(java2BuildFile)
 
         java2BuildFile << """
-apply plugin: "eclipse-wtp"
-apply plugin: "java"
+            apply plugin: "eclipse-wtp"
+            apply plugin: "java"
 
-repositories {
-    maven { url "${repoDir.toURI()}" }
-}
+            repositories {
+                maven { url = "${repoDir.toURI()}" }
+            }
 
-dependencies {
-    runtimeOnly "mygroup:myartifact:$myArtifactVersion"
-}
+            dependencies {
+                runtimeOnly "mygroup:myartifact:$myArtifactVersion"
+            }
         """
 
         def groovyBuildFile = getFile(project: "groovy", "build.gradle")
@@ -258,10 +259,11 @@ dependencies {
         groovyBuildFile.parentFile.file("src/main/groovy").createDir()
 
         groovyBuildFile << """
-apply plugin: "eclipse-wtp"
-apply plugin: "groovy"
+            apply plugin: "eclipse-wtp"
+            apply plugin: "groovy"
         """
 
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject", "eclipseWtp", "eclipseWtpComponent", "eclipseWtpFacet")
         executer.withTasks("eclipse").run()
     }
 

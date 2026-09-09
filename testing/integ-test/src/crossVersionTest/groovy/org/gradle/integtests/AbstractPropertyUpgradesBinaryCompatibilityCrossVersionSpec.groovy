@@ -15,8 +15,10 @@
  */
 package org.gradle.integtests
 
+import org.gradle.api.internal.classpath.RuntimeApiInfo
 import org.gradle.configuration.DefaultImportsReader
 import org.gradle.integtests.fixtures.CrossVersionIntegrationSpec
+import org.gradle.internal.classpath.DefaultClassPath
 import org.gradle.internal.lazy.Lazy
 
 import java.util.function.Supplier
@@ -40,18 +42,16 @@ abstract class AbstractPropertyUpgradesBinaryCompatibilityCrossVersionSpec exten
     /**
      * These packages are not available with the version we are building a plugin with and will cause plugin compilation to fail.
      */
-    private static final List<String> BLACKLISTED_PACKAGES = [
+    private static final List<String> EXCLUDED_PACKAGES = [
         // Testkit is not available on compile classpath for plugin
         "org.gradle.testkit"
     ]
 
     private final Supplier<List<String>> defaultGradleImports = Lazy.unsafe().of {
         def runtimeInfoJar = previous.gradleHomeDir.file("lib/gradle-runtime-api-info-${previous.version.baseVersion.version}.jar")
-        def importsReader = runtimeInfoJar.exists() ?
-            new DefaultImportsReader(new URL("jar:file:" + runtimeInfoJar.absolutePath + "!" + DefaultImportsReader.RESOURCE)) :
-            new DefaultImportsReader()
+        def importsReader = new DefaultImportsReader(RuntimeApiInfo.create(DefaultClassPath.of(runtimeInfoJar)))
         return importsReader.importPackages.findAll {
-            !BLACKLISTED_PACKAGES.any { packageName -> it.startsWith(packageName) }
+            !EXCLUDED_PACKAGES.any { packageName -> it.startsWith(packageName) }
         }.collect { it + ".*" }
     }
 

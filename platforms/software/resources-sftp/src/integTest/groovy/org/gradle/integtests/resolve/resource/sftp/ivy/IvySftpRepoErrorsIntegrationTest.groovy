@@ -16,7 +16,7 @@
 
 package org.gradle.integtests.resolve.resource.sftp.ivy
 
-import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+
 import org.gradle.integtests.resolve.resource.sftp.AbstractSftpDependencyResolutionTest
 
 import static org.gradle.integtests.fixtures.SuggestionsMessages.GET_HELP
@@ -32,10 +32,10 @@ class IvySftpRepoErrorsIntegrationTest extends AbstractSftpDependencyResolutionT
         buildFile << """
             repositories {
                 ivy {
-                    url "${ivySftpRepo.uri}"
+                    url = "${ivySftpRepo.uri}"
                     credentials {
-                        username 'sftp'
-                        password 'sftp'
+                        username = 'sftp'
+                        password = 'sftp'
                     }
                 }
             }
@@ -54,7 +54,7 @@ class IvySftpRepoErrorsIntegrationTest extends AbstractSftpDependencyResolutionT
 
         then:
         fails 'retrieve'
-        assertTaskFailureDescription(":retrieve")
+        assertResolutionTaskFailed(":retrieve", "build file 'build.gradle'")
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
             .assertHasCause("""Could not find org.group.name:projectA:1.2.
 Searched in the following locations:
@@ -74,10 +74,10 @@ Required by:
         buildFile << """
             repositories {
                 ivy {
-                    url "${ivySftpRepo.uri}"
+                    url = "${ivySftpRepo.uri}"
                     credentials {
-                        username 'sftp'
-                        password 'sftp'
+                        username = 'sftp'
+                        password = 'sftp'
                     }
                 }
             }
@@ -94,7 +94,7 @@ Required by:
 
         then:
         fails 'retrieve'
-        assertTaskFailureDescription(":retrieve")
+        assertResolutionTaskFailed(":retrieve", "build file 'build.gradle'")
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
             .assertHasCause("""Could not find any matches for org.group.name:projectA:1.+ as no versions of org.group.name:projectA are available.
 Searched in the following locations:
@@ -108,10 +108,10 @@ Required by:
         buildFile << """
             repositories {
                 ivy {
-                    url "${ivySftpRepo.uri}"
+                    url = "${ivySftpRepo.uri}"
                     credentials {
-                        username 'bad'
-                        password 'credentials'
+                        username = 'bad'
+                        password = 'credentials'
                     }
                 }
             }
@@ -127,7 +127,7 @@ Required by:
         fails 'retrieve'
 
         then:
-        assertTaskFailureDescription(":retrieve")
+        assertResolutionTaskFailed(":retrieve", "build file 'build.gradle'")
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
             .assertHasCause('Could not resolve org.group.name:projectA:1.2')
             .assertHasCause("Could not connect to SFTP server at ${ivySftpRepo.serverUri}")
@@ -141,10 +141,10 @@ Required by:
         buildFile << """
             repositories {
                 ivy {
-                    url "${ivySftpRepo.uri}"
+                    url = "${ivySftpRepo.uri}"
                     credentials {
-                        username 'sftp'
-                        password 'sftp'
+                        username = 'sftp'
+                        password = 'sftp'
                     }
                 }
             }
@@ -160,7 +160,7 @@ Required by:
         fails 'retrieve'
 
         then:
-        assertTaskFailureDescription(":retrieve")
+        assertResolutionTaskFailed(":retrieve", "build file 'build.gradle'")
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
             .assertHasCause('Could not resolve org.group.name:projectA:1.2')
             .assertHasCause("Could not connect to SFTP server at ${ivySftpRepo.serverUri}")
@@ -172,10 +172,10 @@ Required by:
         buildFile << """
             repositories {
                 ivy {
-                    url "${ivySftpRepo.uri}"
+                    url = "${ivySftpRepo.uri}"
                     credentials {
-                        username 'sftp'
-                        password 'sftp'
+                        username = 'sftp'
+                        password = 'sftp'
                     }
                 }
             }
@@ -194,7 +194,7 @@ Required by:
         fails 'retrieve'
 
         and:
-        assertTaskFailureDescription(":retrieve")
+        assertResolutionTaskFailed(":retrieve", "build file 'build.gradle'")
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
             .assertHasCause('Could not resolve org.group.name:projectA:1.2')
             .assertHasCause("Could not connect to SFTP server at ${ivySftpRepo.serverUri}")
@@ -205,10 +205,10 @@ Required by:
         buildFile << """
             repositories {
                 ivy {
-                    url "${ivySftpRepo.uri}"
+                    url = "${ivySftpRepo.uri}"
                     credentials {
-                        username 'sftp'
-                        password 'sftp'
+                        username = 'sftp'
+                        password = 'sftp'
                     }
                 }
             }
@@ -229,7 +229,7 @@ Required by:
         failure = executer.withTasks('retrieve').runWithFailure()
 
         then:
-        assertTaskFailureDescription(":retrieve")
+        assertResolutionTaskFailed(":retrieve", "build file 'build.gradle'")
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
             .assertHasCause('Could not resolve org.group.name:projectA:1.2')
             .assertHasCause("Could not get resource '${projectA.ivy.uri}'")
@@ -244,7 +244,7 @@ Required by:
         buildFile << """
 repositories {
     ivy {
-        url "${getIvySftpRepo().uri}"
+        url = "${getIvySftpRepo().uri}"
         authentication {
             auth(BasicAuthentication)
         }
@@ -262,18 +262,8 @@ task retrieve(type: Sync) {
         expect:
         fails 'retrieve'
         and:
-        assertTaskFailureDescription(":retrieve")
+        assertResolutionTaskFailed(":retrieve", "build file 'build.gradle'")
         failure.assertHasCause("Could not resolve all dependencies for configuration ':compile'.")
         failure.assertHasCause("Authentication scheme 'auth'(BasicAuthentication) is not supported by protocol 'sftp'")
-    }
-
-    private void assertTaskFailureDescription(String taskSelector) {
-        if (GradleContextualExecuter.configCache) {
-            failureDescriptionContains("Configuration cache state could not be cached:")
-            failureDescriptionContains(taskSelector)
-        } else {
-            def description = "Execution failed for task '${taskSelector}'."
-            failure.assertHasDescription(description)
-        }
     }
 }

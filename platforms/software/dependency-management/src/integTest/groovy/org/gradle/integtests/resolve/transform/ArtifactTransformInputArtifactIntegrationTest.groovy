@@ -20,11 +20,13 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.initialization.StartParameterBuildOptions
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
 import org.gradle.integtests.fixtures.DirectoryBuildCacheFixture
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import spock.lang.Issue
 
 import java.util.regex.Pattern
 
 class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyResolutionTest implements ArtifactTransformTestFixture, DirectoryBuildCacheFixture {
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "transform does not execute when project artifact cannot be built"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -59,12 +61,13 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         then:
         transformed("c.jar")
         failure.assertHasFailures(1)
-        failure.assertHasDescription("Execution failed for task ':b:producer'.")
+        failure.assertHasDescription("Execution failed for task ':b:producer' (registered in build file 'build.gradle').")
         failure.assertHasCause("broken")
     }
 
     // Documents existing behaviour. The absolute path of the input artifact is baked into the workspace identity
     // for incremental transforms, and so when the path changes the outputs are invalidated
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "can attach #description to input artifact property with incrementally transformed artifact but it has no effect when not caching"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -97,7 +100,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":c:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":c:producer", ":a:resolve")
         transformed("b.jar", "c.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -105,7 +108,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -116,7 +119,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // new content, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -127,7 +130,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -139,7 +142,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // path has changed, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -151,7 +154,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -164,7 +167,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // new file name, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue.jar")
         outputContains("result = [b-blue.jar.green, c.jar.green]")
 
@@ -177,7 +180,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b-blue.jar.green, c.jar.green]")
 
@@ -185,7 +188,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // have already seen these artifacts before, but the transform outputs have been overwritten
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -198,6 +201,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         "@PathSensitive(PathSensitivity.NONE)"      | "@PathSensitive(PathSensitivity.NONE)"
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "can attach #normalization to input artifact property with #type transformed artifact directory but it has no effect when not caching"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -239,7 +243,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":c:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":c:producer", ":a:resolve")
         transformed("b-dir", "c-dir")
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -247,7 +251,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up-to-date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -258,7 +262,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // directory content has changed (file renamed)
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-dir")
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -269,7 +273,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up-to-date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -281,7 +285,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // directory content has changed (file contents changed)
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-dir")
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -293,7 +297,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up-to-date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -306,7 +310,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // directory name has changed
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue")
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -319,7 +323,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up-to-date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -333,7 +337,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // directory path has changed
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         if (incremental || sensitivity == null || sensitivity == PathSensitivity.ABSOLUTE) {
             transformed("b-blue")
         } else {
@@ -351,7 +355,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up-to-date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -359,7 +363,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         // have already seen these artifacts before...
         if (incremental) {
             // ...but the transform outputs have been overwritten
@@ -386,6 +390,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         type = (incremental ? "incremental" : "non-incremental")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "re-runs incremental transform when input artifact file changes from file to missing"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -422,7 +427,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":c:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":c:producer", ":a:resolve")
         transformed("b.jar", "c.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -430,7 +435,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no changes
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -438,7 +443,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve", "-DbContent=")
 
         then: // file is missing, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("missing b.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -446,11 +451,12 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // seen these before, but the transform outputs have been overwritten
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "inputs to the build cache key are reported when build cache logging is enabled"() {
         given:
         createDirs("a", "b")
@@ -492,6 +498,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         output.contains("Build cache key for MakeGreen")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "honors @PathSensitive(NONE) on input artifact property for project artifact file when caching"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -523,7 +530,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":c:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":c:producer", ":a:resolve")
         transformed("b.jar", "c.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -534,7 +541,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // path has changed, but should be up to date
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -546,7 +553,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // name has changed, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue.jar")
         outputContains("result = [b-blue.jar.green, c.jar.green]")
 
@@ -559,7 +566,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // new content, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -572,7 +579,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -581,11 +588,12 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // have already seen these artifacts before
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "honors @PathSensitive(#sensitivity) to input artifact property for incremental artifact directory transforms when caching"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -622,7 +630,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":c:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":c:producer", ":a:resolve")
         transformed("b-dir", "c-dir")
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -633,7 +641,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // path has changed, but should be up to date
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -645,7 +653,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // name has changed, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue")
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -658,7 +666,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // new content, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue")
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -671,7 +679,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -685,7 +693,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // new content (renamed file), should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue")
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -693,7 +701,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // have already seen these artifacts before
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -701,6 +709,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         sensitivity << [PathSensitivity.NAME_ONLY, PathSensitivity.RELATIVE]
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "honors @PathSensitive(#sensitivity) on input artifact property for project artifact file when caching"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -732,7 +741,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":c:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":c:producer", ":a:resolve")
         transformed("b.jar", "c.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -743,7 +752,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // path has changed, but should be up to date
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -755,7 +764,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // name has changed, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue.jar")
         outputContains("result = [b-blue.jar.green, c.jar.green]")
 
@@ -768,7 +777,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // new content, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue.jar")
         outputContains("result = [b-blue.jar.green, c.jar.green]")
 
@@ -781,7 +790,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b-blue.jar.green, c.jar.green]")
 
@@ -789,7 +798,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // have already seen these artifacts before
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -797,6 +806,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         sensitivity << [PathSensitivity.RELATIVE, PathSensitivity.NAME_ONLY]
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "honors content changes for @PathSensitive(NONE) on input artifact property for incremental artifact directory transforms when not caching"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -832,7 +842,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":c:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":c:producer", ":a:resolve")
         transformed("b-dir", "c-dir")
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -843,7 +853,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // path has changed, but path is baked into workspace identity
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-dir")
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -855,7 +865,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // name has changed, but path is baked into workspace identity
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue")
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -868,7 +878,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // new content, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue")
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -881,7 +891,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -895,7 +905,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // new content (renamed file), should not run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -903,11 +913,12 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // have already seen these artifacts before
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b-dir.green, c-dir.green]")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "honors @PathSensitive(NONE) on input artifact property for incremental artifact directory transforms when caching"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -944,7 +955,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":c:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":c:producer", ":a:resolve")
         transformed("b-dir", "c-dir")
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -955,7 +966,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // path has changed, should be up to date
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b-dir.green, c-dir.green]")
 
@@ -967,7 +978,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // name has changed, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue")
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -980,7 +991,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // new content, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue")
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -993,7 +1004,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -1007,7 +1018,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // new content (renamed file), should not run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b-blue.green, c-dir.green]")
 
@@ -1015,7 +1026,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // have already seen these artifacts before
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b-dir.green, c-dir.green]")
     }
@@ -1180,6 +1191,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         sensitivity << [PathSensitivity.RELATIVE, PathSensitivity.NAME_ONLY]
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "honors content changes with @#annotation on input artifact property with incremental artifact transforms file when not caching"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -1214,7 +1226,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":c:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":c:producer", ":a:resolve")
         transformed("b.jar", "c.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1222,7 +1234,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1233,7 +1245,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // new content, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1244,7 +1256,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1256,7 +1268,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // timestamp change only, should not run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1269,7 +1281,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // path has changed, but path is baked into workspace identity
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1283,7 +1295,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // new file name, but path is baked into workspace identity
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue.jar")
         outputContains("result = [b-blue.jar.green, c.jar.green]")
 
@@ -1291,7 +1303,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         succeeds(":a:resolve")
 
         then: // have already seen these artifacts before, but outputs have been overwritten
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1299,6 +1311,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         annotation << ["Classpath", "CompileClasspath"]
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "honors @#annotation on input artifact property with project artifact file when caching"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -1331,7 +1344,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":c:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":c:producer", ":a:resolve")
         transformed("b.jar", "c.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1339,7 +1352,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1350,7 +1363,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // new content, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1361,7 +1374,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // no change, should be up to date
-        result.assertTasksNotSkipped(":a:resolve")
+        result.assertTasksExecuted(":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1373,7 +1386,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // timestamp change only, should not run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1386,7 +1399,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // path has changed, should not run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1400,7 +1413,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // new file name, should run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-blue.jar")
         outputContains("result = [b-blue.jar.green, c.jar.green]")
 
@@ -1408,7 +1421,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         withBuildCache().succeeds(":a:resolve")
 
         then: // have already seen these artifacts before, should not run
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1416,6 +1429,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         annotation << ["Classpath", "CompileClasspath"]
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "honors runtime classpath normalization for input artifact for incremental transform"() {
         createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
@@ -1459,7 +1473,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         run(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":c:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":c:producer", ":a:resolve")
         transformed("b.jar", "c.jar")
         outputContains("result = [b.jar.green, c.jar.green]")
 
@@ -1471,12 +1485,13 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         run(":a:resolve")
 
         then: // change is ignored due to normalization
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed()
         outputContains("result = [b.jar.green, c.jar.green]")
     }
 
     @Issue("https://github.com/gradle/gradle/issues/19003")
+    @ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
     def "can transform an empty input artifact"() {
         createDirs("a", "b")
         settingsFile << "include 'a', 'b'"
@@ -1513,7 +1528,7 @@ class ArtifactTransformInputArtifactIntegrationTest extends AbstractDependencyRe
         run(":a:resolve")
 
         then:
-        result.assertTasksNotSkipped(":b:producer", ":a:resolve")
+        result.assertTasksExecuted(":b:producer", ":a:resolve")
         transformed("b-dir")
         outputContains("result = [b-dir.green]")
     }

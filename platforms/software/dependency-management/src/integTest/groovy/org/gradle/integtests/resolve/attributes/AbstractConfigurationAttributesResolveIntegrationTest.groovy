@@ -18,12 +18,11 @@
 package org.gradle.integtests.resolve.attributes
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ConfigurationUsageChangingFixture
 import org.gradle.integtests.fixtures.extensions.FluidDependenciesResolveTest
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 
 @FluidDependenciesResolveTest
-abstract class AbstractConfigurationAttributesResolveIntegrationTest extends AbstractIntegrationSpec implements ConfigurationUsageChangingFixture {
+abstract class AbstractConfigurationAttributesResolveIntegrationTest extends AbstractIntegrationSpec {
 
     abstract String getTypeDefs()
 
@@ -51,110 +50,109 @@ abstract class AbstractConfigurationAttributesResolveIntegrationTest extends Abs
 
     def "selects configuration in target project which matches the configuration attributes"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                    _compileFreeRelease.attributes { $freeRelease }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                    _compileFreeRelease project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                       assert files.collect { it.name } == ['b-foo.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    def files = configurations._compileFreeRelease
-                    doLast {
-                       assert files.collect { it.name } == ['b-bar.jar']
-                    }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+                _compileFreeRelease.attributes { $freeRelease }
+            }
+            dependencies {
+                _compileFreeDebug project(':b')
+                _compileFreeRelease project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                   assert files.collect { it.name } == ['b-foo.jar']
                 }
             }
-            project(':b') {
-                configurations {
-                    foo {
-                        attributes { $freeDebug }
-                    }
-                    bar {
-                        attributes { $freeRelease }
-                    }
+            task checkRelease(dependsOn: configurations._compileFreeRelease) {
+                def files = configurations._compileFreeRelease
+                doLast {
+                   assert files.collect { it.name } == ['b-bar.jar']
                 }
-                ${fooAndBarJars()}
             }
+        """
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo {
+                    attributes { $freeDebug }
+                }
+                bar {
+                    attributes { $freeRelease }
+                }
+            }
+
+            ${fooAndBarJars()}
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:fooJar', ':a:checkDebug')
 
         when:
         run ':a:checkRelease'
 
         then:
-        result.assertTasksExecuted(':b:barJar', ':a:checkRelease')
+        result.assertTasksScheduled(':b:barJar', ':a:checkRelease')
     }
 
     def "selects configuration in target project which matches the configuration attributes when dependency is set on a parent configuration"() {
-        def resolveRelease = new ResolveTestFixture(buildFile, '_compileFreeRelease')
-        def resolveDebug = new ResolveTestFixture(buildFile, '_compileFreeDebug')
+        def resolve = new ResolveTestFixture(testDirectory)
 
         given:
-        createDirs("a", "b")
-        file('settings.gradle') << """rootProject.name='test'
-include 'a', 'b'
-"""
-        buildFile << """
-            $typeDefs
-
-            project(':a') {
-                configurations {
-                    compile
-                    _compileFreeDebug.attributes { $freeDebug }
-                    _compileFreeRelease.attributes { $freeRelease }
-                    _compileFreeDebug.extendsFrom compile
-                    _compileFreeRelease.extendsFrom compile
-                }
-                dependencies {
-                    compile project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                        assert configurations._compileFreeDebug.collect { it.name } == ['b-foo.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    doLast {
-                        assert configurations._compileFreeRelease.collect { it.name } == ['b-bar.jar']
-                    }
-                }
-            }
-            project(':b') {
-                configurations {
-                    foo.attributes { $freeDebug }
-                    bar.attributes { $freeRelease }
-                }
-                ${fooAndBarJars()}
-            }
+        file('settings.gradle') << """
+            rootProject.name='test'
+            include 'a', 'b'
         """
-        def origFile = buildFile.text
+
+        file("a/build.gradle") << """
+            $typeDefs
+            configurations {
+                compile
+                _compileFreeDebug.attributes { $freeDebug }
+                _compileFreeRelease.attributes { $freeRelease }
+                _compileFreeDebug.extendsFrom compile
+                _compileFreeRelease.extendsFrom compile
+            }
+            dependencies {
+                compile project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                doLast {
+                    assert configurations._compileFreeDebug.collect { it.name } == ['b-foo.jar']
+                }
+            }
+            task checkRelease(dependsOn: configurations._compileFreeRelease) {
+                doLast {
+                    assert configurations._compileFreeRelease.collect { it.name } == ['b-bar.jar']
+                }
+            }
+
+            ${resolve.configureProject("_compileFreeRelease", "_compileFreeDebug")}
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+            configurations {
+                foo.attributes { $freeDebug }
+                bar.attributes { $freeRelease }
+            }
+            ${fooAndBarJars()}
+        """
 
         when:
-        resolveRelease.prepare()
-        run ':a:checkDeps'
+        run ':a:check_compileFreeRelease'
 
         then:
-        result.assertTasksExecuted(':b:barJar', ':a:checkDeps')
-        resolveRelease.expectGraph {
+        result.assertTasksScheduled(':b:barJar', ':a:check_compileFreeRelease')
+        resolve.expectGraph(":a") {
             root(":a", "test:a:") {
                 project(':b', 'test:b:') {
                     variant 'bar', [flavor: 'free', buildType: 'release']
@@ -164,13 +162,11 @@ include 'a', 'b'
         }
 
         when:
-        buildFile.text = origFile
-        resolveDebug.prepare()
-        run ':a:checkDeps'
+        run ':a:check_compileFreeDebug'
 
         then:
-        result.assertTasksExecuted(':b:fooJar', ':a:checkDeps')
-        resolveDebug.expectGraph {
+        result.assertTasksScheduled(':b:fooJar', ':a:check_compileFreeDebug')
+        resolve.expectGraph(":a") {
             root(":a", "test:a:") {
                 project(':b', 'test:b:') {
                     variant 'foo', [flavor: 'free', buildType: 'debug']
@@ -182,236 +178,242 @@ include 'a', 'b'
 
     def "selects configuration in target project which matches the configuration attributes when dependency is set on a parent configuration and target configuration is not top-level"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    compile
-                    _compileFreeDebug.attributes { $freeDebug }
-                    _compileFreeRelease.attributes { $freeRelease }
-                    _compileFreeDebug.extendsFrom compile
-                    _compileFreeRelease.extendsFrom compile
-                }
-                dependencies {
-                    compile project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == ['b-foo.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    def files = configurations._compileFreeRelease
-                    doLast {
-                        assert files.collect { it.name } == ['b-bar.jar']
-                    }
+            configurations {
+                compile
+                _compileFreeDebug.attributes { $freeDebug }
+                _compileFreeRelease.attributes { $freeRelease }
+                _compileFreeDebug.extendsFrom compile
+                _compileFreeRelease.extendsFrom compile
+            }
+            dependencies {
+                compile project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == ['b-foo.jar']
                 }
             }
-            project(':b') {
-                configurations {
-                    compile
-                    foo {
-                       extendsFrom compile
-                       attributes { $freeDebug }
-                    }
-                    bar {
-                       extendsFrom compile
-                       attributes { $freeRelease }
-                    }
+            task checkRelease(dependsOn: configurations._compileFreeRelease) {
+                def files = configurations._compileFreeRelease
+                doLast {
+                    assert files.collect { it.name } == ['b-bar.jar']
                 }
-                ${fooAndBarJars()}
             }
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                compile
+                foo {
+                   extendsFrom compile
+                   attributes { $freeDebug }
+                }
+                bar {
+                   extendsFrom compile
+                   attributes { $freeRelease }
+                }
+            }
+
+            ${fooAndBarJars()}
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:fooJar', ':a:checkDebug')
 
         when:
         run ':a:checkRelease'
 
         then:
-        result.assertTasksExecuted(':b:barJar', ':a:checkRelease')
+        result.assertTasksScheduled(':b:barJar', ':a:checkRelease')
     }
 
     def "explicit configuration selection should take precedence"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    compile
-                    _compileFreeDebug.attributes { $freeDebug }
-                    _compileFreeRelease.attributes { $freeRelease }
-                    _compileFreeDebug.extendsFrom compile
-                    _compileFreeRelease.extendsFrom compile
-                }
-                dependencies {
-                    compile project(path:':b', configuration: 'bar')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == ['b-bar.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    def files = configurations._compileFreeRelease
-                    doLast {
-                        assert files.collect { it.name } == ['b-bar.jar']
-                    }
+            configurations {
+                compile
+                _compileFreeDebug.attributes { $freeDebug }
+                _compileFreeRelease.attributes { $freeRelease }
+                _compileFreeDebug.extendsFrom compile
+                _compileFreeRelease.extendsFrom compile
+            }
+            dependencies {
+                compile project(path:':b', configuration: 'bar')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == ['b-bar.jar']
                 }
             }
-            project(':b') {
-                configurations {
-                    compile
-                    freeDebug {
-                       extendsFrom compile
-                       attributes { $freeDebug }
-                    }
-                    freeRelease {
-                       extendsFrom compile
-                       attributes { $freeDebug }
-                    }
-                    bar {
-                       extendsFrom compile
-                       attributes { $freeDebug }
-                    }
-                }
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'b-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'b-bar'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    freeDebug fooJar
-                    freeRelease fooJar
-                    bar barJar
+            task checkRelease(dependsOn: configurations._compileFreeRelease) {
+                def files = configurations._compileFreeRelease
+                doLast {
+                    assert files.collect { it.name } == ['b-bar.jar']
                 }
             }
+        """
 
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                compile
+                freeDebug {
+                   extendsFrom compile
+                   attributes { $freeDebug }
+                }
+                freeRelease {
+                   extendsFrom compile
+                   attributes { $freeDebug }
+                }
+                bar {
+                   extendsFrom compile
+                   attributes { $freeDebug }
+                }
+            }
+            task fooJar(type: Jar) {
+               archiveBaseName = 'b-foo'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'b-bar'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                freeDebug tasks.fooJar
+                freeRelease tasks.fooJar
+                bar tasks.barJar
+            }
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:barJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:barJar', ':a:checkDebug')
     }
 
     def "explicit configuration selection can be used when no configurations in target have attributes"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                dependencies.attributesSchema {
-                    attribute(buildType)
-                    attribute(flavor)
-                }
-                configurations {
-                    compile
-                    _compileFreeDebug.attributes { $freeDebug }
-                    _compileFreeRelease.attributes { $freeRelease }
-                    _compileFreeDebug.extendsFrom compile
-                    _compileFreeRelease.extendsFrom compile
-                }
-                dependencies {
-                    compile project(path:':b', configuration: 'bar')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == ['b-bar.jar']
-                    }
+            dependencies.attributesSchema {
+                attribute(buildType)
+                attribute(flavor)
+            }
+            configurations {
+                compile
+                _compileFreeDebug.attributes { $freeDebug }
+                _compileFreeRelease.attributes { $freeRelease }
+                _compileFreeDebug.extendsFrom compile
+                _compileFreeRelease.extendsFrom compile
+            }
+            dependencies {
+                compile project(path:':b', configuration: 'bar')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == ['b-bar.jar']
                 }
             }
-            project(':b') {
-                configurations {
-                    compile
-                    foo {
-                       extendsFrom compile
-                    }
-                    bar {
-                       extendsFrom compile
-                    }
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                compile
+                foo {
+                   extendsFrom compile
                 }
-                ${fooAndBarJars()}
+                bar {
+                   extendsFrom compile
+                }
             }
+
+            ${fooAndBarJars()}
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:barJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:barJar', ':a:checkDebug')
     }
 
     def "fails when explicitly selected configuration is not compatible with requested"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    compile
-                    _compileFreeDebug.attributes { $freeDebug }
-                    _compileFreeRelease.attributes { $freeRelease }
-                    _compileFreeDebug.extendsFrom compile
-                    _compileFreeRelease.extendsFrom compile
-                }
-                dependencies {
-                    compile project(path:':b', configuration: 'bar')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == ['b-bar.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    def files = configurations._compileFreeRelease
-                    doLast {
-                        assert files.collect { it.name } == ['b-bar.jar']
-                    }
+            configurations {
+                compile
+                _compileFreeDebug.attributes { $freeDebug }
+                _compileFreeRelease.attributes { $freeRelease }
+                _compileFreeDebug.extendsFrom compile
+                _compileFreeRelease.extendsFrom compile
+            }
+            dependencies {
+                compile project(path:':b', configuration: 'bar')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == ['b-bar.jar']
                 }
             }
-            project(':b') {
-                configurations {
-                    compile
-                    foo {
-                       extendsFrom compile
-                       attributes { $freeDebug }
-                    }
-                    bar {
-                       extendsFrom compile
-                       attributes { $freeRelease }
-                    }
+            task checkRelease(dependsOn: configurations._compileFreeRelease) {
+                def files = configurations._compileFreeRelease
+                doLast {
+                    assert files.collect { it.name } == ['b-bar.jar']
                 }
-                ${fooAndBarJars()}
             }
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                compile
+                foo {
+                   extendsFrom compile
+                   attributes { $freeDebug }
+                }
+                bar {
+                   extendsFrom compile
+                   attributes { $freeRelease }
+                }
+            }
+
+            ${fooAndBarJars()}
         """
 
         when:
         fails ':a:checkDebug'
 
         then:
-        failure.assertHasCause """Configuration 'bar' in project :b does not match the consumer attributes
+        failure.assertHasCause """Configuration 'bar' in project ':b' does not match the consumer attributes
 Configuration 'bar' declares attribute 'flavor' with value 'free':
   - Incompatible because this component declares attribute 'buildType' with value 'release' and the consumer needed attribute 'buildType' with value 'debug'"""
 
@@ -419,129 +421,133 @@ Configuration 'bar' declares attribute 'flavor' with value 'free':
         run ':a:checkRelease'
 
         then:
-        result.assertTasksExecuted(':b:barJar', ':a:checkRelease')
+        result.assertTasksScheduled(':b:barJar', ':a:checkRelease')
     }
 
     def "selects default configuration when it matches configuration attributes"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == []
-                    }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+            }
+            dependencies {
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == []
                 }
             }
-            project(':b') {
-                configurations {
-                    foo
-                    bar
-                    create('default').attributes { $freeDebug }
-                }
-                ${fooAndBarJars()}
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo
+                bar
+                create('default').attributes { $freeDebug }
             }
+
+            ${fooAndBarJars()}
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':a:checkDebug')
+        result.assertTasksScheduled(':a:checkDebug')
     }
 
     def "selects default configuration when target has no configurations with attributes"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+            }
+            dependencies {
+                attributesSchema {
+                    attribute(buildType)
+                    attribute(flavor)
                 }
-                dependencies {
-                    attributesSchema {
-                        attribute(buildType)
-                        attribute(flavor)
-                    }
 
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == ['b-bar.jar']
-                    }
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == ['b-bar.jar']
                 }
             }
-            project(':b') {
-                configurations {
-                    foo
-                    bar
-                    create 'default'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'b-bar'
-                   destinationDirectory = buildDir
-                }
-                artifacts {
-                    'default' barJar
-                }
-            }
+        """
 
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo
+                bar
+                create 'default'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'b-bar'
+               destinationDirectory = buildDir
+            }
+            artifacts {
+                'default' tasks.barJar
+            }
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:barJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:barJar', ':a:checkDebug')
     }
 
     def "does not select default configuration when no match is found and configurations with attributes"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                }
-                dependencies.attributesSchema {
-                    attribute(buildType)
-                    attribute(flavor)
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                        assert configurations._compileFreeDebug.collect { it.name } == []
-                    }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+            }
+            dependencies.attributesSchema {
+                attribute(buildType)
+                attribute(flavor)
+            }
+            dependencies {
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                doLast {
+                    assert configurations._compileFreeDebug.collect { it.name } == []
                 }
             }
-            project(':b') {
-                configurations {
-                    foo { attributes { $freeRelease } }
-                    bar { attributes { $release } }
-                    create 'default'
-                }
-                ${fooAndBarJars()}
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo { attributes { $freeRelease } }
+                bar { attributes { $release } }
+                create 'default'
             }
+
+            ${fooAndBarJars()}
         """
 
         when:
@@ -550,8 +556,8 @@ Configuration 'bar' declares attribute 'flavor' with value 'free':
         then:
         failure.assertHasDescription("Could not determine the dependencies of task ':a:checkDebug'.")
         failure.assertHasCause("Could not resolve all dependencies for configuration ':a:_compileFreeDebug'.")
-        failure.assertHasCause("Could not resolve project :b.")
-        failure.assertHasCause("""No matching variant of project :b was found. The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free' but:
+        failure.assertHasCause("Could not resolve project ':b'.")
+        failure.assertHasCause("""No matching variant of project ':b' was found. The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free' but:
   - Variant 'bar':
       - Incompatible because this component declares attribute 'buildType' with value 'release' and the consumer needed attribute 'buildType' with value 'debug'
       - Other compatible attribute:
@@ -562,32 +568,34 @@ Configuration 'bar' declares attribute 'flavor' with value 'free':
 
     def "does not select default configuration when consumer has no attributes and configurations with attributes"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    compile
-                }
-                dependencies {
-                    compile project(':b')
-                }
-                task checkDebug(dependsOn: configurations.compile) {
-                    doLast {
-                        assert configurations.compile.collect { it.name } == []
-                    }
+            configurations {
+                compile
+            }
+            dependencies {
+                compile project(':b')
+            }
+            task checkDebug(dependsOn: configurations.compile) {
+                doLast {
+                    assert configurations.compile.collect { it.name } == []
                 }
             }
-            project(':b') {
-                configurations {
-                    foo { attributes { $freeRelease } }
-                    bar { attributes { $release } }
-                    create 'default'
-                }
-                ${fooAndBarJars()}
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo { attributes { $freeRelease } }
+                bar { attributes { $release } }
+                create 'default'
             }
+
+            ${fooAndBarJars()}
         """
 
         when:
@@ -596,8 +604,8 @@ Configuration 'bar' declares attribute 'flavor' with value 'free':
         then:
         failure.assertHasDescription("Could not determine the dependencies of task ':a:checkDebug'.")
         failure.assertHasCause("Could not resolve all dependencies for configuration ':a:compile'.")
-        failure.assertHasCause("Could not resolve project :b.")
-        failure.assertHasCause("""Cannot choose between the available variants of project :b:
+        failure.assertHasCause("Could not resolve project ':b'.")
+        failure.assertHasCause("""Cannot choose between the available variants of project ':b':
   - bar
   - foo
 All of them match the consumer attributes:
@@ -612,283 +620,277 @@ All of them match the consumer attributes:
 
     def "does not select default configuration when no configurations with attributes and default configuration is not consumable"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                        assert configurations._compileFreeDebug.collect { it.name } == []
-                    }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+            }
+            dependencies {
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                doLast {
+                    assert configurations._compileFreeDebug.collect { it.name } == []
                 }
             }
-            project(':b') {
-                apply plugin: 'base'
-                configurations {
-                    foo
-                    bar
-                    'default' {
-                        canBeConsumed = false
-                    }
-                }
-            }
+        """
 
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo
+                bar
+                'default' {
+                    canBeConsumed = false
+                }
+            }
         """
 
         when:
-        expectConsumableChanging(':b:default', false)
         fails ':a:checkDebug'
 
         then:
-        failure.assertHasCause """No matching variant of project :b was found. The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free' but:
+        failure.assertHasCause """No matching variant of project ':b' was found. The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free' but:
   - No variants exist."""
     }
 
     def "mentions that there are no variants when there are none"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                        assert configurations._compileFreeDebug.collect { it.name } == []
-                    }
-                }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
             }
-            project(':b') {
+            dependencies {
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                doLast {
+                    assert configurations._compileFreeDebug.collect { it.name } == []
+                }
             }
         """
+
+        file("b/build.gradle") << ""
 
         when:
         fails ':a:checkDebug'
 
         then:
-        failure.assertHasCause """No matching variant of project :b was found. The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free' but:
+        failure.assertHasCause """No matching variant of project ':b' was found. The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free' but:
   - No variants exist."""
     }
 
     def "does not select explicit configuration when it's not consumable"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                }
-                dependencies {
-                    _compileFreeDebug project(path: ':b', configuration: 'someConf')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                        assert configurations._compileFreeDebug.collect { it.name } == []
-                    }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+            }
+            dependencies {
+                _compileFreeDebug project(path: ':b', configuration: 'someConf')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                doLast {
+                    assert configurations._compileFreeDebug.collect { it.name } == []
                 }
             }
-            project(':b') {
-                apply plugin: 'base'
-                configurations {
-                    foo
-                    bar
-                    someConf {
-                        canBeConsumed = false
-                    }
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            apply plugin: 'base'
+
+            configurations {
+                foo
+                bar
+                someConf {
+                    canBeConsumed = false
                 }
-                ${fooAndBarJars()}
             }
+
+            ${fooAndBarJars()}
         """
 
         when:
         fails ':a:checkDebug'
 
         then:
-        failure.assertHasCause "A dependency was declared on configuration 'someConf' of 'project :b' but no variant with that configuration name exists."
-
+        failure.assertHasCause "A dependency was declared on configuration 'someConf' of 'project ':b'' but no variant with that configuration name exists."
     }
 
     def "gives details about failing matches when it cannot select default configuration when no match is found and default configuration is not consumable"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
-            $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                        assert configurations._compileFreeDebug.collect { it.name } == []
-                    }
-                }
+        file("a/build.gradle") << """
+            $typeDefs
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
             }
-            project(':b') {
-                apply plugin: 'base'
-                configurations {
-                    foo.attributes { $freeRelease }
-                    bar.attributes { $paid; $release }
-                    'default' {
-                        canBeConsumed = false
-                    }
+            dependencies {
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                doLast {
+                    assert configurations._compileFreeDebug.collect { it.name } == []
                 }
-                ${fooAndBarJars()}
             }
         """
 
+        file("b/build.gradle") << """
+            $typeDefs
+            configurations {
+                foo.attributes { $freeRelease }
+                bar.attributes { $paid; $release }
+                'default' {
+                    canBeConsumed = false
+                }
+            }
+            ${fooAndBarJars()}
+        """
+
         when:
-        expectConsumableChanging(':b:default', false)
         fails ':a:checkDebug'
 
         then:
-        failure.assertHasCause """No matching variant of project :b was found. The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free' but:
+        failure.assertHasCause """No matching variant of project ':b' was found. The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free' but:
   - Variant 'bar':
       - Incompatible because this component declares attribute 'buildType' with value 'release', attribute 'flavor' with value 'paid' and the consumer needed attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free'
   - Variant 'foo' declares attribute 'flavor' with value 'free':
       - Incompatible because this component declares attribute 'buildType' with value 'release' and the consumer needed attribute 'buildType' with value 'debug'"""
-
     }
 
     def "chooses a configuration when partial match is found"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+            }
+            dependencies {
+                attributesSchema {
+                    attribute(flavor)
                 }
-                dependencies {
-                    attributesSchema {
-                        attribute(flavor)
-                    }
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == ['b-foo.jar']
-                    }
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == ['b-foo.jar']
                 }
             }
-            project(':b') {
-                configurations {
-                    create 'default'
-                    foo {
-                       attributes { $debug } // partial match on `buildType`
-                    }
-                    bar {
-                       attributes { $paid } // no match on `flavor`
-                    }
-                }
-                task defaultJar(type: Jar) {
-                   archiveBaseName = 'b-default'
-                }
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'b-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'b-bar'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    'default' defaultJar
-                    foo fooJar
-                    bar barJar
-                }
-            }
+        """
 
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                create 'default'
+                foo {
+                   attributes { $debug } // partial match on `buildType`
+                }
+                bar {
+                   attributes { $paid } // no match on `flavor`
+                }
+            }
+            task defaultJar(type: Jar) {
+               archiveBaseName = 'b-default'
+            }
+            task fooJar(type: Jar) {
+               archiveBaseName = 'b-foo'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'b-bar'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                'default' tasks.defaultJar
+                foo tasks.fooJar
+                bar tasks.barJar
+            }
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:fooJar', ':a:checkDebug')
     }
 
     def "cannot choose a configuration when multiple partial matches are found"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+            }
+            dependencies {
+                attributesSchema {
+                    attribute(flavor)
+                    attribute(buildType)
                 }
-                dependencies {
-                    attributesSchema {
-                        attribute(flavor)
-                        attribute(buildType)
-                    }
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                        assert configurations._compileFreeDebug.collect { it.name } == []
-                    }
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                doLast {
+                    assert configurations._compileFreeDebug.collect { it.name } == []
                 }
             }
-            project(':b') {
-                configurations {
-                    create 'default'
-                    foo {
-                       attributes { $debug } // partial match on `buildType`
-                    }
-                    bar {
-                       attributes { $free } // partial match on `flavor`
-                    }
-                }
-                task defaultJar(type: Jar) {
-                   archiveBaseName = 'b-default'
-                }
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'b-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'b-bar'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    'default' defaultJar
-                    foo fooJar
-                    bar barJar
-                }
-            }
+        """
 
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                create 'default'
+                foo {
+                   attributes { $debug } // partial match on `buildType`
+                }
+                bar {
+                   attributes { $free } // partial match on `flavor`
+                }
+            }
+            task defaultJar(type: Jar) {
+               archiveBaseName = 'b-default'
+            }
+            task fooJar(type: Jar) {
+               archiveBaseName = 'b-foo'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'b-bar'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                'default' tasks.defaultJar
+                foo tasks.fooJar
+                bar tasks.barJar
+            }
         """
 
         when:
         fails ':a:checkDebug'
 
         then:
-        failure.assertHasCause("""The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free'. However we cannot choose between the following variants of project :b:
+        failure.assertHasCause("""The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free'. However we cannot choose between the following variants of project ':b':
   - bar
   - foo
 All of them match the consumer attributes:
@@ -902,48 +904,50 @@ All of them match the consumer attributes:
 
     def "selects configuration when it has more attributes than the resolved configuration"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == ['b-foo.jar']
-                    }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+            }
+            dependencies {
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == ['b-foo.jar']
                 }
             }
-            project(':b') {
-                dependencies {
-                    attributesSchema {
-                        attribute(extra)
-                    }
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            dependencies {
+                attributesSchema {
+                    attribute(extra)
                 }
-                configurations {
-                    foo {
-                       attributes { $freeDebug; attribute(extra, 'extra') }
-                    }
-                    bar {
-                       attributes { $free }
-                    }
-                }
-                ${fooAndBarJars()}
             }
+            configurations {
+                foo {
+                   attributes { $freeDebug; attribute(extra, 'extra') }
+                }
+                bar {
+                   attributes { $free }
+                }
+            }
+
+            ${fooAndBarJars()}
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:fooJar', ':a:checkDebug')
     }
 
     /**
@@ -956,34 +960,36 @@ All of them match the consumer attributes:
      */
     def "should fail with reasonable error message if more than one configuration matches the attributes"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    compile.attributes { $debug }
-                }
-                dependencies {
-                    compile project(':b')
-                }
-                task check(dependsOn: configurations.compile) { doLast { configurations.compile.each { println it } } }
+            configurations {
+                compile.attributes { $debug }
             }
-            project(':b') {
-                configurations {
-                    foo.attributes { $debug }
-                    bar.attributes { $debug }
-                }
-                ${fooAndBarJars()}
+            dependencies {
+                compile project(':b')
             }
+            task check(dependsOn: configurations.compile) { doLast { configurations.compile.each { println it } } }
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo.attributes { $debug }
+                bar.attributes { $debug }
+            }
+
+            ${fooAndBarJars()}
         """
 
         when:
         fails ':a:check'
 
         then:
-        failure.assertHasCause """The consumer was configured to find attribute 'buildType' with value 'debug'. However we cannot choose between the following variants of project :b:
+        failure.assertHasCause """The consumer was configured to find attribute 'buildType' with value 'debug'. However we cannot choose between the following variants of project ':b':
   - bar
   - foo
 All of them match the consumer attributes:
@@ -993,47 +999,49 @@ All of them match the consumer attributes:
 
     def "fails when multiple configurations match but have more attributes than requested"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                        assert configurations._compileFreeDebug.collect { it.name } == ['b-foo.jar']
-                    }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+            }
+            dependencies {
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                doLast {
+                    assert configurations._compileFreeDebug.collect { it.name } == ['b-foo.jar']
                 }
             }
-            project(':b') {
-                dependencies {
-                    attributesSchema {
-                        attribute(extra)
-                    }
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            dependencies {
+                attributesSchema {
+                    attribute(extra)
                 }
-                configurations {
-                    foo {
-                       attributes { $freeDebug; attribute(extra, 'extra') }
-                    }
-                    bar {
-                      attributes { $freeDebug; attribute(extra, 'extra 2') }
-                    }
-                }
-                ${fooAndBarJars()}
             }
+            configurations {
+                foo {
+                   attributes { $freeDebug; attribute(extra, 'extra') }
+                }
+                bar {
+                  attributes { $freeDebug; attribute(extra, 'extra 2') }
+                }
+            }
+
+            ${fooAndBarJars()}
         """
 
         when:
         fails ':a:checkDebug'
 
         then:
-        failure.assertHasCause """The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free'. There are several available matching variants of project :b
+        failure.assertHasCause """The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free'. There are several available matching variants of project ':b'
 The only attribute distinguishing these variants is 'extra'. Add this attribute to the consumer's configuration to resolve the ambiguity:
   - Value: 'extra 2' selects variant: 'bar'
   - Value: 'extra' selects variant: 'foo'"""
@@ -1060,52 +1068,52 @@ The only attribute distinguishing these variants is 'extra'. Add this attribute 
      */
     def "attributes of parent configurations should not be used when matching"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                dependencies {
-                    attributesSchema {
-                        attribute(flavor)
-                        attribute(buildType)
-                    }
-                }
-                configurations {
-                    compile.attributes { $freeDebug }
-                }
-                dependencies {
-                    compile project(':b')
-                }
-                task check(dependsOn: configurations.compile) { doLast { configurations.compile.each { println it } } }
-            }
-            project(':b') {
-                configurations {
-                    debug.attributes { $debug }
-                    compile.extendsFrom debug
-                    compile.attributes { $free }
-                }
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'b-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'b-bar'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    debug fooJar
-                    compile barJar
+            dependencies {
+                attributesSchema {
+                    attribute(flavor)
+                    attribute(buildType)
                 }
             }
+            configurations {
+                compile.attributes { $freeDebug }
+            }
+            dependencies {
+                compile project(':b')
+            }
+            task check(dependsOn: configurations.compile) { doLast { configurations.compile.each { println it } } }
+        """
 
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                debug.attributes { $debug }
+                compile.extendsFrom debug
+                compile.attributes { $free }
+            }
+            task fooJar(type: Jar) {
+               archiveBaseName = 'b-foo'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'b-bar'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                debug tasks.fooJar
+                compile tasks.barJar
+            }
         """
 
         when:
         fails ':a:check'
 
         then:
-        failure.assertHasCause """The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free'. However we cannot choose between the following variants of project :b:
+        failure.assertHasCause """The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free'. However we cannot choose between the following variants of project ':b':
   - compile
   - debug
 All of them match the consumer attributes:
@@ -1119,330 +1127,312 @@ All of them match the consumer attributes:
 
     def "transitive dependencies of selected configuration are included"() {
         given:
-        createDirs("a", "b", "c", "d")
         file('settings.gradle') << "include 'a', 'b', 'c', 'd'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            allprojects {
-               dependencies {
-                   attributesSchema {
-                      attribute(flavor)
-                      attribute(buildType)
-                   }
-               }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+                _compileFreeRelease.attributes { $freeRelease }
             }
+            dependencies {
+                _compileFreeDebug project(':b')
+                _compileFreeRelease project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                   assert files.collect { it.name } == ['b-foo.jar', 'c-transitive.jar']
+                }
+            }
+            task checkRelease(dependsOn: configurations._compileFreeRelease) {
+                def files = configurations._compileFreeRelease
+                doLast {
+                   assert files.collect { it.name } == ['b-bar.jar', 'd-transitive.jar']
+                }
+            }
+        """
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                    _compileFreeRelease.attributes { $freeRelease }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                    _compileFreeRelease project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                       assert files.collect { it.name } == ['b-foo.jar', 'c-transitive.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    def files = configurations._compileFreeRelease
-                    doLast {
-                       assert files.collect { it.name } == ['b-bar.jar', 'd-transitive.jar']
-                    }
-                }
-            }
-            project(':b') {
-                configurations {
-                    foo.attributes { $freeDebug }
-                    bar.attributes { $freeRelease }
-                }
-                dependencies {
-                    foo project(':c')
-                    bar project(':d')
-                }
-                ${fooAndBarJars()}
-            }
-            project(':c') {
-                configurations.create('default') {
+        file("b/build.gradle") << """
+            $typeDefs
 
-                }
-                artifacts {
-                    'default' file('c-transitive.jar')
-                }
+            configurations {
+                foo.attributes { $freeDebug }
+                bar.attributes { $freeRelease }
             }
-            project(':d') {
-                configurations.create('default') {
-                }
-                artifacts {
-                    'default' file('d-transitive.jar')
-                }
+            dependencies {
+                foo project(':c')
+                bar project(':d')
             }
+            ${fooAndBarJars()}
+        """
 
+        file("c/build.gradle") << """
+            $typeDefs
+
+            configurations.create('default') {
+
+            }
+            artifacts {
+                'default' file('c-transitive.jar')
+            }
+        """
+
+        file("d/build.gradle") << """
+            $typeDefs
+
+            configurations.create('default') {
+            }
+            artifacts {
+                'default' file('d-transitive.jar')
+            }
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:fooJar', ':a:checkDebug')
 
         when:
         run ':a:checkRelease'
 
         then:
-        result.assertTasksExecuted(':b:barJar', ':a:checkRelease')
+        result.assertTasksScheduled(':b:barJar', ':a:checkRelease')
     }
 
     def "context travels down to transitive dependencies"() {
         given:
-        createDirs("a", "b", "c")
         file('settings.gradle') << "include 'a', 'b', 'c'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            allprojects {
-               dependencies {
-                   attributesSchema {
-                      attribute(flavor)
-                      attribute(buildType)
-                   }
-               }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+                _compileFreeRelease.attributes { $freeRelease }
             }
+            dependencies {
+                _compileFreeDebug project(':b')
+                _compileFreeRelease project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                   assert files.collect { it.name } == ['b-transitive.jar', 'c-foo.jar']
+                }
+            }
+            task checkRelease(dependsOn: configurations._compileFreeRelease) {
+                def files = configurations._compileFreeRelease
+                doLast {
+                   assert files.collect { it.name } == ['b-transitive.jar', 'c-bar.jar']
+                }
+            }
+        """
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                    _compileFreeRelease.attributes { $freeRelease }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                    _compileFreeRelease project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                       assert files.collect { it.name } == ['b-transitive.jar', 'c-foo.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    def files = configurations._compileFreeRelease
-                    doLast {
-                       assert files.collect { it.name } == ['b-transitive.jar', 'c-bar.jar']
-                    }
-                }
-            }
-            project(':b') {
-                configurations.create('default') {
+        file("b/build.gradle") << """
+            $typeDefs
 
-                }
-                artifacts {
-                    'default' file('b-transitive.jar')
-                }
-                dependencies {
-                    'default' project(':c')
-                }
-            }
-            project(':c') {
-                configurations {
-                    foo.attributes { $freeDebug }
-                    bar.attributes { $freeRelease }
-                }
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'c-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'c-bar'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    foo fooJar
-                    bar barJar
-                }
-            }
+            configurations.create('default') {
 
+            }
+            artifacts {
+                'default' file('b-transitive.jar')
+            }
+            dependencies {
+                'default' project(':c')
+            }
+        """
+
+        file("c/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo.attributes { $freeDebug }
+                bar.attributes { $freeRelease }
+            }
+            task fooJar(type: Jar) {
+               archiveBaseName = 'c-foo'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'c-bar'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                foo tasks.fooJar
+                bar tasks.barJar
+            }
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':c:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':c:fooJar', ':a:checkDebug')
 
         when:
         run ':a:checkRelease'
 
         then:
-        result.assertTasksExecuted(':c:barJar', ':a:checkRelease')
+        result.assertTasksScheduled(':c:barJar', ':a:checkRelease')
     }
 
     def "context travels down to transitive dependencies with dependency substitution"() {
         given:
-        createDirs("a", "b", "c")
         file('settings.gradle') << "include 'a', 'b', 'c'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            allprojects {
-               dependencies {
-                   attributesSchema {
-                      attribute(flavor)
-                      attribute(buildType)
-                   }
-               }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+                _compileFreeRelease.attributes { $freeRelease }
             }
+            dependencies {
+                _compileFreeDebug project(':b')
+                _compileFreeRelease project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                   assert files.collect { it.name } == ['b-transitive.jar', 'c-foo.jar']
+                }
+            }
+            task checkRelease(dependsOn: configurations._compileFreeRelease) {
+                def files = configurations._compileFreeRelease
+                doLast {
+                   assert files.collect { it.name } == ['b-transitive.jar', 'c-bar.jar']
+                }
+            }
+            configurations.all {
+                resolutionStrategy.dependencySubstitution {
+                    substitute module('com.acme.external:external') using project(":c")
+                }
+            }
+        """
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                    _compileFreeRelease.attributes { $freeRelease }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                    _compileFreeRelease project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                       assert files.collect { it.name } == ['b-transitive.jar', 'c-foo.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    def files = configurations._compileFreeRelease
-                    doLast {
-                       assert files.collect { it.name } == ['b-transitive.jar', 'c-bar.jar']
-                    }
-                }
-                configurations.all {
-                    resolutionStrategy.dependencySubstitution {
-                        substitute module('com.acme.external:external') using project(":c")
-                    }
-                }
-            }
-            project(':b') {
-                configurations.create('default') {
+        file("b/build.gradle") << """
+            $typeDefs
 
-                }
-                artifacts {
-                    'default' file('b-transitive.jar')
-                }
-                dependencies {
-                    'default'('com.acme.external:external:1.0')
-                }
-            }
-            project(':c') {
-                configurations {
-                    foo.attributes { $freeDebug }
-                    bar.attributes { $freeRelease }
-                }
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'c-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'c-bar'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    foo fooJar
-                    bar barJar
-                }
-            }
+            configurations.create('default') {
 
+            }
+            artifacts {
+                'default' file('b-transitive.jar')
+            }
+            dependencies {
+                'default'('com.acme.external:external:1.0')
+            }
+        """
+
+        file("c/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo.attributes { $freeDebug }
+                bar.attributes { $freeRelease }
+            }
+            task fooJar(type: Jar) {
+               archiveBaseName = 'c-foo'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'c-bar'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                foo tasks.fooJar
+                bar tasks.barJar
+            }
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':c:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':c:fooJar', ':a:checkDebug')
 
         when:
         run ':a:checkRelease'
 
         then:
-        result.assertTasksExecuted(':c:barJar', ':a:checkRelease')
+        result.assertTasksScheduled(':c:barJar', ':a:checkRelease')
     }
 
     def "transitive dependencies selection uses the source configuration attributes"() {
         given:
-        createDirs("a", "b", "c")
         file('settings.gradle') << "include 'a', 'b', 'c'"
-        buildFile << """
-            $typeDefs
-            allprojects {
-                dependencies {
-                    attributesSchema {
-                        attribute(extra)
-                    }
-                }
-            }
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                    _compileFreeRelease.attributes { $freeRelease }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                    _compileFreeRelease project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    doLast {
-                       assert configurations._compileFreeDebug.collect { it.name } == ['b-foo.jar', 'c-foo.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    doLast {
-                       assert configurations._compileFreeRelease.collect { it.name } == ['b-bar.jar', 'c-bar.jar']
-                    }
-                }
-            }
-            project(':b') {
-                configurations {
-                    foo.attributes { $freeDebug; attribute(extra, 'extra') } // the "extra" attribute will be used when matching ':c'
-                    bar.attributes { $freeRelease; attribute(extra, 'extra') } // the "extra" attribute will be used when matching ':c'
-                }
-                dependencies {
-                    foo project(':c')
-                    bar project(':c')
-                }
-                ${fooAndBarJars()}
-            }
-            project(':c') {
-                configurations {
-                    foo.attributes { $freeDebug; attribute(extra, 'extra') }
-                    foo2.attributes { $freeDebug; attribute(extra, 'extra 2') }
-                    bar.attributes { $freeRelease; attribute(extra, 'extra') }
-                    bar2.attributes { $freeRelease; attribute(extra, 'extra 2') }
-                }
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'c-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'c-bar'
-                }
-                task foo2Jar(type: Jar) {
-                   archiveBaseName = 'c-foo2'
-                }
-                task bar2Jar(type: Jar) {
-                   archiveBaseName = 'c-bar2'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    foo fooJar, foo2Jar
-                    bar barJar, bar2Jar
-                }
-            }
 
+        file("a/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+                _compileFreeRelease.attributes { $freeRelease }
+            }
+            dependencies {
+                _compileFreeDebug project(':b')
+                _compileFreeRelease project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                doLast {
+                   assert configurations._compileFreeDebug.collect { it.name } == ['b-foo.jar', 'c-foo.jar']
+                }
+            }
+            task checkRelease(dependsOn: configurations._compileFreeRelease) {
+                doLast {
+                   assert configurations._compileFreeRelease.collect { it.name } == ['b-bar.jar', 'c-bar.jar']
+                }
+            }
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo.attributes { $freeDebug; attribute(extra, 'extra') } // the "extra" attribute will be used when matching ':c'
+                bar.attributes { $freeRelease; attribute(extra, 'extra') } // the "extra" attribute will be used when matching ':c'
+            }
+            dependencies {
+                foo project(':c')
+                bar project(':c')
+            }
+            ${fooAndBarJars()}
+        """
+
+        file("c/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo.attributes { $freeDebug; attribute(extra, 'extra') }
+                foo2.attributes { $freeDebug; attribute(extra, 'extra 2') }
+                bar.attributes { $freeRelease; attribute(extra, 'extra') }
+                bar2.attributes { $freeRelease; attribute(extra, 'extra 2') }
+            }
+            task fooJar(type: Jar) {
+               archiveBaseName = 'c-foo'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'c-bar'
+            }
+            task foo2Jar(type: Jar) {
+               archiveBaseName = 'c-foo2'
+            }
+            task bar2Jar(type: Jar) {
+               archiveBaseName = 'c-bar2'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                foo tasks.fooJar, tasks.foo2Jar
+                bar tasks.barJar, tasks.bar2Jar
+            }
         """
 
         when:
         fails ':a:checkDebug'
 
         then:
-        failure.assertHasCause """The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free'. There are several available matching variants of project :c
+        failure.assertHasCause """The consumer was configured to find attribute 'buildType' with value 'debug', attribute 'flavor' with value 'free'. There are several available matching variants of project ':c'
 The only attribute distinguishing these variants is 'extra'. Add this attribute to the consumer's configuration to resolve the ambiguity:
   - Value: 'extra' selects variant: 'foo'
   - Value: 'extra 2' selects variant: 'foo2'"""
@@ -1451,7 +1441,7 @@ The only attribute distinguishing these variants is 'extra'. Add this attribute 
         fails ':a:checkRelease'
 
         then:
-        failure.assertHasCause """The consumer was configured to find attribute 'buildType' with value 'release', attribute 'flavor' with value 'free'. There are several available matching variants of project :c
+        failure.assertHasCause """The consumer was configured to find attribute 'buildType' with value 'release', attribute 'flavor' with value 'free'. There are several available matching variants of project ':c'
 The only attribute distinguishing these variants is 'extra'. Add this attribute to the consumer's configuration to resolve the ambiguity:
   - Value: 'extra' selects variant: 'bar'
   - Value: 'extra 2' selects variant: 'bar2'"""
@@ -1459,337 +1449,332 @@ The only attribute distinguishing these variants is 'extra'. Add this attribute 
 
     def "context travels down to transitive dependencies with external dependencies in graph"() {
         given:
-        createDirs("a", "b", "c")
         file('settings.gradle') << "include 'a', 'b', 'c'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            allprojects {
-               dependencies {
-                   attributesSchema {
-                      attribute(flavor)
-                      attribute(buildType)
-                   }
-               }
+            ${mavenCentralRepository()}
+
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+                _compileFreeRelease.attributes { $freeRelease }
             }
-
-            project(':a') {
-                ${mavenCentralRepository()}
-
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
-                    _compileFreeRelease.attributes { $freeRelease }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                    _compileFreeRelease project(':b')
-                    _compileFreeDebug 'org.apache.commons:commons-lang3:3.5'
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                       assert files.collect { it.name }.sort { it } == ['b-transitive.jar', 'c-foo.jar', 'commons-lang3-3.5.jar']
-                    }
-                }
-                task checkRelease(dependsOn: configurations._compileFreeRelease) {
-                    def files = configurations._compileFreeRelease
-                    doLast {
-                       assert files.collect { it.name }.sort { it } == ['b-transitive.jar', 'c-bar.jar', 'commons-lang3-3.4.jar']
-                    }
+            dependencies {
+                _compileFreeDebug project(':b')
+                _compileFreeRelease project(':b')
+                _compileFreeDebug 'org.apache.commons:commons-lang3:3.5'
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                   assert files.collect { it.name }.sort { it } == ['b-transitive.jar', 'c-foo.jar', 'commons-lang3-3.5.jar']
                 }
             }
-            project(':b') {
-                configurations.create('default') {
-
-                }
-                artifacts {
-                    'default' file('b-transitive.jar')
-                }
-                dependencies {
-                    'default' project(':c')
+            task checkRelease(dependsOn: configurations._compileFreeRelease) {
+                def files = configurations._compileFreeRelease
+                doLast {
+                   assert files.collect { it.name }.sort { it } == ['b-transitive.jar', 'c-bar.jar', 'commons-lang3-3.4.jar']
                 }
             }
-            project(':c') {
-                ${mavenCentralRepository()}
-                configurations {
-                    foo.attributes { $freeDebug }
-                    bar.attributes { $freeRelease }
-                }
-                dependencies {
-                    bar 'org.apache.commons:commons-lang3:3.4'
-                }
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'c-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'c-bar'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    foo fooJar
-                    bar barJar
-                }
-            }
+        """
 
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations.create('default') {
+
+            }
+            artifacts {
+                'default' file('b-transitive.jar')
+            }
+            dependencies {
+                'default' project(':c')
+            }
+        """
+
+        file("c/build.gradle") << """
+            $typeDefs
+
+            ${mavenCentralRepository()}
+            configurations {
+                foo.attributes { $freeDebug }
+                bar.attributes { $freeRelease }
+            }
+            dependencies {
+                bar 'org.apache.commons:commons-lang3:3.4'
+            }
+            task fooJar(type: Jar) {
+               archiveBaseName = 'c-foo'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'c-bar'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                foo tasks.fooJar
+                bar tasks.barJar
+            }
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':c:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':c:fooJar', ':a:checkDebug')
 
         when:
         run ':a:checkRelease'
 
         then:
-        result.assertTasksExecuted(':c:barJar', ':a:checkRelease')
+        result.assertTasksScheduled(':c:barJar', ':a:checkRelease')
     }
 
     def "two configurations can have the same attributes but for different roles"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    compileFreeDebug {
-                        canBeConsumed = false
-                        canBeResolved = false
-                    }
-                    compileFreeRelease {
-                        canBeConsumed = false
-                        canBeResolved = false
-                    }
-                    compileFreeDebugPath {
-                        extendsFrom(compileFreeDebug)
-                        attributes { $freeDebug }
-                        canBeConsumed = false
-                        assert canBeResolved
-                    }
-                    compileFreeReleasePath {
-                        extendsFrom(compileFreeRelease)
-                        attributes { $freeRelease }
-                        canBeConsumed = false
-                        assert canBeResolved
-                    }
+            configurations {
+                compileFreeDebug {
+                    canBeConsumed = false
+                    canBeResolved = false
                 }
-                dependencies {
-                    compileFreeDebug project(':b')
-                    compileFreeRelease project(':b')
+                compileFreeRelease {
+                    canBeConsumed = false
+                    canBeResolved = false
                 }
-                task checkDebug(dependsOn: configurations.compileFreeDebugPath) {
-                    def files = configurations.compileFreeDebugPath
-                    doLast {
-                       assert files.collect { it.name } == ['b-foo.jar']
-                    }
+                compileFreeDebugPath {
+                    extendsFrom(compileFreeDebug)
+                    attributes { $freeDebug }
+                    canBeConsumed = false
+                    assert canBeResolved
                 }
-                task checkRelease(dependsOn: configurations.compileFreeReleasePath) {
-                    def files = configurations.compileFreeReleasePath
-                    doLast {
-                       assert files.collect { it.name } == ['b-bar.jar']
-                    }
+                compileFreeReleasePath {
+                    extendsFrom(compileFreeRelease)
+                    attributes { $freeRelease }
+                    canBeConsumed = false
+                    assert canBeResolved
                 }
             }
-            project(':b') {
-                configurations {
-                    // configurations used when resolving
-                    compileFreeDebug.attributes { $freeDebug }
-                    compileFreeRelease.attributes { $freeRelease }
-                    compileFreeDebug.canBeConsumed = false
-                    compileFreeRelease.canBeConsumed = false
-                    // configurations used when selecting dependencies
-                    _compileFreeDebug {
-                        attributes { $freeDebug }
-                    }
-                    _compileFreeRelease {
-                        attributes { $freeRelease }
-                    }
-                }
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'b-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'b-bar'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    _compileFreeDebug(fooJar)
-                    _compileFreeRelease(barJar)
+            dependencies {
+                compileFreeDebug project(':b')
+                compileFreeRelease project(':b')
+            }
+            task checkDebug(dependsOn: configurations.compileFreeDebugPath) {
+                def files = configurations.compileFreeDebugPath
+                doLast {
+                   assert files.collect { it.name } == ['b-foo.jar']
                 }
             }
+            task checkRelease(dependsOn: configurations.compileFreeReleasePath) {
+                def files = configurations.compileFreeReleasePath
+                doLast {
+                   assert files.collect { it.name } == ['b-bar.jar']
+                }
+            }
+        """
 
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                // configurations used when resolving
+                compileFreeDebug.attributes { $freeDebug }
+                compileFreeRelease.attributes { $freeRelease }
+                compileFreeDebug.canBeConsumed = false
+                compileFreeRelease.canBeConsumed = false
+                // configurations used when selecting dependencies
+                _compileFreeDebug {
+                    attributes { $freeDebug }
+                }
+                _compileFreeRelease {
+                    attributes { $freeRelease }
+                }
+            }
+            task fooJar(type: Jar) {
+               archiveBaseName = 'b-foo'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'b-bar'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                _compileFreeDebug(tasks.fooJar)
+                _compileFreeRelease(tasks.barJar)
+            }
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:fooJar', ':a:checkDebug')
 
         when:
         run ':a:checkRelease'
 
         then:
-        result.assertTasksExecuted(':b:barJar', ':a:checkRelease')
+        result.assertTasksScheduled(':b:barJar', ':a:checkRelease')
     }
 
     def "Library project with flavors depends on a library project that does not"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+            }
+            dependencies {
+                attributesSchema {
+                    attribute(flavor)
                 }
-                dependencies {
-                    attributesSchema {
-                        attribute(flavor)
-                    }
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == ['b-foo.jar']
-                    }
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == ['b-foo.jar']
                 }
             }
-            project(':b') {
-                configurations {
-                    foo {
-                       attributes { $debug } // partial match on `buildType`
-                    }
-                    bar {
-                       attributes { $release } // no match on `buildType`
-                    }
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo {
+                   attributes { $debug } // partial match on `buildType`
                 }
-                ${fooAndBarJars()}
+                bar {
+                   attributes { $release } // no match on `buildType`
+                }
             }
+
+            ${fooAndBarJars()}
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:fooJar', ':a:checkDebug')
     }
 
     def "Library project without flavors depends on a library project with flavors"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $debug }
-                }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == ['b-foo.jar']
-                    }
+
+            configurations {
+                _compileFreeDebug.attributes { $debug }
+            }
+            dependencies {
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == ['b-foo.jar']
                 }
             }
-            project(':b') {
-                dependencies {
-                    attributesSchema {
-                        attribute(flavor)
-                    }
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            dependencies {
+                attributesSchema {
+                    attribute(flavor)
                 }
-                configurations {
-                    foo {
-                       attributes { $freeDebug } // match on `buildType`
-                    }
-                    bar {
-                       attributes { $freeRelease } // match on `buildType`
-                    }
-                }
-                ${fooAndBarJars()}
             }
+            configurations {
+                foo {
+                   attributes { $freeDebug } // match on `buildType`
+                }
+                bar {
+                   attributes { $freeRelease } // match on `buildType`
+                }
+            }
+
+            ${fooAndBarJars()}
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:fooJar', ':a:checkDebug')
     }
 
     def "Library project with flavors depends on library project that does not which depends on library project with flavors"() {
         given:
-        createDirs("a", "b", "c")
         file('settings.gradle') << "include 'a', 'b', 'c'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            allprojects {
-                dependencies {
-                    attributesSchema {
-                        attribute(flavor)
-                        attribute(buildType)
-                    }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug }
+            }
+            dependencies {
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == ['b-foo.jar', 'c-foo.jar']
                 }
+            }
+        """
+
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo {
+                   attributes { $debug } // partial match on `buildType`
+                }
+                bar {
+                   attributes { $release } // no match on `buildType`
+                }
+            }
+            dependencies {
+                foo project(':c')
+                bar project(':c')
             }
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug }
+            ${fooAndBarJars()}
+        """
+
+        file("c/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                foo {
+                   attributes { $freeDebug } // exact match on `buildType` and `flavor`
                 }
-                dependencies {
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == ['b-foo.jar', 'c-foo.jar']
-                    }
+                bar {
+                   attributes { ${debug}; ${paid} } // partial match on `buildType`
                 }
             }
-            project(':b') {
-                configurations {
-                    foo {
-                       attributes { $debug } // partial match on `buildType`
-                    }
-                    bar {
-                       attributes { $release } // no match on `buildType`
-                    }
-                }
-                dependencies {
-                    foo project(':c')
-                    bar project(':c')
-                }
-                ${fooAndBarJars()}
+            task fooJar(type: Jar) {
+               archiveBaseName = 'c-foo'
             }
-            project(':c') {
-                configurations {
-                    foo {
-                       attributes { $freeDebug } // exact match on `buildType` and `flavor`
-                    }
-                    bar {
-                       attributes { ${debug}; ${paid} } // partial match on `buildType`
-                    }
-                }
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'c-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'c-bar'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    foo fooJar
-                    bar barJar
-                }
+            task barJar(type: Jar) {
+               archiveBaseName = 'c-bar'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                foo tasks.fooJar
+                bar tasks.barJar
             }
         """
 
@@ -1797,84 +1782,84 @@ The only attribute distinguishing these variants is 'extra'. Add this attribute 
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:fooJar', ':c:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:fooJar', ':c:fooJar', ':a:checkDebug')
     }
 
     def "selects configuration with superset of matching attributes"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
-        buildFile << """
+
+        file("a/build.gradle") << """
             $typeDefs
 
-            project(':a') {
-                configurations {
-                    _compileFreeDebug.attributes { $freeDebug; attribute(extra, 'EXTRA') }
+            configurations {
+                _compileFreeDebug.attributes { $freeDebug; attribute(extra, 'EXTRA') }
+            }
+            dependencies {
+                attributesSchema {
+                    attribute(extra)
+                    attribute(buildType)
+                    attribute(flavor)
                 }
-                dependencies {
-                    attributesSchema {
-                        attribute(extra)
-                        attribute(buildType)
-                        attribute(flavor)
-                    }
-                    _compileFreeDebug project(':b')
-                }
-                task checkDebug(dependsOn: configurations._compileFreeDebug) {
-                    def files = configurations._compileFreeDebug
-                    doLast {
-                        assert files.collect { it.name } == ['b-foo.jar']
-                    }
+                _compileFreeDebug project(':b')
+            }
+            task checkDebug(dependsOn: configurations._compileFreeDebug) {
+                def files = configurations._compileFreeDebug
+                doLast {
+                    assert files.collect { it.name } == ['b-foo.jar']
                 }
             }
-            project(':b') {
-                configurations {
-                    create 'default'
-                    foo {
-                       attributes { $free; $debug }
-                    }
-                    bar {
-                       attributes { $free }
-                    }
-                }
-                task defaultJar(type: Jar) {
-                   archiveBaseName = 'b-default'
-                }
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'b-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'b-bar'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    'default' defaultJar
-                    foo fooJar
-                    bar barJar
-                }
-            }
+        """
 
+        file("b/build.gradle") << """
+            $typeDefs
+
+            configurations {
+                create 'default'
+                foo {
+                   attributes { $free; $debug }
+                }
+                bar {
+                   attributes { $free }
+                }
+            }
+            task defaultJar(type: Jar) {
+               archiveBaseName = 'b-default'
+            }
+            task fooJar(type: Jar) {
+               archiveBaseName = 'b-foo'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'b-bar'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                'default' tasks.defaultJar
+                foo tasks.fooJar
+                bar tasks.barJar
+            }
         """
 
         when:
         run ':a:checkDebug'
 
         then:
-        result.assertTasksExecuted(':b:fooJar', ':a:checkDebug')
+        result.assertTasksScheduled(':b:fooJar', ':a:checkDebug')
     }
 
     private String fooAndBarJars() {
         '''
-                task fooJar(type: Jar) {
-                   archiveBaseName = 'b-foo'
-                }
-                task barJar(type: Jar) {
-                   archiveBaseName = 'b-bar'
-                }
-                tasks.withType(Jar) { destinationDirectory = buildDir }
-                artifacts {
-                    foo fooJar
-                    bar barJar
-                }
+            task fooJar(type: Jar) {
+               archiveBaseName = 'b-foo'
+            }
+            task barJar(type: Jar) {
+               archiveBaseName = 'b-bar'
+            }
+            tasks.withType(Jar) { destinationDirectory = buildDir }
+            artifacts {
+                foo tasks.fooJar
+                bar tasks.barJar
+            }
         '''
     }
 

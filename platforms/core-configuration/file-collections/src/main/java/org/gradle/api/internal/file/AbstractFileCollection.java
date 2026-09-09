@@ -22,11 +22,9 @@ import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileSystemLocation;
 import org.gradle.api.file.FileVisitDetails;
 import org.gradle.api.file.FileVisitor;
-import org.gradle.api.internal.file.collections.DirectoryFileTree;
 import org.gradle.api.internal.file.collections.FileBackedDirectoryFileTree;
 import org.gradle.api.internal.file.collections.FileSystemMirroringFileTree;
 import org.gradle.api.internal.provider.BuildableBackedProvider;
-import org.gradle.api.internal.tasks.DefaultTaskDependency;
 import org.gradle.api.internal.tasks.DefaultTaskDependencyFactory;
 import org.gradle.api.internal.tasks.TaskDependencyFactory;
 import org.gradle.api.internal.tasks.TaskDependencyResolveContext;
@@ -35,6 +33,7 @@ import org.gradle.api.specs.Spec;
 import org.gradle.api.specs.Specs;
 import org.gradle.api.tasks.TaskDependency;
 import org.gradle.api.tasks.util.PatternSet;
+import org.gradle.api.tasks.util.internal.PatternSetFactory;
 import org.gradle.api.tasks.util.internal.PatternSets;
 import org.gradle.internal.Cast;
 import org.gradle.internal.Factory;
@@ -54,10 +53,11 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public abstract class AbstractFileCollection implements FileCollectionInternal {
-    protected final TaskDependencyFactory taskDependencyFactory;
-    protected final Factory<PatternSet> patternSetFactory;
 
-    protected AbstractFileCollection(TaskDependencyFactory taskDependencyFactory, Factory<PatternSet> patternSetFactory) {
+    protected final TaskDependencyFactory taskDependencyFactory;
+    protected final PatternSetFactory patternSetFactory;
+
+    protected AbstractFileCollection(TaskDependencyFactory taskDependencyFactory, PatternSetFactory patternSetFactory) {
         this.taskDependencyFactory = taskDependencyFactory;
         this.patternSetFactory = patternSetFactory;
     }
@@ -95,9 +95,7 @@ public abstract class AbstractFileCollection implements FileCollectionInternal {
     @Override
     public final TaskDependency getBuildDependencies() {
         assertCanCarryBuildDependencies();
-        DefaultTaskDependency result = taskDependencyFactory.visitingDependencies(context -> context.add(AbstractFileCollection.this));
-        result.setToStringProvider(() -> "Dependencies of " + getDisplayName());
-        return result;
+        return taskDependencyFactory.visitingDependencies(context -> context.add(AbstractFileCollection.this));
     }
 
     protected void assertCanCarryBuildDependencies() {
@@ -248,21 +246,19 @@ public abstract class AbstractFileCollection implements FileCollectionInternal {
     }
 
     protected void addAsMatchingTask(Object builder, String nodeName) {
-        new AntFileCollectionMatchingTaskBuilder(getAsFileTrees()).addToAntBuilder(builder, nodeName);
+        new AntFileCollectionMatchingTaskBuilder(getAsDirectoryTrees()).addToAntBuilder(builder, nodeName);
     }
 
     protected void addAsFileSet(Object builder, String nodeName) {
-        new AntFileSetBuilder(getAsFileTrees()).addToAntBuilder(builder, nodeName);
+        new AntFileSetBuilder(getAsDirectoryTrees()).addToAntBuilder(builder, nodeName);
     }
 
     protected void addAsResourceCollection(Object builder, String nodeName) {
         new AntFileCollectionBuilder(this).addToAntBuilder(builder, nodeName);
     }
 
-    /**
-     * Returns this collection as a set of {@link DirectoryFileTree} instance. These are used to map to Ant types.
-     */
-    protected Collection<DirectoryTree> getAsFileTrees() {
+    @Override
+    public Collection<DirectoryTree> getAsDirectoryTrees() {
         List<DirectoryTree> fileTrees = new ArrayList<>();
         visitStructure(new FileCollectionStructureVisitor() {
             @Override
@@ -364,4 +360,5 @@ public abstract class AbstractFileCollection implements FileCollectionInternal {
     protected void visitContents(FileCollectionStructureVisitor visitor) {
         visitor.visitCollection(OTHER, this);
     }
+
 }

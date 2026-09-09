@@ -21,25 +21,28 @@ import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.artifacts.repositories.UrlArtifactRepository;
 import org.gradle.api.internal.file.FileResolver;
 import org.gradle.internal.deprecation.Documentation;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.internal.verifier.HttpRedirectVerifier;
 import org.gradle.internal.verifier.HttpRedirectVerifierFactory;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.net.URI;
 import java.util.function.Supplier;
 
-public class DefaultUrlArtifactRepository implements UrlArtifactRepository {
+public class DefaultUrlArtifactRepository {
 
-    private Object url;
+    private @Nullable Object url;
+    private @Nullable URI resolvedUrl;
     private boolean allowInsecureProtocol;
-    private final String repositoryType;
     private final FileResolver fileResolver;
+    private final String repositoryType;
     private final Supplier<String> displayNameSupplier;
 
     DefaultUrlArtifactRepository(
-        final FileResolver fileResolver,
+        FileResolver fileResolver,
         final String repositoryType,
         final Supplier<String> displayNameSupplier
     ) {
@@ -48,32 +51,38 @@ public class DefaultUrlArtifactRepository implements UrlArtifactRepository {
         this.displayNameSupplier = displayNameSupplier;
     }
 
-    @Override
     public URI getUrl() {
-        return url == null ? null : fileResolver.resolveUri(url);
+        if (url == null) {
+            return null;
+        }
+
+        // We must always resolve the URL in case the backing Object is live/mutable
+        // However, we always try to return the same URI instance if the backing object hasn't changed
+        URI latestUrl = fileResolver.resolveUri(url);
+        if (!latestUrl.equals(resolvedUrl)) {
+            resolvedUrl = latestUrl;
+        }
+
+        return resolvedUrl;
     }
 
-    @Override
     public void setUrl(URI url) {
         this.url = url;
     }
 
-    @Override
     public void setUrl(Object url) {
         this.url = url;
     }
 
-    @Override
     public void setAllowInsecureProtocol(boolean allowInsecureProtocol) {
         this.allowInsecureProtocol = allowInsecureProtocol;
     }
 
-    @Override
     public boolean isAllowInsecureProtocol() {
         return allowInsecureProtocol;
     }
 
-    @Nonnull
+    @NonNull
     public URI validateUrl() {
         URI rootUri = getUrl();
         if (rootUri == null) {
@@ -112,8 +121,15 @@ public class DefaultUrlArtifactRepository implements UrlArtifactRepository {
     }
 
     HttpRedirectVerifier createRedirectVerifier() {
-        @Nullable
-        URI uri = getUrl();
+        return createRedirectVerifier(getUrl());
+    }
+
+    /**
+     * Builds the verifier against a specific URL rather than the declared one, for repositories
+     * whose requests go somewhere else — a Maven mirror rewrites the URL, and it is the URL
+     * actually contacted that has to be secure.
+     */
+    HttpRedirectVerifier createRedirectVerifier(@Nullable URI uri) {
         return HttpRedirectVerifierFactory
             .create(
                 uri,
@@ -123,6 +139,7 @@ public class DefaultUrlArtifactRepository implements UrlArtifactRepository {
             );
     }
 
+    @ServiceScope(Scope.Project.class)
     public static class Factory {
         private final FileResolver fileResolver;
 

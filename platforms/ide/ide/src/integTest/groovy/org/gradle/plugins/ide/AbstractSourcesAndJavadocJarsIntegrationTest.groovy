@@ -15,15 +15,15 @@
  */
 package org.gradle.plugins.ide
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.server.http.HttpServer
 import org.gradle.test.fixtures.server.http.IvyHttpModule
 import org.gradle.test.fixtures.server.http.IvyHttpRepository
 import org.gradle.test.fixtures.server.http.MavenHttpRepository
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
+import org.gradle.test.preconditions.TestEnvironmentPreconditions
+
 import org.gradle.testing.fixture.GroovyCoverage
 import org.junit.Rule
 
@@ -57,7 +57,6 @@ abstract class AbstractSourcesAndJavadocJarsIntegrationTest extends AbstractIdeI
         succeeds "resolve"
     }
 
-    @ToBeFixedForConfigurationCache
     def "sources and javadoc jars from maven repositories are resolved, attached and cached"() {
         def repo = mavenHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -68,13 +67,14 @@ abstract class AbstractSourcesAndJavadocJarsIntegrationTest extends AbstractIdeI
         module.allowAll()
 
         buildFile << """
-dependencies {
-    implementation 'some:module:1.0:api'
-}
-"""
+            dependencies {
+                implementation 'some:module:1.0:api'
+            }
+        """
 
         when:
         useMavenRepo(repo)
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
@@ -83,6 +83,7 @@ dependencies {
 
         when:
         server.resetExpectations()
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
@@ -90,20 +91,19 @@ dependencies {
         ideFileContainsEntry("module-1.0-api.jar", "module-1.0-sources.jar", "module-1.0-javadoc.jar")
     }
 
-    @ToBeFixedForConfigurationCache
     def "ignores missing sources and javadoc jars in maven repositories"() {
         def repo = mavenHttpRepo
         repo.module("some", "module", "1.0").publish().allowAll()
 
         when:
         useMavenRepo(repo)
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
         ideFileContainsNoSourcesAndJavadocEntry()
     }
 
-    @ToBeFixedForConfigurationCache
     def "ignores broken source or javadoc artifacts in maven repository"() {
         def repo = mavenHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -126,6 +126,7 @@ dependencies {
 
 
         then:
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
         ideFileContainsNoSourcesAndJavadocEntry()
     }
@@ -147,7 +148,6 @@ dependencies {
         succeeds "resolve"
     }
 
-    @ToBeFixedForConfigurationCache
     def "sources and javadoc jars from ivy repositories are resolved, attached and cached"() {
         def repo = ivyHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -157,6 +157,7 @@ dependencies {
 
         when:
         useIvyRepo(repo)
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
@@ -164,13 +165,13 @@ dependencies {
 
         when:
         server.resetExpectations()
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
         ideFileContainsEntry("module-1.0.jar", "module-1.0-my-sources.jar", "module-1.0-my-javadoc.jar")
     }
 
-    @ToBeFixedForConfigurationCache
     def "all sources and javadoc jars resolved from ivy repo are attached to all artifacts for module"() {
         def repo = ivyHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -189,11 +190,12 @@ dependencies {
         when:
         useIvyRepo(repo)
         buildFile << """
-dependencies {
-    implementation 'some:module:1.0:api'
-    testImplementation 'some:module:1.0:tests'
-}"""
-
+            dependencies {
+                    implementation 'some:module:1.0:api'
+                    testImplementation 'some:module:1.0:tests'
+                }
+        """
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
@@ -204,7 +206,6 @@ dependencies {
         ideFileContainsEntry("module-1.0-tests.jar", sources, javadoc)
     }
 
-    @ToBeFixedForConfigurationCache
     def "all sources jars from ivy repositories are attached when there are multiple unclassified artifacts"() {
         def repo = ivyHttpRepo
 
@@ -225,6 +226,7 @@ dependencies {
 
         when:
         useIvyRepo(repo)
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
@@ -232,7 +234,6 @@ dependencies {
         ideFileContainsEntry("foo-api-1.0.jar", ["foo-sources-1.0.jar", "foo-api-sources-1.0.jar"], ["foo-javadoc-1.0.jar", "foo-api-javadoc-1.0.jar"])
     }
 
-    @ToBeFixedForConfigurationCache
     def "ignores missing sources and javadoc jars in ivy repositories"() {
         def repo = ivyHttpRepo
         final module = repo.module("some", "module", "1.0")
@@ -246,11 +247,11 @@ dependencies {
         module.allowAll()
 
         then:
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
         ideFileContainsNoSourcesAndJavadocEntry()
     }
 
-    @ToBeFixedForConfigurationCache
     def "ignores broken source or javadoc artifacts in ivy repository"() {
         def repo = ivyHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -269,11 +270,11 @@ dependencies {
         javadocArtifact.expectGetBroken()
 
         then:
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
         ideFileContainsNoSourcesAndJavadocEntry()
     }
 
-    @ToBeFixedForConfigurationCache
     def "sources and javadoc jars stored with maven scheme in ivy repositories are resolved and attached"() {
         def repo = ivyHttpRepo
         def module = repo.module("some", "module", "1.0")
@@ -286,13 +287,13 @@ dependencies {
 
         when:
         useIvyRepo(repo)
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
         ideFileContainsEntry("module-1.0.jar", "module-1.0-sources.jar", "module-1.0-javadoc.jar")
     }
 
-    @ToBeFixedForConfigurationCache
     def "sources and javadoc jars from flatdir repositories are resolved and attached"() {
         file("repo/module-1.0.jar").createFile()
         file("repo/module-1.0-sources.jar").createFile()
@@ -300,14 +301,14 @@ dependencies {
 
         when:
         buildFile << """repositories { flatDir { dir "repo" } }"""
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
         ideFileContainsEntry("module-1.0.jar", "module-1.0-sources.jar", "module-1.0-javadoc.jar")
     }
 
-    @ToBeFixedForConfigurationCache
-    @Requires(IntegTestPreconditions.IsDaemonExecutor)
+    @Requires(TestExecutionPreconditions.IsDaemonExecutor)
     def "does not download gradleApi() sources when sources download is disabled"() {
         given:
         executer.withEnvironmentVars('GRADLE_REPO_OVERRIDE': "$server.uri/")
@@ -323,8 +324,9 @@ dependencies {
 
             idea.module.downloadSources = false
             eclipse.classpath.downloadSources = false
-            """
+        """
         when:
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
@@ -332,8 +334,7 @@ dependencies {
         ideFileContainsGradleApi("gradle-api")
     }
 
-    @ToBeFixedForConfigurationCache
-    @Requires(IntegTestPreconditions.IsDaemonExecutor)
+    @Requires(TestExecutionPreconditions.IsDaemonExecutor)
     def "does not download gradleApi() sources when offline"() {
         given:
         executer.withEnvironmentVars('GRADLE_REPO_OVERRIDE': "$server.uri/")
@@ -346,9 +347,10 @@ dependencies {
             dependencies {
                 implementation gradleApi()
             }
-            """
+        """
         when:
         args("--offline")
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
@@ -356,8 +358,7 @@ dependencies {
         ideFileContainsGradleApi("gradle-api")
     }
 
-    @ToBeFixedForConfigurationCache
-    @Requires(UnitTestPreconditions.StableGroovy) // localGroovy() version cannot be swapped-out when a snapshot Groovy build is used
+    @Requires(TestEnvironmentPreconditions.StableGroovy) // localGroovy() version cannot be swapped-out when a snapshot Groovy build is used
     def "sources for localGroovy() are downloaded and attached"() {
         given:
         def repo = givenGroovyExistsInGradleRepo()
@@ -371,29 +372,26 @@ dependencies {
             dependencies {
                 implementation localGroovy()
             }
-            """
+        """
 
         when:
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
         ideFileContainsEntry("groovy-${groovyVersion}.jar", ["groovy-${groovyVersion}-sources.jar"], [])
         ideFileContainsEntry("groovy-ant-${groovyVersion}.jar", ["groovy-ant-${groovyVersion}-sources.jar"], [])
         ideFileContainsEntry("groovy-astbuilder-${groovyVersion}.jar", ["groovy-astbuilder-${groovyVersion}-sources.jar"], [])
-        ideFileContainsEntry("groovy-console-${groovyVersion}.jar", ["groovy-console-${groovyVersion}-sources.jar"], [])
         ideFileContainsEntry("groovy-datetime-${groovyVersion}.jar", ["groovy-datetime-${groovyVersion}-sources.jar"], [])
         ideFileContainsEntry("groovy-dateutil-${groovyVersion}.jar", ["groovy-dateutil-${groovyVersion}-sources.jar"], [])
         ideFileContainsEntry("groovy-groovydoc-${groovyVersion}.jar", ["groovy-groovydoc-${groovyVersion}-sources.jar"], [])
         ideFileContainsEntry("groovy-json-${groovyVersion}.jar", ["groovy-json-${groovyVersion}-sources.jar"], [])
         ideFileContainsEntry("groovy-nio-${groovyVersion}.jar", ["groovy-nio-${groovyVersion}-sources.jar"], [])
-        ideFileContainsEntry("groovy-sql-${groovyVersion}.jar", ["groovy-sql-${groovyVersion}-sources.jar"], [])
         ideFileContainsEntry("groovy-templates-${groovyVersion}.jar", ["groovy-templates-${groovyVersion}-sources.jar"], [])
-        ideFileContainsEntry("groovy-test-${groovyVersion}.jar", ["groovy-test-${groovyVersion}-sources.jar"], [])
         ideFileContainsEntry("groovy-xml-${groovyVersion}.jar", ["groovy-xml-${groovyVersion}-sources.jar"], [])
     }
 
-    @ToBeFixedForConfigurationCache
-    @Requires(UnitTestPreconditions.StableGroovy) // localGroovy() version cannot be swapped-out when a snapshot Groovy build is used
+    @Requires(TestEnvironmentPreconditions.StableGroovy) // localGroovy() version cannot be swapped-out when a snapshot Groovy build is used
     def "sources for localGroovy() are downloaded and attached when using gradleApi()"() {
         given:
         def repo = givenGroovyExistsInGradleRepo()
@@ -407,18 +405,18 @@ dependencies {
             dependencies {
                 implementation gradleApi()
             }
-            """
+        """
 
         when:
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
         ideFileContainsEntry("groovy-${groovyVersion}.jar", ["groovy-${groovyVersion}-sources.jar"], [])
     }
 
-    @ToBeFixedForConfigurationCache
     @Requires(
-        value = [UnitTestPreconditions.StableGroovy, IntegTestPreconditions.NotEmbeddedExecutor],
+        value = [TestEnvironmentPreconditions.StableGroovy, TestExecutionPreconditions.NotEmbeddedExecutor],
         reason = "localGroovy() version cannot be swapped-out when a snapshot Groovy build is used"
     )
     def "sources for localGroovy() are downloaded and attached when using gradleTestKit()"() {
@@ -434,16 +432,16 @@ dependencies {
             dependencies {
                 implementation gradleTestKit()
             }
-            """
+        """
 
         when:
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
         ideFileContainsEntry("groovy-${groovyVersion}.jar", ["groovy-${groovyVersion}-sources.jar"], [])
     }
 
-    @ToBeFixedForConfigurationCache
     def "does not download localGroovy() sources when sources download is disabled"() {
         given:
         executer.withEnvironmentVars('GRADLE_LIBS_REPO_OVERRIDE': "$server.uri/")
@@ -459,16 +457,16 @@ dependencies {
 
             idea.module.downloadSources = false
             eclipse.classpath.downloadSources = false
-            """
+        """
 
         when:
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
         ideFileContainsNoSourcesAndJavadocEntry()
     }
 
-    @ToBeFixedForConfigurationCache
     def "does not download localGroovy() sources when offline"() {
         given:
         executer.withEnvironmentVars('GRADLE_LIBS_REPO_OVERRIDE': "$server.uri/")
@@ -481,18 +479,18 @@ dependencies {
             dependencies {
                 implementation localGroovy()
             }
-            """
+        """
 
         when:
         args("--offline")
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
         ideFileContainsNoSourcesAndJavadocEntry()
     }
 
-    @ToBeFixedForConfigurationCache
-    @Requires(UnitTestPreconditions.StableGroovy) // localGroovy() version cannot be swapped-out when a snapshot Groovy build is used
+    @Requires(TestEnvironmentPreconditions.StableGroovy) // localGroovy() version cannot be swapped-out when a snapshot Groovy build is used
     def "does not add project repository to download localGroovy() sources"() {
         given:
         def repo = givenGroovyExistsInGradleRepo()
@@ -512,6 +510,7 @@ dependencies {
         """
 
         when:
+        expectTaskDeprecations(getIdeTask())
         succeeds ideTask
 
         then:
@@ -541,7 +540,6 @@ dependencies {
         publishGroovyModuleWithSources(repo, "groovy-sql")
         publishGroovyModuleWithSources(repo, "groovy-swing")
         publishGroovyModuleWithSources(repo, "groovy-templates")
-        publishGroovyModuleWithSources(repo, "groovy-test")
         publishGroovyModuleWithSources(repo, "groovy-xml")
         return repo
     }
@@ -554,11 +552,11 @@ dependencies {
     }
 
     private useIvyRepo(def repo) {
-        buildFile << """repositories { ivy { url "$repo.uri" } }"""
+        buildFile << """repositories { ivy { url = "$repo.uri" } }"""
     }
 
     private useMavenRepo(def repo) {
-        buildFile << """repositories { maven { url "$repo.uri" } }"""
+        buildFile << """repositories { maven { url = "$repo.uri" } }"""
     }
 
     private static void addCompleteConfigurations(IvyHttpModule module) {
@@ -581,33 +579,33 @@ dependencies {
 
     String getBaseBuildScript() {
         """
-apply plugin: "java"
-apply plugin: "idea"
-apply plugin: "eclipse"
-
-dependencies {
-    implementation("some:module:1.0")
-}
-
-idea {
-    module {
-        downloadJavadoc = true
-    }
-}
-
-eclipse {
-    classpath {
-        downloadJavadoc = true
-    }
-}
-
-task resolve {
-    def runtimeClasspath = configurations.runtimeClasspath
-    doLast {
-        runtimeClasspath.each { println it }
-    }
-}
-"""
+            apply plugin: "java"
+            apply plugin: "idea"
+            apply plugin: "eclipse"
+            
+            dependencies {
+                implementation("some:module:1.0")
+            }
+            
+            idea {
+                module {
+                    downloadJavadoc = true
+                }
+            }
+            
+            eclipse {
+                classpath {
+                    downloadJavadoc = true
+                }
+            }
+            
+            task resolve {
+                def runtimeClasspath = configurations.runtimeClasspath
+                doLast {
+                    runtimeClasspath.each { println it }
+                }
+            }
+        """
     }
 
     abstract String getIdeTask()

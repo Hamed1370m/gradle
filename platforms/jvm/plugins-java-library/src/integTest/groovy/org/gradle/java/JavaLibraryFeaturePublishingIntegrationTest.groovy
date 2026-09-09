@@ -47,7 +47,7 @@ class JavaLibraryFeaturePublishingIntegrationTest extends AbstractIntegrationSpe
 
             publishing {
                 repositories {
-                    maven { url "\${buildDir}/repo" }
+                    maven { url = layout.buildDirectory.dir("repo") }
                 }
                 publications {
                     maven(MavenPublication) {
@@ -178,5 +178,41 @@ class JavaLibraryFeaturePublishingIntegrationTest extends AbstractIntegrationSpe
         true      | true     | false
         true      | false    | true
         true      | true     | true
+    }
+
+    def "consumable feature configurations are not realized during configuration-time"() {
+        given:
+        buildFile << """
+            sourceSets {
+                create("myFeature")
+            }
+
+            java {
+                registerFeature("myFeature") {
+                    usingSourceSet(sourceSets.myFeature)
+                    withJavadocJar()
+                    withSourcesJar()
+                }
+            }
+
+            configurations.withType(ConsumableConfiguration).configureEach {
+                throw new RuntimeException("Should not be called!")
+            }
+            configurations.named("myFeatureApiElements").configure {
+                throw new RuntimeException("Should not be called!")
+            }
+            configurations.named("myFeatureRuntimeElements").configure {
+                throw new RuntimeException("Should not be called!")
+            }
+            configurations.named("myFeatureSourcesElements").configure {
+                throw new RuntimeException("Should not be called!")
+            }
+            configurations.named("myFeatureJavadocElements").configure {
+                throw new RuntimeException("Should not be called!")
+            }
+        """
+
+        expect:
+        succeeds("help")
     }
 }

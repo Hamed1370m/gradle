@@ -66,8 +66,9 @@ import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.resource.local.FileResourceRepository;
 import org.gradle.internal.resource.local.FileStore;
 import org.gradle.internal.resource.local.LocallyAvailableResourceFinder;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
+import javax.inject.Inject;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -77,7 +78,8 @@ import java.util.Set;
 
 import static java.util.Collections.unmodifiableSet;
 
-public class DefaultIvyArtifactRepository extends AbstractAuthenticationSupportedRepository<IvyRepositoryDescriptor> implements IvyArtifactRepository, ResolutionAwareRepository {
+@SuppressWarnings("this-escape")
+public abstract class DefaultIvyArtifactRepository extends AbstractAuthenticationSupportedRepository<IvyRepositoryDescriptor> implements IvyArtifactRepository, ResolutionAwareRepository {
     private volatile Set<String> schemes;
     private AbstractRepositoryLayout layout;
     private final DefaultUrlArtifactRepository urlArtifactRepository;
@@ -99,6 +101,7 @@ public class DefaultIvyArtifactRepository extends AbstractAuthenticationSupporte
     private final ChecksumService checksumService;
     private final IvyMetadataSources metadataSources = new IvyMetadataSources();
 
+    @Inject
     public DefaultIvyArtifactRepository(
         FileResolver fileResolver,
         RepositoryTransportFactory transportFactory,
@@ -208,7 +211,7 @@ public class DefaultIvyArtifactRepository extends AbstractAuthenticationSupporte
         Instantiator injector = createInjectorForMetadataSuppliers(transport, instantiatorFactory, getUrl(), externalResourcesFileStore);
         InstantiatingAction<ComponentMetadataSupplierDetails> supplierFactory = createComponentMetadataSupplierFactory(injector, isolatableFactory);
         InstantiatingAction<ComponentMetadataListerDetails> listerFactory = createComponentMetadataVersionLister(injector, isolatableFactory);
-        return new IvyResolver(getDescriptor(), transport, locallyAvailableResourceFinder, metaDataProvider.dynamicResolve, artifactFileStore, supplierFactory, listerFactory, createMetadataSources(), IvyMetadataArtifactProvider.INSTANCE, injector, checksumService);
+        return new IvyResolver(getDescriptor(), transport, locallyAvailableResourceFinder, metaDataProvider.dynamicResolve, artifactFileStore, supplierFactory, listerFactory, createMetadataSources(), IvyMetadataArtifactProvider.INSTANCE, injector, checksumService, getAllowInsecureContinueWhenDisabled().get());
     }
 
     @Override
@@ -452,7 +455,7 @@ public class DefaultIvyArtifactRepository extends AbstractAuthenticationSupporte
         }
 
         /**
-         * This is used to generate the repository id and for reporting purposes on build scans.
+         * This is used to generate the repository id and for reporting purposes on a Build Scan.
          * Changing this means a change of repository.
          *
          * @return a list of implemented metadata sources, as strings.

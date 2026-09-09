@@ -19,7 +19,6 @@ package org.gradle.tooling.internal.provider;
 import org.gradle.api.internal.StartParameterInternal;
 import org.gradle.api.internal.changedetection.state.FileHasherStatistics;
 import org.gradle.deployment.internal.DeploymentRegistryInternal;
-import org.gradle.initialization.StartParameterBuildOptions;
 import org.gradle.internal.buildoption.InternalOptions;
 import org.gradle.internal.buildtree.BuildActionRunner;
 import org.gradle.internal.buildtree.BuildTreeLifecycleController;
@@ -33,7 +32,6 @@ import org.gradle.internal.watch.options.FileSystemWatchingSettingsFinalizedProg
 import org.gradle.internal.watch.registry.WatchMode;
 import org.gradle.internal.watch.vfs.BuildLifecycleAwareVirtualFileSystem;
 import org.gradle.internal.watch.vfs.VfsLogging;
-import org.gradle.internal.watch.vfs.WatchLogging;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,8 +56,8 @@ public class FileSystemWatchingBuildActionRunner implements BuildActionRunner {
         FileHasherStatistics.Collector fileHasherStatisticsCollector,
         DirectorySnapshotterStatistics.Collector directorySnapshotterStatisticsCollector,
         BuildOperationRunner buildOperationRunner,
-        BuildActionRunner delegate,
-        InternalOptions options
+        InternalOptions options,
+        BuildActionRunner delegate
     ) {
         this.eventEmitter = eventEmitter;
         this.virtualFileSystem = virtualFileSystem;
@@ -80,9 +78,6 @@ public class FileSystemWatchingBuildActionRunner implements BuildActionRunner {
         VfsLogging verboseVfsLogging = startParameter.isVfsVerboseLogging()
             ? VfsLogging.VERBOSE
             : VfsLogging.NORMAL;
-        WatchLogging debugWatchLogging = startParameter.isWatchFileSystemDebugLogging()
-            ? WatchLogging.DEBUG
-            : WatchLogging.NORMAL;
 
         LOGGER.info("Watching the file system is configured to be {}", watchFileSystemMode.getDescription());
 
@@ -99,27 +94,10 @@ public class FileSystemWatchingBuildActionRunner implements BuildActionRunner {
             logVfsStatistics("since last build", statStatisticsCollector, fileHasherStatisticsCollector, directorySnapshotterStatisticsCollector);
         }
 
-        if (action.getStartParameter().getProjectCacheDir() != null) {
-            // We'd like to create the probe in the `.gradle` directory under the build root,
-            // but if project cache is somewhere else, then we don't want to put trash in there
-            // See https://github.com/gradle/gradle/issues/17262
-            switch (watchFileSystemMode) {
-                case ENABLED:
-                    throw new IllegalStateException("Enabling file system watching via --watch-fs (or via the " + StartParameterBuildOptions.WatchFileSystemOption.GRADLE_PROPERTY + " property) with --project-cache-dir also specified is not supported; remove either option to fix this problem");
-                case DEFAULT:
-                    LOGGER.info("File system watching is disabled because --project-cache-dir is specified");
-                    watchFileSystemMode = WatchMode.DISABLED;
-                    break;
-                default:
-                    break;
-            }
-        }
-
         LOGGER.debug("Watching the file system computed to be {}", watchFileSystemMode.getDescription());
         boolean actuallyWatching = virtualFileSystem.afterBuildStarted(
             watchFileSystemMode,
             verboseVfsLogging,
-            debugWatchLogging,
             buildOperationRunner
         );
         LOGGER.info("File system watching is {}", actuallyWatching ? "active" : "inactive");
@@ -143,7 +121,6 @@ public class FileSystemWatchingBuildActionRunner implements BuildActionRunner {
             virtualFileSystem.beforeBuildFinished(
                 watchFileSystemMode,
                 verboseVfsLogging,
-                debugWatchLogging,
                 buildOperationRunner,
                 maximumNumberOfWatchedHierarchies
             );

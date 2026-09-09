@@ -19,7 +19,6 @@ package org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact;
 import org.gradle.api.Action;
 import org.gradle.api.internal.file.FileCollectionInternal;
 import org.gradle.api.internal.file.FileCollectionStructureVisitor;
-import org.gradle.internal.operations.BuildOperationConstraint;
 import org.gradle.internal.operations.BuildOperationExecutor;
 import org.gradle.internal.operations.BuildOperationQueue;
 import org.gradle.internal.operations.RunnableBuildOperation;
@@ -63,7 +62,12 @@ public abstract class ParallelResolveArtifactSet {
         public void visit(ArtifactVisitor visitor) {
             // Start preparing the result
             StartVisitAction visitAction = new StartVisitAction(visitor);
-            buildOperationProcessor.runAll(visitAction, BuildOperationConstraint.UNCONSTRAINED);
+
+            // TODO: Downloads here should use `BuildOperationQueue#addUnconstrained`, so that we can fetch
+            // more artifacts in parallel than there are worker leases. This is blocked on classifying the
+            // work submitted by `Artifact#startFinalization`: artifact transforms in this set that have not
+            // yet executed run here on-demand, and being CPU-bound they must stay lease-constrained.
+            buildOperationProcessor.runAll(visitAction);
 
             // Now visit the result in order
             visitAction.visitResults();

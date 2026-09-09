@@ -19,7 +19,8 @@ package org.gradle.api.plugins
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.ScriptExecuter
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 import org.gradle.util.internal.TextUtil
 
 class ApplicationPluginConfigurationIntegrationTest extends AbstractIntegrationSpec {
@@ -54,14 +55,14 @@ class ApplicationPluginConfigurationIntegrationTest extends AbstractIntegrationS
         def executer = new ScriptExecuter()
         executer.workingDir = testDirectory
         executer.standardOutput = out
-        executer.commandLine = "build/install/test/bin/test"
+        executer.commandLine("build/install/test/bin/test")
         def result = executer.run()
         then:
         result.assertNormalExitValue()
         out.toString() == TextUtil.toPlatformLineSeparators("all good\n")
     }
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk9OrLater)
     def "can configure using project extension for main class and main module"() {
         settingsFile << """
             rootProject.name = 'test'
@@ -99,7 +100,7 @@ class ApplicationPluginConfigurationIntegrationTest extends AbstractIntegrationS
         def executer = new ScriptExecuter()
         executer.workingDir = testDirectory
         executer.standardOutput = out
-        executer.commandLine = "build/install/test/bin/test"
+        executer.commandLine("build/install/test/bin/test")
 
         then:
         executer.run().assertNormalExitValue()

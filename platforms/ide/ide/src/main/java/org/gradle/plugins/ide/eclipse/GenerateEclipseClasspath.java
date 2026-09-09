@@ -16,6 +16,7 @@
 package org.gradle.plugins.ide.eclipse;
 
 import org.gradle.api.tasks.Internal;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.xml.XmlTransformer;
 import org.gradle.plugins.ide.api.XmlGeneratorTask;
 import org.gradle.plugins.ide.eclipse.model.Classpath;
@@ -28,12 +29,22 @@ import javax.inject.Inject;
  * Generates an Eclipse <code>.classpath</code> file. If you want to fine tune the eclipse configuration
  * <p>
  * At this moment nearly all configuration is done via {@link EclipseClasspath}.
+ *
+ * @deprecated Will be removed in Gradle 10.
+ * @since 1.0
  */
+@Deprecated
 @DisableCachingByDefault(because = "Not made cacheable, yet")
 public abstract class GenerateEclipseClasspath extends XmlGeneratorTask<Classpath> {
 
     private EclipseClasspath classpath;
 
+    /**
+     * Creates a new {@code GenerateEclipseClasspath}.
+     *
+     * @since 1.0
+     */
+    @SuppressWarnings("this-escape")
     public GenerateEclipseClasspath() {
         getXmlTransformer().setIndentation("\t");
     }
@@ -41,6 +52,15 @@ public abstract class GenerateEclipseClasspath extends XmlGeneratorTask<Classpat
     @Inject
     public GenerateEclipseClasspath(EclipseClasspath classpath) {
         this.classpath = classpath;
+    }
+
+    @Override
+    protected void generate() {
+        DeprecationLogger.deprecateTask(getName())
+            .willBeRemovedInGradle10()
+            .withUpgradeGuideSection(9, "ide_task_deprecation")
+            .nagUser();
+        super.generate();
     }
 
     @Override
@@ -63,12 +83,18 @@ public abstract class GenerateEclipseClasspath extends XmlGeneratorTask<Classpat
 
     /**
      * The Eclipse Classpath model containing the information required to generate the classpath file.
+     * @since 1.0
      */
     @Internal
     public EclipseClasspath getClasspath() {
         return classpath;
     }
 
+    /**
+     * Sets the classpath.
+     *
+     * @since 1.0
+     */
     public void setClasspath(EclipseClasspath classpath) {
         this.classpath = classpath;
     }

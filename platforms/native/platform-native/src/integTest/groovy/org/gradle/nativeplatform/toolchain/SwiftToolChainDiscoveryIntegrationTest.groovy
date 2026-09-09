@@ -22,15 +22,13 @@ import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 import org.gradle.nativeplatform.fixtures.ToolChainRequirement
 import org.gradle.nativeplatform.fixtures.app.SwiftApp
 
-@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5_OR_OLDER)
+@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC)
 class SwiftToolChainDiscoveryIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
 
     def setup() {
         buildFile << """
-            model {
-                toolChains {
-                    ${toolChain.buildScriptConfig}
-                }
+            toolChains {
+                ${toolChain.buildScriptConfig}
             }
         """
     }
@@ -50,13 +48,11 @@ class SwiftToolChainDiscoveryIntegrationTest extends AbstractInstalledToolChainI
 
         when:
         buildFile << """
-            model {
                 toolChains {
                     ${toolChain.id} {
                         path.add(0, file('${scriptDir.toURI()}'))
                     }
                 }
-            }
             apply plugin: 'swift-application'
         """
 
@@ -64,7 +60,7 @@ class SwiftToolChainDiscoveryIntegrationTest extends AbstractInstalledToolChainI
         fails('assemble')
 
         and:
-        failure.assertHasDescription("Execution failed for task ':compileDebugSwift'.")
+        failure.assertHasDescription("Execution failed for task ':compileDebugSwift' (registered by plugin class 'org.gradle.language.swift.plugins.SwiftBasePlugin').")
         failure.assertHasCause("""No tool chain is available to build Swift for host operating system '${osName}' architecture '${archName}':
   - Tool chain '${toolChain.id}' (Swift Compiler):
       - Could not determine SwiftC metadata: swiftc produced unexpected output.""")

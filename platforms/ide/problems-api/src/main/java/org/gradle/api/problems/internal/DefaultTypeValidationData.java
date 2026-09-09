@@ -16,19 +16,25 @@
 
 package org.gradle.api.problems.internal;
 
-import javax.annotation.Nullable;
+import com.google.common.base.Objects;
+import org.jspecify.annotations.Nullable;
+
 import java.io.Serializable;
+
+import static com.google.common.base.Objects.equal;
 
 public class DefaultTypeValidationData implements TypeValidationData, Serializable {
 
     private final String pluginId;
     private final String propertyName;
+    private final String functionName;
     private final String parentPropertyName;
     private final String typeName;
 
-    public DefaultTypeValidationData(String pluginId, String propertyName, String parentPropertyName, String typeName) {
+    public DefaultTypeValidationData(String pluginId, String propertyName, String functionName, String parentPropertyName, String typeName) {
         this.pluginId = pluginId;
         this.propertyName = propertyName;
+        this.functionName = functionName;
         this.parentPropertyName = parentPropertyName;
         this.typeName = typeName;
     }
@@ -44,6 +50,11 @@ public class DefaultTypeValidationData implements TypeValidationData, Serializab
     }
 
     @Override
+    public String getFunctionName() {
+        return functionName;
+    }
+
+    @Override
     public String getParentPropertyName() {
         return parentPropertyName;
     }
@@ -51,6 +62,24 @@ public class DefaultTypeValidationData implements TypeValidationData, Serializab
     @Override
     public String getTypeName() {
         return typeName;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof DefaultTypeValidationData)) {
+            return false;
+        }
+        DefaultTypeValidationData that = (DefaultTypeValidationData) o;
+        return equal(pluginId, that.pluginId) &&
+            equal(propertyName, that.propertyName) &&
+            equal(functionName, that.functionName) &&
+            equal(parentPropertyName, that.parentPropertyName) &&
+            equal(typeName, that.typeName);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(pluginId, propertyName, functionName, parentPropertyName, typeName);
     }
 
     public static AdditionalDataBuilder<TypeValidationData> builder(@Nullable TypeValidationData from) {
@@ -64,6 +93,7 @@ public class DefaultTypeValidationData implements TypeValidationData, Serializab
 
         private String pluginId;
         private String propertyName;
+        private String functionName;
         private String parentPropertyName;
         private String typeName;
 
@@ -73,13 +103,14 @@ public class DefaultTypeValidationData implements TypeValidationData, Serializab
         public DefaultTypeValidationDataBuilder(TypeValidationData from) {
             this.pluginId = from.getPluginId();
             this.propertyName = from.getPropertyName();
+            this.functionName = from.getFunctionName();
             this.parentPropertyName = from.getParentPropertyName();
             this.typeName = from.getTypeName();
         }
 
         @Override
         public DefaultTypeValidationData build() {
-            return new DefaultTypeValidationData(pluginId, propertyName, parentPropertyName, typeName);
+            return new DefaultTypeValidationData(pluginId, propertyName, functionName, parentPropertyName, typeName);
         }
 
         @Override
@@ -91,6 +122,12 @@ public class DefaultTypeValidationData implements TypeValidationData, Serializab
         @Override
         public TypeValidationDataSpec propertyName(String propertyName) {
             this.propertyName = propertyName;
+            return this;
+        }
+
+        @Override
+        public TypeValidationDataSpec functionName(String functionName) {
+            this.functionName = functionName;
             return this;
         }
 

@@ -15,16 +15,16 @@
  */
 package org.gradle.plugins.ide.eclipse
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.maven.MavenModule
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 
 import static org.gradle.test.fixtures.jpms.ModuleJarFixture.autoModuleJar
 import static org.gradle.test.fixtures.jpms.ModuleJarFixture.moduleJar
 import static org.gradle.test.fixtures.jpms.ModuleJarFixture.traditionalJar
 
-@Requires(UnitTestPreconditions.Jdk9OrLater)
+@Requires(JdkVersionTestPreconditions.Jdk9OrLater)
 class EclipseJavaModulesIntegrationTest extends AbstractEclipseIntegrationSpec {
 
     def setup() {
@@ -38,7 +38,7 @@ class EclipseJavaModulesIntegrationTest extends AbstractEclipseIntegrationSpec {
                 id 'eclipse'
             }
             repositories {
-                maven { url "${mavenRepo.uri}" }
+                maven { url = "${mavenRepo.uri}" }
             }
 
             dependencies {
@@ -49,9 +49,9 @@ class EclipseJavaModulesIntegrationTest extends AbstractEclipseIntegrationSpec {
         """
     }
 
-    @ToBeFixedForConfigurationCache
     def "dependencies are not marked as modules if the project itself is not modular"() {
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         succeeds "eclipse"
 
         then:
@@ -65,7 +65,6 @@ class EclipseJavaModulesIntegrationTest extends AbstractEclipseIntegrationSpec {
         libraries[2].assertHasNoAttribute('module', 'true')
     }
 
-    @ToBeFixedForConfigurationCache
     def "Marks modules on classpath as such"() {
         setup:
         file("src/main/java/module-info.java") << """
@@ -76,6 +75,7 @@ class EclipseJavaModulesIntegrationTest extends AbstractEclipseIntegrationSpec {
         """
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         succeeds "eclipse"
 
         then:

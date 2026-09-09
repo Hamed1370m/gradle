@@ -19,6 +19,9 @@ package org.gradle.internal.work;
 import org.gradle.internal.Factory;
 import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceScope;
+import org.jspecify.annotations.Nullable;
+
+import java.util.function.BooleanSupplier;
 
 /**
  * Allows a thread to enlist in resource locking, for example to lock the mutable state of a project.
@@ -46,6 +49,23 @@ public interface WorkerThreadRegistry {
      * This method blocks until a worker lease is available.
      */
     void runAsWorkerThread(Runnable action);
+
+    /**
+     * Runs the given action as a worker, as long as the given condition holds while waiting for a lease.
+     *
+     * <p>This method blocks until a worker lease is available. If no lease is available and {@code shouldContinue}
+     * returns {@code false}, this method gives up and returns without running the action.
+     *
+     * <p>Unlike {@link #runAsWorkerThread(Runnable)}, the caller decides how long it is willing to wait for a lease.
+     *
+     * <p>Also unlike {@link #runAsWorkerThread(Runnable)}, the caller must not call this method from a thread that already holds a worker lease.
+     * Technically this could be allowed, but it has little benefit.
+     *
+     * @param action the action to run while holding a worker lease
+     * @param shouldContinue supplier that returns {@code true} to keep waiting for a lease, {@code false} to give up. This should be cheap as it is called under the state lock.
+     * @throws IllegalStateException if the calling thread already holds a worker lease
+     */
+    void tryWhileConditionToRunAsWorkerThread(Runnable action, BooleanSupplier shouldContinue);
 
     /**
      * Runs the given action as an unmanaged worker, if not already a worker. This is basically the same as {@link #runAsWorkerThread(Runnable)} but does not block waiting for a lease.
@@ -77,4 +97,11 @@ public interface WorkerThreadRegistry {
      * Returns {@code true} when this thread is enlisted in resource locking.
      */
     boolean isWorkerThread();
+
+    /**
+     * Set the owning thread pool for the current thread. This will be notified for blocking actions to allow the thread pool to expand if necessary.
+     *
+     * @param threadPool the thread pool that owns the current thread
+     */
+    void setOwningThreadPool(@Nullable WorkerThreadPool threadPool);
 }

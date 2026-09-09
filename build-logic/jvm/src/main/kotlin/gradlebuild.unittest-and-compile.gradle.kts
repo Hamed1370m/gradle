@@ -20,13 +20,13 @@ import com.gradle.develocity.agent.gradle.test.DevelocityTestConfiguration
 import gradlebuild.basics.BuildEnvironment
 import gradlebuild.basics.FlakyTestStrategy
 import gradlebuild.basics.accessors.kotlinMainSourceSet
-import gradlebuild.basics.buildRunningOnCi
 import gradlebuild.basics.flakyTestStrategy
 import gradlebuild.basics.maxParallelForks
 import gradlebuild.basics.maxTestDistributionLocalExecutors
 import gradlebuild.basics.maxTestDistributionPartitionSecond
 import gradlebuild.basics.maxTestDistributionRemoteExecutors
 import gradlebuild.basics.predictiveTestSelectionEnabled
+import gradlebuild.basics.predictiveTestSelectionServerUrl
 import gradlebuild.basics.rerunAllTests
 import gradlebuild.basics.testDistributionDogfoodingTag
 import gradlebuild.basics.testDistributionEnabled
@@ -36,11 +36,12 @@ import gradlebuild.basics.testJavaVersion
 import gradlebuild.basics.testing.excludeSpockAnnotation
 import gradlebuild.basics.testing.includeSpockAnnotation
 import gradlebuild.filterEnvironmentVariables
+import gradlebuild.identity.extension.GradleModuleExtension
+import gradlebuild.identity.extension.DEFAULT_TARGET_JVM_VERSION
+import gradlebuild.jvm.JvmCompileExtension
 import gradlebuild.jvm.argumentproviders.CiEnvironmentProvider
-import gradlebuild.jvm.extension.UnitTestAndCompileExtension
+import org.gradle.internal.jvm.JpmsConfiguration
 import org.gradle.internal.os.OperatingSystem
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.dsl.jvm.JvmTargetValidationMode
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.time.Duration
 
@@ -49,48 +50,29 @@ plugins {
     idea // Need to apply the idea plugin, so the extended configuration is taken into account on sync
     id("gradlebuild.module-jar")
     id("gradlebuild.dependency-modules")
+    id("gradlebuild.jvm-compile")
 }
 
-// Create an extension that allows projects to configure the way they are compiled and tested.
-// Particularly, we let them describe the "platform" they are targeting, like a Gradle worker, daemon, etc.
-// Furthermore, we let them describe whether they are using any "workarounds" like:
-// - Using JDK internal classes
-// - Using Java standard library APIs that were introduced after the JVM version they are targeting
-// - Using dependencies that target a higher JVM version than the project's target JVM version
-//
-// All of these workarounds should be generally avoided, but, with this data we can configure the
-// compile tasks to permit some of these requirements.
-// TODO: Rename this. It controls more than just java compilation.
-val gradlebuildJava = extensions.create<UnitTestAndCompileExtension>("gradlebuildJava").apply {
-    usesFutureStdlib.convention(targetVersion.map {
-        // Assume most of our projects targeting workers use Java standard libraries
-        // that were introduced in version later than the version they target.
-
-        // It is by chance that these future libraries are not loaded on test workers during runtime.
-        // TODO: In Gradle 9.0, tooling API and workers will target JVM 8 and we can set this value to false by default.
-        it < 8
-    })
-    usesIncompatibleDependencies.convention(targetVersion.map {
-        // Assume most of our projects targeting workers use dependencies like guava
-        // which require Java 8. (base-services for example uses guava).
-
-        // It is by chance that these incompatible dependencies are not loaded on test workers during runtime.
-        // TODO: In Gradle 9.0, tooling API and workers will target JVM 8 and we can set this value to false by default.
-        it < 8
-    })
-
-    // Assume by default, a library targets the daemon and does not reference JDK internal classes.
-    usedInDaemon()
-    usesJdkInternals.convention(false)
+tasks.withType<JavaCompile>().configureEach {
+    options.release = provider {
+        throw GradleException("This task '${name}' is not associated with a compilation. Associate it with a compilation on the '${JvmCompileExtension.NAME}' extension.")
+    }
 }
 
-// Use the Java 17 compiler, when possible, to perform compilation.
-// This does not mean we target Java 17 bytecode. The target bytecode
-// is controlled by the `gradlebuildJava.targetVersion` property.
-configureDefaultToolchain(17)
-enforceCompatibility(gradlebuildJava)
+val gradleModule = the<GradleModuleExtension>()
+the<JvmCompileExtension>().apply {
+    compilations {
+        configureEach {
+            targetJvmVersion = DEFAULT_TARGET_JVM_VERSION
+        }
+    }
+    addCompilationFrom(sourceSets.main) {
+        // For the production code, we derive the JVM version from the target runtime
+        targetJvmVersion = gradleModule.computedRuntimes.computeProductionJvmTargetVersion()
+    }
+    addCompilationFrom(sourceSets.test)
+}
 
-removeTeamcityTempProperty()
 addDependencies()
 configureCompileDefaults()
 addCompileAllTasks()
@@ -110,155 +92,17 @@ fun configureCompileDefaults() {
     }
 }
 
-/**
- * When possible, use a Java compiler with the given version when
- * performing compilation. This does not necessarily mean we are
- * emitting bytecode for the given version.
- * <p>
- * In some cases, the toolchain used here may be overridden, for
- * example when compiling Groovy code, as it does not support
- * the --release flag, or when targeting much older bytecode versions.
- */
-fun configureDefaultToolchain(toolchainVersion: Int) {
-    java.toolchain {
-        languageVersion = JavaLanguageVersion.of(toolchainVersion)
-        vendor = JvmVendorSpec.ADOPTIUM
-    }
-}
-
-/**
- * Given the user-configured values in the extension, configure the compilation tasks
- * to enforce compatibility with the target JVM version.
- *
- * We try to use the toolchain configured in [configureDefaultToolchain] as much as possible,
- * but in some cases, we need to use another toolchain.
- *
- * In some cases, we need to set the source and target compatibility flags instead of using
- * the release flag. This is because the release flag limits us from using internal APIs or
- * APIs defined by a Java version higher than the target version.
- *
- * Finally, Groovy does not support the release flag at all. We manually set a toolchain
- * for Groovy to ensure it compiles against the correct classes.
- */
-private
-fun enforceCompatibility(gradlebuildJava: UnitTestAndCompileExtension) {
-    // When using the release flag, compiled code cannot access JDK internal classes or standard library
-    // APIs defined in future versions of Java. If either of these cases are true, we do not use the
-    // release flag, but instead set the source and target compatibility flags.
-    val useRelease = this.gradlebuildJava.usesJdkInternals.zip(this.gradlebuildJava.usesFutureStdlib) { internals, futureApis -> !internals && !futureApis }
-
-    val targetVersion = gradlebuildJava.targetVersion
-    enforceJavaCompatibility(targetVersion, useRelease)
-    enforceGroovyCompatibility(targetVersion)
-    enforceKotlinCompatibility(targetVersion, useRelease)
-
-    project.afterEvaluate {
-        if (targetVersion.get() < 8) {
-            // Apply ParameterNamesIndex since 6 and 7 bytecode doesn't support -parameters
-            project.apply(plugin = "gradlebuild.api-parameter-names-index")
-        }
-
-        if (gradlebuildJava.usesIncompatibleDependencies.get()) {
-            // Some projects use dependencies that target higher JVM versions
-            // than the projects target. Disable dependency management checks
-            // that verify these dependencies have compatible java versions.
-            java.disableAutoTargetJvm()
-        }
-    }
-}
-
-fun enforceJavaCompatibility(targetVersion: Provider<Int>, useRelease: Provider<Boolean>) {
-    tasks.withType<JavaCompile>().configureEach {
-        // Set the release flag is requested.
-        // Otherwise, we set the source and target compatibility in the afterEvaluate below.
-        options.release = useRelease.flatMap { doUseRelease -> targetVersion.filter { doUseRelease } }
-
-        // If we are targeting Java < 8, we need to use a different compiler,
-        // since compilers will only cross-compile down to a certain version.
-        javaCompiler = javaToolchains.compilerFor {
-            languageVersion = targetVersion.flatMap {
-                if (it >= 8) {
-                    // The toolchain on the project is able to target JDK >= 8
-                    java.toolchain.languageVersion
-                } else {
-                    // To compile Java 6 and 7 sources, we need an older compiler
-                    // We choose 11 since it supports both of these versions.
-                    provider { JavaLanguageVersion.of(11) }
-                }
-            }
-            vendor = JvmVendorSpec.ADOPTIUM
-        }
-    }
-
-    // Need to use afterEvaluate since source/target compatibility are not lazy
-    project.afterEvaluate {
-        tasks.withType<JavaCompile>().configureEach {
-            if (!useRelease.get()) {
-                val version = targetVersion.get().toString()
-                sourceCompatibility = version
-                targetCompatibility = version
-            }
-        }
-    }
-}
-
-fun enforceGroovyCompatibility(targetVersion: Provider<Int>) {
-    tasks.withType<GroovyCompile>().configureEach {
-        // Groovy does not support the release flag. We must compile with the same
-        // JDK we are targeting in order to see the correct standard lib classes
-        // during compilation
-        javaLauncher = javaToolchains.launcherFor {
-            languageVersion = targetVersion.map {
-                // Use the target version's toolchain if it is 8 or higher.
-                // We do not expect dev machines to have Java 6 or 7 installed,
-                // so when compiling this code, we accept the risk of seeing
-                // higher standard library classes.
-                JavaLanguageVersion.of(maxOf(it, 8))
-            }
-            // TODO: Use a stable vendor. CI currently specifies different vendors for Java 8 depending on the OS
-        }
-    }
-
-    // Need to use afterEvaluate since source/target Compatibility are not lazy
-    project.afterEvaluate {
-        tasks.withType<GroovyCompile>().configureEach {
-            val version = targetVersion.get().toString()
-            sourceCompatibility = version
-            targetCompatibility = version
-        }
-    }
-}
-
-fun enforceKotlinCompatibility(targetVersion: Provider<Int>, useRelease: Provider<Boolean>) {
-    tasks.withType<KotlinCompile>().configureEach {
-        jvmTargetValidationMode.set(JvmTargetValidationMode.ERROR)
-        compilerOptions {
-            jvmTarget = targetVersion.map {
-                JvmTarget.fromTarget(if (it < 9) "1.${it}" else it.toString())
-            }
-
-            // TODO KT-49746: Use the DSL to set the release version
-            freeCompilerArgs.addAll(useRelease.zip(jvmTarget) { doUseRelease, targetVersion ->
-                if (doUseRelease) {
-                    listOf("-Xjdk-release=${targetVersion.target}")
-                } else {
-                    listOf()
-                }
-            })
-        }
-    }
-}
-
 fun configureSourcesVariant() {
     java {
         withSourcesJar()
     }
 
-    @Suppress("UnusedPrivateProperty")
-    val transitiveSourcesElements by configurations.creating {
+    // TODO: This should not be necessary anymore now that we have variant reselection.
+    configurations.create("transitiveSourcesElements") {
         isCanBeResolved = false
         isCanBeConsumed = true
         extendsFrom(configurations.implementation.get())
+        extendsFrom(configurations.runtimeOnly.get())
         attributes {
             attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.JAVA_RUNTIME))
             attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category.DOCUMENTATION))
@@ -292,23 +136,29 @@ fun configureCompileTask(options: CompileOptions) {
 }
 
 fun addDependencies() {
+    if (project.name == "gradle-kotlin-dsl-accessors") return
+    val libs = project.versionCatalogs.named("libs")
+    val testLibs = project.versionCatalogs.named("testLibs")
+
     dependencies {
-        testCompileOnly(libs.junit)
-        testRuntimeOnly(libs.junit5Vintage)
-        testImplementation(libs.groovy)
-        testImplementation(libs.groovyAnt)
-        testImplementation(libs.groovyJson)
-        testImplementation(libs.groovyTest)
-        testImplementation(libs.groovyXml)
-        testImplementation(libs.spock)
-        testImplementation(libs.junit5Vintage)
-        testImplementation(libs.spockJUnit4)
-        testImplementation(libs.develocityTestAnnotation)
-        testRuntimeOnly(libs.bytebuddy)
-        testRuntimeOnly(libs.objenesis)
+        testCompileOnly(testLibs.findLibrary("junit").get())
+        testRuntimeOnly(testLibs.findLibrary("junit5Vintage").get())
+        testImplementation(libs.findLibrary("groovy").get())
+        testImplementation(libs.findLibrary("groovyAnt").get())
+        testImplementation(libs.findLibrary("groovyJson").get())
+        testImplementation(testLibs.findLibrary("groovyTest").get())
+        testImplementation(libs.findLibrary("groovyXml").get())
+        testImplementation(testLibs.findLibrary("spock").get())
+        testImplementation(testLibs.findLibrary("junit5Vintage").get())
+        testImplementation(testLibs.findLibrary("spockJUnit4").get())
+        testImplementation(testLibs.findLibrary("mockitoCore").get())
+        testImplementation(testLibs.findLibrary("develocityTestAnnotation").get())
+        testRuntimeOnly(testLibs.findLibrary("bytebuddy").get())
+        testRuntimeOnly(testLibs.findLibrary("objenesis").get())
+        testRuntimeOnly(testLibs.findLibrary("junitPlatform").get())
 
         // use a separate configuration for the platform dependency that does not get published as part of 'apiElements' or 'runtimeElements'
-        val platformImplementation by configurations.creating
+        val platformImplementation = configurations.create("platformImplementation")
         configurations["compileClasspath"].extendsFrom(platformImplementation)
         configurations["runtimeClasspath"].extendsFrom(platformImplementation)
         configurations["testCompileClasspath"].extendsFrom(platformImplementation)
@@ -324,7 +174,7 @@ fun addCompileAllTasks() {
     tasks.register("compileAll") {
         description = "Compile all source code, including main, test, integTest, crossVersionTest, testFixtures, etc."
         val compileTasks = project.tasks.matching {
-            it is JavaCompile || it is GroovyCompile
+            it is JavaCompile || it is GroovyCompile || it is KotlinCompile
         }
         dependsOn(compileTasks)
     }
@@ -333,14 +183,10 @@ fun addCompileAllTasks() {
         description = "Compile all production source code, usually only main and testFixtures."
         val compileTasks = project.tasks.matching {
             // Currently, we compile everything since the Groovy compiler is not deterministic enough.
-            (it is JavaCompile || it is GroovyCompile)
+            (it is JavaCompile || it is GroovyCompile || it is KotlinCompile)
         }
         dependsOn(compileTasks)
     }
-}
-
-fun Test.jvmVersionForTest(): JavaLanguageVersion {
-    return JavaLanguageVersion.of(project.testJavaVersion)
 }
 
 fun Test.configureSpock() {
@@ -354,6 +200,7 @@ fun Test.configureFlakyTest() {
             excludeSpockAnnotation("org.gradle.test.fixtures.Flaky")
             (options as JUnitPlatformOptions).excludeTags("org.gradle.test.fixtures.Flaky")
         }
+
         FlakyTestStrategy.ONLY -> {
             // Note there is an issue: https://github.com/spockframework/spock/issues/1288
             // JUnit Platform `includeTags` works before Spock engine, thus excludes all spock tests.
@@ -364,21 +211,37 @@ fun Test.configureFlakyTest() {
     }
 }
 
-fun Test.configureJvmForTest() {
-    jvmArgumentProviders.add(CiEnvironmentProvider(this))
-    val launcher = project.javaToolchains.launcherFor {
-        languageVersion = jvmVersionForTest()
-        vendor = project.testJavaVendor.orElse(JvmVendorSpec.ADOPTIUM)
-    }
-    javaLauncher = launcher
-    if (jvmVersionForTest().canCompileOrRun(9)) {
-        if (isUnitTest() || usesEmbeddedExecuter()) {
-            jvmArgs(org.gradle.internal.jvm.JpmsConfiguration.GRADLE_DAEMON_JPMS_ARGS)
-        } else {
-            jvmArgs(listOf("--add-opens", "java.base/java.util=ALL-UNNAMED")) // Used in tests by native platform library: WrapperProcess.getEnv
-            jvmArgs(listOf("--add-opens", "java.base/java.lang=ALL-UNNAMED")) // Used in tests by ClassLoaderUtils
+fun Test.runWithJavaVersion(testJvmVersion: JavaLanguageVersion) {
+    javaLauncher = project.javaToolchains.launcherFor {
+        languageVersion = testJvmVersion
+        if (project.testJavaVendor.isPresent) {
+            vendor = project.testJavaVendor
         }
     }
+
+    if (testJvmVersion.canCompileOrRun(9)) {
+        val argProvider = objects.newInstance(AddOpensArgumentProvider::class.java).apply {
+            jvmVersion = testJvmVersion.asInt()
+            unitTest = provider { isUnitTest() }
+            embedded = provider { usesEmbeddedExecuter() }
+        }
+        jvmArgumentProviders.add(argProvider)
+    }
+}
+
+internal
+abstract class AddOpensArgumentProvider : CommandLineArgumentProvider {
+    @get:Input
+    abstract val jvmVersion: Property<Int>
+
+    @get:Input
+    abstract val unitTest: Property<Boolean>
+
+    @get:Input
+    abstract val embedded: Property<Boolean>
+
+    override fun asArguments(): Iterable<String> =
+        JpmsConfiguration.forDaemonProcesses(jvmVersion.get(), true)
 }
 
 fun Test.addOsAsInputs() {
@@ -389,7 +252,16 @@ fun Test.addOsAsInputs() {
 
 fun Test.isUnitTest() = listOf("test", "writePerformanceScenarioDefinitions", "writeTmpPerformanceScenarioDefinitions").contains(name)
 
-fun Test.usesEmbeddedExecuter() = name.startsWith("embedded")
+/**
+ * If enabled, test JVM will inherit the DEVELOCITY_ACCESS_TOKEN
+ * environment variable. This allows build scans to be published for integration tests.
+ */
+fun Test.inheritedEnvVars(): List<String> = when {
+    project.name == "smoke-test" -> listOf("DEVELOCITY_ACCESS_KEY", "DEVELOCITY_SERVER_URL", "DEVELOCITY_EDGE_DISCOVERY", "CI")
+    else -> emptyList()
+}
+
+fun Test.usesEmbeddedExecuter() = systemProperties["org.gradle.integtest.executer"]?.equals("embedded") ?: false
 
 fun Test.configureRerun() {
     if (project.rerunAllTests.get()) {
@@ -418,11 +290,13 @@ fun configureTests() {
     tasks.withType<Test>().configureEach {
 
         configureAndroidUserHome()
-        filterEnvironmentVariables()
+        filterEnvironmentVariables(inheritedEnvVars())
 
         maxParallelForks = project.maxParallelForks
 
-        configureJvmForTest()
+        jvmArgumentProviders.add(CiEnvironmentProvider(this))
+        runWithJavaVersion(JavaLanguageVersion.of(project.testJavaVersion))
+
         addOsAsInputs()
         configureRerun()
 
@@ -449,6 +323,12 @@ fun configureTests() {
                 maxRemoteExecutors = if (project.isPerformanceProject()) 0 else project.maxTestDistributionRemoteExecutors
                 maxLocalExecutors = project.maxTestDistributionLocalExecutors
 
+                if (maxLocalExecutors.orNull != 0) {
+                    localOnly {
+                        includeAnnotationClasses.addAll("org.gradle.testdistribution.LocalOnly")
+                    }
+                }
+
                 val dogfoodingTag = testDistributionDogfoodingTag.getOrElse("gbt-dogfooding")
                 if (BuildEnvironment.isCiServer) {
                     when {
@@ -462,24 +342,20 @@ fun configureTests() {
             }
         }
 
+        // Set on every test task, not only the PTS-enabled ones: the selection server is shared per
+        // build invocation, so tasks that disagree fail with "Client was already created for a
+        // different server".
+        // Don't move this line into the lambda as it may cause config cache problems
+        val ptsServerUrl = project.predictiveTestSelectionServerUrl.getOrElse("https://ge.gradle.org")
+        extensions.findByType<DevelocityTestConfiguration>()?.predictiveTestSelection {
+            (this as PredictiveTestSelectionConfigurationInternal).server = uri(ptsServerUrl)
+        }
+
         if (project.supportsPredictiveTestSelection() && !isUnitTest()) {
-            // GitHub actions for contributor PRs uses public build scan instance
-            // in this case we need to explicitly configure the PTS server
-            // Don't move this line into the lambda as it may cause config cache problems
             extensions.findByType<DevelocityTestConfiguration>()?.predictiveTestSelection {
-                this as PredictiveTestSelectionConfigurationInternal
-                server = uri("https://ge.gradle.org")
                 enabled.convention(project.predictiveTestSelectionEnabled)
             }
         }
-    }
-}
-
-fun removeTeamcityTempProperty() {
-    // Undo: https://github.com/JetBrains/teamcity-gradle/blob/e1dc98db0505748df7bea2e61b5ee3a3ba9933db/gradle-runner-agent/src/main/scripts/init.gradle#L818
-    if (project.buildRunningOnCi.get() && project.hasProperty("teamcity")) {
-        @Suppress("UNCHECKED_CAST") val teamcity = project.property("teamcity") as MutableMap<String, Any>
-        teamcity["teamcity.build.tempDir"] = ""
     }
 }
 
@@ -516,11 +392,6 @@ fun TaskContainer.registerCITestDistributionLifecycleTasks() {
 
     register("quickFeedbackCrossVersionTest") {
         description = "Run cross-version tests against a limited set of versions"
-        group = ciGroup
-    }
-
-    register("allVersionsCrossVersionTest") {
-        description = "Run cross-version tests against all released versions (latest patch release of each)"
         group = ciGroup
     }
 

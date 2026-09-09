@@ -37,7 +37,7 @@ import java.lang.annotation.Target;
  * <p>
  * Managed types declare their structure as properties, via getter and setter methods.
  * Getter and setter methods are expected to conform to the well-known Java Bean naming conventions.
- * A read/write “name” property would be expressed via the following methods:
+ * A read/write "name" property would be expressed via the following methods:
  * <pre>
  * void setName(String name);
  * String getName();
@@ -98,7 +98,7 @@ import java.lang.annotation.Target;
  * <h2>Calculated read-only properties</h2>
  * <p>
  * Managed types can contain getter methods that return calculated values, based on other properties.
- * For example, a “name” property may return the concatenation of a “firstName” and “lastName” property.
+ * For example, a "name" property may return the concatenation of a "firstName" and "lastName" property.
  * When using Java 8 or later, such properties can be implemented as interface default methods.
  * Alternatively, the managed type can be implemented as an abstract class with the calculated property implemented as a non-abstract getter method.
  * In both cases, the implementation of the calculated property getter may not call any setter method.
@@ -112,9 +112,13 @@ import java.lang.annotation.Target;
  * <h2>Creating managed model elements</h2>
  * <p>
  * Please see {@link Model} for information on creating model elements of managed types.
+ *
+ * @deprecated The Gradle software model is deprecated and will be removed in Gradle 10. Use the new component model (e.g. {@code cpp-application}, {@code cpp-library}, {@code swift-application}, {@code swift-library}, {@code xctest}) instead.
+ * @since 2.3
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 @Incubating
+@Deprecated
 public @interface Managed {
 }

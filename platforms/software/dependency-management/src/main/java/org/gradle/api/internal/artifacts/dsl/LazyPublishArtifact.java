@@ -28,22 +28,19 @@ import org.gradle.api.internal.tasks.TaskDependencyFactory;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.TaskDependency;
 import org.gradle.api.tasks.bundling.AbstractArchiveTask;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.util.Date;
 
 public class LazyPublishArtifact implements PublishArtifactInternal {
+
     private final ProviderInternal<?> provider;
     @Nullable
     private final String version;
     private final FileResolver fileResolver;
     private final TaskDependencyFactory taskDependencyFactory;
     private PublishArtifactInternal delegate;
-
-    public LazyPublishArtifact(Provider<?> archiveTask, FileResolver fileResolver, TaskDependencyFactory taskDependencyFactory) {
-        this(archiveTask, null, fileResolver, taskDependencyFactory);
-    }
 
     public LazyPublishArtifact(Provider<?> provider, @Nullable String version, FileResolver fileResolver, TaskDependencyFactory taskDependencyFactory) {
         this.provider = Providers.internal(provider);
@@ -115,4 +112,5 @@ public class LazyPublishArtifact implements PublishArtifactInternal {
     public boolean shouldBePublished() {
         return getDelegate().shouldBePublished();
     }
+
 }

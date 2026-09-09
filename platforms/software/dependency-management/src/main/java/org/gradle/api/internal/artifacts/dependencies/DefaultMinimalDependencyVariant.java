@@ -24,9 +24,9 @@ import org.gradle.api.attributes.AttributeContainer;
 import org.gradle.api.internal.artifacts.dsl.dependencies.ModuleFactoryHelper;
 import org.gradle.internal.Actions;
 import org.gradle.util.internal.GUtil;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
-
+@SuppressWarnings("this-escape")
 public class DefaultMinimalDependencyVariant extends DefaultExternalModuleDependency implements MinimalExternalModuleDependencyInternal, DependencyVariant {
     private Action<? super AttributeContainer> attributesMutator;
     private Action<? super ModuleDependencyCapabilitiesHandler> capabilitiesMutator;

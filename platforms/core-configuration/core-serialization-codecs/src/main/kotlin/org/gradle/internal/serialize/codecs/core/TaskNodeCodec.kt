@@ -22,22 +22,30 @@ import org.gradle.api.internal.GeneratedSubclasses
 import org.gradle.api.internal.TaskInputsInternal
 import org.gradle.api.internal.TaskInternal
 import org.gradle.api.internal.TaskOutputsInternal
+import org.gradle.api.internal.file.FileCollectionFactory
+import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.api.internal.provider.Providers
 import org.gradle.api.internal.tasks.TaskDestroyablesInternal
 import org.gradle.api.internal.tasks.TaskInputFilePropertyBuilderInternal
 import org.gradle.api.internal.tasks.TaskLocalStateInternal
+import org.gradle.api.logging.StandardOutputListener
+import org.gradle.api.provider.Provider
 import org.gradle.api.specs.Spec
-import org.gradle.internal.cc.base.serialize.IsolateOwners
+import org.gradle.api.tasks.TaskProvider
 import org.gradle.execution.plan.LocalTaskNode
 import org.gradle.execution.plan.TaskNodeFactory
+import org.gradle.internal.cc.base.serialize.IsolateOwners
+import org.gradle.internal.cc.base.serialize.readProjectRef
+import org.gradle.internal.cc.base.serialize.writeProjectRef
+import org.gradle.internal.code.UserCodeSource
 import org.gradle.internal.configuration.problems.PropertyKind
 import org.gradle.internal.configuration.problems.PropertyTrace
-import org.gradle.internal.cc.base.serialize.getProject
 import org.gradle.internal.execution.model.InputNormalizer
 import org.gradle.internal.extensions.stdlib.uncheckedCast
 import org.gradle.internal.fingerprint.DirectorySensitivity
 import org.gradle.internal.fingerprint.FileNormalizer
 import org.gradle.internal.fingerprint.LineEndingSensitivity
+import org.gradle.internal.logging.LoggingManagerInternal
 import org.gradle.internal.properties.InputBehavior
 import org.gradle.internal.properties.InputFilePropertyType
 import org.gradle.internal.properties.OutputFilePropertyType
@@ -52,20 +60,24 @@ import org.gradle.internal.serialize.graph.readClassOf
 import org.gradle.internal.serialize.graph.readCollection
 import org.gradle.internal.serialize.graph.readCollectionInto
 import org.gradle.internal.serialize.graph.readEnum
+import org.gradle.internal.serialize.graph.readList
 import org.gradle.internal.serialize.graph.readNonNull
 import org.gradle.internal.serialize.graph.readPropertyValue
+import org.gradle.internal.serialize.graph.readStringsSet
+import org.gradle.internal.serialize.graph.serviceOf
 import org.gradle.internal.serialize.graph.withDebugFrame
 import org.gradle.internal.serialize.graph.withIsolate
 import org.gradle.internal.serialize.graph.withPropertyTrace
 import org.gradle.internal.serialize.graph.writeCollection
 import org.gradle.internal.serialize.graph.writeEnum
 import org.gradle.internal.serialize.graph.writePropertyValue
+import org.gradle.internal.serialize.graph.writeStrings
 import org.gradle.util.internal.DeferredUtil
 
 
 class TaskNodeCodec(
     private val userTypesCodec: Codec<Any?>,
-    private val taskNodeFactory: TaskNodeFactory
+    private val serializeTaskLoggingListeners: Boolean
 ) : Codec<LocalTaskNode> {
 
     override suspend fun WriteContext.encode(value: LocalTaskNode) {
@@ -75,6 +87,7 @@ class TaskNodeCodec(
 
     override suspend fun ReadContext.decode(): LocalTaskNode {
         val task = readTask()
+        val taskNodeFactory = isolate.owner.serviceOf<TaskNodeFactory>()
         val node = taskNodeFactory.getOrCreateNode(task) as LocalTaskNode
         node.isolated()
         return node
@@ -84,61 +97,82 @@ class TaskNodeCodec(
     suspend fun WriteContext.writeTask(task: TaskInternal) {
         withDebugFrame({ task.path }) {
             val taskType = GeneratedSubclasses.unpackType(task)
-            val projectPath = task.project.path
             val taskName = task.name
             writeClass(taskType)
-            writeString(projectPath)
+            writeProjectRef(task.project)
             writeString(taskName)
-            writeLong(task.taskIdentity.uniqueId)
+            writeLong(task.taskIdentity.id)
+            writeUserCodeSource(task.taskIdentity.userCodeSource)
             writeNullableString(task.reasonTaskIsIncompatibleWithConfigurationCache.orElse(null))
 
+            // Interesting fact: changing the order in which stuff is written may break builds,
+            // if writing something triggers a side effect that modifies stuff written later.
+            // For example, serializing a file collection may trigger dependency resolution callbacks.
+            // At least one dependency management test was relying on the callback modifying a list referenced by the task action.
             withDebugFrame({ taskType.name }) {
                 withTaskOf(taskType, task, userTypesCodec) {
                     writeUpToDateSpec(task)
-                    writeCollection(task.outputs.cacheIfSpecs)
-                    writeCollection(task.outputs.doNotCacheIfSpecs)
+                    writeCacheabilitySpecs(task)
                     writeReasonNotToTrackState(task)
+                    writeOnlyIfSpec(task)
                     beanStateWriterFor(task.javaClass).run {
                         writeStateOf(task)
-                        withTaskReferencesAllowed {
-                            writeRegisteredPropertiesOf(
-                                task
-                            )
-                        }
+                        writeRegisteredPropertiesOf(task)
                     }
+                    writeTaskActions(task)
                     writeDestroyablesOf(task)
                     writeLocalStateOf(task)
                     writeRequiredServices(task)
+                    writeTaskLoggingListeners(task)
                 }
             }
         }
     }
 
     private
+    suspend fun WriteContext.writeUserCodeSource(source: UserCodeSource?) {
+        if (source == null) {
+            writeBoolean(false)
+        } else {
+            writeBoolean(true)
+            UserCodeSourceCodec.run { encode(source) }
+        }
+    }
+
+    private
     suspend fun ReadContext.readTask(): Task {
         val taskType = readClassOf<Task>()
-        val projectPath = readString()
+        val project = readProjectRef()
         val taskName = readString()
         val uniqueId = readLong()
+        val userCodeSource = readUserCodeSource()
         val incompatibleReason = readNullableString()
 
-        val task = createTask(projectPath, taskName, taskType, uniqueId, incompatibleReason)
+        val task = createTask(project, taskName, taskType, uniqueId, incompatibleReason, userCodeSource)
 
         withTaskOf(taskType, task, userTypesCodec) {
             readUpToDateSpec(task)
-            readCollectionInto { task.outputs.cacheIfSpecs.uncheckedCast() }
-            readCollectionInto { task.outputs.doNotCacheIfSpecs.uncheckedCast() }
+            readCacheabilitySpecs(task)
             readReasonNotToTrackState(task)
+            readOnlyIfSpec(task)
             beanStateReaderFor(task.javaClass).run {
                 readStateOf(task)
             }
             readRegisteredPropertiesOf(task)
+            readTaskActions(task)
             readDestroyablesOf(task)
             readLocalStateOf(task)
             readRequiredServices(task)
+            readTaskLoggingListeners(task)
         }
 
         return task
+    }
+
+    private
+    suspend fun ReadContext.readUserCodeSource(): UserCodeSource? = when (readBoolean()) {
+        false -> null
+        true -> UserCodeSourceCodec.run { decode() }
     }
 
     private
@@ -148,27 +182,76 @@ class TaskNodeCodec(
             writeBoolean(false)
         } else {
             writeBoolean(true)
-            write(task.outputs.upToDateSpec)
+            withVirtualPropertyTrace(TaskVirtualProperty.UP_TO_DATE) {
+                write(task.outputs.upToDateSpec)
+            }
         }
     }
 
     private
     suspend fun ReadContext.readUpToDateSpec(task: TaskInternal) {
         if (readBoolean()) {
-            task.outputs.upToDateWhen(readNonNull<Spec<Task>>())
+            withVirtualPropertyTrace(TaskVirtualProperty.UP_TO_DATE) {
+                task.outputs.upToDateWhen(readNonNull<Spec<Task>>())
+            }
+        }
+    }
+
+    private suspend fun WriteContext.writeCacheabilitySpecs(task: TaskInternal) {
+        withVirtualPropertyTrace(TaskVirtualProperty.CACHE_IF) {
+            writeCollection(task.outputs.cacheIfSpecs)
+        }
+        withVirtualPropertyTrace(TaskVirtualProperty.DO_NOT_CACHE_IF) {
+            writeCollection(task.outputs.doNotCacheIfSpecs)
+        }
+    }
+
+    private
+    suspend fun ReadContext.readCacheabilitySpecs(task: TaskInternal) {
+        withVirtualPropertyTrace(TaskVirtualProperty.CACHE_IF) {
+            readCollectionInto { task.outputs.cacheIfSpecs.uncheckedCast() }
+        }
+        withVirtualPropertyTrace(TaskVirtualProperty.DO_NOT_CACHE_IF) {
+            readCollectionInto { task.outputs.doNotCacheIfSpecs.uncheckedCast() }
         }
     }
 
     private
     fun WriteContext.writeReasonNotToTrackState(task: TaskInternal) {
-        writeNullableString(task.reasonNotToTrackState.orElse(null))
+        writeStrings(task.reasonsNotToTrackState)
     }
 
     private
     fun ReadContext.readReasonNotToTrackState(task: TaskInternal) {
-        val reasonNotToTrackState = readNullableString()
-        if (reasonNotToTrackState != null) {
-            task.doNotTrackState(reasonNotToTrackState)
+        val reasonsNotToTrackState = readStringsSet()
+        reasonsNotToTrackState.forEach { reason -> task.doNotTrackState(reason) }
+    }
+
+    private
+    suspend fun WriteContext.writeOnlyIfSpec(task: TaskInternal) {
+        withVirtualPropertyTrace(TaskVirtualProperty.ONLY_IF) {
+            write(task.onlyIf)
+        }
+    }
+
+    private
+    suspend fun ReadContext.readOnlyIfSpec(task: TaskInternal) {
+        withVirtualPropertyTrace(TaskVirtualProperty.ONLY_IF) {
+            task.restoreOnlyIf(readNonNull())
+        }
+    }
+
+    private
+    suspend fun WriteContext.writeTaskActions(task: TaskInternal) {
+        withVirtualPropertyTrace(TaskVirtualProperty.ACTIONS) {
+            writeCollection(task.taskActions)
+        }
+    }
+
+    private
+    suspend fun ReadContext.readTaskActions(task: TaskInternal) {
+        withVirtualPropertyTrace(TaskVirtualProperty.ACTIONS) {
+            task.restoreTaskActions(readCollectionInto(::ArrayList) { readNonNull() })
         }
     }
 
@@ -219,6 +302,33 @@ class TaskNodeCodec(
             task.localState.register(readNonNull<FileCollection>())
         }
     }
+
+    private
+    suspend fun WriteContext.writeTaskLoggingListeners(task: TaskInternal) {
+        withVirtualPropertyTrace(TaskVirtualProperty.LOGGING_LISTENERS) {
+            val loggingManager = task.loggingManager
+            if (loggingManager != null && serializeTaskLoggingListeners) {
+                writeCollection(loggingManager.standardOutputListeners)
+                writeCollection(loggingManager.standardErrorListeners)
+            } else {
+                writeCollection(emptyList<StandardOutputListener>())
+                writeCollection(emptyList<StandardOutputListener>())
+            }
+        }
+    }
+
+    private
+    suspend fun ReadContext.readTaskLoggingListeners(task: TaskInternal) {
+        withVirtualPropertyTrace(TaskVirtualProperty.LOGGING_LISTENERS) {
+            val stdoutListeners = readList { readNonNull<StandardOutputListener>() }
+            val stderrListeners = readList { readNonNull<StandardOutputListener>() }
+            if (stdoutListeners.isNotEmpty() || stderrListeners.isNotEmpty()) {
+                val loggingManager = task.logging as LoggingManagerInternal
+                stdoutListeners.forEach { loggingManager.addStandardOutputListener(it) }
+                stderrListeners.forEach { loggingManager.addStandardErrorListener(it) }
+            }
+        }
+    }
 }
 
 
@@ -230,7 +340,7 @@ suspend fun <T> T.withTaskOf(
     action: suspend () -> Unit
 ) where T : IsolateContext, T : MutableIsolateContext {
     withIsolate(IsolateOwners.OwnerTask(task), codec) {
-        withPropertyTrace(PropertyTrace.Task(taskType, task.identityPath.path)) {
+        withPropertyTrace(PropertyTrace.Task(taskType, task.identityPath.asString())) {
             if (task.isCompatibleWithConfigurationCache) {
                 action()
             } else {
@@ -238,6 +348,23 @@ suspend fun <T> T.withTaskOf(
             }
         }
     }
+}
+
+
+private
+enum class TaskVirtualProperty(val traceName: String) {
+    ACTIONS("actions"),
+    CACHE_IF("cacheIf specs"),
+    DO_NOT_CACHE_IF("doNotCacheIf specs"),
+    LOGGING_LISTENERS("logging listeners"),
+    ONLY_IF("onlyIf specs"),
+    UP_TO_DATE("upToDate specs"),
+}
+
+
+private
+inline fun <T : MutableIsolateContext> T.withVirtualPropertyTrace(virtualProperty: TaskVirtualProperty, block: T.() -> Unit) {
+    withPropertyTrace(PropertyTrace.VirtualProperty(virtualProperty.traceName, trace), block)
 }
 
 
@@ -289,7 +416,7 @@ suspend fun WriteContext.writeRegisteredPropertiesOf(task: Task) {
         property.run {
             when (this) {
                 is RegisteredProperty.InputFile -> {
-                    val finalValue = DeferredUtil.unpackNestableDeferred(propertyValue)
+                    val finalValue = adaptInputFileValueForSerialization(DeferredUtil.unpackNestableDeferred(propertyValue), filePropertyType)
                     writeInputProperty(propertyName, finalValue)
                     writeBoolean(optional)
                     writeBoolean(true)
@@ -315,12 +442,67 @@ suspend fun WriteContext.writeRegisteredPropertiesOf(task: Task) {
     val outputProperties = collectRegisteredOutputsOf(task)
     writeCollection(outputProperties) { property ->
         property.run {
-            val finalValue = DeferredUtil.unpackOrNull(propertyValue)
+            val finalValue = adaptOutputFileValueForSerialization(DeferredUtil.unpackNestableDeferred(propertyValue), filePropertyType)
             writeOutputProperty(propertyName, finalValue)
             writeBoolean(optional)
             writeEnum(filePropertyType)
         }
     }
+}
+
+/**
+ * Adapts an `inputs.files(...)` property value into a form that can be safely serialized by the configuration cache.
+ *
+ * The raw value registered with `TaskInputs.files(...)` can be anything `FileCollectionFactory.resolvingLeniently(...)`
+ * accepts. Wrapping the value in a resolving [FileCollection] up-front routes serialization through [FileCollectionCodec],
+ * which only serializes the resolved set of files and the task dependencies — never the source collection's
+ * mutable internals. This is semantically equivalent to what consumers of `TaskInputs` do at execution time
+ * via `FileParameterUtils.resolveInputFileValue`.
+ *
+ * One exception are [Provider] values. These are handled specially by the validation logic, so we have to preserve
+ * the shape. And yes, this means that `files(absentProvider)` fails and `files(listOf(absentProvider))` works.
+ * An exception to the exception is [TaskProvider], which it cannot be serialized directly but only inside a file collection.
+ * It is always present, so wrapping it is okay.
+ *
+ * Only applied to [InputFilePropertyType.FILES] — [InputFilePropertyType.FILE] and [InputFilePropertyType.DIRECTORY]
+ * expect a single path-like value on read, so wrapping in a [FileCollection] would break `inputs.file(...)` /
+ * `inputs.dir(...)`.
+ */
+private
+fun WriteContext.adaptInputFileValueForSerialization(value: Any?, filePropertyType: InputFilePropertyType): Any? {
+    if (value == null || filePropertyType != InputFilePropertyType.FILES || !needsFileCollectionWrapper(value)) {
+        return value
+    }
+    return isolate.owner.serviceOf<FileCollectionFactory>().resolvingLeniently(value)
+}
+
+
+/**
+ * Same as [adaptInputFileValueForSerialization] but for `outputs.files(...)` / `outputs.dirs(...)` property values.
+ *
+ * Only applied to the multi-valued [OutputFilePropertyType.FILES] and [OutputFilePropertyType.DIRECTORIES] —
+ * [OutputFilePropertyType.FILE] and [OutputFilePropertyType.DIRECTORY] expect a single path-like value on read,
+ * so wrapping in a [FileCollection] would break `outputs.file(...)` / `outputs.dir(...)`.
+ */
+private
+fun WriteContext.adaptOutputFileValueForSerialization(value: Any?, filePropertyType: OutputFilePropertyType): Any? {
+    if (value == null || filePropertyType == OutputFilePropertyType.FILE || filePropertyType == OutputFilePropertyType.DIRECTORY || !needsFileCollectionWrapper(value)) {
+        return value
+    }
+    return isolate.owner.serviceOf<FileCollectionFactory>().resolvingLeniently(value)
+}
+
+
+/**
+ * Checks if the input value needs to be wrapped in a file collection to properly serialize.
+ *
+ * [FileCollection]s aren't wrapped as it is pointless.
+ * [Provider]s except [TaskProvider] aren't wrapped because input validation has special handling for them.
+ * [TaskProvider]s must be wrapped because they cannot be serialized directly, and `inputs.files(taskProvider)` is idiomatic.
+ */
+private
+fun needsFileCollectionWrapper(value: Any): Boolean {
+    return value !is FileCollection && (value !is Provider<*> || value is TaskProvider<*>)
 }
 
 
@@ -474,8 +656,8 @@ suspend fun ReadContext.readOutputPropertiesOf(task: Task) =
 
 
 private
-fun ReadContext.createTask(projectPath: String, taskName: String, taskClass: Class<out Task>, uniqueId: Long, incompatibleReason: String?): TaskInternal {
-    val task = getProject(projectPath).tasks.createWithoutConstructor(taskName, taskClass, uniqueId) as TaskInternal
+fun createTask(project: ProjectInternal, taskName: String, taskClass: Class<out Task>, uniqueId: Long, incompatibleReason: String?, userCodeSource: UserCodeSource?): TaskInternal {
+    val task = project.tasks.createWithoutConstructor(taskName, taskClass, uniqueId, userCodeSource) as TaskInternal
     if (incompatibleReason != null) {
         task.notCompatibleWithConfigurationCache(incompatibleReason)
     }
@@ -483,13 +665,3 @@ fun ReadContext.createTask(projectPath: String, taskName: String, taskClass: Cla
 }
 
 
-private
-inline fun IsolateContext.withTaskReferencesAllowed(action: () -> Unit) {
-    val ownerTask = isolate.owner as IsolateOwners.OwnerTask
-    try {
-        ownerTask.allowTaskReferences = true
-        action()
-    } finally {
-        ownerTask.allowTaskReferences = false
-    }
-}

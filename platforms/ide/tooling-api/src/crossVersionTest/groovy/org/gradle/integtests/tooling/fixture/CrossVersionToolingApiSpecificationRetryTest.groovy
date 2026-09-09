@@ -20,7 +20,8 @@ import org.gradle.api.GradleException
 import org.gradle.integtests.fixtures.daemon.FakeDaemonLog
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.gradle.tooling.GradleConnectionException
 
 //With older 2.x Gradle versions -> Unable to delete file: native-platform.dll
@@ -48,19 +49,7 @@ class CrossVersionToolingApiSpecificationRetryTest extends ToolingApiSpecificati
         gce.cause instanceof NullPointerException
     }
 
-    @TargetGradleVersion("<3.0")
-    def "retries if daemon seems to have disappeared and a daemon that did not do anything is idling (<3.0)"() {
-        given:
-        iteration++
-
-        when:
-        throwWhen(new IOException("Some action failed", new GradleException("Timeout waiting to connect to Gradle daemon.\n more infos")), iteration == 1)
-
-        then:
-        true
-    }
-
-    @TargetGradleVersion(">=3.0")
+    @TargetGradleVersion(">=4.0")
     def "does not retry for 3.0 or later"() {
         given:
         iteration++
@@ -73,11 +62,7 @@ class CrossVersionToolingApiSpecificationRetryTest extends ToolingApiSpecificati
         ioe.cause?.message == "Timeout waiting to connect to the Gradle daemon.\n more infos"
     }
 
-    @Requires([
-        UnitTestPreconditions.Windows,
-        UnitTestPreconditions.Jdk7OrLater,
-        UnitTestPreconditions.Jdk8OrEarlier
-    ])
+    @Requires(value = OsTestPreconditions.IsKnownWindowsSocketDisappearanceIssue, reason = "https://github.com/gradle/gradle/issues/1111")
     def "retries if expected exception occurs"() {
         given:
         iteration++
@@ -92,7 +77,7 @@ class CrossVersionToolingApiSpecificationRetryTest extends ToolingApiSpecificati
         true
     }
 
-    @Requires(UnitTestPreconditions.NotWindowsJavaBefore9)
+    @Requires(value = OsTestPreconditions.IsNotKnownWindowsSocketDisappearanceIssue, reason = "https://github.com/gradle/gradle/issues/1111")
     def "does not retry on non-windows and non-java7 environments"() {
         given:
         iteration++
@@ -106,11 +91,7 @@ class CrossVersionToolingApiSpecificationRetryTest extends ToolingApiSpecificati
         ioe.cause?.message == "An existing connection was forcibly closed by the remote host"
     }
 
-    @Requires([
-        UnitTestPreconditions.Windows,
-        UnitTestPreconditions.Jdk7OrLater,
-        UnitTestPreconditions.Jdk8OrEarlier
-    ])
+    @Requires(value = OsTestPreconditions.IsKnownWindowsSocketDisappearanceIssue, reason = "https://github.com/gradle/gradle/issues/1111")
     def "should fail for unexpected cause on client side"() {
         given:
         iteration++
@@ -124,11 +105,7 @@ class CrossVersionToolingApiSpecificationRetryTest extends ToolingApiSpecificati
         ioe.cause?.message == "A different cause"
     }
 
-    @Requires([
-        UnitTestPreconditions.Windows,
-        UnitTestPreconditions.Jdk7OrLater,
-        UnitTestPreconditions.Jdk8OrEarlier
-    ])
+    @Requires(value = OsTestPreconditions.IsKnownWindowsSocketDisappearanceIssue, reason = "https://github.com/gradle/gradle/issues/1111")
     def "should fail for unexpected cause on daemon side"() {
         given:
         iteration++

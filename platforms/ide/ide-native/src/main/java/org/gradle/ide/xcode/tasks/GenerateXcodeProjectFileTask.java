@@ -70,6 +70,7 @@ import static org.gradle.ide.xcode.internal.XcodeUtils.toSpaceSeparatedList;
  * @see org.gradle.ide.xcode.XcodeProject
  * @since 4.2
  */
+@SuppressWarnings("this-escape")
 @Incubating
 @DisableCachingByDefault(because = "Not made cacheable, yet")
 public abstract class GenerateXcodeProjectFileTask extends PropertyListGeneratorTask<XcodeProjectFile> {
@@ -353,11 +354,21 @@ public abstract class GenerateXcodeProjectFileTask extends PropertyListGenerator
         return parents;
     }
 
+    /**
+     * Returns the xcode project.
+     *
+     * @since 4.2
+     */
     @Internal
     public XcodeProject getXcodeProject() {
         return xcodeProject;
     }
 
+    /**
+     * Sets the xcode project.
+     *
+     * @since 4.2
+     */
     public void setXcodeProject(XcodeProject xcodeProject) {
         this.xcodeProject = (DefaultXcodeProject) xcodeProject;
     }

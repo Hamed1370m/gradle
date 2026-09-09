@@ -33,10 +33,19 @@ import org.gradle.kotlin.dsl.support.delegates.DependencyConstraintHandlerDelega
  */
 class DependencyConstraintHandlerScope
 private constructor(
+    /**
+     * @since 5.0
+     */
     val constraints: DependencyConstraintHandler
 ) : DependencyConstraintHandlerDelegate() {
 
+    /**
+     * @since 5.0
+     */
     companion object {
+        /**
+         * @since 5.0
+         */
         fun of(constraints: DependencyConstraintHandler) =
             DependencyConstraintHandlerScope(constraints)
     }
@@ -50,6 +59,8 @@ private constructor(
      * @param dependencyConstraintNotation notation for the dependency constraint to be added.
      * @return The dependency constraint.
      * @see [DependencyConstraintHandler.add]
+     *
+     * @since 5.0
      */
     operator fun String.invoke(dependencyConstraintNotation: Any): DependencyConstraint =
         constraints.add(this, dependencyConstraintNotation)
@@ -61,6 +72,8 @@ private constructor(
      * @param configuration expression to use to configure the dependency constraint.
      * @return The dependency constraint.
      * @see [DependencyConstraintHandler.add]
+     *
+     * @since 5.0
      */
     operator fun String.invoke(dependencyConstraintNotation: String, configuration: DependencyConstraint.() -> Unit): DependencyConstraint =
         constraints.add(this, dependencyConstraintNotation, configuration)
@@ -73,7 +86,6 @@ private constructor(
      * @see [DependencyConstraintHandler.add]
      * @since 8.3
      */
-    @Incubating
     operator fun NamedDomainObjectProvider<Configuration>.invoke(dependencyConstraintNotation: Any): DependencyConstraint =
         constraints.add(name, dependencyConstraintNotation)
 
@@ -85,8 +97,8 @@ private constructor(
      * @see [DependencyConstraintHandler.add]
      * @since 8.5
      */
-    @Incubating
     @JvmName("invokeDependencyScope")
+    @Incubating
     operator fun NamedDomainObjectProvider<DependencyScopeConfiguration>.invoke(dependencyConstraintNotation: Any): DependencyConstraint =
         constraints.add(name, dependencyConstraintNotation)
 
@@ -99,7 +111,6 @@ private constructor(
      * @see [DependencyConstraintHandler.add]
      * @since 8.3
      */
-    @Incubating
     operator fun NamedDomainObjectProvider<Configuration>.invoke(dependencyConstraintNotation: String, configuration: DependencyConstraint.() -> Unit): DependencyConstraint =
         constraints.add(name, dependencyConstraintNotation, configuration)
 
@@ -112,8 +123,8 @@ private constructor(
      * @see [DependencyConstraintHandler.add]
      * @since 8.5
      */
-    @Incubating
     @JvmName("invokeDependencyScope")
+    @Incubating
     operator fun NamedDomainObjectProvider<DependencyScopeConfiguration>.invoke(dependencyConstraintNotation: String, configuration: DependencyConstraint.() -> Unit): DependencyConstraint =
         constraints.add(name, dependencyConstraintNotation, configuration)
 
@@ -123,6 +134,8 @@ private constructor(
      * @param dependencyConstraintNotation notation for the dependency constraint to be added.
      * @return The dependency constraint.
      * @see [DependencyConstraintHandler.add]
+     *
+     * @since 5.0
      */
     operator fun Configuration.invoke(dependencyConstraintNotation: Any): DependencyConstraint =
         add(name, dependencyConstraintNotation)
@@ -134,12 +147,16 @@ private constructor(
      * @param configuration expression to use to configure the dependency constraint.
      * @return The dependency constraint.
      * @see [DependencyConstraintHandler.add]
+     *
+     * @since 5.0
      */
     operator fun Configuration.invoke(dependencyConstraintNotation: String, configuration: DependencyConstraint.() -> Unit): DependencyConstraint =
         add(name, dependencyConstraintNotation, configuration)
 
     /**
      * Configures the dependency constraints.
+     *
+     * @since 5.0
      */
     inline operator fun invoke(configuration: DependencyConstraintHandlerScope.() -> Unit) =
         this.configuration()

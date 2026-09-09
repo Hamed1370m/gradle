@@ -17,7 +17,6 @@
 package org.gradle.integtests.resolve.maven
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 
 import static org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.GradleModuleMetadataParser.FORMAT_VERSION
@@ -28,15 +27,18 @@ import static org.gradle.integtests.fixtures.SuggestionsMessages.STACKTRACE_MESS
 import static org.gradle.integtests.fixtures.SuggestionsMessages.repositoryHint
 
 class MavenRemoteDependencyWithGradleMetadataResolutionIntegrationTest extends AbstractHttpDependencyResolutionTest {
-    def resolve = new ResolveTestFixture(buildFile, "compile").expectDefaultConfiguration("runtime")
+
+    def resolve = new ResolveTestFixture(testDirectory)
 
     def setup() {
-        resolve.prepare()
-        resolve.addDefaultVariantDerivationStrategy()
         server.start()
 
         settingsFile << "rootProject.name = 'test'"
-
+        buildFile << """
+            plugins {
+                id("jvm-ecosystem")
+            }
+        """
     }
 
     def "downloads and caches the module metadata when present"() {
@@ -44,16 +46,22 @@ class MavenRemoteDependencyWithGradleMetadataResolutionIntegrationTest extends A
 
         given:
         buildFile << """
-repositories {
-    maven {
-        url = '${mavenHttpRepo.uri}'
-    }
-}
-configurations { compile }
-dependencies {
-    compile 'test:a:1.2'
-}
-"""
+            repositories {
+                maven {
+                    url = '${mavenHttpRepo.uri}'
+                }
+            }
+
+            configurations {
+                compile
+            }
+
+            ${resolve.configureProject("compile")}
+
+            dependencies {
+                compile 'test:a:1.2'
+            }
+        """
 
         m.pom.expectGet()
         m.moduleMetadata.expectGet()
@@ -102,16 +110,22 @@ dependencies {
 
         given:
         buildFile << """
-repositories {
-    maven {
-        url = '${mavenHttpRepo.uri}'
-    }
-}
-configurations { compile }
-dependencies {
-    compile 'test:a:1.2'
-}
-"""
+            repositories {
+                maven {
+                    url = '${mavenHttpRepo.uri}'
+                }
+            }
+
+            configurations {
+                compile
+            }
+
+            ${resolve.configureProject("compile")}
+
+            dependencies {
+                compile 'test:a:1.2'
+            }
+        """
 
         m.pom.expectGet()
         m.artifact.expectGet()
@@ -153,7 +167,6 @@ dependencies {
         }
     }
 
-    @ToBeFixedForConfigurationCache
     def "uses dependencies and files from selected variant"() {
         def c = mavenHttpRepo.module("test", "c", "2.2").publish()
         def b = mavenHttpRepo.module("test", "b", "2.0").publish()
@@ -205,10 +218,12 @@ dependencies {
     release 'test:a:1.2'
 }
 task checkDebug {
-    doLast { assert configurations.debug.files*.name == ['a-1.2-debug.jar', 'b-2.0.jar'] }
+    inputs.files(configurations.debug)
+    doLast { println inputs.files*.name }
 }
 task checkRelease {
-    doLast { assert configurations.release.files*.name == ['a-1.2-release.jar', 'c-2.2.jar'] }
+    inputs.files(configurations.release)
+    doLast { println inputs.files*.name }
 }
 """
 
@@ -220,6 +235,7 @@ task checkRelease {
 
         expect:
         succeeds("checkDebug")
+        outputContains("[a-1.2-debug.jar, b-2.0.jar]")
 
         and:
         server.resetExpectations()
@@ -229,13 +245,15 @@ task checkRelease {
 
         and:
         succeeds("checkRelease")
+        outputContains("[a-1.2-release.jar, c-2.2.jar]")
 
         and:
         succeeds("checkDebug")
+        outputContains("[a-1.2-debug.jar, b-2.0.jar]")
         succeeds("checkRelease")
+        outputContains("[a-1.2-release.jar, c-2.2.jar]")
     }
 
-    @ToBeFixedForConfigurationCache
     def "variant can define zero files or multiple files"() {
         def b = mavenHttpRepo.module("test", "b", "2.0").publish()
         def a = mavenHttpRepo.module("test", "a", "1.2")
@@ -286,10 +304,12 @@ dependencies {
     release 'test:a:1.2'
 }
 task checkDebug {
-    doLast { assert configurations.debug.files*.name == ['a-1.2-api.jar', 'a-1.2-runtime.jar', 'b-2.0.jar'] }
+    inputs.files(configurations.debug)
+    doLast { println inputs.files*.name }
 }
 task checkRelease {
-    doLast { assert configurations.release.files*.name == ['b-2.0.jar'] }
+    inputs.files(configurations.release)
+    doLast { println inputs.files*.name }
 }
 """
 
@@ -302,17 +322,21 @@ task checkRelease {
 
         expect:
         succeeds("checkDebug")
+        outputContains("[a-1.2-api.jar, a-1.2-runtime.jar, b-2.0.jar]")
 
         and:
         server.resetExpectations()
 
         and:
         succeeds("checkRelease")
+        outputContains("[b-2.0.jar]")
 
         and:
         // Cached
         succeeds("checkDebug")
+        outputContains("[a-1.2-api.jar, a-1.2-runtime.jar, b-2.0.jar]")
         succeeds("checkRelease")
+        outputContains("[b-2.0.jar]")
 
         and:
         server.resetExpectations()
@@ -327,7 +351,6 @@ task checkRelease {
         succeeds("checkDebug")
     }
 
-    @ToBeFixedForConfigurationCache
     def "variant can define files whose names are different to their maven contention location"() {
         def a = mavenHttpRepo.module("test", "a", "1.2")
             .withModuleMetadata()
@@ -364,7 +387,8 @@ dependencies {
     debug 'test:a:1.2'
 }
 task checkDebug {
-    doLast { assert configurations.debug.files*.name == ['a_main.jar', 'a_extra.jar', 'a.zip'] }
+    inputs.files(configurations.debug)
+    doLast { println inputs.files*.name }
 }
 """
 
@@ -376,6 +400,7 @@ task checkDebug {
 
         expect:
         succeeds("checkDebug")
+        outputContains("[a_main.jar, a_extra.jar, a.zip]")
 
         and:
         server.resetExpectations()
@@ -383,6 +408,7 @@ task checkDebug {
         and:
         // cached
         succeeds("checkDebug")
+        outputContains("[a_main.jar, a_extra.jar, a.zip]")
 
         and:
         server.resetExpectations()
@@ -396,7 +422,6 @@ task checkDebug {
         succeeds("checkDebug")
     }
 
-    @ToBeFixedForConfigurationCache
     def "variant can define files whose names and locations do not match maven convention"() {
         def a = mavenHttpRepo.module("test", "a", "1.2")
             .withModuleMetadata()
@@ -438,7 +463,8 @@ dependencies {
     debug 'test:a:1.2'
 }
 task checkDebug {
-    doLast { assert configurations.debug.files*.name == ['file1.jar', 'a-1.2.jar', 'a-3.jar', 'file4.jar', 'a_5.jar'] }
+    inputs.files(configurations.debug)
+    doLast { println inputs.files*.name }
 }
 """
 
@@ -452,6 +478,7 @@ task checkDebug {
 
         expect:
         succeeds("checkDebug")
+        outputContains("[file1.jar, a-1.2.jar, a-3.jar, file4.jar, a_5.jar]")
 
         and:
         server.resetExpectations()
@@ -459,6 +486,7 @@ task checkDebug {
         and:
         // Cached result
         succeeds("checkDebug")
+        outputContains("[file1.jar, a-1.2.jar, a-3.jar, file4.jar, a_5.jar]")
 
         and:
         server.resetExpectations()
@@ -550,11 +578,11 @@ dependencies {
 }
 task checkDebug {
     def files = configurations.debug
-    doLast { assert files*.name == ['a-1.2-debug.jar', 'b-2.0.jar', 'c-preview-debug.jar'] }
+    doLast { println files*.name }
 }
 task checkRelease {
     def files = configurations.release
-    doLast { assert files*.name == [] }
+    doLast { println files*.name }
 }
 """
 
@@ -570,15 +598,16 @@ task checkRelease {
 
         expect:
         succeeds("checkDebug")
+        outputContains("[a-1.2-debug.jar, b-2.0.jar, c-preview-debug.jar]")
 
         and:
         server.resetExpectations()
 
         and:
         succeeds("checkRelease")
+        outputContains("[]")
     }
 
-    @ToBeFixedForConfigurationCache
     def "consumer can use attribute of type #type"() {
         def a = mavenHttpRepo.module("test", "a", "1.2")
             .withModuleMetadata()
@@ -615,8 +644,9 @@ repositories {
     }
 }
 
-enum BuildTypeEnum {
+enum BuildTypeEnum implements Named {
     debug, release
+    @Override String getName() { return name() }
 }
 interface BuildType extends Named {
 }
@@ -631,10 +661,12 @@ dependencies {
     release 'test:a:1.2'
 }
 task checkDebug {
-    doLast { assert configurations.debug.files*.name == ['a-1.2-debug.jar'] }
+    inputs.files(configurations.debug)
+    doLast { println inputs.files*.name }
 }
 task checkRelease {
-    doLast { assert configurations.release.files*.name == [] }
+    inputs.files(configurations.release)
+    doLast { println inputs.files*.name }
 }
 """
 
@@ -644,16 +676,20 @@ task checkRelease {
 
         expect:
         succeeds("checkDebug")
+        outputContains("[a-1.2-debug.jar]")
 
         and:
         server.resetExpectations()
 
         and:
         succeeds("checkRelease")
+        outputContains("[]")
 
         // Cached
         succeeds("checkDebug")
+        outputContains("[a-1.2-debug.jar]")
         succeeds("checkRelease")
+        outputContains("[]")
 
         where:
         encodedDebugValue | encodedReleaseValue | type            | debugValue                          | releaseValue
@@ -668,16 +704,22 @@ task checkRelease {
 
         given:
         buildFile << """
-repositories {
-    maven {
-        url = '${mavenHttpRepo.uri}'
-    }
-}
-configurations { compile }
-dependencies {
-    compile 'test:a:1.2'
-}
-"""
+            repositories {
+                maven {
+                    url = '${mavenHttpRepo.uri}'
+                }
+            }
+
+            configurations {
+                compile
+            }
+
+            ${resolve.configureProject("compile")}
+
+            dependencies {
+                compile 'test:a:1.2'
+            }
+        """
 
         m.pom.expectGetMissing()
 
@@ -690,7 +732,7 @@ dependencies {
 Searched in the following locations:
   - ${m.pom.uri}
 Required by:
-    root project :""")
+    root project 'test'""")
         failure.assertHasResolutions(repositoryHint("Maven POM"),
             STACKTRACE_MESSAGE,
             INFO_DEBUG,
@@ -719,16 +761,21 @@ Required by:
 
         given:
         buildFile << """
-repositories {
-    maven {
-        url = '${mavenHttpRepo.uri}'
-    }
-}
-configurations { compile }
-dependencies {
-    compile 'test:a:1.2'
-}
-"""
+            repositories {
+                maven {
+                    url = '${mavenHttpRepo.uri}'
+                }
+            }
+            configurations {
+                compile
+            }
+
+            ${resolve.configureProject("compile")}
+
+            dependencies {
+                compile 'test:a:1.2'
+            }
+        """
 
         m.pom.expectGet()
         m.moduleMetadata.expectGetBroken()
@@ -763,16 +810,22 @@ dependencies {
 
         given:
         buildFile << """
-repositories {
-    maven {
-        url = '${mavenHttpRepo.uri}'
-    }
-}
-configurations { compile }
-dependencies {
-    compile 'test:a:1.2'
-}
-"""
+            repositories {
+                maven {
+                    url = '${mavenHttpRepo.uri}'
+                }
+            }
+
+            configurations {
+                compile
+            }
+
+            ${resolve.configureProject("compile")}
+
+            dependencies {
+                compile 'test:a:1.2'
+            }
+        """
 
         m.pom.expectGet()
         m.moduleMetadata.expectGet()
@@ -822,16 +875,21 @@ dependencies {
 
         given:
         buildFile << """
-repositories {
-    maven {
-        url = '${mavenHttpRepo.uri}'
-    }
-}
-configurations { compile }
-dependencies {
-    compile 'test:a:1.2'
-}
-"""
+            repositories {
+                maven {
+                    url = '${mavenHttpRepo.uri}'
+                }
+            }
+            configurations {
+                compile
+            }
+
+            ${resolve.configureProject("compile")}
+
+            dependencies {
+                compile 'test:a:1.2'
+            }
+        """
 
         m.pom.expectGet()
         m.moduleMetadata.expectGet()
@@ -872,4 +930,5 @@ Searched in the following locations:
 Searched in the following locations:
     ${m.artifact(classifier: 'extra').uri}""")
     }
+
 }

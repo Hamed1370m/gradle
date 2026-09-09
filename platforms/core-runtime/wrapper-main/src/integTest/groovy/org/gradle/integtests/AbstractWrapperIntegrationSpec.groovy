@@ -21,6 +21,7 @@ import org.gradle.api.Action
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.executer.GradleExecuter
 import org.gradle.integtests.fixtures.executer.InProcessGradleExecuter
+import org.gradle.integtests.fixtures.executer.NoDaemonGradleExecuter
 import org.gradle.internal.Actions
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.keystore.TestKeyStore
@@ -33,27 +34,26 @@ class AbstractWrapperIntegrationSpec extends AbstractIntegrationSpec {
         distDir.listFiles()[0].file("gradle-${distribution.version.baseVersion.version}").assertIsDir()
     }
 
-    void prepareWrapper(URI distributionUri = distribution.binDistribution.toURI(), Action<GradleExecuter> action = Actions.doNothing()) {
-        def executer = new InProcessGradleExecuter(distribution, temporaryFolder)
-        executer.beforeExecute(action)
-        executer.withArguments("wrapper", "--gradle-distribution-url", distributionUri.toString()).run()
+    GradleExecuter prepareWrapper(URI distributionUri = distribution.binDistribution.toURI(), Action<GradleExecuter> action = Actions.doNothing()) {
+        configureWrapperTask(new InProcessGradleExecuter(distribution, temporaryFolder), distributionUri, action)
     }
 
-    void prepareWrapper(URI distributionUri = distribution.binDistribution.toURI(), TestKeyStore keyStore) {
-        def executer = new InProcessGradleExecuter(distribution, temporaryFolder)
-        executer.withArguments(
-            "wrapper",
-            "--gradle-distribution-url",
-            distributionUri.toString(),
-        )
-        keyStore.trustStoreArguments.each {
-            executer.withArgument(it)
+    GradleExecuter prepareWrapper(URI distributionUri = distribution.binDistribution.toURI(), TestKeyStore keyStore) {
+        // Updating JVM trust store/keystore requires a new JVM process
+        configureWrapperTask(new NoDaemonGradleExecuter(distribution, temporaryFolder), distributionUri) { executer ->
+            keyStore.trustStoreArguments.each {
+                executer.withArgument(it)
+            }
         }
-        executer.run()
+    }
+
+    private GradleExecuter configureWrapperTask(GradleExecuter executer, URI distributionUri, Action<GradleExecuter> action) {
+        executer.beforeExecute(action)
+        executer.withArguments("wrapper", "--gradle-distribution-url", distributionUri.toString())
     }
 
     GradleExecuter getWrapperExecuter() {
-        executer.requireOwnGradleUserHomeDir()
+        executer.requireOwnGradleUserHomeDir("isolating downloads")
         executer.requireIsolatedDaemons()
         executer.beforeExecute {
             executer.usingExecutable("gradlew")

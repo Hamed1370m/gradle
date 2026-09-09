@@ -21,14 +21,12 @@ import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
-import org.gradle.api.UncheckedIOException;
 import org.gradle.api.distribution.Distribution;
 import org.gradle.api.distribution.DistributionContainer;
 import org.gradle.api.distribution.plugins.DistributionPlugin;
 import org.gradle.api.file.CopySpec;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.model.ObjectFactory;
-import org.gradle.api.plugins.internal.DefaultApplicationPluginConvention;
+import org.gradle.api.internal.provider.PropertyFactory;
 import org.gradle.api.plugins.internal.DefaultJavaApplication;
 import org.gradle.api.plugins.internal.JavaPluginHelper;
 import org.gradle.api.plugins.jvm.internal.JvmFeatureInternal;
@@ -42,11 +40,14 @@ import org.gradle.api.tasks.application.CreateStartScripts;
 import org.gradle.api.tasks.bundling.Jar;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.api.tasks.internal.JavaExecExecutableUtils;
-import org.gradle.internal.deprecation.DeprecationLogger;
+import org.gradle.internal.UncheckedException;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
+import org.gradle.util.internal.DefaultGradleVersion;
 
+import javax.inject.Inject;
 import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.Callable;
 import java.util.function.BiFunction;
 
@@ -58,13 +59,44 @@ import static org.gradle.api.distribution.plugins.DistributionPlugin.TASK_INSTAL
  * <p>The plugin can be configured via the {@link JavaApplication} extension.</p>
  *
  * @see <a href="https://docs.gradle.org/current/userguide/application_plugin.html">Application plugin reference</a>
+ * @since 1.0
  */
 public abstract class ApplicationPlugin implements Plugin<Project> {
+    /**
+     * The application plugin name.
+     *
+     * @since 2.14
+     */
     public static final String APPLICATION_PLUGIN_NAME = "application";
+    /**
+     * The application group.
+     *
+     * @since 2.14
+     */
     public static final String APPLICATION_GROUP = APPLICATION_PLUGIN_NAME;
+    /**
+     * The task run name.
+     *
+     * @since 2.14
+     */
     public static final String TASK_RUN_NAME = "run";
+    /**
+     * The task start scripts name.
+     *
+     * @since 2.14
+     */
     public static final String TASK_START_SCRIPTS_NAME = "startScripts";
+    /**
+     * The task dist zip name.
+     *
+     * @since 2.14
+     */
     public static final String TASK_DIST_ZIP_NAME = "distZip";
+    /**
+     * The task dist tar name.
+     *
+     * @since 2.14
+     */
     public static final String TASK_DIST_TAR_NAME = "distTar";
 
     @Override
@@ -117,7 +149,7 @@ public abstract class ApplicationPlugin implements Plugin<Project> {
             if (destinationDir.isDirectory()) {
                 String[] children = destinationDir.list();
                 if (children == null) {
-                    throw new UncheckedIOException("Could not list directory " + destinationDir);
+                    throw UncheckedException.throwAsUncheckedException(new IOException("Could not list directory " + destinationDir), true);
                 }
                 if (children.length > 0) {
                     if (!new File(destinationDir, "lib").isDirectory() || !new File(destinationDir, executableDir.get()).isDirectory()) {
@@ -134,12 +166,10 @@ public abstract class ApplicationPlugin implements Plugin<Project> {
         }
     }
 
-    @SuppressWarnings("deprecation")
     private JavaApplication addExtension(Project project) {
-        @SuppressWarnings("deprecation") ApplicationPluginConvention pluginConvention = project.getObjects().newInstance(DefaultApplicationPluginConvention.class, project);
-        DeprecationLogger.whileDisabled(() -> pluginConvention.setApplicationName(project.getName()));
-        DeprecationLogger.whileDisabled(() -> project.getConvention().getPlugins().put("application", pluginConvention));
-        return project.getExtensions().create(JavaApplication.class, "application", DefaultJavaApplication.class, pluginConvention);
+        JavaApplication javaApplication = project.getExtensions().create(JavaApplication.class, "application", DefaultJavaApplication.class);
+        javaApplication.setApplicationName(project.getName());
+        return javaApplication;
     }
 
     private void addRunTask(Project project, JvmFeatureInternal mainFeature, JavaApplication pluginExtension) {
@@ -161,9 +191,10 @@ public abstract class ApplicationPlugin implements Plugin<Project> {
 
             JavaPluginExtension javaPluginExtension = project.getExtensions().getByType(JavaPluginExtension.class);
             run.getModularity().getInferModulePath().convention(javaPluginExtension.getModularity().getInferModulePath());
-            ObjectFactory objectFactory = project.getObjects();
+            PropertyFactory propertyFactory = getPropertyFactory();
+
             Provider<JavaToolchainSpec> toolchainOverrideSpec = project.provider(() ->
-                JavaExecExecutableUtils.getExecutableOverrideToolchainSpec(run, objectFactory));
+                JavaExecExecutableUtils.getExecutableOverrideToolchainSpec(run, propertyFactory));
             run.getJavaLauncher().convention(getToolchainTool(project, JavaToolchainService::launcherFor, toolchainOverrideSpec));
         });
     }
@@ -190,6 +221,8 @@ public abstract class ApplicationPlugin implements Plugin<Project> {
             startScripts.getMainClass().set(pluginExtension.getMainClass());
 
             startScripts.getConventionMapping().map("applicationName", pluginExtension::getApplicationName);
+
+            startScripts.getGitRef().set(DefaultGradleVersion.current().getScriptTemplateGitRevision());
 
             startScripts.getConventionMapping().map("outputDir", () -> new File(project.getBuildDir(), "scripts"));
 
@@ -238,4 +271,7 @@ public abstract class ApplicationPlugin implements Plugin<Project> {
         distSpec.with(pluginExtension.getApplicationDistribution());
         return distSpec;
     }
+
+    @Inject
+    protected abstract PropertyFactory getPropertyFactory();
 }

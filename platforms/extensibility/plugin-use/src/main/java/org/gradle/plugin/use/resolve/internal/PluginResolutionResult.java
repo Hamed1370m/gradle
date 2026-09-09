@@ -21,8 +21,8 @@ import org.gradle.api.plugins.UnknownPluginException;
 import org.gradle.internal.exceptions.LocationAwareException;
 import org.gradle.plugin.management.internal.PluginRequestInternal;
 import org.gradle.util.internal.TextUtil;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Formatter;
 import java.util.List;
 
@@ -109,7 +109,7 @@ public class PluginResolutionResult {
         }
 
         String message = sb.toString();
-        Exception exception = new UnknownPluginException(message);
+        Exception exception = new UnknownPluginException(message, request.getId().getId());
         throw new LocationAwareException(exception, request.getScriptDisplayName(), request.getLineNumber());
     }
 

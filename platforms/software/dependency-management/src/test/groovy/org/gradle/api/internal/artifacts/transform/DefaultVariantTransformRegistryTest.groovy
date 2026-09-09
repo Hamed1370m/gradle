@@ -22,16 +22,17 @@ import org.gradle.api.artifacts.transform.InputArtifactDependencies
 import org.gradle.api.artifacts.transform.TransformAction
 import org.gradle.api.artifacts.transform.TransformOutputs
 import org.gradle.api.artifacts.transform.TransformParameters
-import org.gradle.api.artifacts.transform.VariantTransformConfigurationException
 import org.gradle.api.attributes.Attribute
+import org.gradle.api.internal.DocumentationRegistry
 import org.gradle.api.internal.DomainObjectContext
 import org.gradle.api.internal.DynamicObjectAware
 import org.gradle.api.internal.file.FileCollectionFactory
 import org.gradle.api.internal.file.FileLookup
 import org.gradle.api.internal.initialization.StandaloneDomainObjectContext
+import org.gradle.api.internal.parameters.NoneParameters
 import org.gradle.api.internal.tasks.properties.InspectionScheme
 import org.gradle.api.plugins.ExtensionAware
-import org.gradle.api.problems.internal.InternalProblems
+import org.gradle.api.problems.internal.ProblemsInternal
 import org.gradle.internal.execution.InputFingerprinter
 import org.gradle.internal.hash.ClassLoaderHierarchyHasher
 import org.gradle.internal.hash.TestHashCodes
@@ -40,7 +41,6 @@ import org.gradle.internal.isolation.TestIsolatableFactory
 import org.gradle.internal.operations.TestBuildOperationRunner
 import org.gradle.internal.properties.bean.PropertyWalker
 import org.gradle.internal.service.ServiceLookup
-import org.gradle.internal.service.ServiceRegistry
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.testfixtures.internal.ProjectBuilderImpl
 import org.gradle.util.AttributeTestUtil
@@ -71,6 +71,10 @@ class DefaultVariantTransformRegistryTest extends Specification {
     def classLoaderHierarchyHasher = Mock(ClassLoaderHierarchyHasher)
     def calculatedValueContainerFactory = TestUtil.calculatedValueContainerFactory()
     def attributesFactory = AttributeTestUtil.attributesFactory()
+    def serviceLookup = Stub(ServiceLookup) {
+        get(ProblemsInternal) >> Mock(ProblemsInternal)
+        get(DocumentationRegistry) >> new DocumentationRegistry()
+    }
     def registryFactory = new DefaultTransformRegistrationFactory(
         new TestBuildOperationRunner(),
         isolatableFactory,
@@ -91,11 +95,9 @@ class DefaultVariantTransformRegistryTest extends Specification {
             ),
             inspectionScheme
         ),
-        Stub(ServiceLookup) {
-            get(InternalProblems) >> Mock(InternalProblems)
-        }
+        serviceLookup
     )
-    def registry = new DefaultVariantTransformRegistry(instantiatorFactory, attributesFactory, Stub(ServiceRegistry), registryFactory, instantiatorFactory.injectScheme())
+    def registry = new DefaultVariantTransformRegistry(instantiatorFactory, attributesFactory, serviceLookup, registryFactory, instantiatorFactory.injectScheme(), new DocumentationRegistry())
 
     def "setup"() {
         _ * classLoaderHierarchyHasher.getClassLoaderHash(_) >> TestHashCodes.hashCodeFrom(123)
@@ -130,7 +132,7 @@ class DefaultVariantTransformRegistryTest extends Specification {
         registration.from.getAttribute(TEST_ATTRIBUTE) == "FROM"
         registration.to.getAttribute(TEST_ATTRIBUTE) == "TO"
         registration.transformStep.transform.implementationClass == ParameterlessTestTransform
-        registration.transformStep.transform.isolatedParameters.supplier.parameterObject == null
+        registration.transformStep.transform.isolatedParameters.supplier.parameterObject.is(NoneParameters.singletonOf(TransformParameters.None))
     }
 
     def "cannot use TransformParameters as parameter type"() {
@@ -146,37 +148,38 @@ class DefaultVariantTransformRegistryTest extends Specification {
         e.cause.message == 'Could not create the parameters for DefaultVariantTransformRegistryTest.UnspecifiedTestTransform: must use a sub-type of TransformParameters as the parameters type. Use TransformParameters.None as the parameters type for implementations that do not take parameters.'
     }
 
-    def "cannot configure parameters for parameterless action"() {
+    def "configure parameters closure runs for parameterless action"() {
+        def observed = null
+
         when:
         registry.registerTransform(ParameterlessTestTransform) {
-            it.from.attribute(TEST_ATTRIBUTE, "FROM")
-            it.to.attribute(TEST_ATTRIBUTE, "TO")
+            it.from.attribute(TEST_ATTRIBUTE, "from")
+            it.to.attribute(TEST_ATTRIBUTE, "to")
             it.parameters {
+                observed = it
             }
         }
 
         then:
-        def e = thrown(VariantTransformConfigurationException)
-        e.message == 'Could not register artifact transform DefaultVariantTransformRegistryTest.ParameterlessTestTransform (from {TEST=FROM} to {TEST=TO}).'
-        e.cause.message == 'Cannot configure parameters for artifact transform without parameters.'
+        observed.is(NoneParameters.singletonOf(TransformParameters.None))
     }
 
-    def "cannot query parameters object for parameterless action"() {
+    def "query parameters object for parameterless action returns None.INSTANCE"() {
+        def observed = null
+
         when:
         registry.registerTransform(ParameterlessTestTransform) {
-            it.from.attribute(TEST_ATTRIBUTE, "FROM")
-            it.to.attribute(TEST_ATTRIBUTE, "TO")
-            it.parameters
+            it.from.attribute(TEST_ATTRIBUTE, "from")
+            it.to.attribute(TEST_ATTRIBUTE, "to")
+            observed = it.parameters
         }
 
         then:
-        def e = thrown(VariantTransformConfigurationException)
-        e.message == 'Could not register artifact transform DefaultVariantTransformRegistryTest.ParameterlessTestTransform (from {TEST=FROM} to {TEST=TO}).'
-        e.cause.message == 'Cannot query parameters for artifact transform without parameters.'
+        observed.is(NoneParameters.singletonOf(TransformParameters.None))
     }
 
     def "delegates are DSL decorated but not extensible when registering with config object"() {
-        def registration
+        def registration = null
 
         when:
         registry.registerTransform(TestTransform) {
@@ -276,7 +279,7 @@ class DefaultVariantTransformRegistryTest extends Specification {
 
         then:
         def e = thrown(VariantTransformConfigurationException)
-        e.message == "Could not register artifact transform DefaultVariantTransformRegistryTest.TestTransform (from {} to {TEST=to})."
+        e.message == "Could not register artifact transform DefaultVariantTransformRegistryTest.TestTransform (to {TEST=to})."
         e.cause.message == "At least one 'from' attribute must be provided."
     }
 
@@ -288,7 +291,7 @@ class DefaultVariantTransformRegistryTest extends Specification {
 
         then:
         def e = thrown(VariantTransformConfigurationException)
-        e.message == "Could not register artifact transform DefaultVariantTransformRegistryTest.TestTransform (from {TEST=from} to {})."
+        e.message == "Could not register artifact transform DefaultVariantTransformRegistryTest.TestTransform (from {TEST=from})."
         e.cause.message == "At least one 'to' attribute must be provided."
     }
 
@@ -309,6 +312,7 @@ class DefaultVariantTransformRegistryTest extends Specification {
 
     static abstract class TestTransform implements TransformAction<Parameters> {
         static class Parameters implements TransformParameters {
+            @SuppressWarnings('unused')
             String value
         }
 

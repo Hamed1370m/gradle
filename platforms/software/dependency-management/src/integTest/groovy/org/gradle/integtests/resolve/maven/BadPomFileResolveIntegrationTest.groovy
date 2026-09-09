@@ -21,7 +21,7 @@ import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import spock.lang.Issue
 
 class BadPomFileResolveIntegrationTest extends AbstractHttpDependencyResolutionTest {
-    final resolve = new ResolveTestFixture(buildFile, "compile")
+    final resolve = new ResolveTestFixture(testDirectory)
     final failedResolve = new ResolveFailureTestFixture(buildFile, "compile")
 
     def setup() {
@@ -38,14 +38,14 @@ class BadPomFileResolveIntegrationTest extends AbstractHttpDependencyResolutionT
         and:
         buildFile << """
             repositories {
-                maven { url "${mavenRepo().uri}" }
+                maven { url = "${mavenRepo().uri}" }
             }
             configurations { compile }
+            ${resolve.configureProject("compile")}
             dependencies {
                 compile "group:artifact:1.0"
             }
         """
-        resolve.prepare()
 
         expect:
         succeeds ":checkDeps"
@@ -61,7 +61,7 @@ class BadPomFileResolveIntegrationTest extends AbstractHttpDependencyResolutionT
         buildFile << """
 repositories {
     maven {
-        url "${mavenHttpRepo.uri}"
+        url = "${mavenHttpRepo.uri}"
     }
 }
 configurations { compile }
@@ -91,7 +91,7 @@ dependencies {
         buildFile << """
 repositories {
     maven {
-        url "${mavenRepo.uri}"
+        url = "${mavenRepo.uri}"
     }
 }
 configurations { compile }
@@ -125,7 +125,7 @@ dependencies {
 
         buildFile << """
 repositories {
-    maven { url '${mavenHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations { compile }
 dependencies { compile 'org:child:1.0' }
@@ -159,7 +159,7 @@ Searched in the following locations:
 
         buildFile << """
 repositories {
-    maven { url '${mavenHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations { compile }
 dependencies { compile 'org:child:1.0' }
@@ -186,7 +186,7 @@ dependencies { compile 'org:child:1.0' }
         buildFile << """
 repositories {
     maven {
-        url "${mavenRepo.uri}"
+        url = "${mavenRepo.uri}"
     }
 }
 configurations { compile }
@@ -219,17 +219,19 @@ dependencies {
     def "handles broken packaging type gracefully"() {
         given:
         buildFile << """
-repositories {
-    maven {
-        url "${mavenHttpRepo.uri}"
-    }
-}
-configurations { compile }
-dependencies {
-    compile 'group:projectA:1.2'
-}
-"""
-        resolve.prepare()
+            repositories {
+                maven {
+                    url = "${mavenHttpRepo.uri}"
+                }
+            }
+            configurations {
+                compile
+            }
+            ${resolve.configureProject("compile")}
+            dependencies {
+                compile 'group:projectA:1.2'
+            }
+        """
 
         and:
         def projectA = mavenHttpRepo.module('group', 'projectA', '1.2').publish()

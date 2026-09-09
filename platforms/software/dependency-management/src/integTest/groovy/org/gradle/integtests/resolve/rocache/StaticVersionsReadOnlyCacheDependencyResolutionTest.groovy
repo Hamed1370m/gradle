@@ -17,7 +17,7 @@
 package org.gradle.integtests.resolve.rocache
 
 import org.gradle.api.internal.artifacts.ivyservice.CacheLayout
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.test.fixtures.server.http.MavenHttpModule
 import org.gradle.test.fixtures.server.http.MavenHttpRepository
 
@@ -38,7 +38,7 @@ class StaticVersionsReadOnlyCacheDependencyResolutionTest extends AbstractReadOn
 
         when:
         withReadOnlyCache()
-        succeeds ':checkDeps'
+        succeeds ':checkDeps', ":resolveArtifacts"
 
         then:
         resolve.expectGraph {
@@ -68,7 +68,7 @@ class StaticVersionsReadOnlyCacheDependencyResolutionTest extends AbstractReadOn
         other.moduleMetadata.expectGet()
         other.artifact.expectGet()
 
-        succeeds ':checkDeps'
+        succeeds ':checkDeps', ":resolveArtifacts"
 
         then:
         resolve.expectGraph {

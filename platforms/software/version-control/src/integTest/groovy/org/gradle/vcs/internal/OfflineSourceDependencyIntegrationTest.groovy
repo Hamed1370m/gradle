@@ -17,7 +17,6 @@
 package org.gradle.vcs.internal
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
 import org.gradle.vcs.fixtures.GitHttpRepository
 import org.junit.Rule
@@ -39,9 +38,10 @@ class OfflineSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
                 dependencies {
                     compile 'test:test:1.2'
                 }
+                def compileFiles = configurations.compile
                 tasks.register('resolve') {
-                    inputs.files configurations.compile
-                    doLast { configurations.compile.each { } }
+                    inputs.files compileFiles
+                    doLast { compileFiles.each { } }
                 }
             }
             sourceControl.vcsMappings.withModule('test:test') {
@@ -64,7 +64,6 @@ class OfflineSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         repo.createLightWeightTag('1.2')
     }
 
-    @ToBeFixedForConfigurationCache
     def "uses previous checkout when offline"() {
         given:
         repo.expectListVersions()
@@ -89,6 +88,6 @@ class OfflineSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         failure.assertHasCause("Could not resolve all dependencies for configuration ':compile'.")
         failure.assertHasCause("""Cannot resolve test:test:1.2 from Git repository at ${repo.url} in offline mode.
 Required by:
-    root project :""")
+    root project 'consumer'""")
     }
 }

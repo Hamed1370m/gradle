@@ -16,7 +16,7 @@
 
 package org.gradle.testing.base;
 
-import org.gradle.api.ExtensiblePolymorphicDomainObjectContainer;
+import org.gradle.api.DomainObjectCollection;
 import org.gradle.api.Incubating;
 import org.gradle.api.Named;
 
@@ -29,6 +29,7 @@ import org.gradle.api.Named;
 public interface TestSuite extends Named {
     /**
      * Available targets for this test suite.
+     * @since 7.3
      */
-    ExtensiblePolymorphicDomainObjectContainer<? extends TestSuiteTarget> getTargets();
+    DomainObjectCollection<? extends TestSuiteTarget> getTargets();
 }

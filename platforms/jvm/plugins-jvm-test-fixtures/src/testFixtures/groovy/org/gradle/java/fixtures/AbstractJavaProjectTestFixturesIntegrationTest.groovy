@@ -16,7 +16,7 @@
 
 package org.gradle.java.fixtures
 
-import org.gradle.integtests.fixtures.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import org.gradle.test.fixtures.GradleModuleMetadata
 import org.gradle.test.fixtures.maven.MavenPom
@@ -268,7 +268,7 @@ hamcrest-core-1.3.jar
             publishing {
                 repositories {
                     maven {
-                        url "\${buildDir}/repo"
+                        url = layout.buildDirectory.dir("repo")
                     }
                     publications {
                         maven(MavenPublication) {
@@ -327,7 +327,7 @@ hamcrest-core-1.3.jar
             publishing {
                 repositories {
                     maven {
-                        url "\${buildDir}/repo"
+                        url = layout.buildDirectory.dir("repo")
                     }
                     publications {
                         maven(MavenPublication) {
@@ -362,6 +362,8 @@ hamcrest-core-1.3.jar
     }
 
     def "can consume test fixtures of an external module"() {
+        def resolve = new ResolveTestFixture(testDirectory)
+
         mavenRepo.module("com.acme", "external-module", "1.3")
                 .variant("testFixturesApiElements", ['org.gradle.usage': 'java-api', 'org.gradle.libraryelements': 'jar']) {
                     capability('com.acme', 'external-module-test-fixtures', '1.3')
@@ -382,14 +384,15 @@ hamcrest-core-1.3.jar
             }
             repositories {
                 maven {
-                    url "${mavenRepo.uri}"
+                    url = "${mavenRepo.uri}"
                 }
             }
+
+            ${resolve.configureProject("testCompileClasspath", "testRuntimeClasspath")}
         """
+
         when:
-        def resolve = new ResolveTestFixture(buildFile, "testCompileClasspath")
-        resolve.prepare()
-        succeeds ':checkdeps'
+        succeeds ':checkTestCompileClasspath'
 
         then:
         resolve.expectGraph {
@@ -413,9 +416,7 @@ hamcrest-core-1.3.jar
         }
 
         when:
-        resolve = new ResolveTestFixture(buildFile, "testRuntimeClasspath")
-        resolve.prepare()
-        succeeds ':checkdeps'
+        succeeds ':checkTestRuntimeClasspath'
 
         then:
         resolve.expectGraph {

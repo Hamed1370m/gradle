@@ -18,378 +18,20 @@ package org.gradle.integtests.resolve
 
 import groovy.test.NotYetImplemented
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+import org.gradle.test.preconditions.TestEnvironmentPreconditions
+
 import spock.lang.Ignore
 import spock.lang.Issue
 
 /**
- * Common location for resolution tests that are related to user-reported issues.
+ * Common location for unresolved resolution tests that are related to user-reported issues.
  *
- * Once these issues are resolved, we should make sure to  move these tests to a
+ * Once these issues are resolved, we should make sure to move these tests to a
  * file more appropriate for the feature they are testing.
  */
 class ResolutionIssuesIntegrationTest extends AbstractIntegrationSpec {
-
-    @NotYetImplemented
-    @Issue("https://github.com/gradle/gradle/issues/14220#issuecomment-1283947029")
-    def "resolution result represents failure to resolve dynamic selected module version when platform has constraint on that module"() {
-        mavenRepo.module("test", "module1", "11.1.0.1").publish()
-
-        settingsFile << "include 'plat'"
-        file("plat/build.gradle") << """
-            plugins {
-                id("java-platform")
-            }
-
-            dependencies {
-                constraints {
-                    api "test:module1:11.1.0.1"
-                }
-            }
-        """
-
-        buildFile << """
-            plugins {
-                id("jvm-ecosystem")
-            }
-
-            configurations {
-                dependencyScope("implementation")
-                resolvable("runtimeClasspath") {
-                    extendsFrom implementation
-                }
-            }
-
-            tasks.register('resolve') {
-                def root = configurations.runtimeClasspath.incoming.resolutionResult.rootComponent
-                doLast {
-                    println root.get()
-                }
-            }
-
-            ${mavenTestRepository()}
-
-            dependencies {
-                implementation 'test:module1:11.2.0.+'
-                implementation platform(project(":plat"))
-            }
-        """
-
-        expect:
-        succeeds("resolve")
-    }
-
-    @Ignore("Original reproducer. Minified version below")
-    @Requires(UnitTestPreconditions.Jdk17OrLater)
-    @Issue("https://github.com/gradle/gradle/issues/26145#issuecomment-1957776331")
-    def "original reproducer -- android project causes corrupt serialized resolution result"() {
-        settingsFile << """
-            pluginManagement {
-                ${mavenCentralRepository()}
-                repositories {
-                    google()
-                }
-            }
-
-            dependencyResolutionManagement {
-                ${mavenCentralRepository()}
-                repositories {
-                    google()
-                }
-            }
-
-
-            rootProject.name = "androidx"
-
-            include(":compose:ui:ui")
-            include(":lifecycle:lifecycle-livedata-core")
-            include(":lifecycle:lifecycle-runtime")
-            include(":lifecycle:lifecycle-viewmodel")
-            include(":lifecycle:lifecycle-viewmodel-savedstate")
-        """
-
-        propertiesFile << "android.useAndroidX=true"
-
-        buildFile << """
-            plugins {
-                id("com.android.library") version "8.2.2" apply false
-                id("org.jetbrains.kotlin.multiplatform") version "1.9.20" apply false
-            }
-        """
-
-        file("lifecycle/lifecycle-livedata-core/build.gradle") << """
-            plugins {
-                id("com.android.library")
-            }
-
-            version = "2.8.0-alpha02"
-            group = "androidx.lifecycle"
-
-            android {
-                namespace "androidx.lifecycle.livedata.core"
-                compileSdkVersion "android-34"
-            }
-        """
-
-        file("lifecycle/lifecycle-runtime/build.gradle") << """
-            plugins {
-                id("com.android.library")
-                id("org.jetbrains.kotlin.multiplatform")
-            }
-
-            group = "lifecycle"
-
-            kotlin {
-                android()
-            }
-            android {
-                namespace "androidx.lifecycle.runtime"
-                compileSdkVersion "android-34"
-            }
-
-            configurations {
-                groupConstraints
-            }
-
-            project.configurations.configureEach { conf ->
-                if (conf != configurations.groupConstraints) {
-                    conf.extendsFrom(configurations.groupConstraints)
-                }
-            }
-
-            dependencies {
-                constraints {
-                    groupConstraints project(":lifecycle:lifecycle-livedata-core")
-                    groupConstraints project(":lifecycle:lifecycle-viewmodel")
-                    groupConstraints project(":lifecycle:lifecycle-viewmodel-savedstate")
-                }
-            }
-        """
-
-        file("lifecycle/lifecycle-viewmodel-savedstate/build.gradle") << """
-            plugins {
-                id("com.android.library")
-            }
-
-            android {
-                namespace "androidx.lifecycle.viewmodel.savedstate"
-                compileSdkVersion "android-34"
-            }
-        """
-
-        file("lifecycle/lifecycle-viewmodel/build.gradle") << """
-            plugins {
-                id("com.android.library")
-                id("org.jetbrains.kotlin.multiplatform")
-            }
-
-            version = "2.8.0-alpha02"
-            group = "androidx.lifecycle"
-
-            kotlin {
-                android()
-            }
-
-            android {
-                namespace "androidx.lifecycle.viewmodel"
-                compileSdkVersion "android-34"
-            }
-
-            configurations {
-                groupConstraints
-            }
-
-            project.configurations.configureEach { conf ->
-                if (conf != configurations.groupConstraints) {
-                    conf.extendsFrom(configurations.groupConstraints)
-                }
-            }
-
-            dependencies {
-                constraints {
-                    groupConstraints project(":lifecycle:lifecycle-livedata-core")
-                }
-            }
-        """
-
-        file("compose/ui/ui/build.gradle") << """
-            plugins {
-                id("com.android.library")
-                id("org.jetbrains.kotlin.multiplatform")
-            }
-
-            kotlin {
-                android()
-                jvm("desktop")
-                sourceSets {
-                    commonMain {
-                        dependencies {
-                            implementation(project(":lifecycle:lifecycle-runtime"))
-                        }
-                    }
-                    androidInstrumentedTest {
-                        dependencies {
-                            implementation("androidx.appcompat:appcompat:1.3.0")
-                            implementation("androidx.fragment:fragment-testing:1.4.1")
-                        }
-                    }
-                }
-            }
-
-            android {
-                namespace "androidx.compose.ui"
-                compileSdkVersion "android-34"
-            }
-
-            tasks.register("resolve") {
-                def root = configurations.commonMainResolvableDependenciesMetadata.incoming.resolutionResult.rootComponent
-                doLast {
-                    println root.get()
-                }
-            }
-        """
-
-        expect:
-        succeeds(":compose:ui:ui:resolve", "--stacktrace")
-    }
-
-    @NotYetImplemented
-    @Issue("https://github.com/gradle/gradle/issues/26145#issuecomment-1957776331")
-    def "partially minimized reproducer -- android project causes corrupt serialized resolution result"() {
-        settingsFile << """
-            pluginManagement {
-                ${mavenCentralRepository()}
-                repositories {
-                    google()
-                }
-            }
-
-            dependencyResolutionManagement {
-                ${mavenCentralRepository()}
-                repositories {
-                    google()
-                }
-            }
-
-            include(":lifecycle:lifecycle-livedata-core")
-            include(":lifecycle:lifecycle-viewmodel")
-            include(":lifecycle:lifecycle-viewmodel-savedstate")
-        """
-
-        file("lifecycle/lifecycle-livedata-core/build.gradle") << """
-            version = "2.8.0-alpha02"
-            group = "androidx.lifecycle"
-
-            // There is some failure while resolving this component.
-            // We can do this many ways, but one way to do it is with an ambiguous variant selection.
-            configurations {
-                consumable("debugApiElements") {
-                    attributes {
-                        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_API))
-                        attribute(Attribute.of("build-type", String), "debug")
-                    }
-                }
-                consumable("releaseApiElements") {
-                    attributes {
-                        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_API))
-                        attribute(Attribute.of("build-type", String), "release")
-                    }
-                }
-            }
-        """
-
-        file("lifecycle/lifecycle-viewmodel-savedstate/build.gradle") << """
-            version = "2.8.0-alpha02"
-            group="androidx.lifecycle"
-
-            // There is some failure while resolving this component.
-            // We can do this many ways, but one way to do it is with an ambiguous variant selection.
-            configurations {
-                consumable("debugApiElements") {
-                    attributes {
-                        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_API))
-                        attribute(Attribute.of("build-type", String), "debug")
-                    }
-                }
-                consumable("releaseApiElements") {
-                    attributes {
-                        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_API))
-                        attribute(Attribute.of("build-type", String), "release")
-                    }
-                }
-            }
-        """
-
-        file("lifecycle/lifecycle-viewmodel/build.gradle") << """
-            version = "2.8.0-alpha02"
-            group = "androidx.lifecycle"
-
-            configurations {
-                dependencyScope("deps")
-                consumable("metadataApiElements") {
-                    extendsFrom(deps)
-                    attributes {
-                        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
-                        attribute(TargetJvmEnvironment.TARGET_JVM_ENVIRONMENT_ATTRIBUTE, objects.named(TargetJvmEnvironment, "non-jvm"))
-                        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, "kotlin-metadata"))
-                        attribute(Attribute.of("org.jetbrains.kotlin.platform.type", String), "common")
-                    }
-                }
-            }
-
-            dependencies {
-                constraints {
-                    deps project(":lifecycle:lifecycle-livedata-core")
-                }
-            }
-        """
-
-        buildFile << """
-            plugins {
-                // This plugin is needed in order to get the proper AttributeSchema compatibility/disambiguation
-                // rules. Once we understand this reproducer better, we can likely construct a graph that does not
-                // need these resolution rules.
-                id("org.jetbrains.kotlin.jvm") version "1.9.20"
-            }
-
-            configurations {
-                dependencyScope("deps")
-                resolvable("res") {
-                    extendsFrom(deps)
-                    attributes {
-                        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
-                        attribute(TargetJvmEnvironment.TARGET_JVM_ENVIRONMENT_ATTRIBUTE, objects.named(TargetJvmEnvironment, "non-jvm"))
-                        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, "kotlin-metadata"))
-                    }
-                }
-            }
-
-            dependencies {
-                deps "androidx.appcompat:appcompat:1.3.0"
-                deps "androidx.fragment:fragment-testing:1.4.1"
-
-                constraints {
-                    deps project(":lifecycle:lifecycle-livedata-core")
-                    deps project(":lifecycle:lifecycle-viewmodel")
-                    deps project(":lifecycle:lifecycle-viewmodel-savedstate")
-                }
-            }
-
-            tasks.register("resolve") {
-                def root = configurations.res.incoming.resolutionResult.rootComponent
-                doLast {
-                    println root.get()
-                }
-            }
-        """
-
-        expect:
-        succeeds(":resolve", "--stacktrace")
-//        succeeds(":compose:ui:ui:dependencies", "--configuration", "commonMainResolvableDependenciesMetadata", "--stacktrace")
-    }
-
     @NotYetImplemented
     @Issue("https://github.com/gradle/gradle/issues/22326")
     def "capability conflict skip"() {
@@ -447,24 +89,18 @@ class ResolutionIssuesIntegrationTest extends AbstractIntegrationSpec {
     }
 
     @Ignore("Original reproducer. Minified version below")
-    @Requires(UnitTestPreconditions.Jdk17OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk17OrLater)
     @Issue("https://github.com/gradle/gradle/issues/22326#issuecomment-1617422240")
     def "guava issue"() {
         settingsFile << """
             pluginManagement {
                 ${mavenCentralRepository()}
-                repositories {
-                    google()
-                    maven { url 'https://jitpack.io' }
-                }
+                ${googleRepository()}
             }
 
             dependencyResolutionManagement {
                 ${mavenCentralRepository()}
-                repositories {
-                    google()
-                    maven { url 'https://jitpack.io' }
-                }
+                ${googleRepository()}
             }
         """
 
@@ -476,7 +112,7 @@ class ResolutionIssuesIntegrationTest extends AbstractIntegrationSpec {
 
         buildFile << '''
             plugins {
-                id("com.android.application") version "8.2.2"
+                id("com.android.application") version "9.0.1"
             }
 
             android {
@@ -519,9 +155,7 @@ class ResolutionIssuesIntegrationTest extends AbstractIntegrationSpec {
             dependencyResolutionManagement {
                 ${mavenTestRepository()}
                 ${mavenCentralRepository()}
-                repositories {
-                    google()
-                }
+                ${googleRepository()}
             }
         """
 
@@ -539,217 +173,101 @@ class ResolutionIssuesIntegrationTest extends AbstractIntegrationSpec {
             task checkDebugDuplicateClasses {
                 def files = configurations.runtimeClasspath
                 doLast {
-                    assert files*.name.contains("guava-32.1.1-jre.jar")
-                    assert !files*.name.contains("listenablefuture-1.0.jar")
+                    println files*.name
                 }
             }
         '''
 
         expect:
         succeeds("checkDebugDuplicateClasses")
+        outputContains("guava-32.1.1-jre.jar")
+        outputDoesNotContain("listenablefuture-1.0.jar")
     }
 
-    @NotYetImplemented
-    @UnsupportedWithConfigurationCache(because = "Uses allDependencies")
-    @Issue("https://github.com/gradle/gradle/pull/26016#issuecomment-1795491970")
-    def "conflict between two nodes in the same component causes edge without target node"() {
-        settingsFile << "include 'producer'"
-        file("producer/build.gradle") << """
-            configurations {
-                consumable("one") {
-                    outgoing {
-                        capability('o:n:e')
-                    }
-                    attributes {
-                        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.class, "foo"))
-                    }
-                }
-                consumable("one-preferred") {
-                    outgoing {
-                        capability('o:n:e')
-                        capability('g:one-preferred:v')
-                    }
-                    attributes {
-                        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.class, "foo"))
-                    }
-                }
-            }
-        """
+    @Requires(TestEnvironmentPreconditions.Online)
+    @Issue("https://github.com/gradle/gradle/issues/36284")
+    def "lenient artifact view exposes failure messages from androidx.room reproducer without NPE"() {
+        // Verbatim reproducer from issue 36284. With the bug, getMessage() throws
+        // NPE because DependencyGraphPathResolver.calculatePaths returns a list
+        // containing a null entry for a directDependee whose incoming edges no
+        // longer chain back to the root component.
         buildFile << """
-            configurations {
-                dependencyScope("implementation")
-                resolvable("classpath") {
-                    extendsFrom(implementation)
-                    attributes {
-                        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.class, "foo"))
-                    }
-                }
+            plugins {
+                id("java-library")
             }
 
-            configurations.classpath {
-                resolutionStrategy.capabilitiesResolution.all { details ->
-                    def selection =
-                        details.candidates.find { it.variantName.endsWith('preferred') }
-                    println("Selecting \$selection from \${details.candidates}")
-                    details.select(selection)
-                }
-            }
+            ${mavenCentralRepository()}
+            ${googleRepository()}
 
             dependencies {
-                implementation(project(':producer')) {
-                    capabilities {
-                        requireCapability('o:n:e')
-                    }
-                }
-                implementation(project(':producer')) {
-                    capabilities {
-                        requireCapability('o:n:e')
-                        requireCapability('g:one-preferred:v')
-                    }
-                }
+                implementation("androidx.room:room-sqlite-wrapper:2.8.3")
+                implementation("androidx.room:room-runtime:2.8.3")
             }
 
-            task resolve {
-                def result = configurations.classpath.incoming.resolutionResult
+            tasks.register("dgp") {
+                def failures = configurations.compileClasspath.incoming.artifactView {
+                    lenient = true
+                }.artifacts.failures
                 doLast {
-                    result.allDependencies {
-                        assert it.selectedVariant != null
-                    }
+                    println("Failures: ")
+                    failures.each { println(it.message) }
                 }
             }
         """
 
         expect:
-        succeeds("resolve")
+        succeeds("dgp")
     }
 
-    @NotYetImplemented
-    @Issue("https://github.com/gradle/gradle/issues/14220#issuecomment-2008178522")
-    def "another reproducer for corrupt RR"() {
+    def "depending on a bom of one version and another dependency that upgrades that bom causes unstable graph"() {
 
-        mavenRepo.module("com.netflix.eureka", "eureka-client", "2.0.1")
-            .dependsOn(
-                mavenRepo.module("com.netflix.netflix-commons", "netflix-eventbus", "0.3.0")
-                    .dependsOn(mavenRepo.module("com.netflix.archaius", "archaius-core", "0.3.3").publish())
-                    .publish()
-            )
-            .dependsOn(mavenRepo.module("com.netflix.archaius", "archaius-core", "0.7.6").publish())
+        // This code triggers a situation where we reselect the root node of the graph.
+        // This would lead to an unstable graph if it weren't for some suspicious code that
+        // detects certain unstable scenarios.
+        // See SelectorState#markForReuse()
+
+        mavenRepo.module("org.junit", "junit-bom", "5.10.2")
+            .withModuleMetadata()
+            .adhocVariants()
+            .variant("apiElements", [
+                "org.gradle.category": "platform",
+                "org.gradle.usage": "java-api"
+            ])
             .publish()
 
-        mavenRepo.module("org.springframework.cloud", "spring-cloud-netflix-dependencies", "4.1.0")
-            .hasPackaging("pom")
-            .dependencyConstraint([exclusions: [[group: "com.netflix.archaius", module: "archaius-core"]]], mavenRepo.module("com.netflix.eureka", "eureka-client", "2.0.1"))
+        mavenRepo.module("org.junit", "junit-bom", "5.11.3")
+            .withModuleMetadata()
+            .adhocVariants()
+            .variant("apiElements", [
+                "org.gradle.category": "platform",
+                "org.gradle.usage": "java-api"
+            ])
             .publish()
 
-        settingsFile << """
-            include 'indirect'
-        """
-
-        file("indirect/build.gradle") << """
-            plugins {
-                id("java-library")
+        mavenRepo.module("org.junit.jupiter", "junit-jupiter-params", "5.11.3")
+            .withModuleMetadata()
+            .withVariant("api") {
+                dependsOn("org.junit", "junit-bom", "5.11.3") {
+                    attribute("org.gradle.category", "platform")
+                    endorseStrictVersions = true
+                }
             }
-            dependencies {
-                implementation(platform("org.springframework.cloud:spring-cloud-netflix-dependencies:4.1.0"))
-            }
-        """
+            .publish()
 
         buildFile << """
             plugins {
-                id("java-library")
+              id("java-library")
             }
 
             ${mavenTestRepository()}
 
             dependencies {
-                implementation("com.netflix.eureka:eureka-client:2.0.1")
-                implementation(project(":indirect"))
+                implementation(platform("org.junit:junit-bom:5.10.2"))
+                implementation("org.junit.jupiter:junit-jupiter-params:5.11.3")
             }
         """
 
         expect:
-        succeeds("dependencies", "--configuration", "runtimeClasspath", "--stacktrace")
-    }
-
-    @NotYetImplemented
-    def "can select unrelated variant from component with variant that loses capability conflict"() {
-        settingsFile << """
-            include("producer1")
-            include("producer2")
-        """
-        buildFile << """
-            plugins {
-                id("java-library")
-            }
-
-            dependencies {
-                implementation(project(":producer2")) {
-                    capabilities {
-                        requireCapability("org:bar:1.0")
-                    }
-                }
-                implementation(project(":producer1")) {
-                    capabilities {
-                        requireCapability("org:foo:2.0")
-                    }
-                }
-                implementation(project(":producer2")) {
-                    capabilities {
-                        requireCapability("org:foo:1.0")
-                    }
-                }
-            }
-
-            task resolve {
-                def files = configurations.runtimeClasspath.incoming.files
-                doLast {
-                    println(files*.name)
-                }
-            }
-
-            configurations.runtimeClasspath {
-                resolutionStrategy {
-                    capabilitiesResolution {
-                        withCapability("org:foo") {
-                            selectHighestVersion()
-                        }
-                    }
-                }
-            }
-        """
-
-        file("producer1/build.gradle") << """
-            configurations {
-                consumable("foo") {
-                    outgoing.capability("org:foo:2.0")
-                    outgoing.artifact(file("producer1-foo"))
-                    attributes {
-                        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
-                    }
-                }
-            }
-        """
-        file("producer2/build.gradle") << """
-            configurations {
-                consumable("foo") {
-                    outgoing.capability("org:foo:1.0")
-                    outgoing.artifact(file("producer2-foo"))
-                    attributes {
-                        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
-                    }
-                }
-                consumable("bar") {
-                    outgoing.capability("org:bar:1.0")
-                    outgoing.artifact(file("producer2-bar"))
-                    attributes {
-                        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
-                    }
-                }
-            }
-        """
-
-        expect:
-        succeeds(":resolve")
-        outputContains("[producer2-bar, producer1-foo]")
+        succeeds(":dependencies", "--configuration", "compileClasspath")
     }
 }

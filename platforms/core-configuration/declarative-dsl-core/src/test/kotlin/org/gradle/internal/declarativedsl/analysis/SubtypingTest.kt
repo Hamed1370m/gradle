@@ -17,16 +17,14 @@
 package org.gradle.internal.declarativedsl.analysis
 
 import org.gradle.declarative.dsl.model.annotations.Adding
-import org.gradle.declarative.dsl.model.annotations.Restricted
 import org.gradle.declarative.dsl.schema.DataClass
-import org.gradle.declarative.dsl.schema.DataTypeRef
+import org.gradle.internal.declarativedsl.assertIs
 import org.gradle.internal.declarativedsl.demo.resolve
 import org.gradle.internal.declarativedsl.schemaBuilder.schemaFromTypes
+import org.junit.Test
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.Test
-import org.gradle.internal.declarativedsl.assertIs
 
 
 class SubtypingTest {
@@ -97,7 +95,7 @@ class SubtypingTest {
             assertNotNull(error)
             val reason = error.errorReason
             assertIs<ErrorReason.AssignmentTypeMismatch>(reason)
-            assertEquals(NotASubtype::class.simpleName, (((reason.actual.ref as DataTypeRef.Type).dataType as DataClass).name as DefaultFqName).simpleName)
+            assertEquals(NotASubtype::class.simpleName, (((reason.actual as DataClass).name as DefaultFqName).simpleName))
         }
     }
 
@@ -118,10 +116,8 @@ class SubtypingTest {
 
 private
 abstract class TopLevelForSubtyping {
-    @get:Restricted
     abstract var superClassProp: SuperClass
 
-    @get:Restricted
     abstract var superInterfaceProp: SuperInterface
 
     @Adding
@@ -130,10 +126,8 @@ abstract class TopLevelForSubtyping {
     @Adding
     abstract fun addSuperInterface(superclass: SuperInterface)
 
-    @Restricted
     abstract fun sub(): Subtype
 
-    @Restricted
     abstract fun notASub(): NotASubtype
 }
 

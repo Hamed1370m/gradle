@@ -17,18 +17,18 @@
 package org.gradle.internal.resources;
 
 import org.gradle.internal.Factory;
+import org.gradle.internal.concurrent.BlockingNotifier;
 import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.util.Path;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Collection;
 
 @ServiceScope(Scope.BuildSession.class)
-public interface ProjectLeaseRegistry {
-    /**
-     * Get the lock for the state of all projects of the given build. This lock provides exclusive access to the state of all projects in the build.While this lock is held, no project state locks can be held.
-     */
-    ResourceLock getAllProjectsLock(Path buildIdentityPath);
+@NullMarked
+public interface ProjectLeaseRegistry extends BlockingNotifier {
 
     /**
      * Get a lock for access to the specified project's state.
@@ -42,10 +42,13 @@ public interface ProjectLeaseRegistry {
 
     /**
      * Returns any project state locks currently held by this thread.
-     *
-     * Note: may contain either locks for specific projects (returned by {@link #getProjectLock(Path, Path)}) or the lock for all projects (returned by {@link #getAllProjectsLock(Path)}.
      */
     Collection<? extends ResourceLock> getCurrentProjectLocks();
+
+    /**
+     * Returns true if this thread holds the given project state lock.
+     */
+    boolean holdsProjectLock(ResourceLock lock);
 
     /**
      * Releases any project state locks or task execution locks currently held by this thread, allowing the current
@@ -67,7 +70,7 @@ public interface ProjectLeaseRegistry {
      * If no locks were held at the time the method was called, then no attempt will be made to reacquire a lock on completion.
      * While blocking to reacquire the project lock, all worker leases held by the thread will be released and reacquired once the project lock is obtained.
      */
-    <T> T runAsIsolatedTask(Factory<T> action);
+    <T extends @Nullable Object> T runAsIsolatedTask(Factory<T> action);
 
     /**
      * Releases any project state locks or task execution locks currently held by the current thread and executes the {@link Factory}.
@@ -78,22 +81,20 @@ public interface ProjectLeaseRegistry {
     void runAsIsolatedTask(Runnable action);
 
     /**
-     * Allows the given code to access the mutable state of any project, regardless of which other threads may be accessing the project.
-     *
-     * DO NOT USE THIS METHOD. It is here to allow some very specific backwards compatibility.
+     * {@link #blocking(Factory)}, but returns no result.
      */
-    <T> T allowUncontrolledAccessToAnyProject(Factory<T> factory);
-
-    boolean isAllowedUncontrolledAccessToAnyProject();
+    @Override
+    void blocking(Runnable action);
 
     /**
-     * Performs some blocking action. If the current thread is allowed to make changes to project locks, then release all locks
+     * Performs some blocking action, returning the result. If the current thread is allowed to make changes to project locks, then release all locks
      * then run the action and reacquire any locks.
      * If the current thread is not allowed to make changes to the project locks (via {@link #whileDisallowingProjectLockChanges(Factory)},
      * then it is safe to run the action without releasing the project locks. The worker lease is, however, released prior to running the
      * action and reacquired at the end.
      */
-    void blocking(Runnable action);
+    @Override
+    <T extends @Nullable Object> T blocking(Factory<T> action);
 
     /**
      * Runs the given action and disallows the current thread from attempting to acquire or release any project locks.
@@ -106,4 +107,5 @@ public interface ProjectLeaseRegistry {
      * For now, this is an opt-in behaviour.</p>
      */
     <T> T whileDisallowingProjectLockChanges(Factory<T> action);
+
 }

@@ -17,6 +17,8 @@
 package org.gradle.api
 
 import groovy.transform.SelfType
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import spock.lang.Issue
 
 @SelfType(AbstractDomainObjectContainerIntegrationTest)
@@ -74,26 +76,26 @@ class TaskContainerIntegrationTest extends AbstractDomainObjectContainerIntegrat
         }
 
         where:
-        filtering                           | configAction        | realizesBuiltInTasks  | realizesExplicitTasks
+        filtering                           | configAction       | realizesBuiltInTasks | realizesExplicitTasks
 
-        "named { it == \"help\" }"          | "all {}"            | true                  | true
-        "named { it == \"help\" }"          | "forEach {}"        | true                  | false
-        "named { it == \"help\" }"          | "configureEach {}"  | false                 | false
-        "named { it == \"help\" }"          | "toList()"          | true                  | false
-        "named { it == \"help\" }"          | "iterator()"        | true                  | false
+        "named { it == \"help\" }"          | "all {}"           | true                 | true
+        "named { it == \"help\" }"          | "forEach {}"       | true                 | false
+        "named { it == \"help\" }"          | "configureEach {}" | false                | false
+        "named { it == \"help\" }"          | "toList()"         | true                 | false
+        "named { it == \"help\" }"          | "iterator()"       | true                 | false
         // TODO: no other tasks should be realized, that was the intent of having the new `named()` method
 
-        "matching { it.name == \"help\" }"  | "all {}"            | true                  | true
-        "matching { it.name == \"help\" }"  | "forEach {}"        | true                  | false
-        "matching { it.name == \"help\" }"  | "configureEach {}"  | false                 | false
-        "matching { it.name == \"help\" }"  | "toList()"          | true                  | false
-        "matching { it.name == \"help\" }"  | "iterator()"        | true                  | false
+        "matching { it.name == \"help\" }"  | "all {}"           | true                 | true
+        "matching { it.name == \"help\" }"  | "forEach {}"       | true                 | false
+        "matching { it.name == \"help\" }"  | "configureEach {}" | false                | false
+        "matching { it.name == \"help\" }"  | "toList()"         | true                 | false
+        "matching { it.name == \"help\" }"  | "iterator()"       | true                 | false
 
-        "matching { it.group == \"help\" }" | "all {}"            | true                  | true
-        "matching { it.group == \"help\" }" | "forEach {}"        | true                  | false
-        "matching { it.group == \"help\" }" | "configureEach {}"  | false                 | false
-        "matching { it.group == \"help\" }" | "toList()"          | true                  | false
-        "matching { it.group == \"help\" }" | "iterator()"        | true                  | false
+        "matching { it.group == \"help\" }" | "all {}"           | true                 | true
+        "matching { it.group == \"help\" }" | "forEach {}"       | true                 | false
+        "matching { it.group == \"help\" }" | "configureEach {}" | false                | false
+        "matching { it.group == \"help\" }" | "toList()"         | true                 | false
+        "matching { it.group == \"help\" }" | "iterator()"       | true                 | false
 
     }
 
@@ -127,4 +129,48 @@ class TaskContainerIntegrationTest extends AbstractDomainObjectContainerIntegrat
         expect:
         succeeds "help"
     }
+
+    def "can access task by path from containing project"() {
+        buildFile("""
+            task foobar
+            println([
+                tasks.findByPath("unknown"),
+                tasks.findByPath(":unknown"),
+                tasks.getByPath(":foobar").name,
+                tasks.getByPath("foobar").name,
+                tasks.findByPath(":foobar").name,
+                tasks.findByPath("foobar").name
+            ])
+        """)
+
+        when:
+        succeeds("help")
+
+        then:
+        output.contains("[null, null, foobar, foobar, foobar, foobar]")
+    }
+
+    @Requires(value = TestExecutionPreconditions.NotIsolatedProjects, reason = "This API is not IP compatible")
+    def "can access task by path from another project with IP disabled"() {
+        settingsFile("""
+            include 'other'
+        """)
+        buildFile("""
+            task foobar
+        """)
+        buildFile("other/build.gradle", """
+            println([
+                tasks.findByPath(":unknown"),
+                tasks.getByPath(":foobar").name,
+                tasks.findByPath(":foobar").name
+            ])
+        """)
+
+        when:
+        succeeds("help")
+
+        then:
+        output.contains("[null, foobar, foobar]")
+    }
+
 }

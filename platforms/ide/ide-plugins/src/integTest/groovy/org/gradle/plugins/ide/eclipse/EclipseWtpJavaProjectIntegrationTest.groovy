@@ -15,11 +15,8 @@
  */
 package org.gradle.plugins.ide.eclipse
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
-
 class EclipseWtpJavaProjectIntegrationTest extends AbstractEclipseIntegrationSpec {
 
-    @ToBeFixedForConfigurationCache
     def "generates configuration files for a Java project"() {
         file('src/main/java').mkdirs()
         file('src/main/resources').mkdirs()
@@ -41,6 +38,7 @@ class EclipseWtpJavaProjectIntegrationTest extends AbstractEclipseIntegrationSpe
         """
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject", "eclipseWtp", "eclipseWtpComponent", "eclipseWtpFacet")
         run "eclipse"
 
         then:

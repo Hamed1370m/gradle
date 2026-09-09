@@ -18,11 +18,12 @@ package org.gradle.ide.visualstudio
 
 import groovy.test.NotYetImplemented
 import org.gradle.ide.visualstudio.fixtures.AbstractVisualStudioIntegrationSpec
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.nativeplatform.fixtures.app.CppAppWithLibrary
 import org.gradle.nativeplatform.fixtures.app.CppHelloWorldApp
 import org.gradle.nativeplatform.fixtures.app.ExeWithLibraryUsingLibraryHelloWorldApp
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 
 class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegrationSpec {
     def app = new CppHelloWorldApp()
@@ -38,6 +39,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         """
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Visual Studio uses allprojects/subprojects")
     def "create visual studio solution for build without any C++ components"() {
         when:
         createDirs("one", "two", "three")
@@ -50,13 +52,14 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         run ":visualStudio"
 
         then:
-        result.assertTasksExecuted(":visualStudio", ":appVisualStudioSolution")
+        result.assertTasksScheduled(":visualStudio", ":appVisualStudioSolution")
 
         and:
         final mainSolution = solutionFile("app.sln")
         mainSolution.assertHasProjects()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Visual Studio uses allprojects/subprojects")
     def "includes a visual studio project for every project with a C++ component"() {
         when:
         createDirs("one", "two", "three")
@@ -79,7 +82,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         run ":visualStudio"
 
         then:
-        result.assertTasksExecuted(":appVisualStudioSolution",
+        result.assertTasksScheduled(":appVisualStudioSolution",
             ":appVisualStudioFilters", ":appVisualStudioProject",
             ":one:oneVisualStudioFilters", ":one:oneVisualStudioProject",
             ":two:twoDllVisualStudioFilters", ":two:twoDllVisualStudioProject",
@@ -97,6 +100,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         mainSolution.assertReferencesProject(twoProject, projectConfigurations)
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Visual Studio uses allprojects/subprojects")
     def "create visual studio solution for executable that depends on a library in another project"() {
         when:
         app.executable.writeSources(file("exe/src/main"))
@@ -121,7 +125,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         run ":visualStudio"
 
         then:
-        result.assertTasksExecuted(":appVisualStudioSolution",
+        result.assertTasksScheduled(":appVisualStudioSolution",
             ":exe:exeVisualStudioFilters", ":exe:exeVisualStudioProject",
             ":lib:libDllVisualStudioFilters", ":lib:libDllVisualStudioProject",
             ":visualStudio")
@@ -151,6 +155,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         mainSolution.assertReferencesProject(dllProject, projectConfigurations)
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp build")
     def "visual studio solution does not reference the components of a project if it does not have visual studio plugin applied"() {
         when:
         app.executable.writeSources(file("exe/src/main"))
@@ -186,7 +191,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         run ":visualStudio"
 
         then:
-        result.assertTasksExecuted(":appVisualStudioSolution",
+        result.assertTasksScheduled(":appVisualStudioSolution",
             ":exe:exeVisualStudioFilters", ":exe:exeVisualStudioProject",
             ":lib:libDllVisualStudioFilters", ":lib:libDllVisualStudioProject",
             ":visualStudio")
@@ -219,6 +224,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         file("other").listFiles().every { !(it.name.endsWith(".vcxproj") || it.name.endsWith(".vcxproj.filters")) }
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp build")
     def "create visual studio solution for executable that transitively depends on multiple projects"() {
         given:
         def app = new ExeWithLibraryUsingLibraryHelloWorldApp()
@@ -257,7 +263,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         succeeds ":visualStudio"
 
         then:
-        result.assertTasksExecuted(":appVisualStudioSolution",
+        result.assertTasksScheduled(":appVisualStudioSolution",
             ":exe:exeVisualStudioFilters", ":exe:exeVisualStudioProject",
             ":greet:greetLibVisualStudioFilters", ":greet:greetLibVisualStudioProject",
             ":lib:libDllVisualStudioFilters", ":lib:libDllVisualStudioProject",
@@ -281,6 +287,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         greetLibProject.projectConfigurations['debug'].includePath == filePath("src/main/public", "src/main/headers")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Visual Studio uses allprojects/subprojects")
     def "create visual studio solution for executable with a transitive api dependency"() {
         given:
         def app = new ExeWithLibraryUsingLibraryHelloWorldApp()
@@ -319,7 +326,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         succeeds ":visualStudio"
 
         then:
-        result.assertTasksExecuted(":appVisualStudioSolution",
+        result.assertTasksScheduled(":appVisualStudioSolution",
             ":exe:exeVisualStudioFilters", ":exe:exeVisualStudioProject",
             ":greet:greetLibVisualStudioFilters", ":greet:greetLibVisualStudioProject",
             ":lib:libDllVisualStudioFilters", ":lib:libDllVisualStudioProject",
@@ -343,7 +350,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
         greetLibProject.projectConfigurations['debug'].includePath == filePath("src/main/public", "src/main/headers")
     }
 
-    @Requires(IntegTestPreconditions.HasMsBuild)
+    @Requires(TestExecutionPreconditions.HasMsBuild)
     def "can build executable that depends on static library in another project from visual studio"() {
         useMsbuildTool()
         def app = new CppAppWithLibrary()
@@ -380,11 +387,11 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
 
         then:
         resultDebug.size() == 1
-        resultDebug[0].assertTasksExecuted(':exe:compileDebugCpp', ':exe:linkDebug', ':exe:installDebug', ':lib:compileDebugCpp', ':lib:createDebug')
+        resultDebug[0].assertTasksScheduled(':exe:compileDebugCpp', ':exe:linkDebug', ':exe:installDebug', ':lib:compileDebugCpp', ':lib:createDebug')
         installation('exe/build/install/main/debug').assertInstalled()
     }
 
-    @Requires(IntegTestPreconditions.HasMsBuild)
+    @Requires(TestExecutionPreconditions.HasMsBuild)
     def "skip unbuildable static library project when building solution from visual studio"() {
         useMsbuildTool()
         def app = new CppAppWithLibrary()
@@ -422,7 +429,7 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
 
         then:
         resultUnbuildableSolution.size() == 1
-        resultUnbuildableSolution[0].assertTasksExecuted()
+        resultUnbuildableSolution[0].assertNoTasksScheduled()
         resultUnbuildableSolution[0].assertOutputContains('The project "exe" is not selected for building in solution configuration "unbuildable|Win32".')
         resultUnbuildableSolution[0].assertOutputContains('The project "libLib" is not selected for building in solution configuration "unbuildable|Win32".')
         installation('exe/build/install/main/debug').assertNotInstalled()
@@ -434,9 +441,9 @@ class VisualStudioMultiProjectIntegrationTest extends AbstractVisualStudioIntegr
                 .fails()
 
         then:
-        resultDebug.assertTasksExecuted()
+        resultDebug.assertNoTasksScheduled()
         resultDebug.assertHasCause("Could not resolve all dependencies for configuration ':exe:nativeRuntimeDebug'.")
-        resultDebug.assertHasCause("Could not resolve project :lib.")
+        resultDebug.assertHasCause("Could not resolve project ':lib'.")
         installation('exe/build/install/main/debug').assertNotInstalled()
     }
 

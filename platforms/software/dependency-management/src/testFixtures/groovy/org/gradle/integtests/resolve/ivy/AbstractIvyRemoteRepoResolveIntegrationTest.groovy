@@ -17,7 +17,6 @@
 package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.executer.ProgressLoggingFixture
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.server.RepositoryServer
@@ -45,7 +44,7 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
         buildFile << """
             repositories {
                 ivy {
-                    url "${remoteIvyRepo.uri}"
+                    url = "${remoteIvyRepo.uri}"
                     $server.validCredentials
                     layout '$layout'
                 }
@@ -83,7 +82,7 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
         buildFile << """
             repositories {
                 ivy {
-                    url "${remoteIvyRepo.uri}"
+                    url = "${remoteIvyRepo.uri}"
                     $server.validCredentials
                     patternLayout {
                         artifact "${remoteIvyRepo.baseArtifactPattern}"
@@ -134,11 +133,11 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
             repositories {
                 ivy {
                     $server.validCredentials
-                    url "${emptyRepo.uri}"
-                    artifactPattern "${thirdPartyIvyRepo.artifactPattern}"
-                    artifactPattern "${companyIvyRepo.artifactPattern}"
-                    ivyPattern "${thirdPartyIvyRepo.ivyPattern}"
-                    ivyPattern "${companyIvyRepo.ivyPattern}"
+                    url = "${emptyRepo.uri}"
+                    artifactPattern("${thirdPartyIvyRepo.artifactPattern}")
+                    artifactPattern("${companyIvyRepo.artifactPattern}")
+                    ivyPattern("${thirdPartyIvyRepo.ivyPattern}")
+                    ivyPattern("${companyIvyRepo.ivyPattern}")
                 }
             }
             configurations { compile }
@@ -184,11 +183,11 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
         buildFile << """
             repositories {
                 ivy {
-                    url "${repo1.uri}"
+                    url = "${repo1.uri}"
                     $server.validCredentials
                 }
                 ivy {
-                    url "${repo2.uri}"
+                    url = "${repo2.uri}"
                     $server.validCredentials
                 }
             }
@@ -238,7 +237,7 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
         buildFile << """
             repositories {
                 ivy {
-                    url "${server.remoteIvyRepo.uri}"
+                    url = "${server.remoteIvyRepo.uri}"
                     $server.validCredentials
                 }
             }
@@ -280,7 +279,7 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
         buildFile << """
             repositories {
                 ivy {
-                    url "${server.remoteIvyRepo.uri}"
+                    url = "${server.remoteIvyRepo.uri}"
                     $server.validCredentials
                 }
             }
@@ -323,7 +322,7 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
         buildFile << """
             repositories {
                 ivy {
-                    url "${server.remoteIvyRepo.uri}"
+                    url = "${server.remoteIvyRepo.uri}"
                     $server.validCredentials
                     metadataSources { artifact() }
                 }
@@ -358,10 +357,6 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
         succeeds('listJars')
     }
 
-    @ToBeFixedForConfigurationCache(
-        skip = ToBeFixedForConfigurationCache.Skip.FAILS_TO_CLEANUP,
-        because = "IvyGcsRepoResolveIntegrationTest leaks test files"
-    )
     def "reuses cached details when switching ivy resolve mode"() {
         given:
         buildFile << """
@@ -373,7 +368,7 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
             dependencies {
                 repositories {
                     ivy {
-                        url "${server.remoteIvyRepo.uri}"
+                        url = "${server.remoteIvyRepo.uri}"
                         $server.validCredentials
                         resolve.dynamicMode = project.hasProperty('useDynamicResolve')
                     }

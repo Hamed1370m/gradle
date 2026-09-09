@@ -15,82 +15,65 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.builder;
 
-import com.google.common.collect.Iterators;
-import org.gradle.api.artifacts.ModuleIdentifier;
-import org.gradle.api.artifacts.ModuleVersionIdentifier;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphEdge;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphNode;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-abstract class MessageBuilderHelper {
+public final class MessageBuilderHelper {
 
-    static Collection<String> pathTo(EdgeState edge) {
-        return pathTo(edge, true);
+    private MessageBuilderHelper() { /* not instantiable */ }
+
+    public static List<String> formattedPathsTo(DependencyGraphEdge edge) {
+        return findPathsTo(edge).stream().map(path -> {
+            String header = Iterables.getLast(path).getDependencyMetadata().isConstraint() ? "Constraint" : "Dependency";
+            String formattedPath = streamNodeNames(path)
+                .collect(Collectors.joining(" --> "));
+
+            return header + " path: " + formattedPath;
+        }).collect(Collectors.toList());
     }
 
-    static Collection<String> pathTo(EdgeState edge, boolean includeLast) {
-        List<List<EdgeState>> acc = new ArrayList<>(1);
+    public static ImmutableList<ImmutableList<String>> findPathNamesTo(DependencyGraphEdge edge) {
+        return findPathsTo(edge).stream()
+            .map(p -> streamNodeNames(p).collect(ImmutableList.toImmutableList()))
+            .collect(ImmutableList.toImmutableList());
+    }
+
+    public static List<List<DependencyGraphEdge>> findPathsTo(DependencyGraphEdge edge) {
+        List<List<DependencyGraphEdge>> acc = new ArrayList<>(1);
         pathTo(edge, new ArrayList<>(), acc, new HashSet<>());
-        List<String> result = new ArrayList<>(acc.size());
-        for (List<EdgeState> path : acc) {
-            EdgeState target = Iterators.getLast(path.iterator());
-            StringBuilder sb = new StringBuilder();
-            if (target.getSelector().getDependencyMetadata().isConstraint()) {
-                sb.append("Constraint path ");
+        return acc;
+    }
+
+    private static void pathTo(DependencyGraphEdge edge, List<DependencyGraphEdge> currentPath, List<List<DependencyGraphEdge>> accumulator, Set<DependencyGraphNode> alreadySeen) {
+        DependencyGraphNode from = edge.getFrom();
+        if (alreadySeen.add(from)) {
+            currentPath.add(edge);
+
+            Collection<? extends DependencyGraphEdge> incomingEdges = from.getIncomingEdges();
+            if (!incomingEdges.isEmpty()) {
+                for (DependencyGraphEdge dependent : incomingEdges) {
+                    List<DependencyGraphEdge> otherPath = new ArrayList<>(currentPath);
+                    pathTo(dependent, otherPath, accumulator, alreadySeen);
+                }
             } else {
-                sb.append("Dependency path ");
+                // We've hit the root of the path
+                accumulator.add(Lists.reverse(currentPath));
             }
-            boolean first = true;
-            String variantDetails = null;
-            for (EdgeState e : path) {
-                if (!first) {
-                    sb.append(" --> ");
-                }
-                first = false;
-                ModuleVersionIdentifier id = e.getFrom().getComponent().getModuleVersion();
-                sb.append('\'').append(id).append('\'');
-                if (variantDetails != null) {
-                    sb.append(variantDetails);
-                }
-                variantDetails = variantDetails(e);
-            }
-            if (includeLast) {
-                sb.append(" --> ");
-                SelectorState selector = edge.getSelector();
-                ModuleIdentifier moduleId = selector.getTargetModule().getId();
-                sb.append('\'').append(moduleId.getGroup()).append(':').append(moduleId.getName()).append('\'');
-                if (variantDetails != null) {
-                    sb.append(variantDetails);
-                }
-            }
-            result.add(sb.toString());
         }
-        return result;
     }
 
-    @Nullable
-    private static String variantDetails(EdgeState e) {
-        String selectedVariantName = e.hasSelectedVariant() ? e.getSelectedNode().getMetadata().getName() : null;
-        if (selectedVariantName != null) {
-            return " (" + selectedVariantName + ")";
-        }
-        return null;
-    }
-
-    static void pathTo(EdgeState component, List<EdgeState> currentPath, List<List<EdgeState>> accumulator, Set<NodeState> alreadySeen) {
-        if (alreadySeen.add(component.getFrom())) {
-            currentPath.add(0, component);
-            for (EdgeState dependent : component.getFrom().getIncomingEdges()) {
-                List<EdgeState> otherPath = new ArrayList<>(currentPath);
-                pathTo(dependent, otherPath, accumulator, alreadySeen);
-            }
-            if (component.getFrom().isRoot()) {
-                accumulator.add(currentPath);
-            }
-        }
+    private static Stream<String> streamNodeNames(List<DependencyGraphEdge> path) {
+        return path.stream().map(edge -> edge.getFrom().getDisplayName());
     }
 }

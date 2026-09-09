@@ -16,16 +16,16 @@
 
 package org.gradle.language.swift
 
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.nativeplatform.fixtures.NativeBinaryFixture
 import org.gradle.nativeplatform.fixtures.app.CppGreeterFunction
 import org.gradle.nativeplatform.fixtures.app.CppGreeterFunctionUsesLogger
 import org.gradle.nativeplatform.fixtures.app.CppLogger
 import org.gradle.nativeplatform.fixtures.app.SwiftGreeterUsingCppFunction
 import org.gradle.test.fixtures.file.DoesNotSupportNonAsciiPaths
-import spock.lang.Ignore
 
 @DoesNotSupportNonAsciiPaths(reason = "Swift sometimes fails when executed from non-ASCII directory")
-@Ignore("Inconsistent Swift SDK and tooling discovered on our Intel Macs")
+@ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp/Swift build")
 class SwiftLibraryCppInteroperabilityIntegrationTest extends AbstractSwiftMixedLanguageIntegrationTest {
 
     def "can compile and link against a #linkage.toLowerCase() c++ library"() {
@@ -65,7 +65,7 @@ class SwiftLibraryCppInteroperabilityIntegrationTest extends AbstractSwiftMixedL
 
         expect:
         succeeds ":hello:assemble"
-        result.assertTasksExecuted(
+        result.assertTasksScheduled(
             ":cppGreeter:compileDebugCpp", ":cppGreeter:${createOrLink(linkage)}Debug",
             ":hello:compileDebugSwift", ":hello:linkDebug", ":hello:assemble")
 
@@ -113,7 +113,7 @@ class SwiftLibraryCppInteroperabilityIntegrationTest extends AbstractSwiftMixedL
 
         expect:
         succeeds ":hello:assemble"
-        result.assertTasksExecuted(
+        result.assertTasksScheduled(
             ":cppGreeter:compileDebugCpp", ":cppGreeter:linkDebug",
             ":logger:compileDebugCpp", ":logger:${createOrLink(linkage)}Debug",
             ":hello:compileDebugSwift", ":hello:linkDebug", ":hello:assemble")

@@ -275,9 +275,9 @@ class StrictVersionConstraintsIntegrationTest extends AbstractModuleDependencyRe
 
         then:
         failure.assertHasCause """Cannot find a version of 'org:c' that satisfies the version constraints:
-   Dependency path ':test:unspecified' --> 'org:c:2.0'
-   Dependency path ':test:unspecified' --> 'org:a:1.0' (runtime) --> 'org:c:{strictly 1.0}'
-   Dependency path ':test:unspecified' --> 'org:a:1.0' (runtime) --> 'org:b:1.0' (runtime) --> 'org:c:2.0'"""
+   Dependency path: root project 'test' (conf) --> 'org:c:2.0'
+   Dependency path: root project 'test' (conf) --> org:a:1.0 (runtime) --> 'org:c:{strictly 1.0}'
+   Dependency path: root project 'test' (conf) --> org:a:1.0 (runtime) --> org:b:1.0 (runtime) --> 'org:c:2.0'"""
     }
 
     def "strict from selected and later evicted modules are ignored"() {
@@ -473,14 +473,11 @@ class StrictVersionConstraintsIntegrationTest extends AbstractModuleDependencyRe
             }
         }
 
-        createDirs("foo")
-        settingsFile << "\ninclude 'foo'"
+        settingsFile << """
+            include 'foo'
+        """
+
         buildFile << """
-            project(':foo') {
-                configurations.create('default')
-                group = 'org'
-                version = '1.0'
-            }
             dependencies {
                 constraints {
                     conf('org:foo') {
@@ -490,6 +487,12 @@ class StrictVersionConstraintsIntegrationTest extends AbstractModuleDependencyRe
                 conf('org:bar:1.0')
                 conf(project(':foo'))
             }
+        """
+
+        file("foo/build.gradle") << """
+            configurations.create('default')
+            group = 'org'
+            version = '1.0'
         """
 
         when:
@@ -519,14 +522,11 @@ class StrictVersionConstraintsIntegrationTest extends AbstractModuleDependencyRe
     def "incompatible strict constraint and local project fail to resolve"() {
         given:
 
-        createDirs("foo")
-        settingsFile << "\ninclude 'foo'"
+        settingsFile << """
+            include 'foo'
+        """
+
         buildFile << """
-            project(':foo') {
-                configurations.create('default')
-                group = 'org'
-                version = '1.2'
-            }
             dependencies {
                 constraints {
                     conf('org:foo') {
@@ -537,13 +537,19 @@ class StrictVersionConstraintsIntegrationTest extends AbstractModuleDependencyRe
             }
         """
 
+        file("foo/build.gradle") << """
+            configurations.create('default')
+            group = 'org'
+            version = '1.2'
+        """
+
         when:
         fails ':checkDeps'
 
         then:
         failure.assertHasCause("""Cannot find a version of 'org:foo' that satisfies the version constraints:
-   Dependency path ':test:unspecified' --> 'project :foo'
-   Constraint path ':test:unspecified' --> 'org:foo:{strictly 1.0}'""")
+   Dependency path: root project 'test' (conf) --> 'project ':foo''
+   Constraint path: root project 'test' (conf) --> 'org:foo:{strictly 1.0}'""")
     }
 
     @RequiredFeature(feature = GradleMetadataResolveRunner.GRADLE_METADATA, value = "true")
@@ -590,8 +596,8 @@ class StrictVersionConstraintsIntegrationTest extends AbstractModuleDependencyRe
 
         then:
         failure.assertHasCause """Cannot find a version of 'org:foo' that satisfies the version constraints:
-   Dependency path ':test:unspecified' --> 'org:x1:1.0' (runtime) --> 'org:bar:1.0' (runtime) --> 'org:foo:2.0'
-   Constraint path ':test:unspecified' --> 'org:x1:1.0' (runtime) --> 'org:foo:{strictly 1.0}'"""
+   Dependency path: root project 'test' (conf) --> org:x1:1.0 (runtime) --> org:bar:1.0 (runtime) --> 'org:foo:2.0'
+   Constraint path: root project 'test' (conf) --> org:x1:1.0 (runtime) --> 'org:foo:{strictly 1.0}'"""
     }
 
     @RequiredFeature(feature = GradleMetadataResolveRunner.GRADLE_METADATA, value = "true")

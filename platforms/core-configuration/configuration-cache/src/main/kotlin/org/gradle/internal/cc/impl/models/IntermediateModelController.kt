@@ -16,9 +16,10 @@
 
 package org.gradle.internal.cc.impl.models
 
+import org.gradle.api.internal.project.ProjectIdentity
+import org.gradle.internal.buildtree.ToolingModelRequestContext
 import org.gradle.internal.cc.impl.ConfigurationCacheOperationIO
 import org.gradle.internal.cc.impl.ConfigurationCacheStateStore
-import org.gradle.internal.cc.impl.ProjectIdentityPath
 import org.gradle.internal.cc.impl.StateType
 import org.gradle.internal.cc.impl.cacheentry.ModelKey
 import org.gradle.internal.cc.impl.fingerprint.ConfigurationCacheFingerprintController
@@ -30,6 +31,7 @@ import org.gradle.internal.serialize.graph.readNonNull
 import org.gradle.internal.serialize.graph.withIsolate
 import org.gradle.tooling.provider.model.UnknownModelException
 import org.gradle.tooling.provider.model.internal.ToolingModelParameterCarrier
+import org.gradle.tooling.provider.model.internal.ToolingModelScopeResult
 
 
 /**
@@ -61,16 +63,21 @@ class IntermediateModelController(
         }
     }
 
-    fun <T> loadOrCreateIntermediateModel(project: ProjectIdentityPath?, modelName: String, parameter: ToolingModelParameterCarrier?, creator: () -> T): T? {
-        val key = ModelKey(project?.identityPath, modelName, parameter?.hash)
+    fun loadOrCreateIntermediateModel(
+        project: ProjectIdentity?,
+        modelRequestContext: ToolingModelRequestContext,
+        parameter: ToolingModelParameterCarrier?,
+        creator: () -> ToolingModelScopeResult
+    ): ToolingModelScopeResult {
+        val key = ModelKey(project?.buildTreePath, modelRequestContext.modelName, parameter?.hash, modelRequestContext.inResilientContext())
         return loadOrCreateValue(key) {
             try {
                 val model = if (project != null) {
-                    cacheFingerprintController.runCollectingFingerprintForProject(project, creator)
+                    cacheFingerprintController.runCollectingFingerprintForProject(project, true, creator)
                 } else {
                     creator()
                 }
-                if (model == null) IntermediateModel.NullModel else IntermediateModel.Model(model)
+                IntermediateModel.Model(model)
             } catch (e: UnknownModelException) {
                 IntermediateModel.NoModel(e.message!!)
             }

@@ -16,14 +16,14 @@
 
 package org.gradle.tooling.internal.protocol.test;
 
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Specifies a method to be tested.
  *
  * DO NOT CHANGE THIS INTERFACE. It is part of the cross-version protocol.
  *
- * @since 2.7-rc-1
+ * @since 2.7
  */
 public interface InternalJvmTestRequest {
     String getClassName();

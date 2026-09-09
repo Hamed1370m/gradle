@@ -20,4 +20,31 @@ import groovy.transform.SelfType
 
 @SelfType(BaseDeprecations)
 trait WithAndroidDeprecations {
+
+    void expectProjectDependencyNotationDeprecationIf(boolean condition) {
+        if (condition) {
+            expectProjectDependencyNotationDeprecation()
+        }
+    }
+
+    void expectProjectDependencyNotationDeprecation() {
+        runner.expectDeprecationWarning(
+            "Using a Project object as a dependency notation has been deprecated. This will fail with an error in Gradle 10. Please use the project(String) method on DependencyHandler or the createProjectDependency(String) method on DependencyFactory instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#dependency_project_notation",
+            "https://issuetracker.google.com/issues/495889752"
+        )
+    }
+
+    void expectSetVisibleDeprecationIf(boolean condition) {
+        if (condition) {
+            expectSetVisibleDeprecation()
+        }
+    }
+
+    void expectSetVisibleDeprecation() {
+        runner.expectDeprecationWarning(
+            "The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecate-visible-property",
+            "https://issuetracker.google.com/issues/540783786"
+        )
+    }
+
 }

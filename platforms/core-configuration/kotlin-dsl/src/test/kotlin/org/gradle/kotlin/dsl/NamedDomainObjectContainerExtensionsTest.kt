@@ -1,11 +1,5 @@
 package org.gradle.kotlin.dsl
 
-import com.nhaarman.mockito_kotlin.any
-import com.nhaarman.mockito_kotlin.doReturn
-import com.nhaarman.mockito_kotlin.eq
-import com.nhaarman.mockito_kotlin.inOrder
-import com.nhaarman.mockito_kotlin.mock
-import com.nhaarman.mockito_kotlin.verify
 import org.gradle.api.Action
 import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.api.NamedDomainObjectProvider
@@ -15,10 +9,17 @@ import org.gradle.api.tasks.Delete
 import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.TaskContainer
 import org.gradle.kotlin.dsl.support.uncheckedCast
+import org.gradle.test.fixtures.ExpectDeprecationExtension
 import org.hamcrest.CoreMatchers.equalTo
 import org.hamcrest.CoreMatchers.sameInstance
 import org.hamcrest.MatcherAssert.assertThat
 import org.junit.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.inOrder
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 
 
 class NamedDomainObjectContainerExtensionsTest {
@@ -205,8 +206,7 @@ class NamedDomainObjectContainerExtensionsTest {
             }
             val b = "bob"(type = DomainObjectBase.Bar::class)
             val j = "jim" {}
-            @Suppress("deprecation")
-            val s = "steve"() // can invoke without a block, but must invoke
+            val s = named("steve")
 
             assertThat(a.get(), sameInstance(alice))
             assertThat(b.get(), sameInstance(bob))
@@ -225,6 +225,7 @@ class NamedDomainObjectContainerExtensionsTest {
         )
     }
 
+    @Suppress("DEPRECATION")
     @Test
     fun `can create and configure tasks`() {
 
@@ -260,32 +261,39 @@ class NamedDomainObjectContainerExtensionsTest {
         }
     }
 
+    @Suppress("DEPRECATION")
     @Test
     fun `can create element within configuration block via delegated property`() {
+        ExpectDeprecationExtension.intercept(
+            "The 'val name by creating' property delegate syntax has been deprecated."
+        ) {
+            val tasks = mock<TaskContainer> {
+                on { create("hello") } doReturn mock<Task>()
+            }
 
-        val tasks = mock<TaskContainer> {
-            on { create("hello") } doReturn mock<Task>()
+            tasks {
+                @Suppress("DEPRECATION", "UnusedVariable", "unused")
+                val hello by creating
+            }
+            verify(tasks).create("hello")
         }
-
-        tasks {
-            @Suppress("UnusedPrivateProperty")
-            val hello by creating
-        }
-        verify(tasks).create("hello")
     }
 
     @Test
     fun `can get element of specific type within configuration block via delegated property`() {
+        ExpectDeprecationExtension.intercept(
+            "The 'val name by getting(Type::class)' property delegate syntax has been deprecated."
+        ) {
+            val task = mock<Exec>()
+            val tasks = mock<TaskContainer> {
+                on { getByName("hello") } doReturn task
+            }
 
-        val task = mock<Exec>()
-        val tasks = mock<TaskContainer> {
-            on { getByName("hello") } doReturn task
+            tasks {
+                @Suppress("DEPRECATION", "UnusedVariable", "unused")
+                val hello by getting(Exec::class)
+            }
+            verify(tasks).getByName("hello")
         }
-
-        @Suppress("UnusedPrivateProperty")
-        tasks {
-            val hello by getting(Exec::class)
-        }
-        verify(tasks).getByName("hello")
     }
 }

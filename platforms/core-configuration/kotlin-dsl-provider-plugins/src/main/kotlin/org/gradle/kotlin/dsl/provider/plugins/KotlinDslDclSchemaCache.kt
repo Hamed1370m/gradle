@@ -16,25 +16,75 @@
 
 package org.gradle.kotlin.dsl.provider.plugins
 
+import org.gradle.api.internal.initialization.ClassLoaderScope
 import org.gradle.api.reflect.TypeOf
 import org.gradle.cache.internal.CrossBuildInMemoryCache
+import org.gradle.cache.internal.CrossBuildInMemoryCacheFactory
+import org.gradle.declarative.dsl.evaluation.InterpretationSequence
 import org.gradle.kotlin.dsl.accessors.ContainerElementFactoryEntry
+import org.gradle.kotlin.dsl.accessors.NestedModelEntry
+import org.gradle.kotlin.dsl.accessors.ProjectFeatureEntry
+import org.gradle.features.internal.binding.ProjectFeatureDeclarations
 
 typealias ContainerElementFactories = List<ContainerElementFactoryEntry<TypeOf<*>>>
+typealias NestedModels = List<NestedModelEntry<TypeOf<*>>>
+typealias ProjectTypeEntries = List<ProjectFeatureEntry<TypeOf<*>>>
 
 interface KotlinDslDclSchemaCache {
-    fun getOrPutContainerElementFactories(forClass: Class<*>, produceIfAbsent: () -> ContainerElementFactories): ContainerElementFactories
+    fun getOrPutContainerElementFactories(
+        forInterpretationSequence: InterpretationSequence,
+        classLoaderScope: ClassLoaderScope,
+        produceIfAbsent: () -> ContainerElementFactories
+    ): ContainerElementFactories
+
+    fun getOrPutNestedModels(
+        forInterpretationSequence: InterpretationSequence,
+        classLoaderScope: ClassLoaderScope,
+        produceIfAbsent: () -> NestedModels
+    ): NestedModels
+
+    fun getOrPutProjectTypes(
+        forRegistry: ProjectFeatureDeclarations,
+        produceIfAbsent: () -> ProjectTypeEntries
+    ): ProjectTypeEntries
 }
 
 class CrossBuildInMemoryKotlinDslDclSchemaCache(
-    private val containerElementFactoriesCache: CrossBuildInMemoryCache<Class<*>, ContainerElementFactories>
+    crossBuildInMemoryCacheFactory: CrossBuildInMemoryCacheFactory
 ) : KotlinDslDclSchemaCache {
-    override fun getOrPutContainerElementFactories(forClass: Class<*>, produceIfAbsent: () -> ContainerElementFactories): ContainerElementFactories =
-        containerElementFactoriesCache.getIfPresent(forClass)
-            ?: produceIfAbsent().also { result ->
-                containerElementFactoriesCache.put(
-                    forClass,
-                    result.takeIf(Collection<*>::isNotEmpty) ?: emptyList() // avoid referencing lots of empty lists, store a reference to the singleton instead
-                )
-            }
+
+    private val containerElementFactoriesCache: CrossBuildInMemoryCache<InterpretationSequenceKey, ContainerElementFactories> =
+        crossBuildInMemoryCacheFactory.newCache()
+
+    private val nestedModelsCache: CrossBuildInMemoryCache<InterpretationSequenceKey, NestedModels> =
+        crossBuildInMemoryCacheFactory.newCache()
+
+    private val projectTypeEntriesCache: CrossBuildInMemoryCache<ProjectFeatureDeclarations, ProjectTypeEntries> =
+        crossBuildInMemoryCacheFactory.newCache()
+
+    private data class InterpretationSequenceKey(
+        val interpretationSequence: InterpretationSequence,
+        val classLoaderScope: ClassLoaderScope
+    )
+
+    override fun getOrPutNestedModels(forInterpretationSequence: InterpretationSequence, classLoaderScope: ClassLoaderScope, produceIfAbsent: () -> NestedModels): NestedModels =
+        nestedModelsCache.get(InterpretationSequenceKey(forInterpretationSequence, classLoaderScope)) { _ ->
+            produceIfAbsent().ifEmpty { emptyList() }
+        }
+
+    override fun getOrPutContainerElementFactories(
+        forInterpretationSequence: InterpretationSequence,
+        classLoaderScope: ClassLoaderScope,
+        produceIfAbsent: () -> ContainerElementFactories
+    ): ContainerElementFactories = containerElementFactoriesCache
+        .get(InterpretationSequenceKey(forInterpretationSequence, classLoaderScope)) { _ ->
+            produceIfAbsent().ifEmpty { emptyList() } // avoid referencing lots of empty lists, store a reference to the singleton instead
+        }
+
+    override fun getOrPutProjectTypes(
+        forRegistry: ProjectFeatureDeclarations,
+        produceIfAbsent: () -> ProjectTypeEntries
+    ): ProjectTypeEntries = projectTypeEntriesCache.get(forRegistry) { _ ->
+        produceIfAbsent()
+    }
 }

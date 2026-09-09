@@ -18,6 +18,7 @@ package org.gradle.kotlin.dsl.integration
 
 import org.gradle.kotlin.dsl.fixtures.AbstractKotlinIntegrationTest
 import org.junit.Test
+import spock.lang.Issue
 
 
 /**
@@ -26,11 +27,45 @@ import org.junit.Test
 class KotlinDslNullnessIntegrationTest : AbstractKotlinIntegrationTest() {
 
     @Test
-    fun `Provider#map works with a null return value in script`() {
-        withBuildScript("""
-            provider { "thing" }.map { null }
-        """)
+    @Issue("https://github.com/gradle/gradle/issues/38792")
+    fun `Transformer can be implemented with a nullable OUT type argument in script`() {
+        withBuildScript(
+            """
+            class NullingTransformer : Transformer<String?, String> {
+                override fun transform(name: String): String? = null
+            }
+            tasks.register<Copy>("copyStuff") {
+                rename(NullingTransformer())
+            }
+            """
+        )
         build("help")
+    }
+
+    @Test
+    fun `Provider#map works with a null return value in script`() {
+        withBuildScript(
+            """
+            provider { "thing" }.map { null }
+        """
+        )
+        build("help")
+    }
+
+    @Test
+    fun `Provider#map works with a null return value in a precompiled script`() {
+        withKotlinDslPlugin()
+
+        withFile(
+            "src/main/kotlin/code.gradle.kts",
+            """
+            provider { "thing" }.map { null }
+            """
+        )
+
+        val result = build("classes")
+
+        result.assertTaskScheduled(":compileKotlin")
     }
 
     @Test
@@ -57,16 +92,35 @@ class KotlinDslNullnessIntegrationTest : AbstractKotlinIntegrationTest() {
 
         val result = build("classes")
 
-        result.assertTaskExecuted(":compileKotlin")
+        result.assertTaskScheduled(":compileKotlin")
     }
 
     @Test
     fun `Provider#flatMap works with a null return value in script`() {
-        withBuildScript("""
+        withBuildScript(
+            """
             val providerA: Provider<String> = provider { "thing" }.flatMap { provider { null } }
             val providerB: Provider<String> = provider { "thing" }.flatMap { null }
-        """)
+        """
+        )
         build("help")
+    }
+
+    @Test
+    fun `Provider#flatMap works with a null return value in a precompiled script`() {
+        withKotlinDslPlugin()
+
+        withFile(
+            "src/main/kotlin/code.gradle.kts",
+            """
+            val providerA: Provider<String> = provider { "thing" }.flatMap { provider { null } }
+            val providerB: Provider<String> = provider { "thing" }.flatMap { null }
+            """
+        )
+
+        val result = build("classes")
+
+        result.assertTaskScheduled(":compileKotlin")
     }
 
     @Test
@@ -96,17 +150,37 @@ class KotlinDslNullnessIntegrationTest : AbstractKotlinIntegrationTest() {
 
         val result = build("classes")
 
-        result.assertTaskExecuted(":compileKotlin")
+        result.assertTaskScheduled(":compileKotlin")
     }
 
     @Test
     fun `CopySpec#filter works with a null return value in script`() {
-        withBuildScript("""
+        withBuildScript(
+            """
             fun eliminateEverything(spec: CopySpec) {
                 spec.filter { null }
             }
-        """)
+        """
+        )
         build("help")
+    }
+
+    @Test
+    fun `CopySpec#filter works with a null return value in a precompiled script`() {
+        withKotlinDslPlugin()
+
+        withFile(
+            "src/main/kotlin/code.gradle.kts",
+            """
+            fun eliminateEverything(spec: CopySpec) {
+                spec.filter { null }
+            }
+            """
+        )
+
+        val result = build("classes")
+
+        result.assertTaskScheduled(":compileKotlin")
     }
 
     @Test
@@ -127,6 +201,75 @@ class KotlinDslNullnessIntegrationTest : AbstractKotlinIntegrationTest() {
 
         val result = build("classes")
 
-        result.assertTaskExecuted(":compileKotlin")
+        result.assertTaskScheduled(":compileKotlin")
+    }
+
+    @Test
+    fun `Property#set accepts null in script`() {
+        withBuildScript(
+            """
+            interface Some {
+                val some: Property<String>
+            }
+            val instance = objects.newInstance<Some>()
+            instance.some.set(null)
+            """.trimIndent()
+        )
+        build("help")
+    }
+
+    @Test
+    fun `Property#set accepts null in precompiled script`() {
+        withKotlinBuildSrc()
+        withFile(
+            "buildSrc/src/main/kotlin/my-plugin.gradle.kts",
+            """
+            interface Some {
+                val some: Property<String>
+            }
+            val instance = objects.newInstance<Some>()
+            instance.some.set(null)
+            """.trimIndent()
+        )
+        withBuildScript("""plugins { id("my-plugin") }""")
+        val result = build("help")
+        result.assertTaskScheduled(":buildSrc:compileKotlin")
+    }
+
+    @Test
+    fun `Property#set accepts null in kt file in kotlin-dsl project`() {
+        withKotlinBuildSrc()
+        withFile(
+            "buildSrc/src/main/kotlin/MyPlugin.kt",
+            """
+            import org.gradle.api.*
+            import org.gradle.api.provider.*
+            import org.gradle.kotlin.dsl.*
+            interface Some {
+                val some: Property<String>
+            }
+            class MyPlugin : Plugin<Project> {
+                override fun apply(project: Project) {
+                    val instance = project.objects.newInstance<Some>()
+                    instance.some.set(null)
+                }
+            }
+            """.trimIndent()
+        )
+        existing("buildSrc/build.gradle.kts").appendText(
+            """
+            gradlePlugin {
+                plugins {
+                    create("myPlugin") {
+                        id = "my-plugin"
+                        implementationClass = "MyPlugin"
+                    }
+                }
+            }
+            """.trimIndent()
+        )
+        withBuildScript("""plugins { id("my-plugin") }""")
+        val result = build("help")
+        result.assertTaskScheduled(":buildSrc:compileKotlin")
     }
 }

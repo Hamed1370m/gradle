@@ -18,10 +18,10 @@ package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph;
 
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
-import org.gradle.api.artifacts.result.ComponentSelectionReason;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionReasonInternal;
 import org.gradle.internal.component.model.ComponentGraphResolveState;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 /**
@@ -53,7 +53,7 @@ public interface ResolvedGraphComponent {
     /**
      * The reason this component was selected in the graph.
      */
-    ComponentSelectionReason getSelectionReason();
+    ComponentSelectionReasonInternal getSelectionReason();
 
     /**
      * Returns the resolved/selected variant(s) for this component.

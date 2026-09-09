@@ -26,7 +26,8 @@ import org.gradle.nativeplatform.fixtures.app.SwiftLib
 import org.gradle.nativeplatform.fixtures.app.SwiftLibWithXCTest
 import org.gradle.test.fixtures.file.DoesNotSupportNonAsciiPaths
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.TestEnvironmentPreconditions
+
 import spock.lang.Ignore
 
 @DoesNotSupportNonAsciiPaths(reason = "Swift sometimes fails when executed from non-ASCII directory")
@@ -130,7 +131,7 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
         rootXcodeProject.schemeFiles[0].schemeXml.LaunchAction.BuildableProductRunnable.size() == 0
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     def "can build Swift static library from xcode"() {
         useXcodebuildTool()
         def lib = new SwiftLib()
@@ -155,7 +156,6 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
 
         then:
         resultDebug.assertTasksExecuted(':compileDebugSwift', ':createDebug', ':_xcode___App_Debug')
-        resultDebug.assertTasksNotSkipped(':compileDebugSwift', ':createDebug', ':_xcode___App_Debug')
         debugBinary.assertExists()
 
         when:
@@ -167,8 +167,8 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds()
 
         then:
+        resultRelease.assertTasksScheduled(':compileReleaseSwift', ':createRelease', ':_xcode___App_Release')
         resultRelease.assertTasksExecuted(':compileReleaseSwift', ':createRelease', ':_xcode___App_Release')
-        resultRelease.assertTasksNotSkipped(':compileReleaseSwift', ':createRelease', ':_xcode___App_Release')
         releaseBinary.assertExists()
     }
 
@@ -245,7 +245,7 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
         }
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     def "returns meaningful errors from xcode when Swift application product doesn't have test configured"() {
         useXcodebuildTool()
 
@@ -288,7 +288,7 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
         resultRunner.error.contains("Scheme App is not currently configured for the test action.")
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     def "returns meaningful errors from xcode when Swift library doesn't have test configured"() {
         useXcodebuildTool()
 
@@ -321,7 +321,7 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
         resultRelease.error.contains("Scheme App is not currently configured for the test action.")
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     @Ignore("https://github.com/gradle/gradle-native-private/issues/274")
     def "can configure test only when xctest plugin is applied"() {
         useXcodebuildTool()
@@ -360,7 +360,7 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
         resultDebugWithXCTest.assertHasPostBuildOutput("** TEST SUCCEEDED **")
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     @Ignore("https://github.com/gradle/gradle-native-private/issues/274")
     def "can run tests for Swift library from xcode"() {
         useXcodebuildTool()
@@ -383,14 +383,14 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds(XcodebuildExecutor.XcodeAction.TEST)
 
         then:
-        resultTestRunner.assertTasksExecuted(':compileDebugSwift', ':compileTestSwift', ':linkTest', ':installTest',
+        resultTestRunner.assertTasksScheduled(':compileDebugSwift', ':compileTestSwift', ':linkTest', ':installTest',
             ':syncBundleToXcodeBuiltProductDir', ':_xcode__build_GreeterTest___GradleTestRunner_Debug')
         resultTestRunner.assertHasPostBuildOutput("Test Case '-[GreeterTest.MultiplyTestSuite testCanMultiplyTotalOf42]' passed")
         resultTestRunner.assertHasPostBuildOutput("Test Case '-[GreeterTest.SumTestSuite testCanAddSumOf42]' passed")
         resultTestRunner.assertHasPostBuildOutput("** TEST SUCCEEDED **")
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     @Ignore("https://github.com/gradle/gradle-native-private/issues/274")
     def "can run tests for Swift application from xcode"() {
         useXcodebuildTool()
@@ -415,14 +415,14 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds(XcodebuildExecutor.XcodeAction.TEST)
 
         then:
-        resultTestRunner.assertTasksExecuted(':compileDebugSwift', ':compileTestSwift', ":relocateMainForTest", ':linkTest', ':installTest',
+        resultTestRunner.assertTasksScheduled(':compileDebugSwift', ':compileTestSwift', ":relocateMainForTest", ':linkTest', ':installTest',
             ':syncBundleToXcodeBuiltProductDir', ':_xcode__build_AppTest___GradleTestRunner_Debug')
         resultTestRunner.assertHasPostBuildOutput("Test Case '-[AppTest.MultiplyTestSuite testCanMultiplyTotalOf42]' passed")
         resultTestRunner.assertHasPostBuildOutput("Test Case '-[AppTest.SumTestSuite testCanAddSumOf42]' passed")
         resultTestRunner.assertHasPostBuildOutput("** TEST SUCCEEDED **")
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     @Ignore("https://github.com/gradle/gradle-native-private/issues/273")
     def "can build Swift application from xcode"() {
         useXcodebuildTool()
@@ -447,7 +447,6 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
 
         then:
         resultDebug.assertTasksExecuted(':compileDebugSwift', ':linkDebug', ':installDebug', ':_xcode___App_Debug')
-        resultDebug.assertTasksNotSkipped(':compileDebugSwift', ':linkDebug', ':installDebug', ':_xcode___App_Debug')
         debugBinary.exec().out == app.expectedOutput
         fixture(debugBinary).assertHasDebugSymbolsFor(app.sourceFileNames)
 
@@ -461,12 +460,11 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
 
         then:
         resultRelease.assertTasksExecuted(':compileReleaseSwift', ':linkRelease', ':stripSymbolsRelease', ':installRelease', ':_xcode___App_Release')
-        resultRelease.assertTasksNotSkipped(':compileReleaseSwift', ':linkRelease', ':stripSymbolsRelease', ':installRelease', ':_xcode___App_Release')
         releaseBinary.exec().out == app.expectedOutput
         fixture(releaseBinary).assertHasDebugSymbolsFor(app.sourceFileNames)
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     @Ignore("https://github.com/gradle/gradle-native-private/issues/273")
     def "can build Swift application from xcode with multiple operating systems"() {
         useXcodebuildTool()
@@ -495,7 +493,6 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
 
         then:
         resultDebug.assertTasksExecuted(':compileDebugMacosSwift', ':linkDebugMacos', ':installDebugMacos', ':_xcode___App_DebugMacos')
-        resultDebug.assertTasksNotSkipped(':compileDebugMacosSwift', ':linkDebugMacos', ':installDebugMacos', ':_xcode___App_DebugMacos')
         debugBinary.exec().out == app.expectedOutput
         fixture(debugBinary).assertHasDebugSymbolsFor(app.sourceFileNames)
 
@@ -508,13 +505,13 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
                 .succeeds()
 
         then:
+        resultRelease.assertTasksScheduled(':compileReleaseMacosSwift', ':linkReleaseMacos', ':stripSymbolsReleaseMacos', ':installReleaseMacos', ':_xcode___App_ReleaseMacos')
         resultRelease.assertTasksExecuted(':compileReleaseMacosSwift', ':linkReleaseMacos', ':stripSymbolsReleaseMacos', ':installReleaseMacos', ':_xcode___App_ReleaseMacos')
-        resultRelease.assertTasksNotSkipped(':compileReleaseMacosSwift', ':linkReleaseMacos', ':stripSymbolsReleaseMacos', ':installReleaseMacos', ':_xcode___App_ReleaseMacos')
         releaseBinary.exec().out == app.expectedOutput
         fixture(releaseBinary).assertHasDebugSymbolsFor(app.sourceFileNames)
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     def "produces reasonable message when xcode uses outdated xcode configuration"() {
         useXcodebuildTool()
         def app = new SwiftApp()
@@ -537,7 +534,7 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
         result.assertHasDescription("Unknown Xcode target 'App', do you need to re-generate Xcode configuration?")
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     @Ignore("https://github.com/gradle/gradle-native-private/issues/273")
     def "can clean from xcode"() {
         useXcodebuildTool()
@@ -569,7 +566,7 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
         file("build").assertDoesNotExist()
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     @Ignore("https://github.com/gradle/gradle-native-private/issues/273")
     def "can build Swift library from xcode"() {
         useXcodebuildTool()
@@ -594,7 +591,6 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
 
         then:
         resultDebug.assertTasksExecuted(':compileDebugSwift', ':linkDebug', ':_xcode___App_Debug')
-        resultDebug.assertTasksNotSkipped(':compileDebugSwift', ':linkDebug', ':_xcode___App_Debug')
         debugBinary.assertExists()
         fixture(debugBinary).assertHasDebugSymbolsFor(lib.sourceFileNames)
 
@@ -607,13 +603,13 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds()
 
         then:
+        resultRelease.assertTasksScheduled(':compileReleaseSwift', ':linkRelease', ':stripSymbolsRelease', ':_xcode___App_Release')
         resultRelease.assertTasksExecuted(':compileReleaseSwift', ':linkRelease', ':stripSymbolsRelease', ':_xcode___App_Release')
-        resultRelease.assertTasksNotSkipped(':compileReleaseSwift', ':linkRelease', ':stripSymbolsRelease', ':_xcode___App_Release')
         releaseBinary.assertExists()
         fixture(releaseBinary).assertHasDebugSymbolsFor(lib.sourceFileNames)
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     @Ignore("https://github.com/gradle/gradle-native-private/issues/273")
     def "can build Swift library from xcode with multiple operating systems"() {
         useXcodebuildTool()
@@ -641,7 +637,6 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
 
         then:
         resultDebug.assertTasksExecuted(':compileDebugMacosSwift', ':linkDebugMacos', ':_xcode___App_DebugMacos')
-        resultDebug.assertTasksNotSkipped(':compileDebugMacosSwift', ':linkDebugMacos', ':_xcode___App_DebugMacos')
         debugBinary.assertExists()
         fixture(debugBinary).assertHasDebugSymbolsFor(lib.sourceFileNames)
 
@@ -654,8 +649,8 @@ class XcodeSingleSwiftProjectIntegrationTest extends AbstractXcodeIntegrationSpe
                 .succeeds()
 
         then:
+        resultRelease.assertTasksScheduled(':compileReleaseMacosSwift', ':linkReleaseMacos', ':stripSymbolsReleaseMacos', ':_xcode___App_ReleaseMacos')
         resultRelease.assertTasksExecuted(':compileReleaseMacosSwift', ':linkReleaseMacos', ':stripSymbolsReleaseMacos', ':_xcode___App_ReleaseMacos')
-        resultRelease.assertTasksNotSkipped(':compileReleaseMacosSwift', ':linkReleaseMacos', ':stripSymbolsReleaseMacos', ':_xcode___App_ReleaseMacos')
         releaseBinary.assertExists()
         fixture(releaseBinary).assertHasDebugSymbolsFor(lib.sourceFileNames)
     }

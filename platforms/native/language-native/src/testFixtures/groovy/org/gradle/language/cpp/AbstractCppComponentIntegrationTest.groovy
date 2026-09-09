@@ -16,7 +16,6 @@
 
 package org.gradle.language.cpp
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.language.AbstractNativeLanguageComponentIntegrationTest
 import org.gradle.nativeplatform.MachineArchitecture
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
@@ -34,7 +33,7 @@ abstract class AbstractCppComponentIntegrationTest extends AbstractNativeLanguag
 
         expect:
         succeeds taskNameToAssembleDevelopmentBinary
-        result.assertTasksExecutedAndNotSkipped(tasksToAssembleDevelopmentBinary, ":$taskNameToAssembleDevelopmentBinary")
+        result.assertTasksExecuted(tasksToAssembleDevelopmentBinary, ":$taskNameToAssembleDevelopmentBinary")
     }
 
     def "assemble task warns when current operating system family is excluded"() {
@@ -103,7 +102,7 @@ abstract class AbstractCppComponentIntegrationTest extends AbstractNativeLanguag
 
         expect:
         succeeds taskNameToAssembleDevelopmentBinary
-        result.assertTasksExecutedAndNotSkipped getTasksToAssembleDevelopmentBinary(currentOsFamilyName.toLowerCase()), ":${taskNameToAssembleDevelopmentBinary}"
+        result.assertTasksExecuted getTasksToAssembleDevelopmentBinary(currentOsFamilyName.toLowerCase()), ":${taskNameToAssembleDevelopmentBinary}"
     }
 
     @RequiresInstalledToolChain(ToolChainRequirement.SUPPORTS_32_AND_64)
@@ -117,17 +116,12 @@ abstract class AbstractCppComponentIntegrationTest extends AbstractNativeLanguag
 
         expect:
         succeeds getTaskNameToAssembleDevelopmentBinaryWithArchitecture(MachineArchitecture.X86), getTaskNameToAssembleDevelopmentBinaryWithArchitecture(MachineArchitecture.X86_64)
-        result.assertTasksExecutedAndNotSkipped(getTasksToAssembleDevelopmentBinary(MachineArchitecture.X86),
+        result.assertTasksExecuted(getTasksToAssembleDevelopmentBinary(MachineArchitecture.X86),
                 getTasksToAssembleDevelopmentBinary(MachineArchitecture.X86_64),
                 getTaskNameToAssembleDevelopmentBinaryWithArchitecture(MachineArchitecture.X86),
                 getTaskNameToAssembleDevelopmentBinaryWithArchitecture(MachineArchitecture.X86_64))
     }
 
-    @ToBeFixedForConfigurationCache(bottomSpecs = [
-        'CppUnitTestComponentWithStaticLibraryLinkageIntegrationTest',
-        'CppUnitTestComponentWithBothLibraryLinkageIntegrationTest',
-        'CppUnitTestComponentWithSharedLibraryLinkageIntegrationTest'
-    ], because = "may compile main and test binaries concurrently so may fail with multiple exceptions")
     def "fails when no target architecture can be built"() {
         given:
         makeSingleProject()
@@ -138,8 +132,14 @@ abstract class AbstractCppComponentIntegrationTest extends AbstractNativeLanguag
         buildFile << configureToolChainSupport('foo')
 
         expect:
-        fails taskNameToAssembleDevelopmentBinary
-        failure.assertHasCause("No tool chain is available to build C++")
+        // With configuration cache, compilation tasks may run in parallel.
+        // Use --continue to deterministically collect all failures.
+        fails taskNameToAssembleDevelopmentBinary, "--continue"
+        def compileTasksCount = compilationTasks.size()
+        failure.assertHasFailures(compileTasksCount)
+        compileTasksCount.times {
+            failure.assertHasCause("No tool chain is available to build C++")
+        }
     }
 
     def "can build current architecture when other, non-buildable architectures are specified"() {
@@ -153,7 +153,7 @@ abstract class AbstractCppComponentIntegrationTest extends AbstractNativeLanguag
 
         expect:
         succeeds taskNameToAssembleDevelopmentBinary
-        result.assertTasksExecutedAndNotSkipped(getTasksToAssembleDevelopmentBinary(currentArchitecture), ":$taskNameToAssembleDevelopmentBinary")
+        result.assertTasksExecuted(getTasksToAssembleDevelopmentBinary(currentArchitecture), ":$taskNameToAssembleDevelopmentBinary")
     }
 
     def "ignores duplicate target machines"() {
@@ -193,18 +193,20 @@ abstract class AbstractCppComponentIntegrationTest extends AbstractNativeLanguag
 
     protected abstract List<String> getTasksToAssembleDevelopmentBinary(String variant = "")
 
+    protected List<String> getCompilationTasks(String variant = "") {
+        return getTasksToAssembleDevelopmentBinary(variant).findAll { it.startsWith(':compile') }
+    }
+
     protected abstract String getTaskNameToAssembleDevelopmentBinaryWithArchitecture(String architecture)
 
     protected abstract String getComponentName()
 
     protected String configureToolChainSupport(String architecture) {
         return """
-            model {
-                toolChains {
-                    toolChainFor${architecture.capitalize()}Architecture(Gcc) {
-                        path "/not/found"
-                        target("host:${architecture}")
-                    }
+            toolChains {
+                toolChainFor${architecture.capitalize()}Architecture(Gcc) {
+                    path "/not/found"
+                    target("host:${architecture}")
                 }
             }
         """

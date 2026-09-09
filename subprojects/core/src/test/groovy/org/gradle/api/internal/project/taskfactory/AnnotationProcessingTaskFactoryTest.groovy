@@ -24,6 +24,7 @@ import org.gradle.api.internal.AbstractTask
 import org.gradle.api.internal.TaskInternal
 import org.gradle.api.internal.file.FileCollectionFactory
 import org.gradle.api.internal.file.FileResolver
+import org.gradle.api.internal.project.ProjectIdentity
 import org.gradle.api.internal.tasks.properties.DefaultTaskProperties
 import org.gradle.api.internal.tasks.properties.bean.TestImplementationResolver
 import org.gradle.api.provider.Property
@@ -32,14 +33,15 @@ import org.gradle.api.tasks.SkipWhenEmpty
 import org.gradle.api.tasks.TaskPropertyTestUtils
 import org.gradle.cache.internal.TestCrossBuildInMemoryCacheFactory
 import org.gradle.internal.execution.WorkValidationException
-import org.gradle.internal.execution.WorkValidationExceptionChecker
 import org.gradle.internal.execution.model.annotations.ModifierAnnotationCategory
 import org.gradle.internal.properties.annotations.DefaultTypeMetadataStore
+import org.gradle.internal.properties.annotations.FunctionAnnotationHandler
 import org.gradle.internal.properties.annotations.MissingPropertyAnnotationHandler
 import org.gradle.internal.properties.annotations.PropertyAnnotationHandler
 import org.gradle.internal.properties.annotations.TestPropertyTypeResolver
 import org.gradle.internal.properties.bean.DefaultPropertyWalker
 import org.gradle.internal.reflect.DirectInstantiator
+import org.gradle.internal.reflect.annotations.AnnotationCategory
 import org.gradle.internal.reflect.annotations.impl.DefaultTypeAnnotationMetadataStore
 import org.gradle.internal.reflect.validation.ValidationMessageChecker
 import org.gradle.internal.service.ServiceRegistryBuilder
@@ -47,6 +49,7 @@ import org.gradle.internal.service.scopes.ExecutionGlobalServices
 import org.gradle.internal.snapshot.impl.ImplementationValue
 import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 import org.gradle.test.fixtures.file.TestFile
+import org.gradle.util.Path
 import org.gradle.util.TestUtil
 import org.gradle.work.InputChanges
 
@@ -95,6 +98,7 @@ import static org.gradle.api.internal.project.taskfactory.AnnotationProcessingTa
 import static org.gradle.api.internal.project.taskfactory.AnnotationProcessingTasks.TaskWithSingleParamAction
 import static org.gradle.api.internal.project.taskfactory.AnnotationProcessingTasks.TaskWithStaticMethod
 import static org.gradle.api.internal.project.taskfactory.AnnotationProcessingTasks.TestTask
+import static org.gradle.internal.service.scopes.ExecutionGlobalServices.FUNCTION_TYPE_ANNOTATIONS
 import static org.gradle.internal.service.scopes.ExecutionGlobalServices.IGNORED_METHOD_ANNOTATIONS
 import static org.gradle.internal.service.scopes.ExecutionGlobalServices.IGNORED_METHOD_ANNOTATIONS_ALLOWED_MODIFIERS
 import static org.gradle.internal.service.scopes.ExecutionGlobalServices.PROPERTY_TYPE_ANNOTATIONS
@@ -103,11 +107,11 @@ class AnnotationProcessingTaskFactoryTest extends AbstractProjectBuilderSpec imp
     private AnnotationProcessingTaskFactory factory
     private ITaskFactory delegate
     def services = ServiceRegistryBuilder.builder().provider(new ExecutionGlobalServices()).build()
-    def taskClassInfoStore = new DefaultTaskClassInfoStore(new TestCrossBuildInMemoryCacheFactory())
     def cacheFactory = new TestCrossBuildInMemoryCacheFactory()
     def typeAnnotationMetadataStore = new DefaultTypeAnnotationMetadataStore(
         [],
         ModifierAnnotationCategory.asMap(PROPERTY_TYPE_ANNOTATIONS),
+        FUNCTION_TYPE_ANNOTATIONS.collectEntries { [it, AnnotationCategory.TYPE] },
         ["java", "groovy"],
         [],
         [Object, GroovyObject],
@@ -118,7 +122,9 @@ class AnnotationProcessingTaskFactoryTest extends AbstractProjectBuilderSpec imp
         cacheFactory
     )
     def propertyHandlers = services.getAll(PropertyAnnotationHandler)
-    def typeMetadataStore = new DefaultTypeMetadataStore([], propertyHandlers, [Optional, SkipWhenEmpty], typeAnnotationMetadataStore, TestPropertyTypeResolver.INSTANCE, cacheFactory, MissingPropertyAnnotationHandler.DO_NOTHING)
+    def functionHandlers = services.getAll(FunctionAnnotationHandler)
+    def typeMetadataStore = new DefaultTypeMetadataStore([], propertyHandlers, [Optional, SkipWhenEmpty], functionHandlers, [], typeAnnotationMetadataStore, TestPropertyTypeResolver.INSTANCE, cacheFactory, MissingPropertyAnnotationHandler.DO_NOTHING)
+    def taskClassInfoStore = new DefaultTaskClassInfoStore(new TestCrossBuildInMemoryCacheFactory(), typeMetadataStore)
     def propertyWalker = new DefaultPropertyWalker(typeMetadataStore, new TestImplementationResolver(), propertyHandlers)
 
     @SuppressWarnings("GroovyUnusedDeclaration")
@@ -219,11 +225,25 @@ class AnnotationProcessingTaskFactoryTest extends AbstractProjectBuilderSpec imp
 
         where:
         type                                  | failureMessage
-        TaskWithStaticMethod                  | "Cannot use @TaskAction annotation on static method TaskWithStaticMethod.doStuff()."
         TaskWithMultiParamAction              | "Cannot use @TaskAction annotation on method TaskWithMultiParamAction.doStuff() as this method takes multiple parameters."
         TaskWithSingleParamAction             | "Cannot use @TaskAction annotation on method TaskWithSingleParamAction.doStuff() because int is not a valid parameter to an action method."
         TaskWithOverloadedInputChangesActions | "Cannot use @TaskAction annotation on multiple overloads of method TaskWithOverloadedInputChangesActions.doStuff()"
         TaskWithMultipleInputChangesActions   | "Cannot have multiple @TaskAction methods accepting an InputChanges parameter."
+    }
+
+    def "validation fails for task with static task action method"() {
+        when:
+        def task = expectTaskCreated(TaskWithStaticMethod)
+        execute(task)
+
+        then:
+        def e = thrown WorkValidationException
+        validateException(task, e, staticFunctionMethodShouldNotBeAnnotatedMessage {
+                method('staticAction')
+                .kind("static method")
+                .annotation('TaskAction')
+                .includeLink()
+        })
     }
 
     def "works for #type.simpleName"() {
@@ -547,7 +567,7 @@ class AnnotationProcessingTaskFactoryTest extends AbstractProjectBuilderSpec imp
 
         then:
         def e = thrown WorkValidationException
-        validateException(task, false, e,
+        validateException(task, e,
             missingValueMessage { type(TaskWithNestedBeanWithPrivateClass.canonicalName).property('bean.inputFile').includeLink() },
             ignoredAnnotationOnField { type(Bean2.canonicalName).property('inputFile2').annotatedWith('InputFile').includeLink() })
     }
@@ -898,7 +918,8 @@ class AnnotationProcessingTaskFactoryTest extends AbstractProjectBuilderSpec imp
 
     private <T extends TaskInternal> T expectTaskCreated(String name, final Class<T> type, T task) {
         // We cannot just stub here as we want to return a different task each time.
-        def id = new TaskIdentity(type, name, null, null, null, 12)
+        def projectId = ProjectIdentity.forRootProject(Path.ROOT, "root")
+        def id = new TaskIdentity(type, name, projectId, 12, null)
         1 * delegate.create(id) >> task
         def createdTask = factory.create(id)
         assert createdTask.is(task)
@@ -906,17 +927,8 @@ class AnnotationProcessingTaskFactoryTest extends AbstractProjectBuilderSpec imp
     }
 
     private static void validateException(TaskInternal task, WorkValidationException exception, String... causes) {
-        validateException(task, true, exception, causes)
-    }
-
-    private static void validateException(TaskInternal task, boolean ignoreType, WorkValidationException exception, String... causes) {
         def expectedMessage = causes.length > 1 ? "Some problems were found with the configuration of $task" : "A problem was found with the configuration of $task"
-        WorkValidationExceptionChecker.check(exception, ignoreType) {
-            messageContains(expectedMessage)
-            causes.each { cause ->
-                hasProblem(cause)
-            }
-        }
+        exception.message.contains(expectedMessage)
     }
 
     private Map<String, Object> inputProperties(TaskInternal task) {

@@ -16,10 +16,14 @@
 
 package org.gradle.model.internal.inspect
 
+import com.google.common.io.Files
+import org.codehaus.groovy.control.CompilerConfiguration
 import org.gradle.model.RuleSource
 import org.gradle.test.fixtures.ConcurrentTestUtil
 import spock.lang.Specification
+import spock.lang.TempDir
 
+@SuppressWarnings("deprecation")
 class ModelRuleSourceDetectorTest extends Specification {
 
     private ModelRuleSourceDetector detector = new ModelRuleSourceDetector()
@@ -73,26 +77,26 @@ class ModelRuleSourceDetectorTest extends Specification {
     def "does not hold strong reference"() {
         given:
         def cl = new GroovyClassLoader(getClass().classLoader)
-        addClass(cl, impl)
+        def classRef = addClass(cl, impl)
 
         expect:
-        detector.cache.size() == 1
+        classRef.get() != null
 
         when:
         cl.clearCache()
+        cl = null
 
         then:
         ConcurrentTestUtil.poll(10) {
             System.gc()
-            detector.cache.cleanUp()
-            detector.cache.size() == 0
+            classRef.get() == null
         }
 
         where:
         impl << [
-                "class SomeThing {}",
-                "class SomeThing extends ${RuleSource.name} {}",
-                "class SomeThing { static class Inner extends ${RuleSource.name} { } }",
+            "class SomeThing {}",
+            "class SomeThing extends ${RuleSource.name} {}",
+            "class SomeThing { static class Inner extends ${RuleSource.name} { } }",
         ]
     }
 
@@ -101,10 +105,39 @@ class ModelRuleSourceDetectorTest extends Specification {
         detector.getDeclaredSources(SourcesNotDeclaredAlphabetically).toList() == [SourcesNotDeclaredAlphabetically.A, SourcesNotDeclaredAlphabetically.B]
     }
 
-    private void addClass(GroovyClassLoader cl, String impl) {
+    @TempDir
+    File tempDir
+
+    def "lenient to class loading errors"() {
+        given: "base class and an outer class with an inner that extends it"
+        def compileDir = new File(tempDir, "compile").tap { it.mkdirs() }
+        def compileLoader = new GroovyClassLoader(
+            getClass().classLoader,
+            new CompilerConfiguration().tap { it.targetDirectory = compileDir }
+        )
+        compileLoader.parseClass("class MissingBase {}")
+        compileLoader.parseClass("class Outer { static class BrokenInner extends MissingBase {} }")
+
+        and: "copy Outer class files, skip MissingBase, and classload"
+        def isolatedDir = new File(tempDir, "isolated").tap { it.mkdirs() }
+        compileDir.eachFileRecurse { file ->
+            if (file.name.startsWith("Outer") && file.name.endsWith(".class")) {
+                Files.copy(file, new File(isolatedDir, file.name))
+            }
+        }
+        def brokenOuterClass = new URLClassLoader(
+            [isolatedDir.toURI().toURL()] as URL[],
+            getClass().classLoader
+        ).loadClass("Outer")
+
+        expect: "detector handles this gracefully"
+        detector.getDeclaredSources(brokenOuterClass).toList() == []
+    }
+
+    private java.lang.ref.WeakReference<Class<?>> addClass(GroovyClassLoader cl, String impl) {
         def type = cl.parseClass(impl)
         detector.getDeclaredSources(type)
-        type = null
+        return new java.lang.ref.WeakReference<Class<?>>(type)
     }
 
 }

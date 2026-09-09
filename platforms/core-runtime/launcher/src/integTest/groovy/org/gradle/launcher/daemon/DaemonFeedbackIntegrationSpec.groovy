@@ -16,14 +16,15 @@
 
 package org.gradle.launcher.daemon
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+
 import org.gradle.integtests.fixtures.daemon.DaemonIntegrationSpec
 import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
 import org.gradle.launcher.daemon.logging.DaemonMessages
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.gradle.util.GradleVersion
 import spock.lang.Issue
 
@@ -78,13 +79,18 @@ task sleep {
         ex.message.contains("Unrecognized option: -Xyz")
     }
 
-    @ToBeFixedForConfigurationCache(because = "asserts on configuration phase logging")
     def "daemon log contains all necessary logging"() {
         given:
-        file("build.gradle") << "println 'Hello build!'"
+        buildFile """
+            tasks.register('hello') {
+                doLast {
+                    println 'Hello build!'
+                }
+            }
+        """
 
         when:
-        executer.withArguments("-i").run()
+        executer.withArguments("-i").withTasks("hello").run()
 
         then:
         def log = readLog(executer.daemonBaseDir)
@@ -97,7 +103,7 @@ task sleep {
         log.count('Hello build!') == 1
 
         when: "another build requested with the same daemon"
-        executer.withArguments("-i").run()
+        executer.withArguments("-i").withTasks("hello").run()
 
         then:
         def aLog = readLog(executer.daemonBaseDir)
@@ -166,7 +172,7 @@ task sleep {
     }
 
     @Issue("https://github.com/gradle/gradle/issues/8833")
-    @Requires(UnitTestPreconditions.NotWindows)
+    @Requires(OsTestPreconditions.NotWindows)
     def "daemon log restricts permissions to owner"() {
         given:
         file("build.gradle") << """
@@ -184,24 +190,31 @@ task sleep {
         assert new TestFile(logFile).permissions == "rw-------"
     }
 
-    //Java 9 and above needs --add-opens to make environment variable mutation work
-    @Requires(UnitTestPreconditions.Jdk8OrEarlier)
-    @ToBeFixedForConfigurationCache(because = "asserts on configuration phase logging")
     def "foreground daemon log honors log levels for logging"() {
+        // Both the foreground daemon and the client must request the same daemon JVM args,
+        // so the client's build runs in the foreground daemon instead of a forked daemon.
+        List<String> daemonJvmArgs = ["-ea", "-Xms256m", "-Xmx512m"]
+
         given:
-        file("build.gradle") << """
-            logger.debug('debug me!')
-            logger.info('info me!')
+        buildFile """
+            tasks.register("log") {
+                doLast {
+                    logger.debug('debug me!')
+                    logger.info('info me!')
+                }
+            }
         """
 
         when:
+        executer.useOnlyRequestedJvmOpts()
+        executer.withBuildJvmOpts(daemonJvmArgs)
         def daemon = executer.noExtraLogging().withArguments("--foreground").start()
 
         then:
         poll(60) { assert daemon.standardOutput.contains(DaemonMessages.PROCESS_STARTED) }
 
         when:
-        def infoBuild = executer.withArguments("-i").run()
+        def infoBuild = executer.useOnlyRequestedJvmOpts().withArguments("-i", "-Dorg.gradle.jvmargs=${daemonJvmArgs.join(" ")}").withTasks("log").run()
 
         then:
         infoBuild.output.count("debug me!") == 0
@@ -215,7 +228,7 @@ task sleep {
         daemon.standardOutput.count(DaemonMessages.ABOUT_TO_START_RELAYING_LOGS) == 0
 
         when:
-        def debugBuild = executer.withArguments("-d").run()
+        def debugBuild = executer.useOnlyRequestedJvmOpts().withArguments("-d", "-Dorg.gradle.jvmargs=${daemonJvmArgs.join(" ")}").withTasks("log").run()
 
         then:
         debugBuild.output.count("debug me!") == 1

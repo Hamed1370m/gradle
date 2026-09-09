@@ -16,7 +16,6 @@
 
 package org.gradle.performance.results.report;
 
-import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.googlecode.jatl.Html;
@@ -30,6 +29,7 @@ import org.gradle.util.GradleVersion;
 import java.io.UnsupportedEncodingException;
 import java.io.Writer;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -64,7 +64,7 @@ public abstract class HtmlPageGenerator<T> extends ReportRenderer<T, Writer> {
             .href(rootDir + "css/style.css")
             .end();
         html.script()
-            .src(rootDir + "js/jquery.min-3.5.1.js")
+            .src(rootDir + "js/jquery.min-3.7.1.js")
             .end();
         html.script()
             .src(rootDir + "js/flot-0.8.1-min.js")
@@ -224,7 +224,7 @@ public abstract class HtmlPageGenerator<T> extends ReportRenderer<T, Writer> {
 
     protected String urlEncode(String str) {
         try {
-            return URLEncoder.encode(str, Charsets.UTF_8.name());
+            return URLEncoder.encode(str, StandardCharsets.UTF_8.name());
         } catch (UnsupportedEncodingException e) {
             throw new RuntimeException(e);
         }

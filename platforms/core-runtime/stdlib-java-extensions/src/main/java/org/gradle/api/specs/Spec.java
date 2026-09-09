@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,13 @@ package org.gradle.api.specs;
  * Represents some predicate against objects of type T.
  *
  * @param <T> The target type for this Spec
+ * @since 0.7
  */
 public interface Spec<T> {
+    /**
+     * Returns whether satisfied by is set.
+     *
+     * @since 0.7
+     */
     boolean isSatisfiedBy(T element);
 }

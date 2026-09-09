@@ -25,7 +25,9 @@ import org.gradle.internal.jvm.Jvm
 import org.gradle.internal.serialize.JavaClassUtil
 import org.gradle.test.fixtures.file.ClassFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.InstalledJdkTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 import org.gradle.util.internal.TextUtil
 import org.junit.Assume
 import spock.lang.Issue
@@ -154,8 +156,8 @@ abstract class AbstractJavaCompilerIntegrationSpec extends AbstractIntegrationSp
     // JavaFx was removed in JDK 10
     // JavaFx comes packaged with Oracle JDKs
     @Requires([
-        UnitTestPreconditions.Jdk9OrEarlier,
-        UnitTestPreconditions.JdkOracle
+        JdkVersionTestPreconditions.Jdk9OrEarlier,
+        JdkVersionTestPreconditions.JdkOracle
     ])
     def "can compile JavaFx 8 code"() {
         given:
@@ -235,7 +237,7 @@ abstract class AbstractJavaCompilerIntegrationSpec extends AbstractIntegrationSp
         bytecodeVersion() == TestJavaClassUtil.getClassVersion(lower.javaVersion)
     }
 
-    @Requires(UnitTestPreconditions.Jdk11OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk11OrLater)
     def "compile with release flag using #notation notation"() {
         given:
         goodCode()
@@ -265,7 +267,7 @@ abstract class AbstractJavaCompilerIntegrationSpec extends AbstractIntegrationSp
         ]
     }
 
-    @Requires(UnitTestPreconditions.Jdk11OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk11OrLater)
     def "compile with release property set"() {
         given:
         goodCode()
@@ -289,7 +291,7 @@ abstract class AbstractJavaCompilerIntegrationSpec extends AbstractIntegrationSp
         bytecodeVersion() == 55
     }
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk9OrLater)
     def "fails to compile with release property and flag set"() {
         given:
         goodCode()
@@ -302,10 +304,14 @@ abstract class AbstractJavaCompilerIntegrationSpec extends AbstractIntegrationSp
         fails("compileJava")
 
         then:
+        releaseFlagAssertions()
+    }
+
+    void releaseFlagAssertions() {
         failureHasCause('Cannot specify --release via `CompileOptions.compilerArgs` when using `CompileOptions.release`.')
     }
 
-    @Requires(UnitTestPreconditions.Jdk11OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk11OrLater)
     def "compile with release property and autoTargetJvmDisabled"() {
         given:
         goodCode()
@@ -387,7 +393,7 @@ abstract class AbstractJavaCompilerIntegrationSpec extends AbstractIntegrationSp
         bytecodeVersion() == TestJavaClassUtil.getClassVersion(lower.javaVersion)
     }
 
-    @Requires(UnitTestPreconditions.Jdk12OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk12OrLater)
     def "compile fails when using newer API with release option"() {
         given:
         file("src/main/java/compile/test/FailsOnJava11.java") << """
@@ -416,7 +422,7 @@ abstract class AbstractJavaCompilerIntegrationSpec extends AbstractIntegrationSp
         failure.assertHasErrorOutput("method describeConstable")
     }
 
-    @Requires(UnitTestPreconditions.Jdk12OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk12OrLater)
     def "compile fails when using newer API with release property"() {
         given:
         file("src/main/java/compile/test/FailsOnJava11.java") << """
@@ -586,6 +592,38 @@ abstract class AbstractJavaCompilerIntegrationSpec extends AbstractIntegrationSp
         javaClassFile("compile/test/Person.class").exists()
         javaClassFile("compile/test/Person2.class").exists()
         !javaClassFile("Bar.class").exists()
+    }
+
+    @Requires(InstalledJdkTestPreconditions.Java8HomeAvailable)
+    def "bootclasspath can be set"() {
+        Assume.assumeTrue(Jvm.current().javaVersionMajor > 8)
+        file('src/main/java/Main.java') << """
+            import java.nio.file.Files;
+            import java.nio.file.Paths;
+
+            public class Main {
+                public static void main(String... args) throws Exception {
+                    // Flow was introduced in Java 9
+                    java.util.concurrent.Flow flow = null;
+                }
+            }
+        """
+
+        expect:
+        succeeds("compileJava")
+
+        when:
+        buildFile << """
+            compileJava {
+                sourceCompatibility = 8 // bootstrapClasspath is ignored by the compiler otherwise
+                targetCompatibility = 8 // bootstrapClasspath is ignored by the compiler otherwise
+                ${configureBoostrapClasspath(AvailableJavaHomes.getJdk8())}
+            }
+        """
+
+        then:
+        fails("compileJava")
+        failure.assertHasErrorOutput "Main.java:8: error: cannot find symbol"
     }
 
     def "can use annotation processor"() {

@@ -18,7 +18,7 @@ package org.gradle.integtests
 
 import org.gradle.api.internal.artifacts.ivyservice.CacheLayout
 import org.gradle.integtests.fixtures.AbstractIntegrationTest
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.server.http.HttpServer
 import org.gradle.test.fixtures.server.http.MavenHttpRepository
@@ -27,6 +27,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import spock.lang.Issue
+
+import java.nio.file.Files
 
 import static org.junit.Assert.assertEquals
 import static org.junit.Assert.assertTrue
@@ -70,10 +72,17 @@ class CacheProjectIntegrationTest extends AbstractIntegrationTest {
 
     private void updateCaches() {
         String version = GradleVersion.current().version
-        classPathClassesDir = userHomeDir.file("caches/$version/groovy-dsl").listFiles().find { it.file("classes/cp_proj").isDirectory() }?.file("classes/cp_proj")
-        def candidates = userHomeDir.file("caches/$version/groovy-dsl").listFiles().findAll { it.file("classes/proj").isDirectory() }
-        // when there are multiple candidates, assume that a different entry to that used last time is the one required
-        def baseDir = candidates.size() == 1 ? candidates.first() : candidates.find {it !in visitedBaseDirs }
+        def classesDirs = Files.find(userHomeDir.file("caches/$version/groovy-dsl").toPath(), 3) {
+            path, attributes -> path.getFileName().toString() == "classes" && attributes.isDirectory()
+        }.map {
+            new TestFile(it.toFile())
+        }.toList()
+        classPathClassesDir = classesDirs.find { it.file("cp_proj").isDirectory() }?.file("cp_proj")
+        def baseDirCandidates = classesDirs
+            .findAll { it.file("proj").isDirectory() }
+            .collect { it.parentFile }
+        // when there are multiple baseDirCandidates, assume that a different entry to that used last time is the one required
+        def baseDir = baseDirCandidates.size() == 1 ? baseDirCandidates.first() : baseDirCandidates.find {it !in visitedBaseDirs }
         visitedBaseDirs.add(baseDir)
         classFile = baseDir.file("classes/proj/_BuildScript_.class")
     }
@@ -165,7 +174,7 @@ class CacheProjectIntegrationTest extends AbstractIntegrationTest {
         String content = """
 repositories {
     maven{
-        url "${repo.uri}"
+        url = "${repo.uri}"
     }
 }
 configurations { compile }

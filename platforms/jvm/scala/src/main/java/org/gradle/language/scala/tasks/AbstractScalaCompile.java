@@ -20,7 +20,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.io.Files;
 import org.gradle.api.Incubating;
 import org.gradle.api.JavaVersion;
-import org.gradle.api.UncheckedIOException;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.FileTree;
 import org.gradle.api.file.ProjectLayout;
@@ -47,6 +46,7 @@ import org.gradle.api.tasks.compile.AbstractCompile;
 import org.gradle.api.tasks.compile.CompileOptions;
 import org.gradle.api.tasks.scala.IncrementalCompileOptions;
 import org.gradle.api.tasks.scala.ScalaCompileOptions;
+import org.gradle.internal.UncheckedException;
 import org.gradle.internal.buildevents.BuildStartedTime;
 import org.gradle.internal.classpath.CachedClasspathTransformer;
 import org.gradle.internal.classpath.DefaultClassPath;
@@ -69,41 +69,38 @@ import java.util.Map;
 
 /**
  * An abstract Scala compile task sharing common functionality for compiling scala.
+ * @since 2.3
  */
 @DisableCachingByDefault(because = "Abstract super-class, not to be instantiated directly")
 public abstract class AbstractScalaCompile extends AbstractCompile implements HasCompileOptions {
+    /**
+     * Returns the logger.
+     *
+     * @since 2.3
+     */
     protected static final Logger LOGGER = Logging.getLogger(AbstractScalaCompile.class);
     private final BaseScalaCompileOptions scalaCompileOptions;
-    private final CompileOptions compileOptions;
-    private final RegularFileProperty analysisMappingFile;
-    private final ConfigurableFileCollection analysisFiles;
-    private final Property<JavaLauncher> javaLauncher;
-
-    {
-        // Calling this(getProject().getObject()...) in the constructor is invalid as getProject() is an instance method.
-        // To avoid code duplication, the initialization logic is extracted to an instance initialization block.
-        ObjectFactory objectFactory = getObjectFactory();
-        this.analysisMappingFile = objectFactory.fileProperty();
-        this.analysisFiles = getProject().files();
-        this.compileOptions = objectFactory.newInstance(CompileOptions.class);
-        JavaToolchainService javaToolchainService = getJavaToolchainService();
-        this.javaLauncher = objectFactory.property(JavaLauncher.class).convention(javaToolchainService.launcherFor(it -> {}));
-        CompilerForkUtils.doNotCacheIfForkingViaExecutable(compileOptions, getOutputs());
-    }
 
     /**
      * Constructor.
      *
      * @since 7.6
      */
+    @SuppressWarnings("this-escape")
     @Incubating
     protected AbstractScalaCompile() {
         ObjectFactory objectFactory = getObjectFactory();
         this.scalaCompileOptions = objectFactory.newInstance(ScalaCompileOptions.class);
+
+        JavaToolchainService javaToolchainService = getJavaToolchainService();
+        getJavaLauncher().convention(javaToolchainService.launcherFor(it -> {}));
+
+        CompilerForkUtils.doNotCacheIfForkingViaExecutable(getOptions(), getOutputs());
     }
 
     /**
      * Returns the Scala compilation options.
+     * @since 2.3
      */
     @Nested
     public BaseScalaCompileOptions getScalaCompileOptions() {
@@ -115,12 +112,20 @@ public abstract class AbstractScalaCompile extends AbstractCompile implements Ha
      */
     @Nested
     @Override
-    public CompileOptions getOptions() {
-        return compileOptions;
-    }
+    public abstract CompileOptions getOptions();
 
+    /**
+     * Returns the compiler.
+     *
+     * @since 2.3
+     */
     abstract protected Compiler<ScalaJavaJointCompileSpec> getCompiler(ScalaJavaJointCompileSpec spec);
 
+    /**
+     * Compile.
+     *
+     * @since 2.3
+     */
     @TaskAction
     public void compile() {
         ScalaJavaJointCompileSpec spec = createSpec();
@@ -139,9 +144,7 @@ public abstract class AbstractScalaCompile extends AbstractCompile implements Ha
      * @since 7.2
      */
     @Nested
-    public Property<JavaLauncher> getJavaLauncher() {
-        return javaLauncher;
-    }
+    public abstract Property<JavaLauncher> getJavaLauncher();
 
     private boolean isNonIncrementalCompilation() {
         File analysisFile = getScalaCompileOptions().getIncrementalOptions().getAnalysisFile().getAsFile().get();
@@ -152,11 +155,21 @@ public abstract class AbstractScalaCompile extends AbstractCompile implements Ha
         return false;
     }
 
+    /**
+     * Returns the toolchain.
+     *
+     * @since 7.3
+     */
     @Internal
     protected JavaInstallationMetadata getToolchain() {
-        return javaLauncher.map(JavaLauncher::getMetadata).get();
+        return getJavaLauncher().map(JavaLauncher::getMetadata).get();
     }
 
+    /**
+     * Create spec.
+     *
+     * @since 2.3
+     */
     protected ScalaJavaJointCompileSpec createSpec() {
         File javaExecutable = getJavaLauncher().get().getExecutablePath().getAsFile();
         DefaultScalaJavaJointCompileSpec spec = new DefaultScalaJavaJointCompileSpec(javaExecutable);
@@ -174,9 +187,9 @@ public abstract class AbstractScalaCompile extends AbstractCompile implements Ha
         configureCompatibilityOptions(spec);
         spec.setCompileOptions(getOptions());
         spec.setScalaCompileOptions(new MinimalScalaCompileOptions(scalaCompileOptions));
-        spec.setAnnotationProcessorPath(compileOptions.getAnnotationProcessorPath() == null
+        spec.setAnnotationProcessorPath(getOptions().getAnnotationProcessorPath() == null
             ? ImmutableList.of()
-            : ImmutableList.copyOf(compileOptions.getAnnotationProcessorPath()));
+            : ImmutableList.copyOf(getOptions().getAnnotationProcessorPath()));
         spec.setBuildStartTimestamp(getServices().get(BuildStartedTime.class).getStartTime());
         return spec;
     }
@@ -196,6 +209,11 @@ public abstract class AbstractScalaCompile extends AbstractCompile implements Ha
         spec.setTargetCompatibility(targetCompatibility);
     }
 
+    /**
+     * Configure incremental compilation.
+     *
+     * @since 2.3
+     */
     private void configureIncrementalCompilation(ScalaCompileSpec spec) {
         IncrementalCompileOptions incrementalOptions = scalaCompileOptions.getIncrementalOptions();
 
@@ -225,14 +243,14 @@ public abstract class AbstractScalaCompile extends AbstractCompile implements Ha
 
     private Map<File, File> resolveAnalysisMappingsForOtherProjects() {
         Map<File, File> analysisMap = new HashMap<>();
-        for (File mapping : analysisFiles.getFiles()) {
+        for (File mapping : getAnalysisFiles().getFiles()) {
             if (mapping.exists()) {
                 try {
                     List<String> lines = Files.readLines(mapping, Charset.defaultCharset());
                     assert lines.size() == 2;
                     analysisMap.put(new File(lines.get(0)), new File(lines.get(1)));
                 } catch (IOException e) {
-                    throw new UncheckedIOException(e);
+                    throw UncheckedException.throwAsUncheckedException(e);
                 }
             }
         }
@@ -258,8 +276,8 @@ public abstract class AbstractScalaCompile extends AbstractCompile implements Ha
     @Input
     // We track this as an input since the Scala compiler output may depend on it.
     protected String getJvmVersion() {
-        if (javaLauncher.isPresent()) {
-            return javaLauncher.get().getMetadata().getLanguageVersion().toString();
+        if (getJavaLauncher().isPresent()) {
+            return getJavaLauncher().get().getMetadata().getLanguageVersion().toString();
         }
         return JavaVersion.current().getMajorVersion();
     }
@@ -277,9 +295,7 @@ public abstract class AbstractScalaCompile extends AbstractCompile implements Ha
      * @since 4.10.1
      */
     @Internal
-    public ConfigurableFileCollection getAnalysisFiles() {
-        return analysisFiles;
-    }
+    public abstract ConfigurableFileCollection getAnalysisFiles();
 
     /**
      * Analysis mapping file.
@@ -289,9 +305,7 @@ public abstract class AbstractScalaCompile extends AbstractCompile implements Ha
      * @since 4.10.1
      */
     @LocalState
-    public RegularFileProperty getAnalysisMappingFile() {
-        return analysisMappingFile;
-    }
+    public abstract RegularFileProperty getAnalysisMappingFile();
 
     @Inject
     protected abstract Deleter getDeleter();

@@ -21,8 +21,9 @@ import org.gradle.internal.jvm.Jvm
 import org.gradle.launcher.daemon.registry.DaemonDir
 import org.gradle.launcher.daemon.server.api.HandleStop
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.InstalledJdkTestPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+
 
 /**
  * Outlines the lifecycle of the daemon given different sequences of events.
@@ -55,16 +56,26 @@ class DaemonLifecycleSpec extends AbstractDaemonLifecycleSpec {
         stopped()
     }
 
-    //Java 9 and above needs --add-opens to make environment variable mutation work
-    @Requires(UnitTestPreconditions.Jdk8OrEarlier)
     def "existing foreground idle daemons are used"() {
+        // Both the foreground daemon and the client must request the same daemon JVM args,
+        // so the client's build runs in the foreground daemon instead of a forked daemon.
+        List<String> daemonJvmArgs = ["-ea", "-Xms256m", "-Xmx512m"]
+
         when:
+        run {
+            executer.useOnlyRequestedJvmOpts()
+            executer.withBuildJvmOpts(daemonJvmArgs)
+        }
         startForegroundDaemon()
 
         then:
         idle()
 
         when:
+        run {
+            executer.useOnlyRequestedJvmOpts()
+            executer.withBuildJvmOpts(daemonJvmArgs)
+        }
         startBuild()
         waitForBuildToWait()
 
@@ -227,7 +238,7 @@ class DaemonLifecycleSpec extends AbstractDaemonLifecycleSpec {
         completeBuild()
     }
 
-    @Requires(IntegTestPreconditions.JavaHomeWithDifferentVersionAvailable)
+    @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
     def "if a daemon exists but is using a different java home, a new compatible daemon will be created and used"() {
         when:
         startForegroundDaemonWithAlternateJavaHome()
@@ -237,7 +248,7 @@ class DaemonLifecycleSpec extends AbstractDaemonLifecycleSpec {
 
         and:
         foregroundDaemonContext {
-            assert javaHome.canonicalPath == AvailableJavaHomes.differentJdk.javaHome.canonicalPath
+            assert javaHome.canonicalPath == AvailableJavaHomes.differentVersion.javaHome.canonicalPath
         }
 
         when:
@@ -294,7 +305,7 @@ class DaemonLifecycleSpec extends AbstractDaemonLifecycleSpec {
     }
 
     // GradleHandle.abort() does not work reliably on windows and creates flakiness
-    @Requires(UnitTestPreconditions.NotWindows)
+    @Requires(OsTestPreconditions.NotWindows)
     def "daemon stops immediately if stop is requested and then client disconnects"() {
         when:
         startBuild()

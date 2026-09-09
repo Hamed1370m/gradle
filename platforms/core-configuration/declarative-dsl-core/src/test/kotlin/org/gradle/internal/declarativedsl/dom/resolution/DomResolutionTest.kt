@@ -101,6 +101,7 @@ class DomResolutionTest {
                 addAndConfigure("cross-scope") { }
                 add("incorrect signature")
                 enum = X
+                otherNumber = number
             }
             """.trimIndent()
         )
@@ -121,13 +122,15 @@ class DomResolutionTest {
             LiteralValueResolved -> 1
             PropertyNotAssigned(UnresolvedBase)
             LiteralValueResolved -> 123
-            ErrorResolution(IsError)
+            PropertyNotAssigned(UnresolvedBase)
+            ValueFactoryNotResolved(UnresolvedBase)
+            NamedReferenceNotResolved(UnresolvedBase)
             ElementNotResolved(UnresolvedSignature)
             LiteralValueResolved -> test2
             PropertyNotAssigned(ValueTypeMismatch)
             LiteralValueResolved -> type mismatch
             ElementNotResolved(UnresolvedSignature)
-            ValueFactoryResolved -> two(String): ComplexValueTwo
+            ValueFactoryNotResolved(UnresolvedBase)
             LiteralValueResolved -> three
             ConfiguringElementResolved -> configure NestedReceiver
             ElementNotResolved(CrossScopeAccess)
@@ -136,6 +139,8 @@ class DomResolutionTest {
             LiteralValueResolved -> incorrect signature
             PropertyNotAssigned(UnresolvedValueUsed)
             NamedReferenceNotResolved(UnresolvedName)
+            PropertyAssignmentResolved -> NestedReceiver.otherNumber: Int
+            NamedReferenceNotResolved(NonEnumValueNamedReference)
             """.trimIndent(),
             resolutions.joinToString("\n") { resolutionPrettyString(it) }
         )

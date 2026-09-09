@@ -16,16 +16,40 @@
 
 package org.gradle.tooling;
 
+import org.gradle.api.Incubating;
+
+import java.util.List;
+
 /**
  * Thrown when the {@link org.gradle.tooling.TestLauncher} cannot run tests, or when one or more tests fail.
  *
  * @since 2.6
  */
 public class TestExecutionException extends GradleConnectionException {
+    /**
+     * Creates a new {@code TestExecutionException}.
+     *
+     * @since 2.6
+     */
     public TestExecutionException(String message, Throwable throwable) {
         super(message, throwable);
     }
 
+    /**
+     * Constructor.
+     *
+     * @since 8.12
+     */
+    @Incubating
+    public TestExecutionException(String message, Throwable throwable, Supplier<List<Failure>> failures) {
+        super(message, throwable, failures);
+    }
+
+    /**
+     * Creates a new {@code TestExecutionException}.
+     *
+     * @since 2.6
+     */
     public TestExecutionException(String message) {
         super(message);
     }

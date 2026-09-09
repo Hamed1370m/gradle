@@ -19,17 +19,20 @@ import org.gradle.initialization.BuildCancellationToken;
 import org.gradle.initialization.BuildLayoutParameters;
 import org.gradle.internal.Cast;
 import org.gradle.internal.buildprocess.BuildProcessState;
-import org.gradle.internal.classpath.ClassPath;
 import org.gradle.internal.deprecation.DeprecationLogger;
+import org.gradle.internal.installation.CurrentGradleInstallation;
 import org.gradle.internal.instrumentation.agent.AgentStatus;
-import org.gradle.internal.jvm.UnsupportedJavaRuntimeException;
 import org.gradle.internal.logging.services.LoggingServiceRegistry;
 import org.gradle.internal.nativeintegration.services.NativeServices;
 import org.gradle.internal.nativeintegration.services.NativeServices.NativeServicesMode;
+import org.gradle.internal.service.CloseableServiceRegistry;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.service.ServiceRegistryBuilder;
+import org.gradle.internal.service.scopes.GlobalScopeServices;
+import org.gradle.internal.service.scopes.Scope;
 import org.gradle.tooling.UnsupportedVersionException;
 import org.gradle.tooling.internal.adapter.ProtocolToModelAdapter;
+import org.gradle.tooling.internal.consumer.DefaultGradleConnector;
 import org.gradle.tooling.internal.protocol.BuildParameters;
 import org.gradle.tooling.internal.protocol.BuildResult;
 import org.gradle.tooling.internal.protocol.ConfigurableConnection;
@@ -59,26 +62,38 @@ import org.gradle.tooling.internal.provider.connection.ProviderOperationParamete
 import org.gradle.tooling.internal.provider.test.ProviderInternalTestExecutionRequest;
 import org.gradle.util.GradleVersion;
 import org.gradle.util.internal.IncubationLogger;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.io.File;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
-@SuppressWarnings("deprecation")
+/**
+ * Implements the provider side of the tooling API.
+ *
+ * @see org.gradle.tooling.internal.consumer.loader.DefaultToolingImplementationLoader
+ */
 public class DefaultConnection implements ConnectionVersion4,
     ConfigurableConnection, InternalCancellableConnection, InternalParameterAcceptingConnection,
     StoppableConnection, InternalTestExecutionConnection, InternalPhasedActionConnection, InternalInvalidatableVirtualFileSystemConnection, InternalStopWhenIdleConnection {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultConnection.class);
 
-    private static final GradleVersion MIN_CLIENT_VERSION = GradleVersion.version("3.0");
-    private ProtocolToModelAdapter adapter;
-    private BuildProcessState buildProcessState;
-    private ProviderConnection connection;
+    private static final String MIN_CLIENT_VERSION_STR = DefaultGradleConnector.MINIMUM_SUPPORTED_GRADLE_VERSION.getVersion();
+    public static final int GUARANTEED_TAPI_BACKWARDS_COMPATIBILITY = 5;
+
+    private final ProtocolToModelAdapter adapter = new ProtocolToModelAdapter();
+
+    private @Nullable ServiceRegistry loggingServices;
+    private @Nullable CloseableServiceRegistry clientServices;
+    private @Nullable BuildProcessState embeddedDaemonState;
+
     @Nullable // not provided by older client versions
     private GradleVersion consumerVersion;
+    private boolean verboseLogging;
 
     /**
      * This is used by consumers 1.0-milestone-3 and later
@@ -92,7 +107,6 @@ public class DefaultConnection implements ConnectionVersion4,
      */
     @Override
     public void configure(ConnectionParameters parameters) {
-        assertUsingSupportedJavaVersion();
         ProviderConnectionParameters providerConnectionParameters = new ProtocolToModelAdapter().adapt(ProviderConnectionParameters.class, parameters);
         File gradleUserHomeDir = providerConnectionParameters.getGradleUserHomeDir(null);
         if (gradleUserHomeDir == null) {
@@ -100,32 +114,12 @@ public class DefaultConnection implements ConnectionVersion4,
         }
         initializeServices(gradleUserHomeDir);
         consumerVersion = GradleVersion.version(providerConnectionParameters.getConsumerVersion());
-        connection.configure(providerConnectionParameters, consumerVersion);
-    }
-
-    private void assertUsingSupportedJavaVersion() {
-        try {
-            UnsupportedJavaRuntimeException.assertUsingSupportedDaemonVersion();
-        } catch (IllegalArgumentException e) {
-            LOGGER.warn(e.getMessage());
-        }
+        verboseLogging = providerConnectionParameters.getVerboseLogging();
     }
 
     private void initializeServices(File gradleUserHomeDir) {
         NativeServices.initializeOnClient(gradleUserHomeDir, NativeServicesMode.fromSystemProperties());
-        ServiceRegistry loggingServices = LoggingServiceRegistry.newEmbeddableLogging();
-        // Merge the connection services into the build process services
-        // It would be better to separate these into different scopes, but many things still assume that connection services are available in the global scope,
-        // so keep them merged as a migration step
-        // It would also be better to create the build process services only if they are needed, ie when the tooling API is used in embedded mode
-        buildProcessState = new BuildProcessState(true, AgentStatus.disabled(), ClassPath.EMPTY, loggingServices, NativeServices.getInstance()) {
-            @Override
-            protected void addProviders(ServiceRegistryBuilder builder) {
-                builder.provider(new ConnectionScopeServices());
-            }
-        };
-        adapter = buildProcessState.getServices().get(ProtocolToModelAdapter.class);
-        connection = buildProcessState.getServices().get(ProviderConnection.class);
+        this.loggingServices = LoggingServiceRegistry.newEmbeddableLogging();
     }
 
     /**
@@ -141,7 +135,17 @@ public class DefaultConnection implements ConnectionVersion4,
      */
     @Override
     public void shutdown(ShutdownParameters parameters) {
-        buildProcessState.close();
+        if (embeddedDaemonState != null) {
+            embeddedDaemonState.getServices().get(ShutdownCoordinator.class).stopAllDaemons();
+            embeddedDaemonState.close();
+            embeddedDaemonState = null;
+        }
+        if (clientServices != null) {
+            clientServices.get(ShutdownCoordinator.class).stopAllDaemons();
+            clientServices.close();
+            clientServices = null;
+        }
+        loggingServices = null;
     }
 
     /**
@@ -151,7 +155,7 @@ public class DefaultConnection implements ConnectionVersion4,
     public BuildResult<?> getModel(ModelIdentifier modelIdentifier, InternalCancellationToken cancellationToken, BuildParameters operationParameters) throws org.gradle.tooling.internal.protocol.BuildExceptionVersion1, InternalUnsupportedModelException, InternalUnsupportedBuildArgumentException, IllegalStateException {
         ProviderOperationParameters providerParameters = validateAndConvert(operationParameters);
         BuildCancellationToken buildCancellationToken = new InternalCancellationTokenAdapter(cancellationToken);
-        Object result = connection.run(modelIdentifier.getName(), buildCancellationToken, providerParameters);
+        Object result = getConnection(providerParameters).run(modelIdentifier.getName(), buildCancellationToken, providerParameters);
         return new ProviderBuildResult<>(result);
     }
 
@@ -159,11 +163,12 @@ public class DefaultConnection implements ConnectionVersion4,
      * This is used by consumers 2.1-rc-1 to 4.3
      */
     @Override
-    public <T> BuildResult<T> run(org.gradle.tooling.internal.protocol.InternalBuildAction<T> action, InternalCancellationToken cancellationToken, BuildParameters operationParameters)
+    @SuppressWarnings("deprecation")
+    public <T> BuildResult<T> run(@SuppressWarnings("deprecation") org.gradle.tooling.internal.protocol.InternalBuildAction<T> action, InternalCancellationToken cancellationToken, BuildParameters operationParameters)
         throws org.gradle.tooling.internal.protocol.BuildExceptionVersion1, InternalUnsupportedBuildArgumentException, IllegalStateException {
         ProviderOperationParameters providerParameters = validateAndConvert(operationParameters);
         BuildCancellationToken buildCancellationToken = new InternalCancellationTokenAdapter(cancellationToken);
-        Object results = connection.run(action, buildCancellationToken, providerParameters);
+        Object results = getConnection(providerParameters).run(action, buildCancellationToken, providerParameters);
         return new ProviderBuildResult<>(Cast.uncheckedNonnullCast(results));
     }
 
@@ -171,11 +176,12 @@ public class DefaultConnection implements ConnectionVersion4,
      * This is used by consumers 4.4 and later
      */
     @Override
+    @SuppressWarnings("overloads")
     public <T> BuildResult<T> run(InternalBuildActionVersion2<T> action, InternalCancellationToken cancellationToken, BuildParameters operationParameters)
         throws org.gradle.tooling.internal.protocol.BuildExceptionVersion1, InternalUnsupportedBuildArgumentException, IllegalStateException {
         ProviderOperationParameters providerParameters = validateAndConvert(operationParameters);
         BuildCancellationToken buildCancellationToken = new InternalCancellationTokenAdapter(cancellationToken);
-        Object results = connection.run(action, buildCancellationToken, providerParameters);
+        Object results = getConnection(providerParameters).run(action, buildCancellationToken, providerParameters);
         return new ProviderBuildResult<>(Cast.uncheckedNonnullCast(results));
     }
 
@@ -186,7 +192,7 @@ public class DefaultConnection implements ConnectionVersion4,
     public BuildResult<?> run(InternalPhasedAction phasedAction, PhasedActionResultListener listener, InternalCancellationToken cancellationToken, BuildParameters operationParameters) {
         ProviderOperationParameters providerParameters = validateAndConvert(operationParameters);
         BuildCancellationToken buildCancellationToken = new InternalCancellationTokenAdapter(cancellationToken);
-        Object results = connection.runPhasedAction(phasedAction, listener, buildCancellationToken, providerParameters);
+        Object results = getConnection(providerParameters).runPhasedAction(phasedAction, listener, buildCancellationToken, providerParameters);
         return new ProviderBuildResult<>(results);
     }
 
@@ -199,13 +205,12 @@ public class DefaultConnection implements ConnectionVersion4,
         ProviderOperationParameters providerParameters = validateAndConvert(operationParameters);
         ProviderInternalTestExecutionRequest testExecutionRequestVersion2 = adapter.adapt(ProviderInternalTestExecutionRequest.class, testExecutionRequest);
         BuildCancellationToken buildCancellationToken = new InternalCancellationTokenAdapter(cancellationToken);
-        Object results = connection.runTests(testExecutionRequestVersion2, buildCancellationToken, providerParameters);
+        Object results = getConnection(providerParameters).runTests(testExecutionRequestVersion2, buildCancellationToken, providerParameters);
         return new ProviderBuildResult<>(results);
     }
 
     private ProviderOperationParameters validateAndConvert(BuildParameters buildParameters) {
         LOGGER.info("Tooling API is using target Gradle version: {}.", GradleVersion.current().getVersion());
-        assertUsingSupportedJavaVersion();
 
         checkUnsupportedTapiVersion();
         ProviderOperationParameters parameters = adapter.builder(ProviderOperationParameters.class).mixInTo(ProviderOperationParameters.class, BuildLogLevelMixIn.class).build(buildParameters);
@@ -216,10 +221,11 @@ public class DefaultConnection implements ConnectionVersion4,
     }
 
     private UnsupportedVersionException unsupportedConnectionException() {
-        return new UnsupportedVersionException(String.format("Support for clients using a tooling API version older than %s was removed in Gradle 5.0. %sYou should upgrade your tooling API client to version %s or later.",
-            MIN_CLIENT_VERSION.getVersion(),
+        return new UnsupportedVersionException(String.format("Support for clients using a tooling API version older than %s was removed in Gradle %d.0. %sYou should upgrade your tooling API client to version %s or later.",
+            MIN_CLIENT_VERSION_STR,
+            DefaultGradleConnector.MINIMAL_CLIENT_MAJOR_VERSION + GUARANTEED_TAPI_BACKWARDS_COMPATIBILITY,
             createCurrentVersionMessage(),
-            MIN_CLIENT_VERSION.getVersion()));
+            MIN_CLIENT_VERSION_STR));
     }
 
     private String createCurrentVersionMessage() {
@@ -232,7 +238,7 @@ public class DefaultConnection implements ConnectionVersion4,
     }
 
     private void checkUnsupportedTapiVersion() {
-        if (consumerVersion == null || consumerVersion.compareTo(MIN_CLIENT_VERSION) < 0) {
+        if (consumerVersion == null || consumerVersion.compareTo(DefaultGradleConnector.MINIMUM_SUPPORTED_GRADLE_VERSION) < 0) {
             throw unsupportedConnectionException();
         }
     }
@@ -240,12 +246,57 @@ public class DefaultConnection implements ConnectionVersion4,
     @Override
     public void notifyDaemonsAboutChangedPaths(List<String> changedPaths, BuildParameters operationParameters) {
         ProviderOperationParameters providerParameters = validateAndConvert(operationParameters);
-        connection.notifyDaemonsAboutChangedPaths(changedPaths, providerParameters);
+        getConnection(providerParameters).notifyDaemonsAboutChangedPaths(changedPaths, providerParameters);
     }
 
     @Override
     public void stopWhenIdle(BuildParameters operationParameters) {
         ProviderOperationParameters providerParameters = validateAndConvert(operationParameters);
-        connection.stopWhenIdle(providerParameters);
+        getConnection(providerParameters).stopWhenIdle(providerParameters);
+    }
+
+    private ProviderConnection getConnection(ProviderOperationParameters providerParameters) {
+        return getServices(providerParameters).get(ProviderConnection.class);
+    }
+
+    private ServiceRegistry getServices(ProviderOperationParameters providerParameters) {
+        if (Boolean.TRUE.equals(providerParameters.isEmbedded())) {
+            if (embeddedDaemonState == null) {
+                embeddedDaemonState = new BuildProcessState(
+                    true,
+                    AgentStatus.disabled(),
+                    CurrentGradleInstallation.locate(),
+                    Collections.singleton(new ConnectionScopeServices()),
+                    Arrays.asList(
+                        loggingServices,
+                        NativeServices.getInstance()
+                    )
+                );
+                configureServices(embeddedDaemonState.getServices());
+            }
+            return embeddedDaemonState.getServices();
+        } else {
+            if (clientServices == null) {
+                clientServices = ServiceRegistryBuilder.builder()
+                    .displayName("TAPI connection global services")
+                    .scopeStrictly(Scope.Global.class)
+                    .parent(loggingServices)
+                    .parent(NativeServices.getInstance())
+                    .provider(new GlobalScopeServices(
+                        true,
+                        AgentStatus.disabled(),
+                        CurrentGradleInstallation.locate()
+                    ))
+                    .provider(new ConnectionScopeServices())
+                    .build();
+                configureServices(clientServices);
+            }
+            return clientServices;
+        }
+    }
+
+    private void configureServices(ServiceRegistry services) {
+        assert consumerVersion != null;
+        services.get(ProviderConnection.class).configure(verboseLogging, consumerVersion);
     }
 }

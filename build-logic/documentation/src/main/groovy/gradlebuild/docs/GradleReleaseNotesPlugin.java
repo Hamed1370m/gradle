@@ -17,19 +17,24 @@
 package gradlebuild.docs;
 
 import gradlebuild.buildutils.tasks.AbstractCheckOrUpdateContributorsInReleaseNotes;
-import gradlebuild.identity.extension.ModuleIdentityExtension;
 import gradlebuild.buildutils.tasks.CheckContributorsInReleaseNotes;
+import gradlebuild.buildutils.tasks.PreparePatchReleaseNotes;
 import gradlebuild.buildutils.tasks.UpdateContributorsInReleaseNotes;
+import gradlebuild.buildutils.tasks.UpdateFixedIssuesInReleaseNotes;
+import gradlebuild.identity.extension.GradleModuleExtension;
+import gradlebuild.identity.extension.ModuleIdentity;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
-import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.provider.MapProperty;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.util.GradleVersion;
 
 import java.nio.charset.Charset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 
 /**
  * Opinionated plugin that generates the release notes for a Gradle release.
@@ -37,6 +42,9 @@ import java.nio.charset.Charset;
  * TODO: Maybe eventually convert this asciidoc too, so everything uses the same markup language.
  */
 public class GradleReleaseNotesPlugin implements Plugin<Project> {
+    private static final DateTimeFormatter BUILD_TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmssZ");
+    private static final DateTimeFormatter RELEASE_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
     @Override
     public void apply(Project project) {
         ProjectLayout layout = project.getLayout();
@@ -56,7 +64,7 @@ public class GradleReleaseNotesPlugin implements Plugin<Project> {
             task.getOutputEncoding().convention(Charset.defaultCharset().name());
 
             task.getMarkdownFile().convention(extension.getReleaseNotes().getMarkdownFile());
-            task.getDestinationFile().convention(extension.getStagingRoot().file("release-notes/raw.html"));
+            task.getDestinationFile().convention(extension.getReleaseNotes().getStagingRoot().file("raw.html"));
         });
 
         TaskProvider<DecorateReleaseNotes> releaseNotesPostProcess = tasks.register("releaseNotes", DecorateReleaseNotes.class, task -> {
@@ -67,14 +75,19 @@ public class GradleReleaseNotesPlugin implements Plugin<Project> {
             task.getBaseCssFile().convention(extension.getReleaseNotes().getBaseCssFile());
             task.getReleaseNotesCssFile().convention(extension.getReleaseNotes().getReleaseNotesCssFile());
             task.getReleaseNotesJavascriptFile().convention(extension.getReleaseNotes().getReleaseNotesJsFile());
-            task.getJquery().from(extension.getReleaseNotes().getJquery());
 
-            ModuleIdentityExtension moduleIdentity = project.getExtensions().getByType(ModuleIdentityExtension.class);
+            ModuleIdentity moduleIdentity = project.getExtensions().getByType(GradleModuleExtension.class).getIdentity();
+
             MapProperty<String, String> replacementTokens = task.getReplacementTokens();
+            Provider<String> buildTimestamp = moduleIdentity.getBuildTimestamp();
+            Provider<String> dateTime = buildTimestamp.map(timestamp ->
+                ZonedDateTime.parse(timestamp, BUILD_TIMESTAMP_FORMAT).format(RELEASE_DATE_FORMAT));
+
+            replacementTokens.put("releaseDate", dateTime);
             replacementTokens.put("version", moduleIdentity.getVersion().map(GradleVersion::getVersion));
             replacementTokens.put("baseVersion", moduleIdentity.getVersion().map(v -> v.getBaseVersion().getVersion()));
 
-            task.getDestinationFile().convention(extension.getStagingRoot().file("release-notes/release-notes.html"));
+            task.getDestinationFile().convention(extension.getReleaseNotes().getStagingRoot().file("release-notes.html"));
         });
 
         tasks.register("checkContributorsInReleaseNotes", CheckContributorsInReleaseNotes.class);
@@ -85,17 +98,31 @@ public class GradleReleaseNotesPlugin implements Plugin<Project> {
             task.getMilestone().convention(project.getProviders().fileContents(project.getIsolated().getRootProject().getProjectDirectory().file("version.txt")).getAsText().map(String::trim));
         });
 
-        Configuration jquery = project.getConfigurations().create("jquery", conf -> {
-            conf.setDescription("JQuery dependencies embedded by release notes.");
+        tasks.register("preparePatchReleaseNotes", PreparePatchReleaseNotes.class, task -> {
+            task.setGroup("release notes");
+            task.setDescription("Rewrites the release notes intro for a patch release, ready for updateFixedIssuesInReleaseNotes.");
+            task.getReleaseNotes().set(extension.getReleaseNotes().getMarkdownFile());
+            task.getVersionFile().set(project.getIsolated().getRootProject().getProjectDirectory().file("version.txt"));
+            // version.txt must already hold the bumped patch version when this runs.
+            task.mustRunAfter(":bumpVersionForPatchRelease");
+        });
+
+        tasks.register("updateFixedIssuesInReleaseNotes", UpdateFixedIssuesInReleaseNotes.class, task -> {
+            task.setGroup("release notes");
+            task.setDescription("Update the list of fixed issues in the release notes for a patch release.");
+            task.getGithubToken().set(project.getProviders().environmentVariable("GITHUB_TOKEN"));
+            task.getReleaseNotes().set(extension.getReleaseNotes().getMarkdownFile());
+            task.getMilestone().convention(project.getProviders().fileContents(project.getIsolated().getRootProject().getProjectDirectory().file("version.txt")).getAsText().map(String::trim));
         });
 
         extension.releaseNotes(releaseNotes -> {
+            releaseNotes.getStagingRoot().convention(extension.getStagingRoot().dir("release-notes"));
             releaseNotes.getMarkdownFile().convention(extension.getSourceRoot().file("release/notes.md"));
             releaseNotes.getRenderedDocumentation().convention(releaseNotesPostProcess.flatMap(DecorateReleaseNotes::getDestinationFile));
             releaseNotes.getBaseCssFile().convention(extension.getSourceRoot().file("css/base.css"));
             releaseNotes.getReleaseNotesCssFile().convention(extension.getSourceRoot().file("css/release-notes.css"));
-            releaseNotes.getReleaseNotesJsFile().convention(extension.getSourceRoot().file("release/content/script.js"));
-            releaseNotes.getJquery().from(jquery);
+            releaseNotes.getReleaseNotesJsFile().convention(extension.getSourceRoot().file("release/content/releaseIssues.js"));
+            releaseNotes.getReleaseNotesAssets().convention(extension.getSourceRoot().dir("release/release-notes-assets"));
         });
     }
 }

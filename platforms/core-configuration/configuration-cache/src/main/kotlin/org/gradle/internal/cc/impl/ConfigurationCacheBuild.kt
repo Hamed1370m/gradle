@@ -16,10 +16,9 @@
 
 package org.gradle.internal.cc.impl
 
-import org.gradle.api.artifacts.component.BuildIdentifier
 import org.gradle.api.internal.BuildDefinition
 import org.gradle.api.internal.GradleInternal
-import org.gradle.api.internal.project.ProjectInternal
+import org.gradle.internal.build.BuildIdentity
 import org.gradle.internal.build.BuildState
 import org.gradle.util.Path
 import java.io.File
@@ -35,12 +34,12 @@ interface ConfigurationCacheBuild {
 
     fun registerProject(projectPath: Path, dir: File, buildDir: File)
 
-    fun getProject(path: String): ProjectInternal
-
-    // Creates all registered projects for this build
+    /** Creates all registered projects for this build. */
     fun createProjects()
 
     fun addIncludedBuild(buildDefinition: BuildDefinition, settingsFile: File?, buildPath: Path): ConfigurationCacheBuild
 
-    fun getBuildSrcOf(ownerId: BuildIdentifier): ConfigurationCacheBuild
+    fun addImplicitIncludedBuild(buildDefinition: BuildDefinition, settingsFile: File?, buildPath: Path): ConfigurationCacheBuild
+
+    fun getBuildSrcOf(ownerId: BuildIdentity): ConfigurationCacheBuild
 }

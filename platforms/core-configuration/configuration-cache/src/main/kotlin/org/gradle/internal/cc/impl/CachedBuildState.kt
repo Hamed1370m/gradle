@@ -16,7 +16,9 @@
 
 package org.gradle.internal.cc.impl
 
-import org.gradle.execution.plan.ScheduledWork
+import org.gradle.internal.build.BuildState
+import org.gradle.internal.serialize.codecs.core.RestoredWorkGraph
+import org.gradle.internal.serialize.graph.codecs.ValueObject
 import org.gradle.normalization.internal.InputNormalizationHandlerInternal
 import org.gradle.util.Path
 import java.io.File
@@ -30,7 +32,7 @@ sealed class CachedProjectState(
     val path: Path,
     val projectDir: File,
     val buildFile: File
-)
+) : ValueObject
 
 
 internal
@@ -51,13 +53,14 @@ class ProjectWithNoWork(
 ) : CachedProjectState(path, projectDir, buildFile)
 
 
-data class BuildToStore(
-    val build: VintageGradleBuild,
+class BuildToStore(
+    val build: BuildState,
     // Does this build have work scheduled?
     val hasWork: Boolean,
     // Does this build have a child build with work scheduled?
     val hasChildren: Boolean
-) {
+) : ValueObject {
+    val hasNoWork = !hasWork && !hasChildren
     fun hasChildren() = BuildToStore(build, hasWork, true)
 }
 
@@ -68,7 +71,7 @@ data class BuildToStore(
 internal
 sealed class CachedBuildState(
     val identityPath: Path,
-)
+) : ValueObject
 
 
 /**
@@ -91,7 +94,7 @@ class BuildWithWork(
     val build: ConfigurationCacheBuild,
     rootProjectName: String,
     projects: List<CachedProjectState>,
-    val workGraph: ScheduledWork
+    val workGraph: RestoredWorkGraph
 ) : BuildWithProjects(identityPath, rootProjectName, projects)
 
 
@@ -102,7 +105,7 @@ internal
 class BuildWithNoWork(
     identityPath: Path,
     rootProjectName: String,
-    projects: List<ProjectWithNoWork>
+    projects: List<CachedProjectState>
 ) : BuildWithProjects(identityPath, rootProjectName, projects)
 
 

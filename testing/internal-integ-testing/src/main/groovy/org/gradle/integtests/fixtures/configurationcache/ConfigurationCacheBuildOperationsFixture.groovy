@@ -21,11 +21,6 @@ import org.gradle.internal.operations.trace.BuildOperationRecord
 
 import javax.annotation.Nullable
 
-import static org.hamcrest.CoreMatchers.notNullValue
-import static org.hamcrest.CoreMatchers.nullValue
-import static org.hamcrest.MatcherAssert.assertThat
-
-
 class ConfigurationCacheBuildOperationsFixture {
 
     final BuildOperationTreeQueries operations
@@ -34,50 +29,136 @@ class ConfigurationCacheBuildOperationsFixture {
         this.operations = operations
     }
 
-    boolean getReused() {
-        storeOperation() == null && loadOperation() != null
-    }
-
+    /**
+     * A successful "CC hit"
+     */
     void assertStateLoaded() {
-        def load = loadOperation()
-        assertThat(load, notNullValue())
-        assertThat(load.failure, nullValue())
-        assertThat(storeOperation(), nullValue())
+        assertStorePhaseSkipped()
+        assertLoadPhaseSuccessful()
     }
 
+    /**
+     * A "CC hit" with errors happening during load phase
+     */
     void assertStateLoadFailed() {
-        def load = loadOperation()
-        assertThat(load, notNullValue())
-        assertThat(load.failure, notNullValue())
-        assertThat(storeOperation(), nullValue())
+        assertStorePhaseSkipped()
+        assertLoadPhaseFailed()
     }
 
-    void assertStateStored(boolean expectLoad = true) {
-        def store = storeOperation()
-        assertThat(store, notNullValue())
-        assertThat(store.failure, nullValue())
-        assertThat(loadOperation(), expectLoad ? notNullValue() : nullValue())
+    /**
+     * A successful "CC miss" with load-after-store behavior
+     */
+    void assertStateStored() {
+        assertStorePhaseSuccessful()
+        assertLoadPhaseSuccessful()
     }
 
+    /**
+     * A "CC miss" that was aborted after encountering errors before or during store phase
+     */
     void assertStateStoreFailed() {
-        assertThat(loadOperation(), nullValue())
-        def store = storeOperation()
-        assertThat(store, notNullValue())
-        assertThat(store.failure, notNullValue())
+        assertStorePhaseFailed()
+        assertLoadPhaseSkipped()
+    }
+
+    /**
+     * A "CC miss" where the state was discarded after encountering errors before or during store phase while when CC problems are warnings.
+     */
+    void assertStateStoreDiscarded() {
+        assertStorePhaseSuccessful()
+        assertLoadPhaseSkipped()
+    }
+
+    /**
+     * A "CC miss" that stores successfully, but fails during load with an error
+     */
+    void assertStateStoredAndFailedOnLoad() {
+        assertStorePhaseSuccessful()
+        assertLoadPhaseFailed()
+    }
+
+    void assertModelStored() {
+        def modelStore = modelStoreOperation()
+        assert modelStore != null && modelStore.failure == null
+        assert modelLoadOperation() == null
+    }
+
+    void assertModelStoreFailed() {
+        def modelStore = modelStoreOperation()
+        assert modelStore != null && modelStore.failure != null
+        assert modelLoadOperation() == null
+    }
+
+    void assertModelLoaded() {
+        def modelLoad = modelLoadOperation()
+        assert modelLoad != null && modelLoad.failure == null
+        assert modelStoreOperation() == null
     }
 
     void assertNoConfigurationCache() {
-        assertThat(loadOperation(), nullValue())
-        assertThat(storeOperation(), nullValue())
+        assertNoWorkGraphOperations()
+        assertNoModelOperations()
+    }
+
+    void assertNoWorkGraphOperations() {
+        assert workGraphStoreOperation() == null
+        assert workGraphLoadOperation() == null
+    }
+
+    void assertNoModelOperations() {
+        assert modelStoreOperation() == null
+        assert modelLoadOperation() == null
+    }
+
+    void assertStorePhaseSuccessful() {
+        def store = workGraphStoreOperation()
+        assert store != null
+        assert store.failure == null
+    }
+
+    void assertLoadPhaseSuccessful() {
+        def load = workGraphLoadOperation()
+        assert load != null
+        assert load.failure == null
+    }
+
+    void assertStorePhaseFailed() {
+        def store = workGraphStoreOperation()
+        assert store != null
+        assert store.failure != null
+    }
+
+    void assertLoadPhaseFailed() {
+        def load = workGraphLoadOperation()
+        assert load != null
+        assert load.failure != null
+    }
+
+    void assertStorePhaseSkipped() {
+        assert workGraphStoreOperation() == null
+    }
+
+    void assertLoadPhaseSkipped() {
+        assert workGraphLoadOperation() == null
     }
 
     @Nullable
-    private BuildOperationRecord loadOperation() {
-        operations.firstMatchingRegex("Load (configuration cache|instant execution) state")
+    private BuildOperationRecord workGraphStoreOperation() {
+        operations.singleOrNone("Store configuration cache state")
     }
 
     @Nullable
-    private BuildOperationRecord storeOperation() {
-        operations.firstMatchingRegex("Store (configuration cache|instant execution) state.*")
+    private BuildOperationRecord workGraphLoadOperation() {
+        operations.singleOrNone("Load configuration cache state")
+    }
+
+    @Nullable
+    private BuildOperationRecord modelStoreOperation() {
+        operations.singleOrNone("Store model in configuration cache")
+    }
+
+    @Nullable
+    private BuildOperationRecord modelLoadOperation() {
+        operations.singleOrNone("Load model from configuration cache")
     }
 }

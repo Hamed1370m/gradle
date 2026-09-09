@@ -17,13 +17,13 @@ package org.gradle.api.internal.tasks.compile;
 
 import org.gradle.api.internal.ClassPathRegistry;
 import org.gradle.api.internal.tasks.compile.daemon.AbstractDaemonCompiler;
+import org.gradle.api.internal.tasks.compile.daemon.CompilerParameters;
 import org.gradle.api.internal.tasks.compile.daemon.CompilerWorkerExecutor;
 import org.gradle.internal.classloader.VisitableURLClassLoader;
 import org.gradle.internal.classpath.ClassPath;
 import org.gradle.internal.jvm.JavaInfo;
 import org.gradle.internal.jvm.Jvm;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
-import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.process.JavaForkOptions;
 import org.gradle.process.internal.JavaForkOptionsFactory;
 import org.gradle.workers.internal.DaemonForkOptions;
@@ -33,26 +33,30 @@ import org.gradle.workers.internal.KeepAliveMode;
 
 import java.io.File;
 import java.util.Collections;
+import java.util.Set;
 
 public class DaemonJavaCompiler extends AbstractDaemonCompiler<JavaCompileSpec> {
-    private final Class<? extends Compiler<JavaCompileSpec>> compilerClass;
-    private final Object[] compilerConstructorArguments;
+    private final JavaHomeBasedJavaCompilerFactory javaCompilerFactory;
     private final JavaForkOptionsFactory forkOptionsFactory;
     private final File daemonWorkingDir;
     private final ClassPathRegistry classPathRegistry;
 
-    public DaemonJavaCompiler(File daemonWorkingDir, Class<? extends Compiler<JavaCompileSpec>> compilerClass, Object[] compilerConstructorArguments, CompilerWorkerExecutor compilerWorkerExecutor, JavaForkOptionsFactory forkOptionsFactory, ClassPathRegistry classPathRegistry) {
+    public DaemonJavaCompiler(File daemonWorkingDir, JavaHomeBasedJavaCompilerFactory javaCompilerFactory, CompilerWorkerExecutor compilerWorkerExecutor, JavaForkOptionsFactory forkOptionsFactory, ClassPathRegistry classPathRegistry) {
         super(compilerWorkerExecutor);
-        this.compilerClass = compilerClass;
-        this.compilerConstructorArguments = compilerConstructorArguments;
+        this.javaCompilerFactory = javaCompilerFactory;
         this.forkOptionsFactory = forkOptionsFactory;
         this.daemonWorkingDir = daemonWorkingDir;
         this.classPathRegistry = classPathRegistry;
     }
 
     @Override
-    protected CompilerWorkerExecutor.CompilerParameters getCompilerParameters(JavaCompileSpec spec) {
-        return new JavaCompilerParameters(compilerClass.getName(), compilerConstructorArguments, spec);
+    protected CompilerParameters getCompilerParameters(JavaCompileSpec spec) {
+        return new JavaCompilerParameters(JdkJavaCompiler.class.getName(), new Object[]{javaCompilerFactory}, spec);
+    }
+
+    @Override
+    protected Set<Class<?>> getAdditionalCompilerServices() {
+        return Collections.emptySet();
     }
 
     @Override
@@ -66,7 +70,7 @@ public class DaemonJavaCompiler extends AbstractDaemonCompiler<JavaCompileSpec> 
 
         MinimalJavaCompilerDaemonForkOptions forkOptions = spec.getCompileOptions().getForkOptions();
         JavaForkOptions javaForkOptions = new BaseForkOptionsConverter(forkOptionsFactory).transform(forkOptions);
-        javaForkOptions.setWorkingDir(daemonWorkingDir);
+        javaForkOptions.getWorkingDirectory().set(daemonWorkingDir);
         javaForkOptions.setExecutable(jvm.getJavaExecutable());
 
         ClassPath compilerClasspath = classPathRegistry.getClassPath("JAVA-COMPILER");
@@ -98,17 +102,4 @@ public class DaemonJavaCompiler extends AbstractDaemonCompiler<JavaCompileSpec> 
             .build();
     }
 
-    public static class JavaCompilerParameters extends CompilerWorkerExecutor.CompilerParameters {
-        private final JavaCompileSpec compileSpec;
-
-        public JavaCompilerParameters(String compilerClassName, Object[] compilerInstanceParameters, JavaCompileSpec compileSpec) {
-            super(compilerClassName, compilerInstanceParameters);
-            this.compileSpec = compileSpec;
-        }
-
-        @Override
-        public JavaCompileSpec getCompileSpec() {
-            return compileSpec;
-        }
-    }
 }

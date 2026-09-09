@@ -16,12 +16,11 @@
 
 package org.gradle.api.internal.initialization;
 
-import org.gradle.api.internal.DomainObjectContext;
+import org.gradle.api.internal.artifacts.DependencyManagementParameters;
 import org.gradle.api.internal.artifacts.DependencyManagementServices;
 import org.gradle.api.internal.artifacts.DependencyResolutionServices;
 import org.gradle.api.internal.file.FileCollectionFactory;
 import org.gradle.api.internal.file.FileResolver;
-import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.groovy.scripts.ScriptSource;
 
 public class DefaultScriptHandlerFactory implements ScriptHandlerFactory {
@@ -37,23 +36,27 @@ public class DefaultScriptHandlerFactory implements ScriptHandlerFactory {
     }
 
     @Override
-    public ScriptHandlerInternal create(ScriptSource scriptSource, ClassLoaderScope classLoaderScope, DomainObjectContext context) {
-        DependencyResolutionServices services = dependencyManagementServices.newBuildscriptResolver(context);
+    public ScriptHandlerInternal create(
+        ScriptSource scriptSource,
+        ClassLoaderScope classLoaderScope,
+        DependencyManagementParameters params
+    ) {
+        DependencyResolutionServices services = dependencyManagementServices.newDetachedResolver(params);
         return getDefaultScriptHandler(scriptSource, classLoaderScope, services);
     }
 
     @Override
-    public ScriptHandlerInternal createProjectScriptHandler(
+    public ScriptHandlerInternal create(
         ScriptSource scriptSource,
         ClassLoaderScope classLoaderScope,
         FileResolver fileResolver,
         FileCollectionFactory fileCollectionFactory,
-        ProjectInternal project
+        DependencyManagementParameters params
     ) {
-        DependencyResolutionServices services = dependencyManagementServices.newProjectBuildscriptResolver(
+        DependencyResolutionServices services = dependencyManagementServices.newDetachedResolver(
             fileResolver,
             fileCollectionFactory,
-            project
+            params
         );
         return getDefaultScriptHandler(scriptSource, classLoaderScope, services);
     }

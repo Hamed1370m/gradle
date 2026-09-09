@@ -16,32 +16,19 @@
 
 pluginManagement {
     includeBuild("../build-logic-commons")
+    includeBuild("../build-logic-settings")
     repositories {
         gradlePluginPortal()
     }
 }
 
 plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version("0.8.0")
+    id("gradlebuild.version-catalogs")
+    id("gradlebuild.default-settings-plugins")
 }
 
 dependencyResolutionManagement {
     repositories {
-        maven {
-            name = "Develocity release candidates"
-            url = uri("https://repo.gradle.org/gradle/enterprise-libs-release-candidates")
-            content {
-                val rcAndMilestonesPattern = "\\d{1,2}?\\.\\d{1,2}?(\\.\\d{1,2}?)?-((rc-\\d{1,2}?)|(milestone-\\d{1,2}?))"
-                includeVersionByRegex("com.gradle", "develocity-gradle-plugin", rcAndMilestonesPattern)
-            }
-        }
-        maven {
-            name = "Gradle public repository"
-            url = uri("https://repo.gradle.org/gradle/public")
-            content {
-                includeModule("org.openmbee.junit", "junit-xml-parser")
-            }
-        }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -65,20 +52,18 @@ include("lifecycle")
 
 // Special purpose build logic for subproject - please preserve alphabetical order
 include("binary-compatibility")
-include("build-init-samples")
 include("buildquality")
 include("documentation")
 include("integration-testing")
 include("integration-testing-kotlin")
 include("jvm")
 include("kotlin-dsl")
-include("uber-plugins")
 include("packaging")
 include("performance-testing")
 include("profiling")
+include("uber-plugins")
 
 // Components used both at build time and GBT runtime, shipped in the distribution
 include("kotlin-dsl-shared-runtime")
-include("java-api-extractor")
 
 rootProject.name = "build-logic"

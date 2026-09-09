@@ -15,20 +15,20 @@
  */
 package org.gradle.integtests.resolve
 
-import groovy.test.NotYetImplemented
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.StableConfigurationCacheDeprecations
 import org.gradle.integtests.fixtures.extensions.FluidDependenciesResolveTest
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import spock.lang.Issue
 
 @FluidDependenciesResolveTest
-class ProjectDependencyResolveIntegrationTest extends AbstractIntegrationSpec {
-    private ResolveTestFixture resolve = new ResolveTestFixture(buildFile, "compile")
+class ProjectDependencyResolveIntegrationTest extends AbstractIntegrationSpec implements StableConfigurationCacheDeprecations {
+    private ResolveTestFixture resolve = new ResolveTestFixture(testDirectory)
 
     def setup() {
-        resolve.addDefaultVariantDerivationStrategy()
         settingsFile << """
             rootProject.name = 'test'
         """
@@ -40,47 +40,48 @@ class ProjectDependencyResolveIntegrationTest extends AbstractIntegrationSpec {
         mavenRepo.module("org.other", "externalB", "2.1").publish()
 
         and:
-        createDirs("a", "b")
-        file('settings.gradle') << "include 'a', 'b'"
+        settingsFile << """
+            include 'a'
+            include 'b'
+            dependencyResolutionManagement {
+                repositories { maven { url = '$mavenRepo.uri' } }
+            }
+        """
 
         and:
-        buildFile << """
-allprojects {
-    repositories { maven { url '$mavenRepo.uri' } }
-}
-project(":a") {
-    configurations {
-        api
-        'default' { extendsFrom api }
-    }
-    dependencies {
-        api "org.other:externalA:1.2"
-        'default' "org.other:externalB:2.1"
-    }
-    task jar(type: Jar) {
-        archiveBaseName = 'a'
-        destinationDirectory = buildDir
-    }
-    artifacts { api jar }
-}
-project(":b") {
-    group = 'org.gradle'
-    version = '1.0'
+        file("a/build.gradle") << """
+            configurations {
+                api
+                'default' { extendsFrom api }
+            }
+            dependencies {
+                api "org.other:externalA:1.2"
+                'default' "org.other:externalB:2.1"
+            }
+            task jar(type: Jar) {
+                archiveBaseName = 'a'
+                destinationDirectory = buildDir
+            }
+            artifacts { api tasks.jar }
+        """
 
-    configurations {
-        compile
-    }
-    dependencies {
-        compile project(':a')
-    }
-}
-"""
-        resolve.prepare()
+        file("b/build.gradle") << """
+            group = 'org.gradle'
+            version = '1.0'
+
+            ${resolve.configureProject("compile")}
+            configurations {
+                compile
+            }
+            dependencies {
+                compile project(':a')
+            }
+        """
 
         expect:
         succeeds ":b:checkDeps"
         executedAndNotSkipped ":a:jar"
-        resolve.expectGraph {
+        resolve.expectGraph(":b") {
             root(":b", "org.gradle:b:1.0") {
                 project(":a", "test:a:") {
                     module("org.other:externalA:1.2")
@@ -95,49 +96,52 @@ project(":b") {
         mavenRepo.module("org.other", "externalA", "1.2").publish()
 
         and:
-        createDirs("a", "b")
-        file('settings.gradle') << """
-            include 'a', 'b'
+        settingsFile << """
+            include 'a'
+            include 'b'
+            dependencyResolutionManagement {
+                repositories { maven { url = '$mavenRepo.uri' } }
+            }
         """
 
-        and:
-        buildFile << """
-allprojects {
-    repositories { maven { url '$mavenRepo.uri' } }
-}
-project(":a") {
-    apply plugin: 'base'
-    configurations {
-        api
-        runtime { extendsFrom api }
-    }
-    dependencies {
-        api("org.other:externalA:1.2") {
-            because 'also check dependency reasons'
-        }
-    }
-    task jar(type: Jar) { archiveBaseName = 'a' }
-    artifacts { api jar }
-}
-project(":b") {
-    configurations {
-        compile
-    }
-    dependencies {
-        compile(project(path: ':a', configuration: 'runtime')) {
-            because 'can provide a dependency reason for project dependencies too'
-        }
-    }
-}
-"""
-        resolve.prepare()
+        file("a/build.gradle") << """
+            plugins {
+                id("base")
+            }
+            configurations {
+                api
+                runtime { extendsFrom api }
+            }
+            dependencies {
+                api("org.other:externalA:1.2") {
+                    because 'also check dependency reasons'
+                }
+            }
+            task jar(type: Jar) { archiveBaseName = 'a' }
+            artifacts { api tasks.jar }
+        """
+
+        file("b/build.gradle") << """
+            plugins {
+                id("jvm-ecosystem")
+            }
+            ${resolve.configureProject("compile")}
+            configurations {
+                compile
+            }
+            dependencies {
+                compile(project(path: ':a', configuration: 'runtime')) {
+                    because 'can provide a dependency reason for project dependencies too'
+                }
+            }
+        """
 
         when:
         succeeds ':b:checkDeps'
 
         then:
         executedAndNotSkipped ":a:jar"
-        resolve.expectGraph {
+        resolve.expectGraph(":b") {
             root(":b", "test:b:") {
                 project(":a", 'test:a:') {
                     notRequested()
@@ -156,51 +160,47 @@ project(":b") {
     @Issue("GRADLE-2899")
     def "multiple project configurations can refer to different configurations of target project"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
 
         and:
-        buildFile << """
-project(':a') {
-    apply plugin: 'base'
-    configurations {
-        configA1
-        configA2
-    }
-    task A1jar(type: Jar) {
-        archiveBaseName = 'A1'
-    }
-    task A2jar(type: Jar) {
-        archiveBaseName = 'A2'
-    }
-    artifacts {
-        configA1 A1jar
-        configA2 A2jar
-    }
-}
+        file("a/build.gradle") << """
+            plugins {
+                id("base")
+            }
+            configurations {
+                configA1
+                configA2
+            }
+            task A1jar(type: Jar) {
+                archiveBaseName = 'A1'
+            }
+            task A2jar(type: Jar) {
+                archiveBaseName = 'A2'
+            }
+            artifacts {
+                configA1 tasks.A1jar
+                configA2 tasks.A2jar
+            }
+        """
 
-project(':b') {
-    configurations {
-        configB1
-        configB2
-    }
-    dependencies {
-        configB1 project(path:':a', configuration:'configA1')
-        configB2 project(path:':a', configuration:'configA2')
-    }
-}
-"""
-        resolve.prepare {
-            config("configB1")
-            config("configB2")
-        }
+        file("b/build.gradle") << """
+            ${resolve.configureProject("configB1", "configB2")}
+            configurations {
+                configB1
+                configB2
+            }
+            dependencies {
+                configB1 project(path:':a', configuration:'configA1')
+                configB2 project(path:':a', configuration:'configA2')
+            }
+        """
 
         when:
         run ":b:checkConfigB1"
 
         then:
         executedAndNotSkipped ":a:A1jar"
-        resolve.expectGraph {
+        resolve.expectGraph(":b") {
             root(":b", "test:b:") {
                 project(":a", "test:a:") {
                     configuration("configA1")
@@ -214,7 +214,7 @@ project(':b') {
 
         then:
         executedAndNotSkipped ":a:A2jar"
-        resolve.expectGraph {
+        resolve.expectGraph(":b") {
             root(":b", "test:b:") {
                 project(":a", "test:a:") {
                     configuration("configA2")
@@ -226,41 +226,45 @@ project(':b') {
 
     def "resolved project artifacts reflect project properties changed after task graph is resolved"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
 
         and:
         file('a/build.gradle') << '''
-            apply plugin: 'base'
+            plugins {
+                id("base")
+            }
             configurations { compile }
             dependencies { compile project(path: ':b', configuration: 'compile') }
             task aJar(type: Jar) { }
             gradle.taskGraph.whenReady { project.version = 'late' }
-            artifacts { compile aJar }
-'''
+            artifacts { compile tasks.aJar }
+        '''
+
         file('b/build.gradle') << '''
-            apply plugin: 'base'
+            plugins {
+                id("base")
+            }
             version = 'early'
             configurations { compile }
             task bJar(type: Jar) { }
             gradle.taskGraph.whenReady { project.version = 'transitive-late' }
-            artifacts { compile bJar }
-'''
-        file('build.gradle') << '''
+            artifacts { compile tasks.bJar }
+        '''
+
+        file('build.gradle') << """
+            ${resolve.configureProject("testCompile")}
             configurations {
                 compile
                 testCompile { extendsFrom compile }
             }
             dependencies { compile project(path: ':a', configuration: 'compile') }
-'''
-        resolve.prepare("testCompile")
+        """
 
         when:
         run ":checkDeps"
 
         then:
         executedAndNotSkipped ":a:aJar", ":b:bJar"
-        resolve.expectDefaultConfiguration("compile")
         resolve.expectGraph {
             root(":", ":test:") {
                 project(":a", "test:a:") {
@@ -276,12 +280,13 @@ project(':b') {
     @UnsupportedWithConfigurationCache(because = "configure task changes jar task")
     def "resolved project artifact can be changed by configuration task"() {
         given:
-        createDirs("a")
         file('settings.gradle') << "include 'a'"
 
         and:
         file('a/build.gradle') << '''
-            apply plugin: 'base'
+            plugins {
+                id("base")
+            }
             configurations { compile }
             task configureJar {
                 doLast {
@@ -290,10 +295,11 @@ project(':b') {
                 }
             }
             task aJar(type: Jar) {
-                dependsOn configureJar
+                dependsOn tasks.configureJar
             }
-            artifacts { compile aJar }
-'''
+            artifacts { compile tasks.aJar }
+        '''
+
         file('build.gradle') << '''
             configurations {
                 compile
@@ -306,7 +312,7 @@ project(':b') {
                     assert configurations.testCompile.collect { it.name } == ['a-modified.txt']
                 }
             }
-'''
+        '''
 
         expect:
         succeeds ":test"
@@ -318,40 +324,44 @@ project(':b') {
         mavenRepo.module("group", "externalA", "1.5").publish()
 
         and:
-        createDirs("a", "b")
-        file('settings.gradle') << "include 'a', 'b'"
+        settingsFile << """
+            include 'a'
+            include 'b'
+            dependencyResolutionManagement {
+                repositories { maven { url = '$mavenRepo.uri' } }
+            }
+        """
 
-        and:
-        buildFile << """
-allprojects {
-    apply plugin: 'base'
-    repositories { maven { url '${mavenRepo.uri}' } }
-}
+        file("a/build.gradle") << """
+            plugins {
+                id("base")
+            }
 
-project(":a") {
-    configurations {
-        deps
-        'default' { extendsFrom deps }
-    }
-    dependencies { deps 'group:externalA:1.5' }
-    task xJar(type: Jar) { archiveBaseName='x' }
-    task yJar(type: Jar) { archiveBaseName='y' }
-    artifacts { 'default' xJar, yJar }
-}
+            configurations {
+                deps
+                'default' { extendsFrom deps }
+            }
+            dependencies { deps 'group:externalA:1.5' }
+            task xJar(type: Jar) { archiveBaseName='x' }
+            task yJar(type: Jar) { archiveBaseName='y' }
+            artifacts { 'default' tasks.xJar, tasks.yJar }
+        """
 
-project(":b") {
-    configurations { compile }
-    dependencies { compile(project(':a')) { artifact { name = 'y'; type = 'jar' } } }
-}
-"""
-        resolve.prepare("compile")
+        file("b/build.gradle") << """
+            plugins {
+                id("base")
+            }
+            ${resolve.configureProject("compile")}
+            configurations { compile }
+            dependencies { compile(project(':a')) { artifact { name = 'y'; type = 'jar' } } }
+        """
 
         when:
         run 'b:checkDeps'
 
         then:
         executedAndNotSkipped ":a:yJar"
-        resolve.expectGraph {
+        resolve.expectGraph(":b") {
             root(":b", "test:b:") {
                 project(":a", "test:a:") {
                     artifact(name: "y", type: "jar")
@@ -363,37 +373,36 @@ project(":b") {
 
     def "reports project dependency that refers to an unknown artifact"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << """
-include 'a', 'b'
-"""
+            include 'a'
+            include 'b'
+        """
 
         and:
-        buildFile << """
-allprojects { group = 'test' }
-project(":a") {
-    configurations { 'default' {} }
-}
+        file("a/build.gradle") << """
+            group = 'test'
+            configurations { 'default' {} }
+        """
 
-project(":b") {
-    configurations { compile }
-    dependencies { compile(project(':a')) { artifact { name = 'b'; type = 'jar' } } }
-    task test {
-        inputs.files configurations.compile
-        outputs.upToDateWhen { false }
-        doFirst {
-            configurations.compile.files.collect { it.name }
-        }
-    }
-}
-"""
+        file("b/build.gradle") << """
+            group = 'test'
+            configurations { compile }
+            dependencies { compile(project(':a')) { artifact { name = 'b'; type = 'jar' } } }
+            task test {
+                inputs.files configurations.compile
+                outputs.upToDateWhen { false }
+                doFirst {
+                    configurations.compile.files.collect { it.name }
+                }
+            }
+        """
 
         expect:
         fails ':b:test'
 
         and:
         failure.assertHasCause("Could not resolve all dependencies for configuration ':b:compile'.")
-        failure.assertHasCause("Could not find b.jar (project :a).")
+        failure.assertHasCause("Could not find b.jar (project ':a').")
     }
 
     def "non-transitive project dependency includes only the artifacts of the target configuration"() {
@@ -401,35 +410,41 @@ project(":b") {
         mavenRepo.module("group", "externalA", "1.5").publish()
 
         and:
-        createDirs("a", "b")
-        file('settings.gradle') << "include 'a', 'b'"
+        settingsFile << """
+            include 'a'
+            include 'b'
+            dependencyResolutionManagement {
+                repositories { maven { url = '$mavenRepo.uri' } }
+            }
+        """
 
-        and:
-        buildFile << """
-allprojects {
-    apply plugin: 'java'
-    repositories { maven { url '${mavenRepo.uri}' } }
-}
-project(':a') {
-    dependencies {
-        implementation 'group:externalA:1.5'
-        implementation files('libs/externalB.jar')
-    }
-}
-project(':b') {
-    dependencies {
-        implementation project(':a'), { transitive = false }
-    }
-}
-"""
-        resolve.prepare("runtimeClasspath")
+        file("a/build.gradle") << """
+            plugins {
+                id("java-library")
+            }
+
+            dependencies {
+                implementation 'group:externalA:1.5'
+                implementation files('libs/externalB.jar')
+            }
+        """
+
+        file("b/build.gradle") << """
+            plugins {
+                id("java-library")
+            }
+            ${resolve.configureProject("runtimeClasspath")}
+            dependencies {
+                implementation project(':a'), { transitive = false }
+            }
+        """
 
         when:
         run ":b:checkDeps"
 
         then:
         executedAndNotSkipped ":a:jar"
-        resolve.expectGraph {
+        resolve.expectGraph(":b") {
             root(":b", "test:b:") {
                 project(":a", "test:a:") {
                     configuration("runtimeElements")
@@ -440,53 +455,53 @@ project(':b') {
 
     def "can have cycle in project dependencies"() {
         given:
-        createDirs("a", "b", "c")
         file('settings.gradle') << "include 'a', 'b', 'c'"
 
         and:
-        buildFile << """
+        def common = """
+            plugins {
+                id("base")
+            }
+            configurations {
+                first
+                other
+                'default' {
+                    extendsFrom first
+                }
+            }
+            task jar(type: Jar)
+            artifacts {
+                'default' tasks.jar
+            }
+        """
 
-subprojects {
-    apply plugin: 'base'
-    configurations {
-        first
-        other
-        'default' {
-            extendsFrom first
-        }
-    }
-    task jar(type: Jar)
-    artifacts {
-        'default' jar
-    }
-}
+        file("a/build.gradle") << """
+            $common
+            ${resolve.configureProject("first")}
+            dependencies {
+                first project(':b')
+                other project(':b')
+            }
+        """
+        file("b/build.gradle") << """
+            $common
+            dependencies {
+                first project(':c')
+            }
+        """
+        file("c/build.gradle") << """
+            $common
+            dependencies {
+                first project(':a')
+            }
+        """
 
-project('a') {
-    dependencies {
-        first project(':b')
-        other project(':b')
-    }
-}
-
-project('b') {
-    dependencies {
-        first project(':c')
-    }
-}
-
-project('c') {
-    dependencies {
-        first project(':a')
-    }
-}
-"""
         when:
-        resolve.prepare("first")
         run ":a:checkDeps"
 
         then:
         executedAndNotSkipped ":b:jar", ":c:jar"
-        resolve.expectGraph {
+        resolve.expectGraph(":a") {
             root(":a", "test:a:") {
                 project(":b", "test:b:") {
                     project(":c", "test:c:") {
@@ -497,59 +512,77 @@ project('c') {
         }
     }
 
-    @NotYetImplemented
     @Issue('GRADLE-3280')
     def "can resolve recursive copy of configuration with cyclic project dependencies"() {
         given:
-        createDirs("a", "b", "c")
         settingsFile << "include 'a', 'b', 'c'"
-        buildFile '''
-            subprojects {
-                apply plugin: 'base'
-                task jar(type: Jar)
-                artifacts {
-                    'default' jar
-                }
+        def common = """
+            plugins {
+                id("base")
             }
-            project('a') {
-                dependencies {
-                    'default' project(':b')
-                }
-                task assertCanResolve {
-                    doLast {
-                        assert !project.configurations.default.resolvedConfiguration.hasError()
+            task jar(type: Jar)
+            configurations {
+                dependencyScope('implementation')
+                resolvable("res") {
+                    extendsFrom(implementation)
+                    attributes {
+                        attribute(Category.CATEGORY_ATTRIBUTE, named(Category, "foo"))
                     }
                 }
-                task assertCanResolveRecursiveCopy {
-                    doLast {
-                        assert !project.configurations.default.copyRecursive().resolvedConfiguration.hasError()
+                consumable("cons") {
+                    extendsFrom(implementation)
+                    attributes {
+                        attribute(Category.CATEGORY_ATTRIBUTE, named(Category, "foo"))
                     }
+                    outgoing.artifact(tasks.jar)
                 }
             }
-            project('b') {
-                dependencies {
-                    'default' project(':c')
+        """
+
+        file("a/build.gradle") << """
+            $common
+            dependencies {
+                implementation(project(":b"))
+            }
+            task assertCanResolve {
+                def files = project.configurations.res.incoming.files
+                doLast {
+                    println(files*.name)
                 }
             }
-            project('c') {
-                dependencies {
-                    'default' project(':a')
+            task assertCanResolveRecursiveCopy {
+                def files = project.configurations.res.copyRecursive().incoming.files
+                doLast {
+                    println(files*.name)
                 }
             }
-        '''.stripIndent()
+        """
+
+        file("b/build.gradle") << """
+            $common
+            dependencies {
+                implementation(project(':c'))
+            }
+        """
+
+        file("c/build.gradle") << """
+            $common
+            dependencies {
+                implementation(project(':a'))
+            }
+        """
 
         expect:
-        succeeds ':a:assertCanResolve'
+        succeeds(":a:assertCanResolve")
 
         and:
-        succeeds ':a:assertCanResolveRecursiveCopy'
+        succeeds(":a:assertCanResolveRecursiveCopy")
     }
 
     // this test is largely covered by other tests, but does ensure that there is nothing special about
-    // project dependencies that are “built” by built in plugins like the Java plugin's created jars
+    // project dependencies that are "built" by built in plugins like the Java plugin's created jars
     def "can use zip files as project dependencies"() {
         given:
-        createDirs("a", "b")
         file("settings.gradle") << "include 'a'; include 'b'"
         file("a/some.txt") << "foo"
         file("a/build.gradle") << """
@@ -562,7 +595,7 @@ project('c') {
             }
 
             artifacts {
-                delegate.default zip
+                delegate.default tasks.zip
             }
         """
         file("b/build.gradle") << """
@@ -587,96 +620,96 @@ project('c') {
         file("b/build/copied/a-1.0.zip").exists()
     }
 
-    @ToBeFixedForConfigurationCache(because = "Task.getProject() during execution")
+    @Requires(value = [TestExecutionPreconditions.NotIsolatedProjects], reason = "Explicitly tests IP incompatible behavior")
     def "resolving configuration with project dependency marks dependency's configuration as observed"() {
-        createDirs("api", "impl")
-        settingsFile << "include 'api'; include 'impl'"
+        settingsFile << """
+            include 'api'
+            include 'impl'
+        """
 
-        buildFile << """
-            allprojects {
-                configurations {
-                    conf
-                }
-                configurations.create("default").extendsFrom(configurations.conf)
+        file("api/build.gradle") << """
+            configurations {
+                conf
+            }
+            configurations.create("default").extendsFrom(configurations.conf)
+        """
+
+        file("impl/build.gradle") << """
+            configurations {
+                conf
+            }
+            configurations.create("default").extendsFrom(configurations.conf)
+
+            dependencies {
+                conf project(":api")
             }
 
-            project(":impl") {
-                dependencies {
-                    conf project(":api")
-                }
+            assert configurations.conf.state == Configuration.State.UNRESOLVED
+            assert project(":api").configurations.conf.state == Configuration.State.UNRESOLVED
 
-                task check {
-                    doLast {
-                        assert configurations.conf.state == Configuration.State.UNRESOLVED
-                        assert project(":api").configurations.conf.state == Configuration.State.UNRESOLVED
+            configurations.conf.resolve()
 
-                        configurations.conf.resolve()
+            assert configurations.conf.state == Configuration.State.RESOLVED
+            assert project(":api").configurations.conf.state == Configuration.State.UNRESOLVED
 
-                        assert configurations.conf.state == Configuration.State.RESOLVED
-                        assert project(":api").configurations.conf.state == Configuration.State.UNRESOLVED
-
-                        // Attempt to change the configuration, to demonstrate that is has been observed
-                        project(":api").configurations.conf.dependencies.add(null)
-                    }
-                }
-            }
-"""
+            // Attempt to change the configuration, to demonstrate that is has been observed
+            project(":api").configurations.conf.dependencies.add(null)
+        """
 
         when:
-        fails("impl:check")
+        fails("help")
 
         then:
-        failure.assertHasCause "Cannot change dependencies of dependency configuration ':api:conf' after it has been included in dependency resolution"
+        failure.assertHasCause("Cannot mutate the dependencies of configuration ':api:conf' after the configuration was consumed as a variant. After a configuration has been observed, it should not be modified.")
     }
 
     @Issue(["GRADLE-3330", "GRADLE-3362"])
     def "project dependency can resolve multiple artifacts from target project that are differentiated by archiveFileName only"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << "include 'a', 'b'"
 
         and:
-        buildFile << """
-project(':a') {
-    apply plugin: 'base'
-    configurations {
-        configOne
-        configTwo
-    }
-    task A1jar(type: Jar) {
-        archiveFileName = 'A1.jar'
-    }
-    task A2jar(type: Jar) {
-        archiveFileName = 'A2.jar'
-    }
-    task A3jar(type: Jar) {
-        archiveFileName = 'A3.jar'
-    }
-    artifacts {
-        configOne A1jar
-        configTwo A2jar
-        configTwo A3jar
-    }
-}
+        file("a/build.gradle") << """
+            plugins {
+                id("base")
+            }
+            configurations {
+                configOne
+                configTwo
+            }
+            task A1jar(type: Jar) {
+                archiveFileName = 'A1.jar'
+            }
+            task A2jar(type: Jar) {
+                archiveFileName = 'A2.jar'
+            }
+            task A3jar(type: Jar) {
+                archiveFileName = 'A3.jar'
+            }
+            artifacts {
+                configOne tasks.A1jar
+                configTwo tasks.A2jar
+                configTwo tasks.A3jar
+            }
+        """
 
-project(':b') {
-    configurations {
-        configB
-    }
-    dependencies {
-        configB project(path:':a', configuration:'configOne')
-        configB project(path:':a', configuration:'configTwo')
-    }
-}
-"""
-        resolve.prepare("configB")
+        file("b/build.gradle") << """
+            ${resolve.configureProject("configB")}
+            configurations {
+                configB
+            }
+            dependencies {
+                configB project(path:':a', configuration:'configOne')
+                configB project(path:':a', configuration:'configTwo')
+            }
+        """
 
         when:
         succeeds ":b:checkDeps"
 
         then:
         executedAndNotSkipped ":a:A1jar", ":a:A2jar", ":a:A3jar"
-        resolve.expectGraph {
+        resolve.expectGraph(":b") {
             root(":b", "test:b:") {
                 project(":a", "test:a:") {
                     configuration("configOne")
@@ -700,7 +733,7 @@ project(':b') {
             }
 
             dependencies {
-                a project
+                a project()
             }
 
             configurations.b.dependencies.addAllLater provider(() -> {
@@ -732,10 +765,8 @@ project(':b') {
                 configurations.a.files
                 []
             })
-
         """
 
-        createDirs("other")
         settingsFile << "include 'other'"
         file("other/build.gradle") << """
             configurations {
@@ -763,6 +794,7 @@ project(':b') {
     def "suggests outgoingVariants command when targetConfiguration not found in local project"() {
         given:
         settingsFile << """
+            rootProject.name = 'myProject'
             includeBuild 'included'
         """
 
@@ -806,26 +838,76 @@ project(':b') {
         succeeds(expectedCommand)
 
         where:
-        declaredDependency   | projectDescription  | expectedCommand
-        "project(':')"       | "root project :"         | ":outgoingVariants"
-        "'org:included:1.0'" | "project :included" | ":included:outgoingVariants"
+        declaredDependency   | projectDescription           | expectedCommand
+        "project(':')"       | "root project 'myProject'"   | ":outgoingVariants"
+        "'org:included:1.0'" | "project ':included'"        | ":included:outgoingVariants"
     }
 
-    def "getDependencyProject is deprecated"() {
+    def "can resolve a variant of a child project during configuration from a parent project when the child project resolves a configuration during configuration time"() {
+        mavenRepo.module("org", "foo").publish()
+
+        settingsFile << """
+            include 'a'
+        """
+
         buildFile << """
-            configurations {
-                dependencyScope("foo")
+            plugins {
+                id("java-library")
             }
 
             dependencies {
-                foo(project)
+                implementation(project(':a'))
             }
 
-            configurations.foo.dependencies.iterator().next().getDependencyProject()
+            // Execute resolution at configuration time, causing
+            // project :a to be resolved on-demand at configuration time.
+            assert configurations.compileClasspath.incoming.files*.name == ["main"]
+        """
+
+        file("a/build.gradle") << """
+            plugins {
+                id("java-library")
+            }
+
+            ${mavenTestRepository()}
+
+            dependencies {
+                implementation("org:foo:1.0")
+            }
+
+            // Execute resolution at configuration time
+            assert configurations.compileClasspath.incoming.files*.name == ["foo-1.0.jar"]
         """
 
         expect:
-        executer.expectDocumentedDeprecationWarning("The ProjectDependency.getDependencyProject() method has been deprecated. This is scheduled to be removed in Gradle 9.0. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_get_dependency_project")
         succeeds("help")
+    }
+
+    def "can resolve a project dependency on the current project"() {
+        settingsFile << "rootProject.name = 'bar'"
+        buildFile << """
+            apply plugin: 'java'
+            dependencies {
+                implementation project()
+                implementation "org:foo:1.0"
+            }
+            repositories {
+                maven { url = '${mavenRepo.uri}' }
+            }
+            task resolve {
+                def files = configurations.runtimeClasspath.incoming.files
+                doLast {
+                    println "resolved: " + files.collect { it.name }.join(", ")
+                }
+            }
+        """
+
+        mavenRepo.module("org", "foo").publish()
+
+        when:
+        succeeds("resolve")
+
+        then:
+        outputContains "resolved: bar.jar, foo-1.0.jar"
     }
 }

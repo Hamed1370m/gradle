@@ -55,14 +55,14 @@ class CompositeBuildTaskFailureIntegrationTest extends AbstractCompositeBuildInt
         fails(buildA, "assemble")
 
         then:
-        result.assertTaskExecuted(":buildB:compileJava")
-        result.assertTaskNotExecuted(":compileJava")
-        result.assertTaskNotExecuted(":classes")
-        result.assertTaskNotExecuted(":jar")
-        result.assertTaskNotExecuted(":other")
-        result.assertTaskNotExecuted(":assemble")
+        result.assertTaskScheduled(":buildB:compileJava")
+        result.assertTasksNotScheduled(":compileJava")
+        result.assertTasksNotScheduled(":classes")
+        result.assertTasksNotScheduled(":jar")
+        result.assertTasksNotScheduled(":other")
+        result.assertTasksNotScheduled(":assemble")
         failure.assertHasFailures(1)
-        failure.assertHasDescription("Execution failed for task ':buildB:compileJava'.")
+        failure.assertHasDescription("Execution failed for task ':buildB:compileJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
     }
 
     @Issue("https://github.com/gradle/gradle/issues/5714")
@@ -80,9 +80,9 @@ class CompositeBuildTaskFailureIntegrationTest extends AbstractCompositeBuildInt
         fails(buildA, "assemble")
 
         then:
-        result.assertTaskExecuted(":buildB:broken")
+        result.assertTaskScheduled(":buildB:broken")
         failure.assertHasFailures(1)
-        failure.assertHasDescription("Execution failed for task ':buildB:broken'.")
+        failure.assertHasDescription("Execution failed for task ':buildB:broken' (registered in build file '..${File.separatorChar}buildB${File.separatorChar}build.gradle').")
     }
 
     def "does not compile build script when build script classpath cannot be built"() {
@@ -102,7 +102,7 @@ class CompositeBuildTaskFailureIntegrationTest extends AbstractCompositeBuildInt
 
         then:
         failure.assertHasFailures(1)
-        failure.assertHasDescription("Execution failed for task ':buildB:compileJava'.")
+        failure.assertHasDescription("Execution failed for task ':buildB:compileJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
         failure.assertHasCause("Compilation failed; see the compiler output below.")
     }
 
@@ -138,11 +138,11 @@ class CompositeBuildTaskFailureIntegrationTest extends AbstractCompositeBuildInt
         fails(buildA, "assemble")
 
         then:
-        result.assertTaskExecuted(":broken")
-        result.assertTaskExecuted(":buildB:broken")
+        result.assertTaskScheduled(":broken")
+        result.assertTaskScheduled(":buildB:broken")
         failure.assertHasFailures(2)
-        failure.assertHasDescription("Execution failed for task ':broken'.")
-        failure.assertHasDescription("Execution failed for task ':buildB:broken'.")
+        failure.assertHasDescription("Execution failed for task ':broken' (registered in build file 'build.gradle').")
+        failure.assertHasDescription("Execution failed for task ':buildB:broken' (registered in build file '..${File.separatorChar}buildB${File.separatorChar}build.gradle').")
     }
 
     def "build fails when task in root build fails"() {
@@ -160,8 +160,8 @@ class CompositeBuildTaskFailureIntegrationTest extends AbstractCompositeBuildInt
         fails(buildA, "assemble")
 
         then:
-        result.assertTaskExecuted(":broken")
+        result.assertTaskScheduled(":broken")
         failure.assertHasFailures(1)
-        failure.assertHasDescription("Execution failed for task ':broken'.")
+        failure.assertHasDescription("Execution failed for task ':broken' (registered in build file 'build.gradle').")
     }
 }

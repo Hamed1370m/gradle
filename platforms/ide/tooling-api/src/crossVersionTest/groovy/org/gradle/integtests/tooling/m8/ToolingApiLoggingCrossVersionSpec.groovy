@@ -18,13 +18,15 @@ package org.gradle.integtests.tooling.m8
 
 import org.apache.commons.io.output.TeeOutputStream
 import org.gradle.integtests.fixtures.executer.ExecutionResult
+import org.gradle.integtests.fixtures.executer.NoDaemonGradleExecuter
 import org.gradle.integtests.tooling.fixture.TestOutputStream
-import org.gradle.integtests.tooling.fixture.ToolingApiLoggingSpecification
+import org.gradle.integtests.tooling.fixture.ToolingApiSpecification
+import org.gradle.internal.jvm.Jvm
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.util.GradleVersion
 
 @LeaksFileHandles
-class ToolingApiLoggingCrossVersionSpec extends ToolingApiLoggingSpecification {
+class ToolingApiLoggingCrossVersionSpec extends ToolingApiSpecification {
 
     def setup() {
         toolingApi.requireIsolatedToolingApi()
@@ -114,7 +116,7 @@ project.logger.debug("debug logging");
         def err = result.error
         def commandLineOutput = removeStartupWarnings(commandLineResult.output)
         normaliseOutput(out) == normaliseOutput(commandLineOutput)
-        err == commandLineResult.error
+        err == removeJvmWarnings(commandLineResult.error)
 
         and:
         def errLogging
@@ -147,8 +149,18 @@ project.logger.debug("debug logging");
         output
     }
 
+    private static removeJvmWarnings(String output) {
+        return output.replaceAll(/(?m)^WARNING:.*\r?\n/, '')
+    }
+
     private ExecutionResult runUsingCommandLine() {
-        def executer = targetDist.executer(temporaryFolder, getBuildContext())
+        Jvm jvm = ToolingApi.getJvmOverride(targetDist)
+        def executer = new NoDaemonGradleExecuter(targetDist, temporaryFolder, getBuildContext())
+            .tap {
+                if (jvm != null) {
+                    withJvm(jvm)
+                }
+            }
             .withCommandLineGradleOpts("-Dorg.gradle.deprecation.trace=false") //suppress deprecation stack trace
             .noExtraLogging() // use default logging level, NoDaemonGradleExecuter sets --info otherwise
 
@@ -170,7 +182,8 @@ project.logger.debug("debug logging");
         // Must replace both build result formats for cross compat
         return output
             .replaceAll(/Unable to list file systems to check whether they can be watched.*\n/, '')
-            .replaceFirst(/Support for .* was deprecated.*\n/, '')
+            .replaceAll(/Parallel Configuration Cache is an incubating feature.\n/, '')
+            .replaceAll(/Support for .* was deprecated.*\n/, '')
             .replaceFirst(/ in [ \dms]+/, " in 0ms")
             .replaceFirst("Total time: .+ secs", "Total time: 0 secs")
             .replaceFirst(/(?s)To honour the JVM settings for this build a (new JVM|single-use Daemon process) will be forked.+will be stopped at the end of the build (stopping after processing)?\n/, "")

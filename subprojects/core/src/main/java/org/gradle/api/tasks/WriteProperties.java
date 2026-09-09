@@ -20,15 +20,13 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.RegularFileProperty;
-import org.gradle.api.internal.file.FileOperations;
 import org.gradle.internal.IoActions;
 import org.gradle.internal.UncheckedException;
-import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 import org.gradle.internal.util.PropertiesUtils;
 import org.gradle.util.internal.DeferredUtil;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -90,9 +88,11 @@ public abstract class WriteProperties extends DefaultTask {
      *
      * @see #properties(Map)
      * @see #property(String, Object)
+     * @since 3.3
      */
     public void setProperties(Map<String, Object> properties) {
         this.properties.clear();
+        this.deferredProperties.clear();
         properties(properties);
     }
 
@@ -121,8 +121,10 @@ public abstract class WriteProperties extends DefaultTask {
                     return String.valueOf(futureValue);
                 }
             });
+            properties.remove(name);
         } else {
             properties.put(name, String.valueOf(value));
+            deferredProperties.remove(name);
         }
     }
 
@@ -145,6 +147,7 @@ public abstract class WriteProperties extends DefaultTask {
     /**
      * Returns the line separator to be used when creating the properties file.
      * Defaults to {@literal `\n`}.
+     * @since 3.3
      */
     @Input
     @ToBeReplacedByLazyProperty
@@ -154,6 +157,7 @@ public abstract class WriteProperties extends DefaultTask {
 
     /**
      * Sets the line separator to be used when creating the properties file.
+     * @since 3.3
      */
     public void setLineSeparator(String lineSeparator) {
         this.lineSeparator = lineSeparator;
@@ -161,6 +165,7 @@ public abstract class WriteProperties extends DefaultTask {
 
     /**
      * Returns the optional comment to add at the beginning of the properties file.
+     * @since 3.3
      */
     @Nullable
     @Optional
@@ -172,6 +177,7 @@ public abstract class WriteProperties extends DefaultTask {
 
     /**
      * Sets the optional comment to add at the beginning of the properties file.
+     * @since 3.3
      */
     public void setComment(@Nullable String comment) {
         this.comment = comment;
@@ -180,6 +186,7 @@ public abstract class WriteProperties extends DefaultTask {
     /**
      * Returns the encoding used to write the properties file. Defaults to {@literal ISO_8859_1}.
      * If set to anything different, unicode escaping is turned off.
+     * @since 3.3
      */
     @Input
     @ToBeReplacedByLazyProperty
@@ -190,50 +197,10 @@ public abstract class WriteProperties extends DefaultTask {
     /**
      * Sets the encoding used to write the properties file. Defaults to {@literal ISO_8859_1}.
      * If set to anything different, unicode escaping is turned off.
+     * @since 3.3
      */
     public void setEncoding(String encoding) {
         this.encoding = encoding;
-    }
-
-    /**
-     * Returns the output file to write the properties to.
-     */
-    @Internal
-    @Deprecated
-    public File getOutputFile() {
-        deprecationWarning();
-        return getDestinationFile().getAsFile().getOrNull();
-    }
-
-    private void deprecationWarning() {
-        DeprecationLogger.deprecateProperty(WriteProperties.class, "outputFile").replaceWith("destinationFile")
-            .willBeRemovedInGradle9()
-            .withDslReference()
-            .nagUser();
-    }
-
-    /**
-     * Sets the output file to write the properties to.
-     *
-     * @deprecated Use {@link #getDestinationFile()} instead.
-     *
-     * @since 4.0
-     */
-    @Deprecated
-    public void setOutputFile(File outputFile) {
-        deprecationWarning();
-        getDestinationFile().set(outputFile);
-    }
-
-    /**
-     * Sets the output file to write the properties to.
-     *
-     * @deprecated Use {@link #getDestinationFile()} instead.
-     */
-    @Deprecated
-    public void setOutputFile(Object outputFile) {
-        deprecationWarning();
-        getDestinationFile().set(getServices().get(FileOperations.class).file(outputFile));
     }
 
     /**
@@ -244,6 +211,11 @@ public abstract class WriteProperties extends DefaultTask {
     @OutputFile
     abstract public RegularFileProperty getDestinationFile();
 
+    /**
+     * Write properties.
+     *
+     * @since 3.3
+     */
     @TaskAction
     public void writeProperties() throws IOException {
         Charset charset = Charset.forName(getEncoding());

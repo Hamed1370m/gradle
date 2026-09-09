@@ -20,13 +20,14 @@ import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
-import org.gradle.api.internal.artifacts.repositories.metadata.MavenAttributesFactory;
+import org.gradle.api.internal.artifacts.NamedVariantIdentifier;
+import org.gradle.api.internal.attributes.AttributesFactory;
 import org.gradle.api.internal.model.NamedObjectInstantiator;
 import org.gradle.internal.component.external.descriptor.Configuration;
 import org.gradle.internal.component.external.descriptor.MavenScope;
 import org.gradle.internal.component.external.model.AbstractLazyModuleComponentResolveMetadata;
 import org.gradle.internal.component.external.model.DefaultConfigurationMetadata;
-import org.gradle.internal.component.external.model.ExternalVariantGraphResolveMetadata;
+import org.gradle.internal.component.external.model.ExternalModuleVariantGraphResolveMetadata;
 import org.gradle.internal.component.external.model.ModuleComponentArtifactMetadata;
 import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata;
 import org.gradle.internal.component.external.model.ModuleDependencyMetadata;
@@ -35,9 +36,10 @@ import org.gradle.internal.component.external.model.VariantMetadataRules;
 import org.gradle.internal.component.model.IvyArtifactName;
 import org.gradle.internal.component.model.ModuleConfigurationMetadata;
 import org.gradle.internal.component.model.ModuleSources;
+import org.gradle.internal.component.model.VariantIdentifier;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -55,7 +57,7 @@ public class DefaultMavenModuleResolveMetadata extends AbstractLazyModuleCompone
     static final Set<String> JAR_PACKAGINGS = ImmutableSet.of("jar", "ejb", "bundle", "maven-plugin", "eclipse-plugin");
 
     private final NamedObjectInstantiator objectInstantiator;
-    private final MavenAttributesFactory mavenAttributesFactory;
+    private final AttributesFactory attributesFactory;
 
     private final ImmutableList<MavenDependencyDescriptor> dependencies;
     private final String packaging;
@@ -70,7 +72,7 @@ public class DefaultMavenModuleResolveMetadata extends AbstractLazyModuleCompone
     DefaultMavenModuleResolveMetadata(DefaultMutableMavenModuleResolveMetadata metadata) {
         super(metadata);
         this.objectInstantiator = metadata.getObjectInstantiator();
-        this.mavenAttributesFactory = (MavenAttributesFactory) metadata.getAttributesFactory();
+        this.attributesFactory = metadata.getAttributesFactory();
         packaging = metadata.getPackaging();
         relocated = metadata.isRelocated();
         snapshotTimestamp = metadata.getSnapshotTimestamp();
@@ -80,7 +82,7 @@ public class DefaultMavenModuleResolveMetadata extends AbstractLazyModuleCompone
     private DefaultMavenModuleResolveMetadata(DefaultMavenModuleResolveMetadata metadata, ModuleSources sources, VariantDerivationStrategy derivationStrategy) {
         super(metadata, sources, derivationStrategy);
         this.objectInstantiator = metadata.objectInstantiator;
-        this.mavenAttributesFactory = metadata.mavenAttributesFactory;
+        this.attributesFactory = metadata.attributesFactory;
         packaging = metadata.packaging;
         relocated = metadata.relocated;
         snapshotTimestamp = metadata.snapshotTimestamp;
@@ -92,13 +94,14 @@ public class DefaultMavenModuleResolveMetadata extends AbstractLazyModuleCompone
     @Override
     protected DefaultConfigurationMetadata createConfiguration(ModuleComponentIdentifier componentId, String name, boolean transitive, boolean visible, ImmutableSet<String> parents, VariantMetadataRules componentMetadataRules) {
         ImmutableList<? extends ModuleComponentArtifactMetadata> artifacts = getArtifactsForConfiguration();
-        final DefaultConfigurationMetadata configuration = new DefaultConfigurationMetadata(componentId, name, transitive, visible, parents, artifacts, componentMetadataRules, ImmutableList.of(), getAttributes(), false);
+        VariantIdentifier id = new NamedVariantIdentifier(componentId, name);
+        final DefaultConfigurationMetadata configuration = new DefaultConfigurationMetadata(name, id, componentId, transitive, visible, parents, artifacts, componentMetadataRules, ImmutableList.of(), getAttributes(), false);
         configuration.setConfigDependenciesFactory(() -> filterDependencies(configuration));
         return configuration;
     }
 
     @Override
-    protected Optional<List<? extends ExternalVariantGraphResolveMetadata>> maybeDeriveVariants() {
+    protected Optional<List<? extends ExternalModuleVariantGraphResolveMetadata>> maybeDeriveVariants() {
         return Optional.ofNullable(getDerivedVariants());
     }
 
@@ -205,7 +208,7 @@ public class DefaultMavenModuleResolveMetadata extends AbstractLazyModuleCompone
     }
 
     @Override
-    public @Nonnull String getPackaging() {
+    public @NonNull String getPackaging() {
         return packaging;
     }
 
@@ -284,7 +287,7 @@ public class DefaultMavenModuleResolveMetadata extends AbstractLazyModuleCompone
          * Dependencies marked as optional/pending in the "optional" configuration _can_ have dependency artifacts.
          */
         @Override
-        public List<IvyArtifactName> getArtifacts() {
+        public ImmutableList<IvyArtifactName> getArtifacts() {
             IvyArtifactName dependencyArtifact = getDependencyDescriptor().getDependencyArtifact();
             return dependencyArtifact == null ? ImmutableList.of() : ImmutableList.of(dependencyArtifact);
         }

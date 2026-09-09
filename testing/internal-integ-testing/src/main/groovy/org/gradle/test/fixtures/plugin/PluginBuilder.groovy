@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,13 +35,18 @@ import org.gradle.test.fixtures.server.http.MavenHttpPluginRepository
 import org.gradle.util.internal.TextUtil
 
 class PluginBuilder {
-    static final String PLUGIN_MARKER_SUFFIX = ".gradle.plugin";
+    static final String PLUGIN_MARKER_SUFFIX = ".gradle.plugin"
 
     final TestFile projectDir
 
     String packageName = "org.gradle.test"
 
     final Map<String, String> pluginIds = [:]
+    final Set<BuildScriptPlugin> buildScriptPlugins = [
+        new BuildScriptPlugin("java-gradle-plugin"),
+        new BuildScriptPlugin("groovy")
+    ]
+    final Set<String> additionalBuildScriptContent = []
 
     PluginBuilder(TestFile projectDir) {
         this.projectDir = projectDir
@@ -63,6 +68,15 @@ class PluginBuilder {
         file("src/main/java/${sourceFilePath(path)}")
     }
 
+    TestFile testJava(String path) {
+        file("src/test/java/${sourceFilePath(path)}")
+    }
+
+    PluginBuilder applyBuildScriptPlugin(String id, String version = null) {
+        buildScriptPlugins << new BuildScriptPlugin(id, version)
+        this
+    }
+
     private String sourceFilePath(String path) {
         packageName ? "${packageName.replaceAll("\\.", "/")}/$path" : path
     }
@@ -70,18 +84,25 @@ class PluginBuilder {
     @SuppressWarnings("GrMethodMayBeStatic")
     String generateManagedBuildScript() {
         """
-            apply plugin: "java-gradle-plugin"
-            apply plugin: "groovy"
+            plugins {
+                ${buildScriptPlugins.collect { it.asPluginDeclaration() }.join("\n")}
+            }
+
             dependencies {
-              implementation localGroovy()
+                implementation localGroovy()
             }
             group = "${packageName}"
             version = "1.0"
         """
     }
 
+    void addBuildScriptContent(String content) {
+        additionalBuildScriptContent << content
+    }
+
     void prepareToExecute() {
-        buildFile << generateManagedBuildScript()
+        buildFile.text = generateManagedBuildScript()
+        additionalBuildScriptContent.each { buildFile << it + "\n" }
         buildFile << getPluginDescriptors(pluginIds)
         projectDir.file('settings.gradle').write("")
     }
@@ -90,7 +111,7 @@ class PluginBuilder {
         prepareToExecute()
         buildFile << buildScript
         buildFile << """
-            jar {
+            tasks.jar {
                 archiveFileName = "$testFile.name"
                 destinationDirectory = file("${TextUtil.escapeString(testFile.parentFile.absolutePath)}")
             }
@@ -146,7 +167,7 @@ class PluginBuilder {
             markerModules.add(marker)
         }
 
-        publishTo(executer, artifactFile);
+        publishTo(executer, artifactFile)
 
         return new PluginPublicationResults(module, markerModules)
     }
@@ -182,7 +203,7 @@ class PluginBuilder {
         addPluginSource(id, className, """
             ${packageName ? "package $packageName" : ""}
 
-            class $className implements $Plugin.name<$Project.name> {
+            abstract class $className implements $Plugin.name<$Project.name> {
                 void apply($Project.name project) {
                     $impl
                 }
@@ -195,10 +216,13 @@ class PluginBuilder {
         addPluginSource(id, className, """
             ${packageName ? "package $packageName" : ""}
 
-            class $className implements $Plugin.name<$Settings.name> {
+            abstract class $className implements $Plugin.name<$Settings.name> {
                 void apply($Settings.name settings) {
                     $impl
                 }
+
+                @javax.inject.Inject
+                protected abstract org.gradle.buildinit.specs.internal.BuildInitSpecRegistry getBuildInitSpecRegistry();
             }
         """)
         this
@@ -232,6 +256,16 @@ class PluginBuilder {
 
     PluginBuilder addPluginWithPrintlnTask(String taskName, String message, String id = "test-plugin", String className = "TestPlugin") {
         addPlugin("project.task(\"$taskName\") { doLast { println \"$message\" } }", id, className)
+        this
+    }
+
+    PluginBuilder addPluginWithCustomCode(String code, String id = "test-plugin", String className = "TestPlugin") {
+        addPlugin(code, id, className)
+        this
+    }
+
+    PluginBuilder addSettingsPluginWithCustomCode(String code, String id = "test-plugin", String className = "TestSettingsPlugin") {
+        addSettingsPlugin(code, id, className)
         this
     }
 
@@ -277,6 +311,24 @@ class PluginBuilder {
         PluginHttpPublicationResults allowAll() {
             ([pluginModule] + markerModules)*.allowAll()
             return this
+        }
+    }
+
+    class BuildScriptPlugin {
+        final String id
+        final String version
+
+        BuildScriptPlugin(String id, String version = null) {
+            this.id = id
+            this.version = version
+        }
+
+        String asPluginDeclaration() {
+            if (version) {
+                return "id('$id') version '$version'"
+            } else {
+                return "id('$id')"
+            }
         }
     }
 }

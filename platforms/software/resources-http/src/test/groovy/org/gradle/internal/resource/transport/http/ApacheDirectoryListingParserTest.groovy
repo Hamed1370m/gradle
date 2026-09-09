@@ -25,7 +25,7 @@ import static org.junit.Assert.assertNotNull
 
 class ApacheDirectoryListingParserTest extends Specification {
     @Rule
-    public final Resources resources = new Resources();
+    public final Resources resources = new Resources(null)
 
     private static final CONTENT_TYPE = "text/html;charset=utf-8";
     private URI baseUrl = URI.create("http://testrepo/")
@@ -93,6 +93,14 @@ class ApacheDirectoryListingParserTest extends Specification {
         expect:
         def uris = parser.parse(baseUrl, new ByteArrayInputStream(encodedHtml), 'text/html')
         uris.collect { it.toString() } == ["\u0321\u0322"]
+    }
+
+    def "parse handles a listing served with a byte order mark"() {
+        def html = "\uFEFF<a href=\"directory1\">directory1</a>"
+
+        expect:
+        def uris = parser.parse(baseUrl, new ByteArrayInputStream(html.getBytes("utf-8")), CONTENT_TYPE)
+        uris.collect { it.toString() } == ["directory1"]
     }
 
     def "parse ignores #descr"() {

@@ -50,6 +50,7 @@ public interface BuildCacheServiceFactory<T extends BuildCache> {
      * Creates a build cache service from the given configuration.
      *
      * Implementations should also provide a description via the given describer.
+     * @since 4.0
      */
     BuildCacheService createBuildCacheService(T configuration, Describer describer);
 
@@ -70,12 +71,13 @@ public interface BuildCacheServiceFactory<T extends BuildCache> {
          * For example, instead of {@code "HTTP @ https://some/cache"} it should be just {@code "HTTP"}.
          * Particular configuration should be set via {@link #config(String, String)}.
          * <p>
-         * {@link BuildCacheServiceFactory} implementations should always return the same value for the same cache “type”.
+         * {@link BuildCacheServiceFactory} implementations should always return the same value for the same cache "type".
          * All implementations should call this method.
          * <p>
          * Values should be lowercase, except where using an acronym (e.g. HTTP).
          * <p>
          * Subsequent calls to this method replace the previously set value.
+         * @since 4.0
          */
         Describer type(String type);
 
@@ -93,6 +95,7 @@ public interface BuildCacheServiceFactory<T extends BuildCache> {
          * the previously supplied {@code value} argument.
          * <p>
          * Subsequent calls to this method with different {@code name} arguments will append values.
+         * @since 4.0
          */
         Describer config(String name, String value);
 

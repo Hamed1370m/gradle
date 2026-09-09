@@ -16,45 +16,64 @@
 
 package org.gradle.internal.process;
 
-import org.gradle.api.UncheckedIOException;
-import org.gradle.internal.InternalTransformer;
+import com.google.common.annotations.VisibleForTesting;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
 import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
-public class ArgWriter implements ArgCollector {
+public class ArgWriter {
+
+    /**
+     * The charset the OS uses when reading any file. Many native launchers (JVM, GCC, MSVC)
+     * use native OS file I/O to read arg files, so they use this charset to parse arg files.
+     * This differs from {@link Charset#defaultCharset()}, which changed to UTF-8 in JDK 18
+     * (JEP 400) while the native encoding remains OS-determined. We check {@code native.encoding}
+     * (Java 17+) then {@code sun.jnu.encoding} (older JDKs), falling back to the default charset
+     * if neither is available.
+     */
+    @VisibleForTesting
+    static final Charset NATIVE_CHARSET = resolveNativeCharset();
+
+    private static Charset resolveNativeCharset() {
+        String name = System.getProperty("native.encoding");
+        if (name != null && Charset.isSupported(name)) {
+            return Charset.forName(name);
+        }
+        name = System.getProperty("sun.jnu.encoding");
+        if (name != null && Charset.isSupported(name)) {
+            return Charset.forName(name);
+        }
+        return Charset.defaultCharset();
+    }
 
     private static final Pattern WHITESPACE = Pattern.compile("\\s");
     private static final Pattern WHITESPACE_OR_HASH = Pattern.compile("\\s|#");
+    private static final String[] BACKSLASH_ESCAPE_SEARCH = {"\\", "\""};
+    private static final String[] BACKSLASH_ESCAPE_REPLACE = {"\\\\", "\\\""};
 
-    private final PrintWriter writer;
     private final boolean backslashEscape;
     private final Pattern quotablePattern;
+    private final Charset encoding;
 
-    private ArgWriter(PrintWriter writer, boolean backslashEscape, Pattern quotablePattern) {
-        this.writer = writer;
+    private ArgWriter(boolean backslashEscape, Pattern quotablePattern, Charset encoding) {
         this.backslashEscape = backslashEscape;
         this.quotablePattern = quotablePattern;
+        this.encoding = encoding;
     }
 
     /**
      * Double quotes around args containing whitespace, backslash chars are escaped using double backslash, platform line separators.
      */
-    public static ArgWriter unixStyle(PrintWriter writer) {
-        return new ArgWriter(writer, true, WHITESPACE);
-    }
-
-    public static InternalTransformer<ArgWriter, PrintWriter> unixStyleFactory() {
-        return new InternalTransformer<ArgWriter, PrintWriter>() {
-            @Override
-            public ArgWriter transform(PrintWriter original) {
-                return unixStyle(original);
-            }
-        };
+    public static ArgWriter unixStyle() {
+        return new ArgWriter(true, WHITESPACE, NATIVE_CHARSET);
     }
 
     /**
@@ -62,101 +81,68 @@ public class ArgWriter implements ArgCollector {
      *
      * See <a href='https://docs.oracle.com/javase/9/tools/java.htm#JSWOR-GUID-4856361B-8BFD-4964-AE84-121F5F6CF111'>java Command-Line Argument Files</a>.
      */
-    public static ArgWriter javaStyle(PrintWriter writer) {
-        return new ArgWriter(writer, true, WHITESPACE_OR_HASH);
-    }
-
-    public static InternalTransformer<ArgWriter, PrintWriter> javaStyleFactory() {
-        return new InternalTransformer<ArgWriter, PrintWriter>() {
-            @Override
-            public ArgWriter transform(PrintWriter original) {
-                return javaStyle(original);
-            }
-        };
+    public static ArgWriter javaStyle() {
+        return new ArgWriter(true, WHITESPACE_OR_HASH, NATIVE_CHARSET);
     }
 
     /**
      * Double quotes around args containing whitespace, platform line separators.
      */
-    public static ArgWriter windowsStyle(PrintWriter writer) {
-        return new ArgWriter(writer, false, WHITESPACE);
-    }
-
-    public static InternalTransformer<ArgWriter, PrintWriter> windowsStyleFactory() {
-        return new InternalTransformer<ArgWriter, PrintWriter>() {
-            @Override
-            public ArgWriter transform(PrintWriter original) {
-                return windowsStyle(original);
-            }
-        };
+    public static ArgWriter windowsStyle() {
+        return new ArgWriter(false, WHITESPACE, NATIVE_CHARSET);
     }
 
     /**
-     * Returns an args transformer that replaces the provided args with a generated args file containing the args. Uses platform text encoding.
+     * Generates an arg file at the given location, using the given args, if necessary.
+     * If no args are provided, no arg file is generated.
+     *
+     * @return The argument to place on the command line which delegates to the generated
+     * arg file. Empty if no arg file is generated.
      */
-    public static InternalTransformer<List<String>, List<String>> argsFileGenerator(final File argsFile, final InternalTransformer<ArgWriter, PrintWriter> argWriterFactory) {
-        return new InternalTransformer<List<String>, List<String>>() {
-            @Override
-            public List<String> transform(List<String> args) {
-                if (args.isEmpty()) {
-                    return args;
+    public List<String> generateArgsFile(List<String> args, File argsFile) {
+        if (args.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return Collections.singletonList(doGenerateArgsFile(argsFile, args));
+    }
+
+    private String doGenerateArgsFile(File argsFile, List<String> args) {
+        try {
+            Files.createDirectories(argsFile.getParentFile().toPath());
+            try (PrintWriter writer = new PrintWriter(argsFile, encoding.name())) {
+                for (String arg : args) {
+                    writeArgument(arg, writer);
                 }
-                argsFile.getParentFile().mkdirs();
-                try {
-                    // TODO(https://github.com/gradle/gradle/issues/29303)
-                    @SuppressWarnings("DefaultCharset") // This method is documented as "uses platform text encoding"
-                    PrintWriter writer = new PrintWriter(argsFile);
-                    try {
-                        ArgWriter argWriter = argWriterFactory.transform(writer);
-                        argWriter.args(args);
-                    } finally {
-                        writer.close();
-                    }
-                } catch (IOException e) {
-                    throw new UncheckedIOException(String.format("Could not write options file '%s'.", argsFile.getAbsolutePath()), e);
-                }
-                return Collections.singletonList("@" + argsFile.getAbsolutePath());
             }
-        };
+        } catch (IOException e) {
+            throw new UncheckedIOException(String.format("Could not write options file '%s'.", argsFile.getAbsolutePath()), e);
+        }
+
+        return "@" + argsFile.getAbsolutePath();
     }
 
     /**
-     * Writes a set of args on a single line, escaping and quoting as required.
+     * Writes an argument on a single line, escaping and quoting as required.
      */
-    @Override
-    public ArgWriter args(Object... args) {
-        for (int i = 0; i < args.length; i++) {
-            Object arg = args[i];
-            if (i > 0) {
-                writer.print(' ');
-            }
-            String str = arg.toString();
-            if (backslashEscape) {
-                str = str.replace("\\", "\\\\").replace("\"", "\\\"");
-            }
-            if (str.isEmpty()) {
-                writer.print("\"\"");
-            } else if (needsQuoting(str)) {
-                writer.print('\"');
-                writer.print(str);
-                writer.print('\"');
-            } else {
-                writer.print(str);
-            }
+    private void writeArgument(String arg, PrintWriter writer) {
+        if (backslashEscape) {
+            arg = StringUtils.replaceEach(arg, BACKSLASH_ESCAPE_SEARCH, BACKSLASH_ESCAPE_REPLACE);
+        }
+        if (arg.isEmpty()) {
+            writer.print("\"\"");
+        } else if (needsQuoting(arg)) {
+            writer.print('\"');
+            writer.print(arg);
+            writer.print('\"');
+        } else {
+            writer.print(arg);
         }
         writer.println();
-        return this;
     }
 
     private boolean needsQuoting(String str) {
         return quotablePattern.matcher(str).find();
     }
 
-    @Override
-    public ArgCollector args(Iterable<?> args) {
-        for (Object arg : args) {
-            args(arg);
-        }
-        return this;
-    }
 }

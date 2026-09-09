@@ -17,6 +17,7 @@
 package org.gradle.api.plugins.quality.pmd
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.test.fixtures.Flaky
 
 class PmdPluginDependenciesIntegrationTest extends AbstractIntegrationSpec {
 
@@ -58,12 +59,13 @@ class PmdPluginDependenciesIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         fails("check")
-        failure.assertHasDescription("Execution failed for task ':pmdTest'.")
+        failure.assertHasDescription("Execution failed for task ':pmdTest' (registered by plugin 'org.gradle.pmd').")
         and:
         succeeds("dependencies", "--configuration", "pmd")
         output.contains "$testDependency"
     }
 
+    @Flaky(because = "https://github.com/gradle/gradle-private/issues/4688")
     def "fails properly using older version of PMD without incremental analysis support"() {
         given:
         buildFile << """

@@ -83,7 +83,7 @@ class ResolvePOMIntegrationTest extends AbstractIntegrationSpec {
         expect:
         fails "build"
         failure.assertHasCause("Could not resolve all dependencies for configuration ':app:runtimeClasspath'")
-        failure.assertHasCause("Could not find lib.pom (project :included-logging:lib)")
+        failure.assertHasCause("Could not find lib.pom (project ':included-logging:lib')")
     }
 
     def "resolving a @pom artifact from an included build replacing an external library does not fail the build with a lenient configuration"() {
@@ -93,13 +93,13 @@ class ResolvePOMIntegrationTest extends AbstractIntegrationSpec {
                 artifactFiles.from {
                     configurations.getByName("compileClasspath").getResolvedConfiguration()
                         .getLenientConfiguration()
-                        .getFiles()
+                        .getArtifacts()
+                        .collect { getFile() }
                 }
             }
         """
 
         expect:
-        executer.expectDocumentedDeprecationWarning("The LenientConfiguration.getFiles() method has been deprecated. This is scheduled to be removed in Gradle 9.0. Use a lenient ArtifactView instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_legacy_configuration_get_files")
         succeeds "resolve"
     }
 

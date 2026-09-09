@@ -26,7 +26,7 @@ class TaskTypeUpToDateIntegrationTest extends AbstractIntegrationSpec {
         buildFile """
             task copy(type: Copy) {
                 from "input.txt"
-                destinationDir buildDir
+                destinationDir = buildDir
             }
         """
 
@@ -89,7 +89,7 @@ class TaskTypeUpToDateIntegrationTest extends AbstractIntegrationSpec {
         buildFile """
             task copy(type: Copy) {
                 from "input.txt"
-                destinationDir buildDir
+                destinationDir = buildDir
                 doLast {
                     println "Custom action"
                 }
@@ -222,7 +222,7 @@ class TaskTypeUpToDateIntegrationTest extends AbstractIntegrationSpec {
         when:
         fails 'noOutput'
         then:
-        failure.assertHasDescription("Execution failed for task ':noOutput'.")
+        failure.assertHasDescription("Execution failed for task ':noOutput' (registered in build file 'build.gradle').")
         failure.assertHasCause("You must declare outputs or use `TaskOutputs.upToDateWhen()` when using the incremental task API")
     }
 

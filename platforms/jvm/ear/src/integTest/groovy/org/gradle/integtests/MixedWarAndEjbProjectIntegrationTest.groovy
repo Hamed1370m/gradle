@@ -16,8 +16,10 @@
 package org.gradle.integtests
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 class MixedWarAndEjbProjectIntegrationTest extends AbstractIntegrationSpec {
+    @ToBeFixedForIsolatedProjects(because = "cross-project configuration / project loading")
     def "project can use compiled classes from an EAR project"() {
         given:
         file("settings.gradle") << 'include "a", "b"'
@@ -55,7 +57,7 @@ class PersonImpl implements Person { }
         succeeds "assemble"
     }
 
-    def "assemble builds only the EAR by default"() {
+    def "assemble builds all artifacts"() {
         given:
         file("settings.gradle") << "rootProject.name = 'root'"
 
@@ -70,8 +72,9 @@ apply plugin: 'ear'
         run "assemble"
 
         then:
-        !file("build/libs/root.jar").exists()
-        !file("build/libs/root.war").exists()
+        executed(":ear", ":war", ":jar")
+        file("build/libs/root.jar").exists()
+        file("build/libs/root.war").exists()
         file("build/libs/root.ear").exists()
     }
 }

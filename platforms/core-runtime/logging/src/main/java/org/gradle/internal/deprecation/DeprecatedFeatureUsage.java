@@ -18,13 +18,13 @@ package org.gradle.internal.deprecation;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import org.gradle.api.problems.DocLink;
 import org.gradle.api.problems.internal.DeprecationData;
-import org.gradle.api.problems.internal.DocLink;
+import org.gradle.api.problems.internal.DocLinkInternal;
 import org.gradle.internal.featurelifecycle.FeatureUsage;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
-
-import static org.apache.commons.lang.StringUtils.isNotEmpty;
+import static org.apache.commons.lang3.StringUtils.isNotEmpty;
 
 public class DeprecatedFeatureUsage extends FeatureUsage {
 
@@ -98,7 +98,7 @@ public class DeprecatedFeatureUsage extends FeatureUsage {
         USER_CODE_INDIRECT,
 
         /**
-         * The key characteristic is that there is no useful “where was it used information”,
+         * The key characteristic is that there is no useful "where was it used information",
          * as the usage relates to how/where Gradle was invoked.
          *
          * Example: deprecated CLI switch.
@@ -121,7 +121,7 @@ public class DeprecatedFeatureUsage extends FeatureUsage {
     /**
      * When the feature will be removed, and how if relevant.
      *
-     * Example: This feature will be removed in Gradle 10.0.
+     * Example: This feature will be removed in Gradle 10.
      */
     public String getRemovalDetails() {
         return removalDetails;
@@ -172,7 +172,7 @@ public class DeprecatedFeatureUsage extends FeatureUsage {
         append(outputBuilder, contextualAdvice);
         append(outputBuilder, advice);
         if (documentation != null) {
-            append(outputBuilder, documentation.getConsultDocumentationMessage());
+            append(outputBuilder, ((DocLinkInternal) documentation).getConsultDocumentationMessage());
         }
         return outputBuilder.toString();
     }

@@ -20,14 +20,17 @@ import org.gradle.api.internal.DocumentationRegistry
 import org.gradle.api.plugins.ExtensionAware
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.TestResources
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.test.fixtures.file.TestFile
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.gradle.util.Matchers
 import org.gradle.util.internal.ToBeImplemented
 import org.junit.Rule
 import spock.lang.Issue
 
-import static org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache.Skip.INVESTIGATE
 
 class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
 
@@ -657,7 +660,6 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
         )
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
     def "rename"() {
         given:
         buildFile '''
@@ -688,20 +690,21 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
         )
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
-    def "copy action"() {
+    @UnsupportedWithConfigurationCache(iterationMatchers = [".*using copy method"], because = "legacy Project.copy at execution time")
+    def "copy action using #copyMethod method"() {
         given:
-        buildFile '''
+        buildFile """
+            ${FsOpsFixture.injectFsOps()}
             task copyIt {
                 doLast {
-                    copy {
+                    ${copyMethod} {
                         from 'src'
                         into 'dest'
                         exclude '**/ignore/**'
                     }
                 }
             }
-        '''.stripIndent()
+        """.stripIndent()
 
         when:
         run 'copy'
@@ -718,21 +721,25 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
             'two/two.a',
             'two/two.b',
         )
+
+        where:
+        copyMethod << ['copy', 'fsOps.copy']
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
-    def "copy single files"() {
+    @UnsupportedWithConfigurationCache(iterationMatchers = [".*using copy method"], because = "legacy Project.copy at execution time")
+    def "copy single files using #copyMethod method"() {
         given:
-        buildFile '''
+        buildFile """
+            ${FsOpsFixture.injectFsOps()}
             task copyIt {
                 doLast {
-                    copy {
+                    ${copyMethod} {
                         from 'src/one/one.a', 'src/two/two.a'
                         into 'dest/two'
                     }
                 }
             }
-        '''.stripIndent()
+        """.stripIndent()
 
         when:
         run 'copyIt'
@@ -742,6 +749,9 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
             'two/one.a',
             'two/two.a',
         )
+
+        where:
+        copyMethod << ['copy', 'fsOps.copy']
     }
 
     /*
@@ -1034,19 +1044,21 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
         )
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
-    def "copy from file tree"() {
+    @UnsupportedWithConfigurationCache(iterationMatchers = [".*using copy method"], because = "legacy Project.copy at execution time")
+    def "copy from file tree using #copyMethod method"() {
         given:
-        buildFile '''
+        buildFile """
+        ${FsOpsFixture.injectFsOps()}
         task cpy {
+            def source = fileTree(dir: 'src', excludes: ['**/ignore/**'], includes: ['*', '*/*'])
             doLast {
-                copy {
-                    from fileTree(dir: 'src', excludes: ['**/ignore/**'], includes: ['*', '*/*'])
+                ${copyMethod} {
+                    from source
                     into 'dest\'
                 }
             }
         }
-        '''.stripIndent()
+        """.stripIndent()
 
         when:
         run 'cpy'
@@ -1062,23 +1074,28 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
             'two/two.b',
             'one/sub'
         )
+
+        where:
+        copyMethod << ['copy', 'fsOps.copy']
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
-    def "copy from file collection"() {
+    @UnsupportedWithConfigurationCache(iterationMatchers = [".*using copy method"], because = "legacy Project.copy at execution time")
+    def "copy from file collection using #copyMethod method"() {
         given:
-        buildFile '''
+        buildFile """
+            ${FsOpsFixture.injectFsOps()}
             task copy {
+                def source = files('src')
                 doLast {
-                    copy {
-                        from files('src')
+                    ${copyMethod} {
+                        from source
                         into 'dest\'
                         exclude '**/ignore/**\'
                         exclude '*/*/*/**\'
                     }
                 }
             }
-        '''.stripIndent()
+        """.stripIndent()
 
         when:
         run 'copy'
@@ -1094,25 +1111,30 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
             'two/two.b',
             'one/sub'
         )
+
+        where:
+        copyMethod << ['copy', 'fsOps.copy']
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
-    def "copy from composite file collection"() {
+    @UnsupportedWithConfigurationCache(iterationMatchers = [".*using copy method"], because = "legacy Project.copy at execution time")
+    def "copy from composite file collection using #copyMethod method"() {
         given:
         file('a.jar').touch()
-        buildFile '''
+        buildFile """
+            ${FsOpsFixture.injectFsOps()}
             configurations { compile }
             dependencies { compile files('a.jar') }
+            def source = files('src2') + fileTree('src') { exclude '**/ignore/**' } + configurations.compile
             task copy {
                 doLast {
-                    copy {
-                        from files('src2') + fileTree('src') { exclude '**/ignore/**' } + configurations.compile
+                    ${copyMethod} {
+                        from source
                         into 'dest'
                         include { fte -> fte.relativePath.segments.length < 3 && (fte.file.directory || fte.file.name.contains('a')) }
                     }
                 }
             }
-        '''.stripIndent()
+        """.stripIndent()
 
         when:
         run 'copy'
@@ -1127,27 +1149,31 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
             'a.jar',
             'one/sub'
         )
+
+        where:
+        copyMethod << ['copy', 'fsOps.copy']
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
     def "copy from task"() {
         given:
         buildFile '''
             configurations { compile }
             dependencies { compile files('a.jar') }
             task fileProducer {
-                outputs.file 'build/out.txt'
+                def outputFile = file('build/out.txt')
+                outputs.file(outputFile)
                 doLast {
-                    file('build/out.txt').text = 'some content'
+                    outputFile.text = 'some content'
                 }
             }
             task dirProducer {
-                outputs.dir 'build/outdir'
+                def outputDir = layout.buildDirectory.dir('outdir')
+                outputs.dir(outputDir)
                 doLast {
-                    file('build/outdir').mkdirs()
-                    file('build/outdir/file1.txt').text = 'some content'
-                    file('build/outdir/sub').mkdirs()
-                    file('build/outdir/sub/file2.txt').text = 'some content'
+                    outputDir.get().asFile.mkdirs()
+                    outputDir.get().file('file1.txt').asFile.text = 'some content'
+                    outputDir.get().dir('sub').asFile.mkdirs()
+                    outputDir.get().file('sub/file2.txt').asFile.text = 'some content'
                 }
             }
             task copy(type: Copy) {
@@ -1167,25 +1193,26 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
         )
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
     def "copy from task outputs"() {
         given:
         buildFile '''
             configurations { compile }
             dependencies { compile files('a.jar') }
             task fileProducer {
-                outputs.file 'build/out.txt'
+                def outputFile = file('build/out.txt')
+                outputs.file(outputFile)
                 doLast {
-                    file('build/out.txt').text = 'some content'
+                    outputFile.text = 'some content'
                 }
             }
             task dirProducer {
-                outputs.dir 'build/outdir'
+                def outputDir = layout.buildDirectory.dir('outdir')
+                outputs.dir(outputDir)
                 doLast {
-                    file('build/outdir').mkdirs()
-                    file('build/outdir/file1.txt').text = 'some content'
-                    file('build/outdir/sub').mkdirs()
-                    file('build/outdir/sub/file2.txt').text = 'some content'
+                    outputDir.get().asFile.mkdirs()
+                    outputDir.get().file('file1.txt').asFile.text = 'some content'
+                    outputDir.get().dir('sub').asFile.mkdirs()
+                    outputDir.get().file('sub/file2.txt').asFile.text = 'some content'
                 }
             }
             task copy(type: Copy) {
@@ -1205,25 +1232,26 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
         )
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
     def "copy from task provider"() {
         given:
         buildFile '''
             configurations { compile }
             dependencies { compile files('a.jar') }
             def fileProducer = tasks.register("fileProducer") {
-                outputs.file 'build/out.txt'
+                def outputFile = file('build/out.txt')
+                outputs.file(outputFile)
                 doLast {
-                    file('build/out.txt').text = 'some content'
+                    outputFile.text = 'some content'
                 }
             }
             def dirProducer = tasks.register("dirProducer") {
-                outputs.dir 'build/outdir'
+                def outputDir = layout.buildDirectory.dir('outdir')
+                outputs.dir(outputDir)
                 doLast {
-                    file('build/outdir').mkdirs()
-                    file('build/outdir/file1.txt').text = 'some content'
-                    file('build/outdir/sub').mkdirs()
-                    file('build/outdir/sub/file2.txt').text = 'some content'
+                    outputDir.get().asFile.mkdirs()
+                    outputDir.get().file('file1.txt').asFile.text = 'some content'
+                    outputDir.get().dir('sub').asFile.mkdirs()
+                    outputDir.get().file('sub/file2.txt').asFile.text = 'some content'
                 }
             }
             task copy(type: Copy) {
@@ -2151,7 +2179,7 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
         when:
         run 'copy'
         then:
-        result.assertTasksExecuted(":compileJava", ":processResources", ":classes", ":copy")
+        result.assertTasksScheduled(":compileJava", ":processResources", ":classes", ":copy")
     }
 
     def "changing spec-level property #property makes task out-of-date"() {
@@ -2221,7 +2249,7 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
 
     @ToBeFixedForConfigurationCache(
         because = "eachFile, expand, filter and rename",
-        skip = ToBeFixedForConfigurationCache.Skip.FLAKY
+        skipBecause = "flaky"
     )
     def "task output caching is disabled when #description is used"() {
         file("src.txt").createFile()
@@ -2286,7 +2314,7 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
 
         and: "with a clear failure message"
         failure.assertHasCause("Cannot copy file '$unzippedFile2' to '${file('after/sub/new.txt').toPath()}' because file '$unzippedFile' has already been copied there.")
-        failure.assertHasDescription("Execution failed for task ':copy'.")
+        failure.assertHasDescription("Execution failed for task ':copy' (registered in build file 'build.gradle').")
     }
 
     // region duplicates in compressed files
@@ -2314,7 +2342,7 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
 
         and: "with a clear failure message"
         failure.assertHasCause("Cannot copy zip entry '$zipFile!sub/c.txt' to '${file('after/sub/c.txt').toPath()}' because file '$unzippedFile' has already been copied there.")
-        failure.assertHasDescription("Execution failed for task ':copy'.")
+        failure.assertHasDescription("Execution failed for task ':copy' (registered in build file 'build.gradle').")
     }
 
     def "encountering duplicates in a zipTree vs another zipTree with DuplicateStrategy.FAIL should give a clear error"() {
@@ -2345,7 +2373,7 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
 
         and: "with a clear failure message"
         failure.assertHasCause("Cannot copy zip entry '$zipFile2!sub/c.txt' to '${file('after/sub/c.txt').toPath()}' because zip entry '$zipFile!sub/c.txt' has already been copied there.")
-        failure.assertHasDescription("Execution failed for task ':copy'.")
+        failure.assertHasDescription("Execution failed for task ':copy' (registered in build file 'build.gradle').")
     }
 
     def "encountering duplicates in a tarTree vs an uncompressed dir with DuplicateStrategy.FAIL should give a clear error"() {
@@ -2372,7 +2400,7 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
 
         and: "with a clear failure message"
         failure.assertHasCause("Cannot copy tar entry '$tarFile!sub/c.txt' to '${file('after/sub/c.txt').toPath()}' because file '$untarredFile' has already been copied there.")
-        failure.assertHasDescription("Execution failed for task ':copy'.")
+        failure.assertHasDescription("Execution failed for task ':copy' (registered in build file 'build.gradle').")
     }
 
     def "encountering duplicates in a tarTree vs another tarTree with DuplicateStrategy.FAIL should give a clear error"() {
@@ -2403,7 +2431,7 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
 
         and: "with a clear failure message"
         failure.assertHasCause("Cannot copy tar entry '$tarFile2!sub/c.txt' to '${file('after/sub/c.txt').toPath()}' because tar entry '$tarFile!sub/c.txt' has already been copied there.")
-        failure.assertHasDescription("Execution failed for task ':copy'.")
+        failure.assertHasDescription("Execution failed for task ':copy' (registered in build file 'build.gradle').")
     }
 
     def "renaming 2 different source files contained in zip files to the same name in the dest dir should give a clear error"() {
@@ -2438,7 +2466,29 @@ class CopyTaskIntegrationSpec extends AbstractIntegrationSpec {
 
         and: "with a clear failure message"
         failure.assertHasCause("Cannot copy zip entry '$zipFile2!sub/c.txt' to '${file('after/sub/new.txt').toPath()}' because zip entry '$zipFile!sub/c.txt' has already been copied there.")
-        failure.assertHasDescription("Execution failed for task ':copy'.")
+        failure.assertHasDescription("Execution failed for task ':copy' (registered in build file 'build.gradle').")
     }
     // endregion duplicates in compressed files
+
+    @Issue("https://github.com/gradle/gradle/issues/862")
+    @Requires(OsTestPreconditions.NotWindows)
+    // NTFS does not support colons in file names
+    def "can copy files with semicolons"() {
+        given:
+        file('from/a:b').createFile() << 'some_text'
+        buildFile << """
+            task doCopy(type: Copy) {
+                from('from')
+                into('to')
+            }
+        """
+
+        when:
+        succeeds('doCopy')
+
+        then:
+        File output = file('to/a:b')
+        output.exists()
+        output.text == 'some_text'
+    }
 }

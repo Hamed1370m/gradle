@@ -17,12 +17,11 @@
 package org.gradle.integtests.resolve.verification
 
 import org.gradle.api.internal.artifacts.ivyservice.CacheLayout
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.cache.CachingIntegrationFixture
 import org.gradle.test.fixtures.HttpModule
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import spock.lang.Issue
 
 import static org.gradle.api.internal.artifacts.verification.DependencyVerificationFixture.getChecksum
@@ -276,7 +275,7 @@ This can indicate that a dependency has been compromised. Please carefully verif
             .publish()
         buildFile << """
             repositories {
-                ivy { url "${ivyHttpRepo.uri}" }
+                ivy { url = "${ivyHttpRepo.uri}" }
             }
 
             dependencies {
@@ -306,7 +305,6 @@ This can indicate that a dependency has been compromised. Please carefully verif
         terse << [true, false]
     }
 
-    @ToBeFixedForConfigurationCache(because = "task uses Configuration API")
     def "fails on the first access to an artifact (not at the end of the build) using #firstResolution"() {
         given:
         terseConsoleOutput(false)
@@ -342,18 +340,18 @@ This can indicate that a dependency has been compromised. Please carefully verif
             }
 
             task resolve {
+                def firstResolutionProvider = providers.provider { $firstResolution }
+                def secondResolutionProvider = providers.provider { configurations.testRuntimeClasspath.files }
                 doLast {
                     println "First resolution"
-                    println $firstResolution
+                    println firstResolutionProvider.get()
                     println "Second resolution"
-                    println configurations.testRuntimeClasspath.files
+                    println secondResolutionProvider.get()
                 }
             }
         """
 
         when:
-        //TODO: remove this once dependency verification stops triggering dependency resolution at execution time
-        executer.withBuildJvmOpts("-Dorg.gradle.configuration-cache.internal.task-execution-access-pre-stable=true")
         fails "resolve"
 
         then:
@@ -436,7 +434,7 @@ This can indicate that a dependency has been compromised. Please carefully verif
         pluginManagement {
             repositories {
                 maven {
-                    url '$pluginRepo.uri'
+                    url = '$pluginRepo.uri'
                 }
             }
         }
@@ -465,7 +463,7 @@ This can indicate that a dependency has been compromised. Please carefully verif
         buildFile << """
           buildscript {
              repositories {
-                maven { url "${pluginRepo.uri}" }
+                maven { url = "${pluginRepo.uri}" }
              }
              dependencies {
                 classpath 'com:myplugin:1.0'
@@ -573,7 +571,7 @@ If the artifacts are trustworthy, you will need to update the gradle/verificatio
         def buildSrc = file("buildSrc/build.gradle")
         buildSrc << """
             repositories {
-                maven { url "${mavenHttpRepo.uri}" }
+                maven { url = "${mavenHttpRepo.uri}" }
             }
             dependencies {
                implementation "org:bar:1.0"
@@ -615,7 +613,7 @@ If the artifacts are trustworthy, you will need to update the gradle/verificatio
             group = "org"
             version = "1.1-SNAPSHOT"
             repositories {
-                maven { url "${mavenHttpRepo.uri}" }
+                maven { url = "${mavenHttpRepo.uri}" }
             }
             dependencies {
                compileOnly "org:bar:1.0"
@@ -1067,7 +1065,7 @@ This can indicate that a dependency has been compromised. Please carefully verif
         file("init.gradle") << """
             initscript {
                 repositories {
-                    maven { url "${mavenHttpRepo.uri}" }
+                    maven { url = "${mavenHttpRepo.uri}" }
                 }
                 dependencies {
                     classpath 'org:foo:1.0'
@@ -1099,7 +1097,7 @@ This can indicate that a dependency has been compromised. Please carefully verif
   - foo-1.0.pom (org:foo:1.0) from repository maven"""
     }
 
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor)
     @Issue("https://github.com/gradle/gradle/issues/18498")
     def "fails validation for local repository with cached metadata rule"() {
         def repoDir = testDirectory.createDir("repo")
@@ -1131,7 +1129,7 @@ This can indicate that a dependency has been compromised. Please carefully verif
                 }
             }
             repositories {
-                maven { url "${repoDir.toURI()}" }
+                maven { url = "${repoDir.toURI()}" }
             }
             dependencies {
                 components.all(SamplesVariantRule)

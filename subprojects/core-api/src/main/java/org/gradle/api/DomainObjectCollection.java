@@ -36,6 +36,7 @@ import java.util.Collection;
  * </p>
  *
  * @param <T> The type of objects in this collection.
+ * @since 0.7
  */
 public interface DomainObjectCollection<T> extends Collection<T> {
     /**
@@ -55,32 +56,70 @@ public interface DomainObjectCollection<T> extends Collection<T> {
     void addAllLater(Provider<? extends Iterable<T>> provider);
 
     /**
+     * Return a provider containing all elements added to this collection.
+     * <p>
+     * The returned provider retains the build dependencies of providers
+     * added by {@link #addLater(Provider)} or {@link #addAllLater(Provider)}.
+     * <p>
+     * The value produced by a provider with build dependencies, by definition,
+     * is not valid until those build dependencies are executed. For example, if a task
+     * produces an output file, the value of a provider returning that file is not valid
+     * until the task executes.
+     * <p>
+     * Querying the contents of this provider before the build dependencies of providers
+     * added by {@link #addLater(Provider)} and {@link #addAllLater(Provider)} will result
+     * in undefined behavior. In general, the returned provider should only be used to
+     * wire values between tasks. Avoid directly calling {@link Provider#get()} or any other
+     * method that realizes the value of the returned provier.
+     *
+     * @since 9.7.0
+     */
+    @Incubating
+    default Provider<? extends Collection<T>> getElements() {
+        // KMP implements DomainObjectCollection by delegation:
+        // https://github.com/JetBrains/kotlin/blob/82cb02a5964e911d38c2c7e877f4bedbca4a6f15/libraries/tools/kotlin-gradle-plugin/src/common/kotlin/org/jetbrains/kotlin/gradle/dsl/KotlinMultiplatformExtension.kt#L311
+        // Without this default implementation, KMP versions compiled against older versions of the
+        // Gradle API without this method do not implement this method, causing instantiation to fail
+        // during decorated class generation.
+        throw new UnsupportedOperationException("getElements() is not supported by this collection. This is likely caused by a plugin using a custom implementation of DomainObjectCollection.");
+    }
+
+    /**
      * Returns a collection containing the objects in this collection of the given type.  The returned collection is
      * live, so that when matching objects are later added to this collection, they are also visible in the filtered
      * collection.
+     * <p>
+     * This method is an intermediate operation. It does not change the realized/unrealized state of the elements in the collection.
      *
      * @param type The type of objects to find.
      * @return The matching objects. Returns an empty collection if there are no such objects in this collection.
+     * @since 0.7
      */
     <S extends T> DomainObjectCollection<S> withType(Class<S> type);
 
     /**
      * Returns a collection containing the objects in this collection of the given type. Equivalent to calling
      * {@code withType(type).all(configureAction)}
+     * <p>
+     * This method is a terminal eager operation. It will cause the realization of all elements of this collection.
      *
      * @param type The type of objects to find.
      * @param configureAction The action to execute for each object in the resulting collection.
      * @return The matching objects. Returns an empty collection if there are no such objects in this collection.
+     * @since 0.9.2
      */
     <S extends T> DomainObjectCollection<S> withType(Class<S> type, Action<? super S> configureAction);
 
     /**
      * Returns a collection containing the objects in this collection of the given type. Equivalent to calling
      * {@code withType(type).all(configureClosure)}.
+     * <p>
+     * This method is a terminal eager operation. It will cause the realization of all elements of this collection.
      *
      * @param type The type of objects to find.
      * @param configureClosure The closure to execute for each object in the resulting collection.
      * @return The matching objects. Returns an empty collection if there are no such objects in this collection.
+     * @since 0.9.2
      */
     <S extends T> DomainObjectCollection<S> withType(@DelegatesTo.Target Class<S> type, @DelegatesTo(genericTypeIndex = 0) Closure configureClosure);
 
@@ -88,10 +127,13 @@ public interface DomainObjectCollection<T> extends Collection<T> {
      * Returns a collection which contains the objects in this collection which meet the given specification. The
      * returned collection is live, so that when matching objects are added to this collection, they are also visible in
      * the filtered collection.
+     * <p>
+     * This method is an intermediate eager operation. The application of the filter forces the realization of the collection elements.
      *
      * @param spec The specification to use.
      * @return The collection of matching objects. Returns an empty collection if there are no such objects in this
      *         collection.
+     * @since 0.7
      */
     DomainObjectCollection<T> matching(Spec<? super T> spec);
 
@@ -99,10 +141,13 @@ public interface DomainObjectCollection<T> extends Collection<T> {
      * Returns a collection which contains the objects in this collection which meet the given closure specification. The
      * returned collection is live, so that when matching objects are added to this collection, they are also visible in
      * the filtered collection.
+     * <p>
+     * This method is an intermediate eager operation. The application of the filter forces the realization of the collection elements.
      *
      * @param spec The specification to use. The closure gets a collection element as an argument.
      * @return The collection of matching objects. Returns an empty collection if there are no such objects in this
      *         collection.
+     * @since 0.9
      */
     DomainObjectCollection<T> matching(Closure spec);
 
@@ -110,68 +155,118 @@ public interface DomainObjectCollection<T> extends Collection<T> {
      * Adds an {@code Action} to be executed when an object is added to this collection.
      * <p>
      * Like {@link #all(Action)}, this method will cause all objects in this container to be realized.
-     * </p>
+     *
      * @param action The action to be executed
      * @return the supplied action
+     * @since 0.7
      */
     Action<? super T> whenObjectAdded(Action<? super T> action);
 
     /**
      * Adds a closure to be called when an object is added to this collection. The newly added object is passed to the
      * closure as the parameter.
+     * <p>
+     * Like {@link #all(Action)}, this method will cause all objects in this container to be realized.
      *
      * @param action The closure to be called
      * @see #whenObjectAdded(Action)
+     * @since 0.7
      */
     void whenObjectAdded(Closure action);
 
     /**
      * Adds an {@code Action} to be executed when an object is removed from this collection.
+     * <p>
+     * This method will only be invoked for elements effectively added to the collection.
+     * Elements that are {@link #addLater(Provider)} will be seen by this action only if they have been observed as part of the collection.
+     * All elements affected by this action will be realized.
      *
      * @param action The action to be executed
      * @return the supplied action
+     * @since 0.7
      */
     Action<? super T> whenObjectRemoved(Action<? super T> action);
 
     /**
      * Adds a closure to be called when an object is removed from this collection. The removed object is passed to the
      * closure as the parameter.
+     * <p>
+     * This method will only be invoked for elements effectively added to the collection.
+     * Elements that are {@link #addLater(Provider)} will be seen by this action only if they have been observed as part of the collection.
+     * All elements affected by this action will be realized.
      *
      * @param action The closure to be called
+     * @since 1.0
      */
     void whenObjectRemoved(Closure action);
 
     /**
      * Executes the given action against all objects in this collection, and any objects subsequently added to this
      * collection.
+     * <p>
+     * This method is a terminal eager operation. It will cause the realization of all elements of this collection.
      *
      * @param action The action to be executed
+     * @since 0.9.2
      */
     void all(Action<? super T> action);
 
     /**
      * Executes the given closure against all objects in this collection, and any objects subsequently added to this collection. The object is passed to the closure as the closure
      * delegate. Alternatively, it is also passed as a parameter.
+     * <p>
+     * This method is a terminal eager operation. It will cause the realization of all elements of this collection.
      *
      * @param action The action to be executed
+     * @since 0.9.2
      */
     void all(Closure action);
 
     /**
      * Configures each element in this collection using the given action, as each element is required. Actions are run in the order added.
+     * <p>
+     * This method is a terminal lazy operation. Lazy collection elements will not be realized.
      *
      * @param action A {@link Action} that can configure the element when required.
      * @since 4.9
      */
     void configureEach(Action<? super T> action);
 
-    // note: this is here to override the default Groovy Collection.findAll { } method.
     /**
      * Returns a collection which contains the objects in this collection which meet the given closure specification.
+     * <p>
+     * This method is an eager operation. The application of the filter forces the realization of all of the underlying collection elements.
      *
      * @param spec The specification to use. The closure gets a collection element as an argument.
      * @return The collection of matching objects. Returns an empty collection if there are no such objects in this
      *         collection.
+     * @deprecated Use {@link #matching(Spec)} or Collection APIs from the JDK.
+     * @since 1.0
      */
+    @Deprecated
     Collection<T> findAll(Closure spec);
+
+    /**
+     * Disallows further structural modifications to this collection.
+     *
+     * <p>After this method is called, any attempt to add or remove elements — including
+     * via {@link #add}, {@link #addLater}, {@link #addAllLater}, {@link #remove},
+     * {@link #clear}, etc. — will throw {@link IllegalStateException}.</p>
+     *
+     * <p>This method does <em>not</em> force the realization of any pending (lazy) elements.
+     * Pending elements registered via {@link #addLater} or {@link NamedDomainObjectContainer#register}
+     * remain lazy; they will still be realized when first accessed. This method only
+     * prevents new elements from being added or existing elements from being removed.</p>
+     *
+     * <p>Calling this method more than once has no effect.</p>
+     *
+     * @throws IllegalStateException if called from within a lazy configuration action
+     *         (e.g., inside a {@link #configureEach} callback)
+     *
+     * @since 9.5.0
+     */
+    @Incubating
+    default void disallowChanges() {
+        throw new UnsupportedOperationException("disallowChanges() is not supported by this collection");
+    }
 }

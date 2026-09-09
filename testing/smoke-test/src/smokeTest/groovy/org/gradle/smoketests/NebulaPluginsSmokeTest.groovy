@@ -16,16 +16,16 @@
 
 package org.gradle.smoketests
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.internal.reflect.validation.ValidationMessageChecker
-import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import spock.lang.Ignore
 import spock.lang.Issue
 
 class NebulaPluginsSmokeTest extends AbstractPluginValidatingSmokeTest implements ValidationMessageChecker {
 
     @Issue('https://plugins.gradle.org/plugin/com.netflix.nebula.dependency-recommender')
-    @ToBeFixedForConfigurationCache
+    @UnsupportedWithConfigurationCache(because = "https://github.com/nebula-plugins/nebula-dependency-recommender-plugin/issues/147")
     def 'nebula recommender plugin'() {
         when:
         buildFile << """
@@ -72,11 +72,10 @@ class NebulaPluginsSmokeTest extends AbstractPluginValidatingSmokeTest implement
 
         then:
         runner('groovydoc', '-s')
-            .build()
     }
 
+    @Ignore("https://github.com/nebula-plugins/gradle-lint-plugin/issues/417")
     @Issue('https://plugins.gradle.org/plugin/nebula.lint')
-    @ToBeFixedForConfigurationCache(because = "Invocation of 'Task.project' by task ':autoLintGradle' at execution time")
     def 'nebula lint plugin'() {
         given:
         buildFile << """
@@ -87,6 +86,8 @@ class NebulaPluginsSmokeTest extends AbstractPluginValidatingSmokeTest implement
             plugins {
                 id "com.netflix.nebula.lint" version "${TestedVersions.nebulaLint}"
             }
+
+            ${mavenCentralRepository()}
 
             apply plugin: 'java'
 
@@ -101,7 +102,7 @@ class NebulaPluginsSmokeTest extends AbstractPluginValidatingSmokeTest implement
         def result = runner('autoLintGradle').build()
 
         then:
-        int numOfRepoBlockLines = 14 + mavenCentralRepository().readLines().size()
+        int numOfRepoBlockLines = 15 + 2 * mavenCentralRepository().readLines().size()
         result.output.contains("parentheses are unnecessary for dependencies")
         result.output.contains("warning   dependency-parentheses")
         result.output.contains("build.gradle:$numOfRepoBlockLines")
@@ -131,7 +132,7 @@ testImplementation('junit:junit:4.7')""")
         runner('buildEnvironment', 'generateLock').build()
 
         where:
-        nebulaDepLockVersion << TestedVersions.nebulaDependencyLock.versions
+        nebulaDepLockVersion << [TestedVersions.nebulaDependencyLock]
     }
 
     @Issue("gradle/gradle#3798")
@@ -195,11 +196,10 @@ testImplementation('junit:junit:4.7')""")
         runner('resolve').build()
 
         where:
-        version << TestedVersions.nebulaDependencyLock
+        version << [TestedVersions.nebulaDependencyLock]
     }
 
     @Issue('https://plugins.gradle.org/plugin/com.netflix.nebula.resolution-rules')
-    @Requires(UnitTestPreconditions.Jdk11OrEarlier)
     def 'nebula resolution rules plugin'() {
         when:
         file('rules.json') << """
@@ -245,4 +245,30 @@ testImplementation('junit:junit:4.7')""")
             'com.netflix.nebula.resolution-rules': Versions.of(TestedVersions.nebulaResolutionRules)
         ]
     }
+
+    @Override
+    String getSubprojectExtensionAccess(String testedPluginId, String version) {
+        switch (testedPluginId) {
+            case 'com.netflix.nebula.dependency-recommender':
+                return "dependencyRecommendations {}"
+            case 'com.netflix.nebula.lint':
+                return "gradleLint.rules = []"
+            default:
+                return null
+        }
+    }
+
+    @Override
+    List<String> getSubprojectExtensionDeprecations(String testedPluginId, String version) {
+        switch (testedPluginId) {
+            case 'com.netflix.nebula.dependency-recommender':
+                return [parentMethodInvocationDeprecation('dependencyRecommendations')]
+            case 'com.netflix.nebula.lint':
+                return [parentPropertyAccessDeprecation('gradleLint')]
+            default:
+                return []
+        }
+    }
 }
+
+

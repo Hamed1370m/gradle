@@ -28,7 +28,7 @@ configurations {
 }
 dependencies {
     repositories {
-        ivy { url "${ivyRepo.uri}" }
+        ivy { url = "${ivyRepo.uri}" }
     }
     compile 'ivy.configuration:projectA:1.2'
 }
@@ -88,25 +88,31 @@ task retrieve(type: Sync) {
     def "fails when project dependency references a configuration that does not exist"() {
         ivyRepo.module('test', 'target', '1.0').publish()
 
+        settingsFile << """
+            rootProject.name = 'test'
+        """
+
         buildFile << """
-configurations {
-    compile
-}
-repositories {
-    ivy { url "${ivyRepo.uri}" }
-}
-dependencies {
-    compile group: 'test', name: 'target', version: '1.0', configuration: 'x86_windows'
-}
-task retrieve(type: Sync) {
-  from configurations.compile
-  into 'libs'
-}
-"""
+            configurations {
+                compile
+            }
+            repositories {
+                ivy { url = "${ivyRepo.uri}" }
+            }
+            dependencies {
+                compile("test:target:1.0") {
+                    targetConfiguration = 'x86_windows'
+                }
+            }
+            task retrieve(type: Sync) {
+              from configurations.compile
+              into 'libs'
+            }
+        """
 
         expect:
         fails 'retrieve'
-        failure.assertHasCause("Could not resolve test:target:1.0.\nRequired by:\n    root project :")
+        failure.assertHasCause("Could not resolve test:target:1.0.\nRequired by:\n    root project 'test'")
         failure.assertHasCause("A dependency was declared on configuration 'x86_windows' of 'test:target:1.0' but no variant with that configuration name exists.")
     }
 
@@ -123,10 +129,12 @@ configurations {
     compile
 }
 repositories {
-    ivy { url "${ivyRepo.uri}" }
+    ivy { url = "${ivyRepo.uri}" }
 }
 dependencies {
-    compile group: 'test', name: 'target', version: '1.0', configuration: 'something'
+    compile("test:target:1.0") {
+        targetConfiguration = 'something'
+    }
 }
 task retrieve(type: Sync) {
   from configurations.compile
@@ -147,9 +155,11 @@ configurations {
 }
 dependencies {
     repositories {
-        ivy { url "${ivyHttpRepo.uri}" }
+        ivy { url = "${ivyHttpRepo.uri}" }
     }
-    compile group: 'ivy.configuration', name: 'projectA', version: '1.2', configuration: 'a'
+    compile("ivy.configuration:projectA:1.2") {
+        targetConfiguration = "a"
+    }
 }
 task retrieve(type: Sync) {
   from configurations.compile
@@ -233,7 +243,7 @@ configurations {
 dependencies {
     repositories {
         ivy {
-            url "${ivyRepo.uri}"
+            url = "${ivyRepo.uri}"
             resolve.dynamicMode = project.hasProperty('useDynamicResolve')
         }
     }
@@ -284,14 +294,14 @@ task retrieve(type: Sync) {
         buildFile << """
 repositories {
     ivy {
-        url "${repo1.uri}"
+        url = "${repo1.uri}"
         metadataSources {
             ivyDescriptor()
             artifact()
         }
     }
     ivy {
-        url "${repo2.uri}"
+        url = "${repo2.uri}"
         metadataSources {
             ivyDescriptor()
             artifact()
@@ -329,33 +339,43 @@ task retrieve(type: Sync) {
         file("libs/test-1.45.jar").assertIsCopyOf(moduleWithMetaData.jarFile)
     }
 
-    def "removes redundant configurations from resolution result"() {
+    def "resolution result declares multiple edges when conf mapping targets multiple configurations"() {
         given:
-        settingsFile << "rootProject.name = 'test'"
+        def resolve = new ResolveTestFixture(testDirectory)
+        settingsFile << """
+            rootProject.name = 'test'
+        """
 
-        def resolve = new ResolveTestFixture(buildFile, "compile")
         buildFile << """
-    group 'org.test'
-    version '1.0'
-    configurations {
-        compile
-    }
-    repositories {
-        ivy { url "${ivyRepo.uri}" }
-    }
-    dependencies {
-        compile group: 'ivy.configuration', name: 'projectA', version: '1.2', configuration: 'a'
-    }
-    task retrieve(type: Sync) {
-      from configurations.compile
-      into 'libs'
-    }
-    """
-        resolve.prepare()
+            group = 'org.test'
+            version = '1.0'
+            configurations {
+                compile
+            }
+
+            ${resolve.configureProject("compile")}
+
+            repositories {
+                ivy {
+                    url = "${ivyRepo.uri}"
+                }
+            }
+
+            dependencies {
+                compile("ivy.configuration:projectA:1.2") {
+                    targetConfiguration = "a"
+                }
+            }
+
+            task retrieve(type: Sync) {
+                from configurations.compile
+                into 'libs'
+            }
+        """
 
         ivyRepo.module('ivy.configuration', 'projectA', '1.2')
             .configuration("a")
-            .dependsOn(organisation: 'ivy.configuration', module: 'projectB', revision: '1.5', conf: "a->parent,a,b,c")
+            .dependsOn(organisation: 'ivy.configuration', module: 'projectB', revision: '1.5', conf: "a->a,b")
             .publish()
 
         ivyRepo.module('ivy.configuration', 'projectB', '1.5')
@@ -374,8 +394,10 @@ task retrieve(type: Sync) {
                 module("ivy.configuration:projectA:1.2") {
                     configuration("a")
                     module("ivy.configuration:projectB:1.5") {
-                        variant('a', ['org.gradle.status': 'integration']) // b, parent are redundant
-                        variant('c', ['org.gradle.status': 'integration']) // b, parent are redundant
+                        variant('a', ['org.gradle.status': 'integration'])
+                    }
+                    module("ivy.configuration:projectB:1.5") {
+                        variant('b', ['org.gradle.status': 'integration'])
                     }
                 }
             }

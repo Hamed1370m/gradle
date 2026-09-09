@@ -24,6 +24,7 @@ import org.gradle.api.internal.notations.DependencyMetadataNotationParser
 import org.gradle.internal.component.external.model.DefaultModuleComponentSelector
 import org.gradle.internal.component.external.model.ModuleDependencyMetadata
 import org.gradle.internal.reflect.DirectInstantiator
+import org.gradle.test.fixtures.ExpectDeprecation
 import org.gradle.util.AttributeTestUtil
 import org.gradle.util.TestUtil
 import org.gradle.util.internal.SimpleMapInterner
@@ -86,6 +87,7 @@ abstract class DependenciesMetadataAdapterTest extends Specification {
         dependenciesMetadata[0].selector.version == "1.0"
     }
 
+    @ExpectDeprecation("Declaring dependencies using multi-string notation has been deprecated")
     def "add via map id propagate to the underlying dependency list"() {
         when:
         adapter.add group: "org.gradle.test", name: "module1", version: "1.0"
@@ -112,6 +114,7 @@ abstract class DependenciesMetadataAdapterTest extends Specification {
         dependenciesMetadata[0].isEndorsingStrictVersions()
     }
 
+    @ExpectDeprecation("Declaring dependencies using multi-string notation has been deprecated")
     def "add via map id with action propagate to the underlying dependency list"() {
         when:
         adapter.add(group: "org.gradle.test", name: "module1") {
@@ -221,7 +224,7 @@ abstract class DependenciesMetadataAdapterTest extends Specification {
         adapter = new DirectDependenciesMetadataAdapter(
             AttributeTestUtil.attributesFactory(),
             TestUtil.instantiatorFactory().decorateLenient(),
-            DependencyMetadataNotationParser.parser(DirectInstantiator.INSTANCE, DirectDependencyMetadataImpl.class, SimpleMapInterner.notThreadSafe()))
+            DependencyMetadataNotationParser.parser(DirectInstantiator.INSTANCE, DirectDependencyMetadataImpl.class, SimpleMapInterner.notThreadSafe(), TestUtil.problemsService()))
 
         for (int i = 0; i < size; i++) {
             ModuleComponentSelector requested = DefaultModuleComponentSelector.newSelector(DefaultModuleIdentifier.newId("org.gradle.test", "module$i"), "1.0")

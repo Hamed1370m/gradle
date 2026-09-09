@@ -16,6 +16,9 @@
 
 package org.gradle.internal.problems.failure;
 
+import org.gradle.api.problems.internal.ProblemInternal;
+import org.jspecify.annotations.Nullable;
+
 import java.util.List;
 
 /**
@@ -32,11 +35,22 @@ public interface Failure {
     Class<? extends Throwable> getExceptionType();
 
     /**
+     * The original exception.
+     */
+    Throwable getOriginal();
+
+    /**
      * A failure summary usually containing the type of the original exception and its message.
      *
      * @see Throwable#toString()
      */
     String getHeader();
+
+    /**
+     * The message of the original exception.
+     */
+    @Nullable
+    String getMessage();
 
     /**
      * Stack frames from the original exception.
@@ -65,4 +79,8 @@ public interface Failure {
      */
     int indexOfStackFrame(int start, StackFramePredicate predicate);
 
+    /**
+     * The problems associated with the failure.
+     */
+    List<ProblemInternal> getProblems();
 }

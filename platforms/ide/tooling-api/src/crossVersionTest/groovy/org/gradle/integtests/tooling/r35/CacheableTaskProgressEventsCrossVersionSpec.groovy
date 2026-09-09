@@ -18,14 +18,15 @@ package org.gradle.integtests.tooling.r35
 
 import org.gradle.integtests.tooling.fixture.ProgressEvents
 import org.gradle.integtests.tooling.fixture.ProgressEvents.Operation
-import org.gradle.integtests.tooling.fixture.TargetGradleVersion
 import org.gradle.integtests.tooling.fixture.TextUtil
 import org.gradle.integtests.tooling.fixture.ToolingApiSpecification
+import org.gradle.integtests.tooling.fixture.ToolingApiVersion
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.tooling.ProjectConnection
 import org.gradle.tooling.events.OperationType
 import org.gradle.util.GradleVersion
 
+@ToolingApiVersion("<8.12")
 class CacheableTaskProgressEventsCrossVersionSpec extends ToolingApiSpecification {
     def setup() {
         buildFile << """
@@ -54,7 +55,6 @@ class CacheableTaskProgressEventsCrossVersionSpec extends ToolingApiSpecificatio
         file("input").text = "input file"
     }
 
-    @TargetGradleVersion('>=3.5')
     def "cacheable task generates build operations for load and store"() {
         when:
         def pushToCacheEvents = ProgressEvents.create()
@@ -71,7 +71,6 @@ class CacheableTaskProgressEventsCrossVersionSpec extends ToolingApiSpecificatio
         readingOperations(pullFromCacheResults).size() == maybeIncludeLocalBuildOperations(1)
     }
 
-    @TargetGradleVersion('>=3.5')
     def "cacheable task generates build operations when using remote cache"() {
         TestFile localCache = file('local-cache')
         TestFile remoteCache = file('remote-cache')

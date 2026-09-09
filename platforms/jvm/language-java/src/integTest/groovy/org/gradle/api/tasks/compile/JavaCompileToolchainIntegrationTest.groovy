@@ -19,14 +19,14 @@ package org.gradle.api.tasks.compile
 import org.gradle.api.JavaVersion
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.AvailableJavaHomes
-import org.gradle.integtests.fixtures.executer.DocumentationUtils
 import org.gradle.integtests.fixtures.jvm.JavaToolchainFixture
 import org.gradle.internal.jvm.Jvm
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.InstalledJdkTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 import org.gradle.util.internal.TextUtil
 import spock.lang.Issue
 
@@ -65,7 +65,7 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
         withInstallations(currentJdk, otherJdk).runAndFail(":compileJava")
 
         then:
-        failureDescriptionStartsWith("Execution failed for task ':compileJava'.")
+        failureDescriptionStartsWith("Execution failed for task ':compileJava'")
         failureHasCause("Toolchain from `${errorFor}` property on `ForkOptions` does not match toolchain from `javaCompiler` property")
 
         where:
@@ -110,7 +110,7 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
         withInstallations(currentJdk, otherJdk).runAndFail(":compileJava")
 
         then:
-        failureDescriptionStartsWith("Execution failed for task ':compileJava'.")
+        failureDescriptionStartsWith("Execution failed for task ':compileJava'")
         failureHasCause("Toolchain from `${errorForProperty}` property on `ForkOptions` does not match toolchain from `javaCompiler` property")
 
         where:
@@ -236,9 +236,6 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
         """
 
         when:
-        if (forkOption == "java home") {
-            executer.expectDocumentedDeprecationWarning("The ForkOptions.setJavaHome(File) method has been deprecated. This is scheduled to be removed in Gradle 9.0. The 'javaHome' property of ForkOptions is deprecated and will be removed in Gradle 9. Use JVM toolchains or the 'executable' property instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_fork_options_java_home")
-        }
         // not adding the other JDK to the installations
         withInstallations(currentJdk).run(":compileJava", "--info")
 
@@ -254,6 +251,7 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
     }
 
     @Issue("https://github.com/gradle/gradle/issues/22398")
+    @Requires(InstalledJdkTestPreconditions.DifferentJdkAvailable)
     def "ignore #forkOption if not forking"() {
         def curJvm = Jvm.current()
         def otherJvm = AvailableJavaHomes.getDifferentJdk()
@@ -269,9 +267,6 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
         """
 
         when:
-        if (forkOption == "java home") {
-            executer.expectDocumentedDeprecationWarning("The ForkOptions.setJavaHome(File) method has been deprecated. This is scheduled to be removed in Gradle 9.0. The 'javaHome' property of ForkOptions is deprecated and will be removed in Gradle 9. Use JVM toolchains or the 'executable' property instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_fork_options_java_home")
-        }
         run(":compileJava", "--info")
 
         then:
@@ -306,16 +301,17 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
             .runWithFailure()
 
         then:
-        failure.assertHasCause("No locally installed toolchains match and toolchain auto-provisioning is not enabled.")
+        failure.assertHasCause("Cannot find a Java installation on your machine (${OperatingSystem.current()}) matching: {languageVersion=99, vendor=any vendor, implementation=vendor-specific, nativeImageCapable=false}. " +
+                "Toolchain auto-provisioning is not enabled.")
             .assertHasResolutions(
-                DocumentationUtils.normalizeDocumentationLink("Learn more about toolchain auto-detection at https://docs.gradle.org/current/userguide/toolchains.html#sec:auto_detection."),
+                "Learn more about toolchain auto-detection and auto-provisioning at https://docs.gradle.org/current/userguide/toolchains.html#sec:auto_detection.",
                 STACKTRACE_MESSAGE,
                 INFO_DEBUG,
                 SCAN,
                 GET_HELP)
     }
 
-    @Requires(IntegTestPreconditions.Java7HomeAvailable)
+    @Requires(InstalledJdkTestPreconditions.Java7HomeAvailable)
     def "can use toolchains to compile java 1.7 code"() {
         def jdk = AvailableJavaHomes.getJdk(JavaVersion.VERSION_1_7)
         buildFile << """
@@ -376,9 +372,10 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
         fails("compileJava")
 
         then:
-        failure.assertHasCause("No locally installed toolchains match and toolchain auto-provisioning is not enabled.")
+        failure.assertHasCause("Cannot find a Java installation on your machine (${OperatingSystem.current()}) matching: {languageVersion=$version, vendor=Amazon Corretto, implementation=vendor-specific, nativeImageCapable=false}. " +
+                "Toolchain auto-provisioning is not enabled.")
             .assertHasResolutions(
-                DocumentationUtils.normalizeDocumentationLink("Learn more about toolchain auto-detection at https://docs.gradle.org/current/userguide/toolchains.html#sec:auto_detection."),
+                "Learn more about toolchain auto-detection and auto-provisioning at https://docs.gradle.org/current/userguide/toolchains.html#sec:auto_detection.",
                 STACKTRACE_MESSAGE,
                 INFO_DEBUG,
                 SCAN,
@@ -402,15 +399,17 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
         withInstallations(jre).fails("compileJava")
 
         then:
-        failure.assertHasCause("No locally installed toolchains match and toolchain auto-provisioning is not enabled.")
+        failure.assertHasCause("Cannot find a Java installation on your machine (${OperatingSystem.current()}) matching: {languageVersion=${jre.javaVersionMajor}, vendor=any vendor, implementation=vendor-specific, nativeImageCapable=false}. " +
+                "Toolchain auto-provisioning is not enabled")
             .assertHasResolutions(
-                DocumentationUtils.normalizeDocumentationLink("Learn more about toolchain auto-detection at https://docs.gradle.org/current/userguide/toolchains.html#sec:auto_detection."),
+                "Learn more about toolchain auto-detection and auto-provisioning at https://docs.gradle.org/current/userguide/toolchains.html#sec:auto_detection.",
                 STACKTRACE_MESSAGE,
                 INFO_DEBUG,
                 SCAN,
                 GET_HELP)
     }
 
+    @Requires(InstalledJdkTestPreconditions.Java8HomeAvailable)
     def "can use compile daemon with tools jar"() {
         def jdk = AvailableJavaHomes.getJdk(JavaVersion.VERSION_1_8)
         assumeTrue(JavaVersion.current() != JavaVersion.VERSION_1_8)
@@ -434,41 +433,41 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
         classJavaVersion(javaClassFile("Foo.class")) == JavaVersion.toVersion(jdk.javaVersion)
     }
 
-    def "can compile Java using different JDKs"() {
-        def jdk = AvailableJavaHomes.getJdk(javaVersion)
-        assumeNotNull(jdk)
-
+    def "can compile Java using jdk version #jdk.javaVersionMajor"() {
         buildFile << """
             plugins {
-                id("java")
+                id("java-library")
             }
 
-            java {
-                toolchain {
-                    languageVersion = JavaLanguageVersion.of(${jdk.javaVersion.majorVersion})
-                }
-            }
+            ${javaPluginToolchainVersion(jdk)}
         """
 
         when:
-        withInstallations(jdk).run(":compileJava", "--info")
+        withInstallations(jdk)
+        succeeds(":compileJava", "--info")
 
         then:
-        outputDoesNotContain("Compiling with Java command line compiler")
+        if (jdk.javaVersionMajor > 7) {
+            outputDoesNotContain("Compiling with Java command line compiler")
+        } else {
+            outputContains("Compiling with Java command line compiler")
+        }
         outputContains("Compiling with toolchain '${jdk.javaHome.absolutePath}'.")
         classJavaVersion(javaClassFile("Foo.class")) == JavaVersion.toVersion(jdk.javaVersion)
 
         where:
-        javaVersion << JavaVersion.values().findAll { it.isJava8Compatible() && it != JavaVersion.current() }
+        jdk << AvailableJavaHomes.allJdkVersions
     }
 
     /**
      * This test covers the case where in Java8 the class name becomes fully qualified in the deprecation message which is
      * somehow caused by invoking javacTask.getElements() in the IncrementalCompileTask of the incremental compiler plugin.
      */
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk9OrLater)
     def "Java deprecation messages with different JDKs"() {
-        def jdk = javaVersion == JavaVersion.current() ? Jvm.current() : AvailableJavaHomes.getJdk(javaVersion)
+        def jdk = AvailableJavaHomes.getJdk(javaVersion)
+
+        assumeNotNull(jdk)
 
         buildFile << """
             plugins {
@@ -501,7 +500,7 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
             }
         """
 
-        executer.expectDeprecationWarning("$fileWithDeprecation:5: warning: $deprecationMessage")
+        executer.expectExternalDeprecatedMessage("$fileWithDeprecation:5: warning: $deprecationMessage")
 
         when:
         withInstallations(jdk).run(":compileJava", "--info")
@@ -521,21 +520,14 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
 
     @Issue("https://github.com/gradle/gradle/issues/23990")
     def "can compile with a custom compiler executable"() {
-        def otherJdk = AvailableJavaHomes.getJdk(JavaVersion.current())
         def jdk = AvailableJavaHomes.getDifferentVersion {
             def v = it.languageVersion.majorVersion.toInteger()
-            11 <= v && v <= 18 // Java versions supported by ECJ releases used in the test
+            17 <= v && v <= 23 // Java versions supported by ECJ releases used in the test
         }
 
         buildFile << """
             plugins {
                 id("java")
-            }
-
-            java {
-                toolchain {
-                    languageVersion = JavaLanguageVersion.of(${otherJdk.javaVersion.majorVersion})
-                }
             }
 
             configurations {
@@ -549,7 +541,7 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
 
             dependencies {
                 def changed = providers.gradleProperty("changed").isPresent()
-                ecj(!changed ? "org.eclipse.jdt:ecj:3.31.0" : "org.eclipse.jdt:ecj:3.32.0")
+                ecj(!changed ? "org.eclipse.jdt:ecj:3.40.0" : "org.eclipse.jdt:ecj:3.41.0")
             }
 
             // Make sure the provider is up-to-date only if the ECJ classpath does not change
@@ -581,7 +573,9 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
         """
 
         when:
-        withInstallations(jdk, otherJdk).run(":compileJava", "--info")
+        withInstallations(jdk)
+        succeeds(":compileJava", "--info")
+
         then:
         executedAndNotSkipped(":compileJava")
         outputContains("Compiling with toolchain '${jdk.javaHome.absolutePath}'")
@@ -590,17 +584,23 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
 
         // Test up-to-date checks
         when:
-        withInstallations(jdk, otherJdk).run(":compileJava")
+        withInstallations(jdk)
+        succeeds(":compileJava")
+
         then:
         skipped(":compileJava")
 
         when:
-        withInstallations(jdk, otherJdk).run(":compileJava", "-Pchanged")
+        withInstallations(jdk)
+        succeeds(":compileJava", "-Pchanged")
+
         then:
         executedAndNotSkipped(":compileJava")
 
         when:
-        withInstallations(jdk, otherJdk).run(":compileJava", "-Pchanged")
+        withInstallations(jdk)
+        succeeds(":compileJava", "-Pchanged")
+
         then:
         skipped(":compileJava")
     }
@@ -615,7 +615,6 @@ class JavaCompileToolchainIntegrationTest extends AbstractIntegrationSpec implem
     }
 
     private TestFile configureForkOptionsJavaHome(Jvm jdk) {
-        executer.expectDocumentedDeprecationWarning("The ForkOptions.setJavaHome(File) method has been deprecated. This is scheduled to be removed in Gradle 9.0. The 'javaHome' property of ForkOptions is deprecated and will be removed in Gradle 9. Use JVM toolchains or the 'executable' property instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_fork_options_java_home")
         buildFile << """
             compileJava {
                 options.fork = true

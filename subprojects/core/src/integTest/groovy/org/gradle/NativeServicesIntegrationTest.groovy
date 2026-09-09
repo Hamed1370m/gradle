@@ -22,7 +22,7 @@ import org.gradle.internal.nativeintegration.jansi.JansiStorageLocator
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.gradle.util.internal.ToBeImplemented
 import org.junit.Rule
 import spock.lang.Issue
@@ -31,7 +31,7 @@ import static org.gradle.internal.nativeintegration.services.NativeServices.NATI
 import static org.gradle.internal.nativeintegration.services.NativeServices.NATIVE_SERVICES_OPTION
 import static org.gradle.util.internal.TextUtil.normaliseFileSeparators
 
-@Requires(value = IntegTestPreconditions.NotEmbeddedExecutor, reason = "needs to run a distribution from scratch to not have native services on the classpath already")
+@Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = "needs to run a distribution from scratch to not have native services on the classpath already")
 class NativeServicesIntegrationTest extends AbstractIntegrationSpec {
 
     @Rule
@@ -111,7 +111,7 @@ class NativeServicesIntegrationTest extends AbstractIntegrationSpec {
             import org.gradle.internal.nativeintegration.NativeCapabilities
 
             tasks.register("doWork", WorkerTask)
-            println("Uses native integration in daemon: " + NativeServices.INSTANCE.createNativeCapabilities().useNativeIntegrations())
+            println("Uses native integration in daemon: " + NativeServices.instance.get(NativeCapabilities).useNativeIntegrations())
 
             abstract class WorkerTask extends DefaultTask {
                 @Inject
@@ -124,8 +124,9 @@ class NativeServicesIntegrationTest extends AbstractIntegrationSpec {
             }
 
             abstract class NoOpWorkAction implements WorkAction<WorkParameters.None> {
+
                 void execute() {
-                    println("Uses native integration in worker: " + NativeServices.INSTANCE.createNativeCapabilities().useNativeIntegrations())
+                    println("Uses native integration in worker: " + NativeServices.instance.get(NativeCapabilities).useNativeIntegrations())
                 }
             }
         """)
@@ -161,7 +162,7 @@ class NativeServicesIntegrationTest extends AbstractIntegrationSpec {
             testing {
                 suites {
                     functionalTest(JvmTestSuite) {
-                        useSpock("2.2-groovy-3.0")
+                        useSpock()
                         dependencies {
                             implementation(project())
                         }
@@ -203,7 +204,9 @@ class NativeServicesIntegrationTest extends AbstractIntegrationSpec {
                     buildFile << \"""
                         println("Build inside a test executor initialized Native services: " + new File("${nativeDirOverride}").exists())
                         println("Build inside a test executor uses Native services: " +
-                            org.gradle.internal.nativeintegration.services.NativeServices.INSTANCE.createNativeCapabilities().useNativeIntegrations())
+                            org.gradle.internal.nativeintegration.services.NativeServices.instance
+                                .get(org.gradle.internal.nativeintegration.NativeCapabilities)
+                                .useNativeIntegrations())
                     \"""
 
                     when:

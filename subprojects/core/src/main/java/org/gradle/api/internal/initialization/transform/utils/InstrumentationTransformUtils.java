@@ -17,10 +17,11 @@
 package org.gradle.api.internal.initialization.transform.utils;
 
 import org.gradle.api.artifacts.transform.TransformOutputs;
+import org.gradle.internal.UncheckedException;
+import org.gradle.internal.classpath.TransformedClassPath;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 
 import static org.gradle.internal.classpath.TransformedClassPath.FileMarker.INSTRUMENTATION_CLASSPATH_MARKER;
 
@@ -36,7 +37,7 @@ public class InstrumentationTransformUtils {
     public static final String ANALYSIS_OUTPUT_DIR = "analysis";
     public static final String MERGE_OUTPUT_DIR = "merge";
     public static final String TYPE_HIERARCHY_ANALYSIS_FILE_NAME = "instrumentation-hierarchy.bin";
-    public static final String DEPENDENCY_ANALYSIS_FILE_NAME = "instrumentation-dependencies.bin";
+    public static final String DEPENDENCY_ANALYSIS_FILE_NAME = TransformedClassPath.DEPENDENCY_ANALYSIS_FILE_NAME;
 
     public static InstrumentationInputType getInputType(File input) {
         if (isInstrumentationMarkerFile(input)) {
@@ -74,7 +75,7 @@ public class InstrumentationTransformUtils {
         try {
             file.createNewFile();
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     }
 

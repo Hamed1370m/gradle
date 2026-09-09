@@ -16,8 +16,9 @@
 
 package org.gradle.java
 
+import org.gradle.api.problems.Severity
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.test.fixtures.archive.ZipTestFixture
 
 @ToBeFixedForIsolatedProjects(because = "subprojects")
@@ -109,13 +110,15 @@ class JavaLibraryDocumentationIntegrationTest extends AbstractIntegrationSpec {
         fails(':a:javadocJar')
 
         then:
-        failure.assertHasDescription("Cannot locate tasks that match ':a:javadocJar' as task 'javadocJar' not found in project ':a'. Some candidates are: 'javadoc'.")
+        failureDescriptionContains("Cannot locate tasks that match ':a:javadocJar' as task 'javadocJar' not found in project ':a'. Some candidates are: 'javadoc'.")
 
         and:
         verifyAll(receivedProblem) {
+            severity == Severity.ERROR
             fqid == 'task-selection:no-matches'
             contextualLabel == 'Cannot locate tasks that match \':a:javadocJar\' as task \'javadocJar\' not found in project \':a\'. Some candidates are: \'javadoc\'.'
             additionalData.asMap == [ 'requestedPath' : ':a:javadocJar']
+            originLocations == []
         }
 
         when:
@@ -133,13 +136,15 @@ class JavaLibraryDocumentationIntegrationTest extends AbstractIntegrationSpec {
         fails(':a:sourcesJar')
 
         then:
-        failure.assertHasDescription("Cannot locate tasks that match ':a:sourcesJar' as task 'sourcesJar' not found in project ':a'.")
+        failureDescriptionContains("Cannot locate tasks that match ':a:sourcesJar' as task 'sourcesJar' not found in project ':a'.")
 
         and:
         verifyAll(receivedProblem) {
+            severity == Severity.ERROR
             fqid == 'task-selection:selection-failed'
             contextualLabel == 'Cannot locate tasks that match \':a:sourcesJar\' as task \'sourcesJar\' not found in project \':a\'.'
             additionalData.asMap == [ 'requestedPath' : ':a:sourcesJar']
+            originLocations == []
         }
 
         when:
@@ -169,7 +174,7 @@ class JavaLibraryDocumentationIntegrationTest extends AbstractIntegrationSpec {
         succeeds 'a:collectSources'
 
         then:
-        result.assertTasksExecuted(':a:collectSources', ':a:sourcesJar', ':b:sourcesJar', ':c:sourcesJar')
+        result.assertTasksScheduled(':a:collectSources', ':a:sourcesJar', ':b:sourcesJar', ':c:sourcesJar')
         output('sources') == ['a-sources.jar', 'b-sources.jar', 'c-sources.jar'] as Set
         jar('sources/a-sources.jar').assertContainsFile('ToolImpl.java')
         jar('sources/b-sources.jar').assertContainsFile('Tool.java')
@@ -195,7 +200,7 @@ class JavaLibraryDocumentationIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         // requires 'c' to do compileJava for the classpath of the javadoc task of 'b'
-        result.assertTasksExecuted(':a:collectJavadoc', ':a:javadoc', ':a:javadocJar', ':a:classes', ':a:compileJava', ':a:processResources', ':b:javadoc', ':b:javadocJar', ':b:classes', ':b:compileJava', ':b:processResources', ':c:compileJava')
+        result.assertTasksScheduled(':a:collectJavadoc', ':a:javadoc', ':a:javadocJar', ':a:classes', ':a:compileJava', ':a:processResources', ':b:javadoc', ':b:javadocJar', ':b:classes', ':b:compileJava', ':b:processResources', ':c:compileJava')
         output('javadocs') == ['a-javadoc.jar', 'b-javadoc.jar'] as Set
         jar('javadocs/a-javadoc.jar').assertContainsFile('ToolImpl.html')
         jar('javadocs/b-javadoc.jar').assertContainsFile('Tool.html')

@@ -22,32 +22,14 @@ import org.junit.Rule
 
 class ConcurrentBuildsArtifactTransformIntegrationTest extends AbstractDependencyResolutionTest {
 
-    @Rule BlockingHttpServer server = new BlockingHttpServer()
+    @Rule
+    BlockingHttpServer server = new BlockingHttpServer()
 
     def setup() {
         server.start()
-        buildFile << """
+        buildFile """
 enum Color { Red, Green, Blue }
 def type = Attribute.of("artifactType", String)
-
-abstract class ToColor implements TransformAction<Parameters> {
-    interface Parameters extends TransformParameters {
-        @Input
-        Property<Color> getColor()
-    }
-
-    @InputArtifact
-    abstract Provider<FileSystemLocation> getInputArtifact()
-
-    void transform(TransformOutputs outputs) {
-        def input = inputArtifact.get().asFile
-        def color = parameters.color.get()
-        println "Transforming \$input.name to \$color"
-        def out = outputs.file(color.toString())
-        out.text = input.name
-    }
-}
-
 dependencies {
     registerTransform(ToColor) {
         from.attribute(type, "jar")
@@ -74,7 +56,7 @@ dependencies {
     compile files(f)
 }
 
-task redThings {
+tasks.register('redThings') {
     def files = configurations.compile.incoming.artifactView {
         attributes {
             attribute(type, "red")
@@ -85,7 +67,7 @@ task redThings {
     }
 }
 
-task blueThings {
+tasks.register('blueThings') {
     def files = configurations.compile.incoming.artifactView {
         attributes {
             attribute(type, "blue")
@@ -98,25 +80,49 @@ task blueThings {
 """
     }
 
+    def setupTransform(String beforeTransformLogic = "") {
+        buildFile """
+            abstract class ToColor implements TransformAction<Parameters> {
+                interface Parameters extends TransformParameters {
+                    @Input
+                    Property<Color> getColor()
+                }
+
+                @InputArtifact
+                abstract Provider<FileSystemLocation> getInputArtifact()
+
+                void transform(TransformOutputs outputs) {
+                    $beforeTransformLogic
+                    def input = inputArtifact.get().asFile
+                    def color = parameters.color.get()
+                    println "Transforming \$input.name to \$color"
+                    def out = outputs.file(color.toString())
+                    out.text = input.name
+                }
+            }
+        """
+    }
+
     def "multiple build processes share transform output cache"() {
         given:
         // Run two builds where one build applies one transform and the other build the second
-        buildFile << """
+        setupTransform()
+        buildFile """
 task block1 {
     doLast {
         ${server.callFromBuild("block1")}
     }
 }
-block1.mustRunAfter redThings
-blueThings.mustRunAfter block1
 
 task block2 {
     doLast {
         ${server.callFromBuild("block2")}
     }
 }
-block2.mustRunAfter blueThings
 
+tasks.block1.mustRunAfter tasks.redThings
+tasks.blueThings.mustRunAfter tasks.block1
+tasks.block2.mustRunAfter tasks.blueThings
 """
         // Ensure build scripts compiled
         run("help")
@@ -149,21 +155,23 @@ block2.mustRunAfter blueThings
 
     def "file is transformed once only by concurrent builds"() {
         given:
-        // Run two builds concurrently
+        setupTransform()
         buildFile << """
 task block1 {
     doLast {
         ${server.callFromBuild("block1")}
     }
 }
-redThings.mustRunAfter block1
 
 task block2 {
     doLast {
         ${server.callFromBuild("block2")}
     }
 }
-redThings.mustRunAfter block2
+
+tasks.redThings.mustRunAfter tasks.block1
+tasks.redThings.mustRunAfter tasks.block2
+tasks.blueThings.mustRunAfter tasks.redThings
 """
         // Ensure build scripts compiled
         run("help")

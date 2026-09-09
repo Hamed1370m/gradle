@@ -17,14 +17,15 @@
 package org.gradle.model.managed
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 import spock.lang.Issue
 
 // Caused by: java.lang.IncompatibleClassChangeError: Method Person.getName()Ljava/lang/String; must be InterfaceMethodref constant
 // Fail since build 125
-@Requires(UnitTestPreconditions.Jdk8OrEarlier)
+@Requires(JdkVersionTestPreconditions.Jdk8OrEarlier)
 @Issue('https://github.com/gradle/gradle/issues/721')
 @UnsupportedWithConfigurationCache(because = "software model")
 class InterfaceBackedManagedTypeIntegrationTest extends AbstractIntegrationSpec {
@@ -78,6 +79,7 @@ class InterfaceBackedManagedTypeIntegrationTest extends AbstractIntegrationSpec 
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
         succeeds "echo"
 
         and:
@@ -115,6 +117,7 @@ class InterfaceBackedManagedTypeIntegrationTest extends AbstractIntegrationSpec 
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
         succeeds "echo"
 
         and:
@@ -176,6 +179,7 @@ class InterfaceBackedManagedTypeIntegrationTest extends AbstractIntegrationSpec 
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
         succeeds "echo"
 
         and:
@@ -223,6 +227,7 @@ class InterfaceBackedManagedTypeIntegrationTest extends AbstractIntegrationSpec 
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
         succeeds "echo"
 
         and:
@@ -267,6 +272,7 @@ class InterfaceBackedManagedTypeIntegrationTest extends AbstractIntegrationSpec 
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
         fails "accessGenerativeName"
 
         and:
@@ -302,6 +308,7 @@ class InterfaceBackedManagedTypeIntegrationTest extends AbstractIntegrationSpec 
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
         fails "tasks"
 
         and:
@@ -337,6 +344,7 @@ class InterfaceBackedManagedTypeIntegrationTest extends AbstractIntegrationSpec 
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
         fails "tasks"
 
         and:
@@ -381,6 +389,7 @@ class InterfaceBackedManagedTypeIntegrationTest extends AbstractIntegrationSpec 
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
         succeeds "help"
     }
 
@@ -408,6 +417,7 @@ class InterfaceBackedManagedTypeIntegrationTest extends AbstractIntegrationSpec 
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
         fails "help"
 
         and:
@@ -416,4 +426,8 @@ class InterfaceBackedManagedTypeIntegrationTest extends AbstractIntegrationSpec 
         failure.assertHasCause("No such property: unknown for class: Person")
     }
 
+
+    private void expectSoftwareModelDeprecation(String pluginName) {
+        executer.expectDocumentedDeprecationWarning("The ${pluginName} plugin has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
+    }
 }

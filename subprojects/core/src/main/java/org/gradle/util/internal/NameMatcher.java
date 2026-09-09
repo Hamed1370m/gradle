@@ -15,9 +15,9 @@
  */
 package org.gradle.util.internal;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.function.TriConsumer;
-import org.gradle.api.problems.ProblemSpec;
+import org.gradle.api.problems.ProblemId;
 import org.gradle.api.problems.internal.GradleCoreProblemGroup;
 
 import java.util.Collection;
@@ -120,8 +120,12 @@ public class NameMatcher {
                 kebabCasePrefixMatches.add(candidate);
                 found = true;
             }
-            if (!found && StringUtils.getLevenshteinDistance(normalisedPattern, candidate.toUpperCase(Locale.ROOT)) <= Math.min(3, pattern.length() / 2)) {
-                candidates.add(candidate);
+            if (!found) {
+                @SuppressWarnings("deprecation")
+                int levenshteinDistance = StringUtils.getLevenshteinDistance(normalisedPattern, candidate.toUpperCase(Locale.ROOT));
+                if (levenshteinDistance <= Math.min(3, pattern.length() / 2)) {
+                    candidates.add(candidate);
+                }
             }
         }
 
@@ -223,13 +227,13 @@ public class NameMatcher {
         return String.format("%s '%s' not found in %s.", singularItemDescription, pattern, container);
     }
 
-    public void configureProblemId(ProblemSpec spec) {
+    public ProblemId problemId() {
         if (!getMatches().isEmpty()) {
-            spec.id("ambiguous-matches", "Ambiguous matches", GradleCoreProblemGroup.taskSelection());
+            return ProblemId.create("ambiguous-matches", "Ambiguous matches", GradleCoreProblemGroup.taskSelection());
         } else if (!getCandidates().isEmpty()) {
-            spec.id("no-matches", "No matches", GradleCoreProblemGroup.taskSelection());
+            return ProblemId.create("no-matches", "No matches", GradleCoreProblemGroup.taskSelection());
         } else {
-            spec.id("selection-failed", "Selection failed", GradleCoreProblemGroup.taskSelection());
+            return ProblemId.create("selection-failed", "Selection failed", GradleCoreProblemGroup.taskSelection());
         }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package org.gradle;
 
-import org.gradle.api.flow.FlowProviders;
 import org.gradle.api.initialization.Settings;
 import org.gradle.api.invocation.Gradle;
 import org.gradle.internal.DeprecatedInGradleScope;
@@ -25,7 +24,22 @@ import org.gradle.internal.service.scopes.Scope;
 /**
  * <p>A {@code BuildListener} is notified of the major lifecycle events as a build is executed.</p>
  *
+ * <p>Registering this listener type is not supported when the
+ * configuration cache is enabled.
+ * The {@link #buildFinished(BuildResult)} callback is incompatible
+ * because it relies on execution-time state that is not available
+ * on a cache hit.
+ * <p>
+ * To receive notifications about task completion, use a
+ * {@link org.gradle.api.services.BuildService BuildService} that
+ * implements {@link org.gradle.tooling.events.OperationCompletionListener}
+ * and register it via
+ * {@link org.gradle.build.event.BuildEventsListenerRegistry}.
+ * To react to the build work result, use
+ * {@link org.gradle.api.flow.FlowProviders#getBuildWorkResult()}.
+ *
  * @see org.gradle.api.invocation.Gradle#addListener(Object)
+ * @since 0.7
  */
 @EventScope(Scope.Build.class)
 @DeprecatedInGradleScope
@@ -44,6 +58,7 @@ public interface BuildListener {
      * ready to use to load the build projects.</p>
      *
      * @param settings The settings. Never null.
+     * @since 0.7
      */
     void settingsEvaluated(Settings settings);
 
@@ -52,6 +67,7 @@ public interface BuildListener {
      * evaluated.</p>
      *
      * @param gradle The build which has been loaded. Never null.
+     * @since 0.8
      */
     void projectsLoaded(Gradle gradle);
 
@@ -60,6 +76,7 @@ public interface BuildListener {
      * ready to use to populate the task graph.</p>
      *
      * @param gradle The build which has been evaluated. Never null.
+     * @since 0.8
      */
     void projectsEvaluated(Gradle gradle);
 
@@ -68,7 +85,8 @@ public interface BuildListener {
      *
      * @param result The result of the build. Never null.
      * @deprecated This method is not supported when configuration caching is enabled.
-     * @see FlowProviders#getBuildWorkResult()
+     * @see org.gradle.api.flow.FlowProviders#getBuildWorkResult()
+     * @since 0.7
      */
     @Deprecated
     void buildFinished(BuildResult result);

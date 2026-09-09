@@ -22,6 +22,7 @@ import org.gradle.internal.dispatch.MethodInvocation;
 public class AnonymousListenerBroadcast<T> extends ListenerBroadcast<T> {
     private final Dispatch<MethodInvocation> forwardingDispatch;
 
+    @SuppressWarnings("this-escape")
     public AnonymousListenerBroadcast(Class<T> type, Dispatch<MethodInvocation> forwardingDispatch) {
         super(type);
         this.forwardingDispatch = forwardingDispatch;
@@ -29,8 +30,7 @@ public class AnonymousListenerBroadcast<T> extends ListenerBroadcast<T> {
     }
 
     @Override
-    public void removeAll() {
-        super.removeAll();
-        add(forwardingDispatch);
+    public synchronized void removeAll() {
+        replaceWith(forwardingDispatch);
     }
 }

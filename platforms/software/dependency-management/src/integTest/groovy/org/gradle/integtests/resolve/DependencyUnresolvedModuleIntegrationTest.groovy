@@ -17,7 +17,7 @@
 package org.gradle.integtests.resolve
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.keystore.TestKeyStore
 import org.gradle.test.fixtures.maven.MavenFileRepository
@@ -133,7 +133,6 @@ class DependencyUnresolvedModuleIntegrationTest extends AbstractHttpDependencyRe
         protocol << ['http', 'https']
     }
 
-    @ToBeFixedForConfigurationCache(because = "task uses Configuration API")
     def "prevents using repository in later resolution within the same build on HTTP timeout"() {
         given:
         MavenHttpModule moduleB = publishMavenModule(mavenHttpRepo, 'b')
@@ -155,11 +154,11 @@ class DependencyUnresolvedModuleIntegrationTest extends AbstractHttpDependencyRe
             }
 
             task resolve {
+                def filesA = configurations.first.incoming.artifactView { lenient = true }.files
+                def filesB = configurations.second.incoming.artifactView { lenient = true }.files
+                def filesC = configurations.third.incoming.artifactView { lenient = true }.files
                 doLast {
-                    def filesA = configurations.first.incoming.artifactView { lenient = true }.files.files*.name
-                    def filesB = configurations.second.incoming.artifactView { lenient = true }.files.files*.name
-                    def filesC = configurations.third.incoming.artifactView { lenient = true }.files.files*.name
-                    println "Resolved: \${filesA} \${filesB} \${filesC}"
+                    println "Resolved: \${filesA*.name} \${filesB*.name} \${filesC*.name}"
                 }
             }
         """
@@ -229,7 +228,7 @@ class DependencyUnresolvedModuleIntegrationTest extends AbstractHttpDependencyRe
         !downloadedLibsDir.isDirectory()
     }
 
-    @ToBeFixedForConfigurationCache(because = "task uses Configuration API")
+    @UnsupportedWithConfigurationCache(because = "can't wrap a resolution and catch the exception to swallow it with CC")
     def "when repository timeout resolving a configuration is swallowed, trying to re-resolve that configuration still prints the original cause"() {
         given:
         MavenHttpModule moduleB = publishMavenModule(mavenHttpRepo, 'b')
@@ -269,7 +268,7 @@ class DependencyUnresolvedModuleIntegrationTest extends AbstractHttpDependencyRe
         assertDependencyMetaDataReadTimeout(moduleA)
     }
 
-    @ToBeFixedForConfigurationCache(because = "task uses Configuration API")
+    @UnsupportedWithConfigurationCache(because = "can't wrap a resolution and catch the exception to swallow it with CC")
     def "when repository timeout resolving a configuration is swallowed, trying to resolve another configuration using the same repository still prints original cause"() {
         given:
         MavenHttpModule moduleB = publishMavenModule(mavenHttpRepo, 'b')
@@ -405,7 +404,7 @@ class DependencyUnresolvedModuleIntegrationTest extends AbstractHttpDependencyRe
     private String mavenRepository(MavenRepository repo) {
         """
             repositories {
-                maven { url "${repo.uri}"}
+                maven { url = "${repo.uri}"}
             }
         """
     }
@@ -447,14 +446,16 @@ class DependencyUnresolvedModuleIntegrationTest extends AbstractHttpDependencyRe
         failure.assertHasCause("Could not resolve ${group}:${module}:${version}.")
         failure.assertHasCause("Failed to list versions for ${group}:${module}.")
         failure.assertHasCause("Unable to load Maven meta-data from ${mavenHttpRepo.uri.toString()}/${group}/${module}/maven-metadata.xml.")
-        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${group}/${module}/maven-metadata.xml'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${group}/${module}/maven-metadata.xml'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
     }
 
     private void assertDependencyListingUnauthorizedError(String group, String module, String version) {
         failure.assertHasCause("Could not resolve ${group}:${module}:${version}.")
         failure.assertHasCause("Failed to list versions for ${group}:${module}.")
         failure.assertHasCause("Unable to load Maven meta-data from ${mavenHttpRepo.uri.toString()}/${group}/${module}/maven-metadata.xml.")
-        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${group}/${module}/maven-metadata.xml'. Received status code 401 from server: Unauthorized")
+        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${group}/${module}/maven-metadata.xml'.")
+        failure.assertHasCause("Received status code 401 from server: Unauthorized")
     }
 
     private void assertDependencyMetaDataReadTimeout(MavenModule module) {
@@ -467,13 +468,15 @@ class DependencyUnresolvedModuleIntegrationTest extends AbstractHttpDependencyRe
     private void assertDependencyMetaDataInternalServerError(MavenModule module) {
         failure.assertHasCause("Could not resolve ${mavenModuleCoordinates(module)}.")
         failure.assertHasCause("Could not get resource '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.pom'.")
-        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.pom'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.pom'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
     }
 
     private void assertDependencyMetaDataUnauthorizedError(MavenModule module) {
         failure.assertHasCause("Could not resolve ${mavenModuleCoordinates(module)}.")
         failure.assertHasCause("Could not get resource '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.pom'.")
-        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.pom'. Received status code 401 from server: Unauthorized")
+        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.pom'.")
+        failure.assertHasCause("Received status code 401 from server: Unauthorized")
     }
 
     private void assertDependencyArtifactReadTimeout(MavenModule module) {
@@ -486,13 +489,15 @@ class DependencyUnresolvedModuleIntegrationTest extends AbstractHttpDependencyRe
     private void assertDependencyArtifactInternalServerError(MavenModule module) {
         failure.assertHasCause("Could not download ${module.artifactFile.name} (${mavenModuleCoordinates(module)})")
         failure.assertHasCause("Could not get resource '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.jar'.")
-        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.jar'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.jar'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
     }
 
     private void assertDependencyArtifactUnauthorizedError(MavenModule module) {
         failure.assertHasCause("Could not download ${module.artifactFile.name} (${mavenModuleCoordinates(module)})")
         failure.assertHasCause("Could not get resource '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.jar'.")
-        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.jar'. Received status code 401 from server: Unauthorized")
+        failure.assertHasCause("Could not GET '${mavenHttpRepo.uri.toString()}/${mavenModuleRepositoryPath(module)}.jar'.")
+        failure.assertHasCause("Received status code 401 from server: Unauthorized")
     }
 
     private void assertDependencySkipped(MavenModule module, String repositoryName) {

@@ -16,15 +16,24 @@
 
 package org.gradle.testing
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import com.google.common.base.Utf8
+import org.gradle.api.JavaVersion
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import org.gradle.internal.SafeFileLocationUtils
+import org.gradle.internal.jvm.SupportedJavaVersions
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.FileSystemTestPreconditions
+import org.gradle.test.preconditions.TestEnvironmentPreconditions
+
 import org.gradle.testing.fixture.AbstractTestingMultiVersionIntegrationTest
 import spock.lang.Issue
 
-import static org.gradle.api.internal.DocumentationRegistry.BASE_URL
-import static org.gradle.api.internal.DocumentationRegistry.RECOMMENDATION
+import java.time.Duration
+import java.nio.file.attribute.PosixFilePermission
+
+import static org.hamcrest.Matchers.greaterThanOrEqualTo
 
 abstract class AbstractTestTaskIntegrationTest extends AbstractTestingMultiVersionIntegrationTest {
     abstract String getStandaloneTestClass()
@@ -46,6 +55,35 @@ abstract class AbstractTestTaskIntegrationTest extends AbstractTestingMultiVersi
                 test.${configureTestFramework}
             }
         """
+    }
+
+    def "test task can write report for long class names"() {
+        given:
+        // Remove .class so we can have the longest class name possible
+        def name = "A" * (255 - Utf8.encodedLength(".class"))
+        file("src/test/java/${name}.java") << """
+            ${testFrameworkImports}
+
+            public class ${name} {
+                @Test
+                public void test() {
+                    assertEquals(1, 1);
+                }
+            }
+        """.stripIndent()
+
+        when:
+        succeeds 'test'
+
+        then:
+        noExceptionThrown()
+
+        and:
+        def htmlReportName = SafeFileLocationUtils.toSafeFileName(name, true) + "/index.html"
+        def xmlReportName = SafeFileLocationUtils.toSafeFileName("TEST-", name + ".xml", false)
+        file("build/reports/tests/test/").assertContainsDescendants(htmlReportName)
+        file("build/test-results/test/").assertContainsDescendants(xmlReportName)
+        file("build/reports/tests/test/index.html").text.contains(name)
     }
 
     @Issue("GRADLE-2702")
@@ -78,10 +116,10 @@ abstract class AbstractTestTaskIntegrationTest extends AbstractTestingMultiVersi
         result.assertTaskSkipped(":test")
     }
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
-    def "compiles and executes a Java 9 test suite"() {
+    def "compiles and executes a Java test above Gradle's minimum Java version"() {
         given:
-        buildFile << java9Build()
+        buildFile << buildRequestingNewerJavaVersion()
+        assert SupportedJavaVersions.MINIMUM_WORKER_JAVA_VERSION < 17 : "Gradle requires a higher Java version, raise this check"
 
         file('src/test/java/MyTest.java') << standaloneTestClass
 
@@ -92,14 +130,13 @@ abstract class AbstractTestTaskIntegrationTest extends AbstractTestingMultiVersi
         noExceptionThrown()
 
         and:
-        classFormat(classFile('java', 'test', 'MyTest.class')) == 53
+        classFormat(classFile('java', 'test', 'MyTest.class')) == JavaVersion.VERSION_17
 
     }
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
-    def "compiles and executes a Java 9 test suite even if a module descriptor is on classpath"() {
+    def "compiles and executes a Java test even if a module descriptor is on classpath"() {
         given:
-        buildFile << java9Build()
+        buildFile << buildRequestingNewerJavaVersion()
 
         file('src/test/java/MyTest.java') << standaloneTestClass
         file('src/main/java/com/acme/Foo.java') << '''package com.acme;
@@ -116,8 +153,8 @@ abstract class AbstractTestTaskIntegrationTest extends AbstractTestingMultiVersi
         noExceptionThrown()
 
         and:
-        classFormat(javaClassFile('module-info.class')) == 53
-        classFormat(classFile('java', 'test', 'MyTest.class')) == 53
+        classFormat(javaClassFile('module-info.class')) == JavaVersion.VERSION_17
+        classFormat(classFile('java', 'test', 'MyTest.class')) == JavaVersion.VERSION_17
     }
 
     def "test task does not hang if maxParallelForks is greater than max-workers (#maxWorkers)"() {
@@ -150,7 +187,8 @@ abstract class AbstractTestTaskIntegrationTest extends AbstractTestingMultiVersi
         Runtime.runtime.availableProcessors() + 1 | _
     }
 
-    @Requires(UnitTestPreconditions.Online)
+    @Requires(TestEnvironmentPreconditions.Online)
+    @ToBeFixedForIsolatedProjects(because = "include 'dependency' without a per-subproject build script")
     def "re-runs tests when resources are renamed in a jar"() {
         given:
         buildFile << """
@@ -188,7 +226,7 @@ abstract class AbstractTestTaskIntegrationTest extends AbstractTestingMultiVersi
         fails 'test'
     }
 
-    @Requires(UnitTestPreconditions.Online)
+    @Requires(TestEnvironmentPreconditions.Online)
     def "re-runs tests when resources are renamed"() {
         given:
         file("src/test/java/MyTest.java") << """
@@ -324,50 +362,67 @@ abstract class AbstractTestTaskIntegrationTest extends AbstractTestingMultiVersi
         succeeds("test", "verifyTestOptions", "--warn")
     }
 
-    def "setForkEvery null emits deprecation warning"() {
+    @Issue("https://github.com/gradle/gradle/issues/17135")
+    def "records full #type class time"() {
         given:
-        buildFile << """
-            tasks.withType(Test).configureEach {
-                forkEvery = null
+        file('src/test/java/MyTest.java') << """
+            ${testFrameworkImports}
+
+            public class MyTest {
+               ${annotation}
+               public static void setUp() throws InterruptedException {
+                   Thread.sleep(1000);
+               }
+
+               @Test
+               public void test() {
+               }
             }
-        """
+        """.stripIndent()
 
         when:
-        executer.expectDocumentedDeprecationWarning("Setting Test.forkEvery to null. This behavior has been deprecated. " +
-            "This will fail with an error in Gradle 9.0. Set Test.forkEvery to 0 instead. " +
-            String.format(RECOMMENDATION, "information", "${BASE_URL}/dsl/org.gradle.api.tasks.testing.Test.html#org.gradle.api.tasks.testing.Test:forkEvery"))
+        succeeds 'test'
 
         then:
-        succeeds "test", "--dry-run"
+        def results = resultsFor(testDirectory)
+        def testClass = results.testPath(':MyTest').onlyRoot()
+        testClass.assertThatSingleDuration(greaterThanOrEqualTo(Duration.ofMillis(1000)))
+
+        where:
+        type     | annotation
+        "before" | beforeClassAnnotation
+        "after"  | afterClassAnnotation
     }
 
-    def "setForkEvery Long emits deprecation warning"() {
+    @Requires(FileSystemTestPreconditions.FilePermissions)
+    def "binary test result files have correct permissions"() {
         given:
-        buildFile << """
-            tasks.withType(Test).configureEach {
-                setForkEvery(Long.valueOf(1))
-            }
-        """
+        file('src/test/java/MyTest.java') << standaloneTestClass
 
         when:
-        executer.expectDocumentedDeprecationWarning("The Test.setForkEvery(Long) method has been deprecated. " +
-            "This is scheduled to be removed in Gradle 9.0. Please use the Test.setForkEvery(long) method instead. " +
-            String.format(RECOMMENDATION, "information", "${BASE_URL}/dsl/org.gradle.api.tasks.testing.Test.html#org.gradle.api.tasks.testing.Test:forkEvery"))
+        succeeds 'test'
 
         then:
-        succeeds "test", "--dry-run"
+        def binaryDir = file("build/test-results/test/binary")
+        java.nio.file.Files.walk(binaryDir.toPath())
+            .filter { java.nio.file.Files.isRegularFile(it) }
+            .each { path ->
+                def perms = java.nio.file.Files.getPosixFilePermissions(path)
+                assert perms.contains(PosixFilePermission.OTHERS_READ)
+                assert perms.contains(PosixFilePermission.GROUP_READ)
+            }
     }
 
-    private String java9Build() {
+    private String buildRequestingNewerJavaVersion() {
         """
             java {
-                sourceCompatibility = 1.9
-                targetCompatibility = 1.9
+                sourceCompatibility = 17
+                targetCompatibility = 17
             }
         """
     }
 
-    private static int classFormat(TestFile path) {
-        path.bytes[7] & 0xFF
+    private static JavaVersion classFormat(TestFile path) {
+        JavaVersion.forClassVersion(path.bytes[7] & 0xFF)
     }
 }

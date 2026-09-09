@@ -17,7 +17,7 @@
 package org.gradle.integtests.resolve.caching
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
 import org.gradle.test.fixtures.server.http.MavenHttpModule
 import org.gradle.test.fixtures.server.http.MavenHttpRepository
@@ -52,7 +52,6 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
             """
     }
 
-    @ToBeFixedForConfigurationCache
     def "can run offline mode after hitting broken repo url"() {
         given:
         buildFileWithSnapshotDependency()
@@ -72,9 +71,13 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         fails 'retrieve'
 
         and:
-        failure.assertHasDescription("Execution failed for task ':retrieve'.")
+        if (GradleContextualExecuter.isConfigCache()) {
+            failureDescriptionStartsWith("Configuration cache state could not be cached: field `mainSpec` of task `:retrieve` of type `org.gradle.api.tasks.Sync`")
+        } else {
+            failure.assertHasDescription("Execution failed for task ':retrieve' (registered in build file 'build.gradle').")
+        }
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
-        failure.assertThatCause(CoreMatchers.containsString("Received status code 500 from server: broken"))
+        failure.assertThatCause(CoreMatchers.containsString("Received status code 500 from server: Internal Server Error"))
 
 
         when:
@@ -86,7 +89,6 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         file('libs/projectA-1.0-SNAPSHOT.jar').assertIsCopyOf(module.artifact.file)
     }
 
-    @ToBeFixedForConfigurationCache
     def "can run offline mode after connection problem with repo url using unique snapshot version"() {
         given:
         buildFileWithSnapshotDependency()
@@ -107,7 +109,11 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         fails 'retrieve'
 
         and:
-        failure.assertHasDescription("Execution failed for task ':retrieve'.")
+        if (GradleContextualExecuter.isConfigCache()) {
+            failureDescriptionStartsWith("Configuration cache state could not be cached")
+        } else {
+            failure.assertHasDescription("Execution failed for task ':retrieve' (registered in build file 'build.gradle').")
+        }
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertThatCause(matchesRegexp(".*?Connect to 127.0.0.1:${port} (\\[.*\\])? failed: Connection refused.*"))
 
@@ -120,7 +126,6 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         file('libs/projectA-1.0-SNAPSHOT.jar').assertIsCopyOf(module.artifact.file)
     }
 
-    @ToBeFixedForConfigurationCache
     def "can run offline mode after connection problem with repo url using non unique snapshot version"() {
         given:
         buildFileWithSnapshotDependency()
@@ -141,7 +146,11 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         fails 'retrieve'
 
         and:
-        failure.assertHasDescription("Execution failed for task ':retrieve'.")
+        if (GradleContextualExecuter.isConfigCache()) {
+            failureDescriptionStartsWith("Configuration cache state could not be cached")
+        } else {
+            failure.assertHasDescription("Execution failed for task ':retrieve' (registered in build file 'build.gradle').")
+        }
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertThatCause(matchesRegexp(".*?Connect to 127.0.0.1:${port} (\\[.*\\])? failed: Connection refused.*"))
 
@@ -154,7 +163,6 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         file('libs/projectA-1.0-SNAPSHOT.jar').assertIsCopyOf(module.artifact.file)
     }
 
-    @ToBeFixedForConfigurationCache
     def "can run offline mode after authentication fails on remote repo"() {
         given:
         buildFileWithSnapshotDependency()
@@ -178,7 +186,11 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         fails 'retrieve'
 
         and:
-        failure.assertHasDescription("Execution failed for task ':retrieve'.")
+        if (GradleContextualExecuter.isConfigCache()) {
+            failureDescriptionStartsWith("Configuration cache state could not be cached")
+        } else {
+            failure.assertHasDescription("Execution failed for task ':retrieve' (registered in build file 'build.gradle').")
+        }
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertThatCause(CoreMatchers.containsString("Received status code 401 from server: Unauthorized"))
 
@@ -191,7 +203,6 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         file('libs/projectA-1.0-SNAPSHOT.jar').assertIsCopyOf(module.artifact.file)
     }
 
-    @ToBeFixedForConfigurationCache
     def "can run offline mode after connection problem with repo when using ivy changing modules"() {
         given:
         def ivyRepo = ivyHttpRepo("ivyRepo")
@@ -201,8 +212,8 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         buildFile.text = """
                   repositories {
                        ivy {
-                           name 'repo'
-                           url '${ivyRepo.uri}'
+                           name = 'repo'
+                           url = "${ivyRepo.uri}"
                        }
                   }
                   configurations {
@@ -214,7 +225,9 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
                   }
 
                   dependencies {
-                      compile group:'group', name:'projectA', version:'1.0', changing:true
+                      compile("group:projectA:1.0") {
+                          changing = true
+                      }
                   }
 
                   task retrieve(type: Sync) {
@@ -236,7 +249,11 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         fails 'retrieve'
 
         and:
-        failure.assertHasDescription("Execution failed for task ':retrieve'.")
+        if (GradleContextualExecuter.isConfigCache()) {
+            failureDescriptionStartsWith("Configuration cache state could not be cached")
+        } else {
+            failure.assertHasDescription("Execution failed for task ':retrieve' (registered in build file 'build.gradle').")
+        }
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertThatCause(matchesRegexp(".*?Connect to 127.0.0.1:${port} (\\[.*\\])? failed: Connection refused.*"))
 
@@ -249,7 +266,6 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         file('libs/projectA-1.0.jar').assertIsCopyOf(ivyModule.jarFile)
     }
 
-    @ToBeFixedForConfigurationCache
     def "can run offline mode after connection problem with repo when using ivy dynamic version"() {
         given:
         def ivyRepo = ivyHttpRepo("ivyRepo")
@@ -258,7 +274,7 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         and:
         buildFile << """
                   repositories {
-                       ivy { url '${ivyRepo.uri}' }
+                       ivy { url = "${ivyRepo.uri}" }
                   }
                   configurations {
                       compile
@@ -267,7 +283,7 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
                       resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
                   }
                   dependencies {
-                      compile group:'group', name:'projectA', version:'1.+'
+                      compile("group:projectA:1.+")
                   }
 
                   task retrieve(type: Sync) {
@@ -290,7 +306,11 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         fails 'retrieve'
 
         and:
-        failure.assertHasDescription("Execution failed for task ':retrieve'.")
+        if (GradleContextualExecuter.isConfigCache()) {
+            failureDescriptionStartsWith("Configuration cache state could not be cached")
+        } else {
+            failure.assertHasDescription("Execution failed for task ':retrieve' (registered in build file 'build.gradle').")
+        }
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertHasCause("Could not list versions using Ivy pattern 'http://127.0.0.1:${port}/ivyRepo/[organisation]/[module]/[revision]/ivy-[revision].xml")
         failure.assertThatCause(matchesRegexp(".*?Connect to 127.0.0.1:${port} (\\[.*\\])? failed: Connection refused.*"))
@@ -331,8 +351,8 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         buildFile << """
         repositories {
             maven {
-                name 'repo'
-                url '${repo.uri}'
+                name = 'repo'
+                url = '${repo.uri}'
             }
         } """
     }
@@ -342,10 +362,10 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         buildFile << """
         repositories {
             maven {
-                url '${repo.uri}'
+                url = '${repo.uri}'
                 credentials {
-                    password 'password'
-                    username 'username'
+                    password = 'password'
+                    username = 'username'
                 }
             }
         }

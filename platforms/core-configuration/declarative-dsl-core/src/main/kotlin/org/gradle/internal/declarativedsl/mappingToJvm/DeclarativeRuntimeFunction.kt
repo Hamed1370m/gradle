@@ -17,15 +17,19 @@
 package org.gradle.internal.declarativedsl.mappingToJvm
 
 import org.gradle.declarative.dsl.schema.DataParameter
+import org.gradle.internal.declarativedsl.InstanceAndPublicType
 import org.gradle.internal.declarativedsl.schemaBuilder.ConfigureLambdaHandler
 import java.lang.reflect.InvocationTargetException
 import kotlin.reflect.KFunction
+import kotlin.reflect.KParameter
+import kotlin.reflect.KTypeParameter
+import kotlin.reflect.jvm.jvmErasure
 
 
 interface DeclarativeRuntimeFunction {
-    fun callBy(receiver: Any, binding: Map<DataParameter, Any?>, hasLambda: Boolean): InvocationResult
+    fun callBy(receiver: Any?, binding: Map<DataParameter, Any?>, hasLambda: Boolean): InvocationResult
 
-    fun callByWithErrorHandling(receiver: Any, binding: Map<DataParameter, Any?>, hasLambda: Boolean): InvocationResult {
+    fun callByWithErrorHandling(receiver: Any?, binding: Map<DataParameter, Any?>, hasLambda: Boolean): InvocationResult {
         try {
             return callBy(receiver, binding, hasLambda)
         } catch (ite: InvocationTargetException) {
@@ -33,16 +37,53 @@ interface DeclarativeRuntimeFunction {
         }
     }
 
-    data class InvocationResult(val result: Any?, val capturedValue: Any?)
+    data class InvocationResult(val result: InstanceAndPublicType, val capturedValue: InstanceAndPublicType)
 }
 
 
 internal
 class ReflectionFunction(private val kFunction: KFunction<*>, private val configureLambdaHandler: ConfigureLambdaHandler) : DeclarativeRuntimeFunction {
-    override fun callBy(receiver: Any, binding: Map<DataParameter, Any?>, hasLambda: Boolean): DeclarativeRuntimeFunction.InvocationResult {
+    override fun callBy(receiver: Any?, binding: Map<DataParameter, Any?>, hasLambda: Boolean): DeclarativeRuntimeFunction.InvocationResult {
         val params = FunctionBinding.convertBinding(kFunction, receiver, binding, hasLambda, configureLambdaHandler)
             ?: error("signature of $kFunction does not match the arguments: $binding")
         val captor = params.valueCaptor
-        return DeclarativeRuntimeFunction.InvocationResult(kFunction.callBy(params.map), captor?.value)
+        val returnedValue = kFunction.callBy(adaptVarargs(params.map))
+        val returnedPublicType = kFunction.returnType.jvmErasure
+        val capturedValue = captor?.value ?: InstanceAndPublicType.NULL
+        return DeclarativeRuntimeFunction.InvocationResult(InstanceAndPublicType.of(returnedValue, returnedPublicType), capturedValue)
+    }
+
+    /**
+     * The DCL type inference makes no difference between primitive and boxed arrays, and when the inferred parameter type is a "vararg of ints", it
+     * will always be the primitive array, e.g. [IntArray].
+     * However, the type might have been inferred that way because the generic type specification had a type parameter substitution like
+     * T := [Int].
+     * In that case, the JVM method is generic and expects an object-typed [Array], so we need to convert the
+     * argument array back from unboxed primitives to boxed values.
+     */
+    private fun adaptVarargs(bindingMap: Map<KParameter, Any?>): Map<KParameter, Any?> {
+        fun isVarargWithGenericTypeArgument(kParameter: KParameter) =
+            kParameter.isVararg && kParameter.type.arguments.singleOrNull()?.type?.classifier is KTypeParameter
+
+        if (bindingMap.keys.none(::isVarargWithGenericTypeArgument))
+            return bindingMap
+
+        fun adaptVarargValueArrayToGenerics(valueArray: Any?) = when (valueArray) {
+            is IntArray -> valueArray.toTypedArray()
+            is ShortArray -> valueArray.toTypedArray()
+            is ByteArray -> valueArray.toTypedArray()
+            is LongArray -> valueArray.toTypedArray()
+            is BooleanArray -> valueArray.toTypedArray()
+            is CharArray -> valueArray.toTypedArray()
+            is FloatArray -> valueArray.toTypedArray()
+            is DoubleArray -> valueArray.toTypedArray()
+            else -> valueArray
+        }
+
+        return bindingMap.mapValues {
+            if (isVarargWithGenericTypeArgument(it.key))
+                adaptVarargValueArrayToGenerics(it.value)
+            else it.value
+        }
     }
 }

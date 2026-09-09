@@ -21,6 +21,7 @@ import org.gradle.api.reporting.ReportingExtension
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.InspectsConfigurationReport
 import org.gradle.test.fixtures.file.TestFile
+import org.gradle.testing.jacoco.plugins.fixtures.JacocoCoverage
 import org.gradle.testing.jacoco.plugins.fixtures.JacocoReportFixture
 import org.gradle.testing.jacoco.plugins.fixtures.JavaProjectUnderTest
 
@@ -30,6 +31,7 @@ class JacocoPluginIntegrationTest extends AbstractIntegrationSpec implements Ins
     private static final String REPORTING_BASE = "${Project.DEFAULT_BUILD_DIR_NAME}/${ReportingExtension.DEFAULT_REPORTS_DIR_NAME}"
 
     def setup() {
+        JacocoCoverage.assumeDefaultJacocoWorksOnCurrentJdk()
         javaProjectUnderTest.writeBuildScript().writeSourceFiles()
     }
 
@@ -155,16 +157,14 @@ class JacocoPluginIntegrationTest extends AbstractIntegrationSpec implements Ins
 --------------------------------------------------
 Variant coverageDataElementsForTest (i)
 --------------------------------------------------
-Binary data file containing results of Jacoco test coverage reporting for the test Test Suite's test target.
+Binary results containing Jacoco test coverage for all targets in the 'test' Test Suite.
 
 Capabilities
     - :Test:unspecified (default capability)
 Attributes
-    - org.gradle.category              = verification
-    - org.gradle.testsuite.name        = test
-    - org.gradle.testsuite.target.name = test
-    - org.gradle.testsuite.type        = unit-test
-    - org.gradle.verificationtype      = jacoco-coverage
+    - org.gradle.category         = verification
+    - org.gradle.testsuite.name   = test
+    - org.gradle.verificationtype = jacoco-coverage
 Artifacts
     - $resultsExecPath (artifactType = binary)
 """)
@@ -180,8 +180,6 @@ Artifacts
             testing {
                 suites {
                     integrationTest(JvmTestSuite) {
-                        testType = TestSuiteType.INTEGRATION_TEST
-
                         dependencies {
                             implementation project()
                         }
@@ -198,16 +196,14 @@ Artifacts
 --------------------------------------------------
 Variant coverageDataElementsForIntegrationTest (i)
 --------------------------------------------------
-Binary data file containing results of Jacoco test coverage reporting for the integrationTest Test Suite's integrationTest target.
+Binary results containing Jacoco test coverage for all targets in the 'integrationTest' Test Suite.
 
 Capabilities
     - :Test:unspecified (default capability)
 Attributes
-    - org.gradle.category              = verification
-    - org.gradle.testsuite.name        = integrationTest
-    - org.gradle.testsuite.target.name = integrationTest
-    - org.gradle.testsuite.type        = integration-test
-    - org.gradle.verificationtype      = jacoco-coverage
+    - org.gradle.category         = verification
+    - org.gradle.testsuite.name   = integrationTest
+    - org.gradle.verificationtype = jacoco-coverage
 Artifacts
     - $resultsExecPath (artifactType = binary)""")
 

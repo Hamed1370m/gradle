@@ -25,6 +25,9 @@ import org.gradle.integtests.tooling.fixture.ToolingApiSpecification
 import org.gradle.kotlin.dsl.tooling.models.KotlinBuildScriptModel
 import org.gradle.test.fixtures.archive.JarTestFixture
 import org.gradle.test.fixtures.file.TestFile
+import org.gradle.tooling.events.ProgressEvent
+import org.gradle.tooling.events.ProgressListener
+import org.gradle.tooling.events.lifecycle.BuildPhaseStartEvent
 import org.gradle.tooling.model.kotlin.dsl.KotlinDslScriptsModel
 import org.gradle.util.GradleVersion
 import org.hamcrest.Description
@@ -59,9 +62,6 @@ abstract class AbstractKotlinScriptModelCrossVersionTest extends ToolingApiSpeci
         if (GradleVersion.version(releasedGradleVersion) == GradleVersion.version("6.5.1")) {
             toolingApi.requireIsolatedUserHome()
         }
-        // Having this unset is now deprecated, will default to `false` in Gradle 9.0
-        // TODO remove - see https://github.com/gradle/gradle/issues/26810
-        file('gradle.properties') << 'org.gradle.kotlin.dsl.skipMetadataVersionCheck=false'
     }
 
     private String targetKotlinVersion
@@ -100,7 +100,7 @@ abstract class AbstractKotlinScriptModelCrossVersionTest extends ToolingApiSpeci
         return fetchKotlinBuildScriptModelFor(
             projectDir,
             scriptFile,
-            { selectedProjectDir -> rawConnector().forProjectDirectory(selectedProjectDir) }
+            { selectedProjectDir -> connector().forProjectDirectory(selectedProjectDir) }
         )
     }
 
@@ -139,7 +139,8 @@ abstract class AbstractKotlinScriptModelCrossVersionTest extends ToolingApiSpeci
             classPath.collect { it.name } as List<String>,
             hasItems(
                 matching("gradle-kotlin-dsl-$version\\.jar"),
-                matching("gradle-api-$version\\.jar"),
+                // The public API jar is the generated gradle-api jar before 9.7, the embedded ABI jar from 9.7 on
+                matching("(gradle-api|gradle-public-api-legacy)-$version\\.jar"),
                 matching("gradle-kotlin-dsl-extensions-$version\\.jar")
             )
         )
@@ -237,5 +238,34 @@ abstract class AbstractKotlinScriptModelCrossVersionTest extends ToolingApiSpeci
 
     protected static void assertHasExceptionMessage(KotlinDslScriptsModel model, TestFile script, String message) {
         assertThat(model.scriptModels[script].exceptions, hasItem(containsString(message)))
+    }
+
+    protected void maybeExpectExplicitScriptsDeprecation() {
+        if (targetVersion >= GradleVersion.version("9.9")) {
+            expectDocumentedDeprecationWarning(
+                "Requesting the KotlinDslScriptsModel for an explicit set of scripts using the " +
+                    "'org.gradle.tooling.model.kotlin.dsl.scripts' Gradle property. " +
+                    "This behavior has been deprecated. This is scheduled to be removed in Gradle 10. " +
+                    "Consult the upgrading guide for further information: " +
+                    "https://docs.gradle.org/current/userguide/upgrading_version_9.html#kotlin_dsl_scripts_model_explicit_scripts"
+            )
+        }
+    }
+
+    protected static final class ConfigurationPhaseMonitoringListener implements ProgressListener {
+
+        boolean hasSeenSomeEvents = false
+        final List<ProgressEvent> configPhaseStartEvents = new ArrayList<>()
+
+        @Override
+        void statusChanged(ProgressEvent event) {
+            hasSeenSomeEvents = true
+            if (event instanceof BuildPhaseStartEvent) {
+                BuildPhaseStartEvent buildPhaseStartEvent = (BuildPhaseStartEvent) event
+                if (buildPhaseStartEvent.descriptor.buildPhase.startsWith("CONFIGURE")) {
+                    configPhaseStartEvents.add(event)
+                }
+            }
+        }
     }
 }

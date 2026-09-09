@@ -20,17 +20,35 @@ import groovy.transform.stc.ClosureParams
 import groovy.transform.stc.SimpleType
 import org.gradle.api.attributes.Attribute
 import org.gradle.api.attributes.AttributesSchema
+import org.gradle.api.internal.artifacts.repositories.metadata.DefaultMavenVariantAttributesFactory
 import org.gradle.api.internal.attributes.AttributeSchemaServices
+import org.gradle.api.internal.attributes.AttributeValueIsolator
 import org.gradle.api.internal.attributes.AttributesSchemaInternal
-import org.gradle.api.internal.attributes.DefaultAttributesSchema
 import org.gradle.api.internal.attributes.DefaultAttributesFactory
+import org.gradle.api.internal.attributes.DefaultAttributesSchema
 import org.gradle.api.internal.attributes.ImmutableAttributes
 import org.gradle.api.internal.attributes.immutable.ImmutableAttributesSchema
 import org.gradle.api.internal.attributes.immutable.ImmutableAttributesSchemaFactory
+import org.gradle.api.internal.attributes.immutable.artifact.ImmutableArtifactTypeRegistryFactory
+import org.gradle.internal.component.external.model.JavaEcosystemVariantDerivationStrategy
 
 class AttributeTestUtil {
+
+    static AttributeValueIsolator attributeValueIsolator() {
+        return new AttributeValueIsolator(SnapshotTestUtil.isolatableFactory(), TestUtil.objectInstantiator())
+    }
+
     static DefaultAttributesFactory attributesFactory() {
-        return new DefaultAttributesFactory(SnapshotTestUtil.isolatableFactory(), TestUtil.objectInstantiator())
+        return new DefaultAttributesFactory(attributeValueIsolator(), SnapshotTestUtil.isolatableFactory(), TestUtil.objectInstantiator(), TestUtil.propertyFactory())
+    }
+
+    static JavaEcosystemVariantDerivationStrategy javaEcosystemVariantDerivationStrategy() {
+        return new JavaEcosystemVariantDerivationStrategy(
+            new DefaultMavenVariantAttributesFactory(
+                attributesFactory(),
+                TestUtil.objectInstantiator()
+            )
+        )
     }
 
     /**
@@ -96,6 +114,10 @@ class AttributeTestUtil {
      * Creates a service factory, used for creating attribute matchers and variant transformers.
      */
     static AttributeSchemaServices services() {
-        new AttributeSchemaServices(new ImmutableAttributesSchemaFactory())
+        new AttributeSchemaServices(
+            new ImmutableAttributesSchemaFactory(TestUtil.inMemoryCacheFactory()),
+            new ImmutableArtifactTypeRegistryFactory(TestUtil.inMemoryCacheFactory(), attributesFactory()),
+            TestUtil.inMemoryCacheFactory()
+        )
     }
 }

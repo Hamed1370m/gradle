@@ -23,9 +23,10 @@ import org.gradle.api.internal.artifacts.configurations.ProjectComponentObservat
 import org.gradle.api.internal.project.ProjectIdentity;
 import org.gradle.internal.component.local.model.LocalComponentGraphResolveState;
 import org.gradle.internal.event.ListenerManager;
+import org.gradle.internal.service.scopes.ProjectDomainObjectContext;
 import org.gradle.util.Path;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 
 /**
@@ -35,7 +36,8 @@ import javax.inject.Inject;
  * project is making the request, we can determine which projects depend on which other projects.
  */
 public class DefaultLocalComponentRegistry implements LocalComponentRegistry {
-    private final Path currentProjectPath;
+
+    private final @Nullable Path currentProjectPath;
     private final Path currentBuildPath;
     private final ProjectComponentObservationListener projectComponentObservationListener;
     private final BuildTreeLocalComponentProvider componentProvider;
@@ -54,30 +56,29 @@ public class DefaultLocalComponentRegistry implements LocalComponentRegistry {
 
     @Override
     public LocalComponentGraphResolveState getComponent(ProjectComponentIdentifier projectIdentifier) {
-        Path targetProjectPath = ((ProjectComponentIdentifierInternal) projectIdentifier).getIdentityPath();
+        ProjectIdentity targetProjectId = ((ProjectComponentIdentifierInternal) projectIdentifier).getProjectIdentity();
+        Path targetProjectPath = targetProjectId.getBuildTreePath();
         if (!targetProjectPath.equals(currentProjectPath)) {
-
             // TODO: We should relax this check. For legacy reasons we are not tracking cross-build project
             // dependencies, but we should be. Removing this condition breaks some Isolated Projects tests,
             // so we need to investigate why they are failing and then remove this condition.
             // Specifically, the following test breaks when we remove this check:
             // IsolatedProjectsToolingApiIdeaProjectIntegrationTest.ensures unique name for all Idea modules in composite
-            if (projectIdentifier.getBuild().getBuildPath().equals(currentBuildPath.getPath())) {
+            if (projectIdentifier.getBuild().getBuildPath().equals(currentBuildPath.asString())) {
                 projectComponentObservationListener.projectObserved(currentProjectPath, targetProjectPath);
             }
-
         }
 
-        return componentProvider.getComponent(projectIdentifier, currentBuildPath);
+        return componentProvider.getComponent(targetProjectId, currentBuildPath);
     }
 
     @Nullable
     private static Path getProjectBuildTreePath(DomainObjectContext domainObjectContext) {
-        ProjectIdentity id = domainObjectContext.getProjectIdentity();
-        if (id != null) {
-            return id.getBuildTreePath();
+        if (domainObjectContext instanceof ProjectDomainObjectContext pdoc) {
+            return pdoc.getModel().getIdentity().getBuildTreePath();
         }
 
         return null;
     }
+
 }

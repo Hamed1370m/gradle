@@ -28,6 +28,16 @@ import org.gradle.internal.service.scopes.Scope;
  * Interface for listening to test execution.  The intent is to be
  * framework agnostic.  Currently this interface can support feedback
  * from JUnit and TestNG tests.
+ * <p>
+ * Note that the {@link #beforeSuite(TestDescriptor)} method will be called
+ * at 3 different times:
+ * <ol>
+ *     <li>Before the test task executes any tests</li>
+ *     <li>Each time a test worker is started before it executes any tests</li>
+ *     <li>Before <strong>each</strong> "test suite" as defined by the testing framework is executed
+ *     (for JVM, this typically means prior to every test class)</li>
+ * </ol>
+ * @since 0.9
  */
 @EventScope(Scope.Build.class)
 @DeprecatedInGradleScope
@@ -35,26 +45,30 @@ public interface TestListener {
     /**
      * Called before a test suite is started.
      * @param suite The suite whose tests are about to be executed.
+     * @since 0.9
      */
-    void beforeSuite(TestDescriptor suite);
+    default void beforeSuite(TestDescriptor suite) {}
 
     /**
      * Called after a test suite is finished.
      * @param suite The suite whose tests have finished being executed.
      * @param result The aggregate result for the suite.
+     * @since 0.9
      */
-    void afterSuite(TestDescriptor suite, TestResult result);
+    default void afterSuite(TestDescriptor suite, TestResult result) {}
 
     /**
      * Called before an atomic test is started.
      * @param testDescriptor The test which is about to be executed.
+     * @since 0.9
      */
-    void beforeTest(TestDescriptor testDescriptor);
+    default void beforeTest(TestDescriptor testDescriptor) {}
 
     /**
      * Called after an atomic test is finished.
      * @param testDescriptor The test which has finished executing.
      * @param result The test result.
+     * @since 0.9
      */
-    void afterTest(TestDescriptor testDescriptor, TestResult result);
+    default void afterTest(TestDescriptor testDescriptor, TestResult result) {}
 }

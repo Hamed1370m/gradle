@@ -19,12 +19,12 @@ package org.gradle.internal.cc.impl
 import org.gradle.integtests.fixtures.cache.FileAccessTimeJournalFixture
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import spock.lang.Issue
 
 
 @Requires(
-    value = IntegTestPreconditions.NotEmbeddedExecutor,
+    value = TestExecutionPreconditions.NotEmbeddedExecutor,
     reason = "FileAccessTimeJournal is never closed in embedded mode"
 )
 class ConfigurationCacheCleanupIntegrationTest
@@ -44,9 +44,12 @@ class ConfigurationCacheCleanupIntegrationTest
             task recent
         '''
         configurationCacheRunNoDaemon 'outdated'
-        TestFile outdated = single(subDirsOf(configurationCacheDir))
+        // Each CC request requires at least 2 directories:
+        // - the cache key directory holding the list of entries per key
+        // - the actual entry directories, each entry directory with its own fingerprint
+        def outdated = subDirsOf(configurationCacheDir)
         configurationCacheRunNoDaemon 'recent'
-        TestFile recent = single(subDirsOf(configurationCacheDir) - outdated)
+        def recent = subDirsOf(configurationCacheDir) - outdated
 
         and: 'they are 8 days old'
         subDirsOf(configurationCacheDir).each { TestFile dir ->
@@ -62,12 +65,12 @@ class ConfigurationCacheCleanupIntegrationTest
         expect: 'Gradle to preserve the recent entry and to delete the outdated one'
         def cc = newConfigurationCacheFixture()
         configurationCacheRunNoDaemon 'recent'
-        cc.reused
-        !outdated.exists()
+        cc.assertStateLoaded()
+        !outdated.any { it.exists() }
 
         and:
         def remaining = configurationCacheDir.list() as Set
-        def expected = [recent.name, 'gc.properties', 'configuration-cache.lock'] as Set
+        def expected = (recent*.name + ['gc.properties', 'configuration-cache.lock']) as Set
         expected == remaining
     }
 
@@ -79,18 +82,7 @@ class ConfigurationCacheCleanupIntegrationTest
         return configurationCacheDir.file('gc.properties')
     }
 
-    private TestFile getConfigurationCacheDir() {
-        return file('.gradle/configuration-cache')
-    }
-
     private static List<TestFile> subDirsOf(TestFile dir) {
         dir.listFiles().findAll { it.directory }
-    }
-
-    private static <T> T single(List<T> list) {
-        list.with {
-            assert size() == 1
-            get(0)
-        }
     }
 }

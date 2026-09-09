@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@ package org.gradle.api.tasks;
 
 import org.gradle.api.Task;
 import org.gradle.internal.accesscontrol.ForExternalUse;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Set;
 
 /**
@@ -27,6 +27,7 @@ import java.util.Set;
  *
  * <p>You can add a <code>TaskDependency</code> to a task by calling the task's {@link Task#dependsOn(Object...)}
  * method.</p>
+ * @since 0.7
  */
 public interface TaskDependency {
     /**
@@ -36,6 +37,7 @@ public interface TaskDependency {
      *
      * @param task The task to determine the dependencies for.
      * @return The tasks which the given task depends on. Returns an empty set if the task has no dependencies.
+     * @since 0.7
      */
     @ForExternalUse // see TaskDependencyInternal.getDependencies
     Set<? extends Task> getDependencies(@Nullable Task task);

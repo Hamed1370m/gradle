@@ -24,6 +24,7 @@ import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.BuildOperationsFixture
 import org.gradle.integtests.fixtures.DirectoryBuildCacheFixture
 import org.gradle.integtests.fixtures.ScopeIdsFixture
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.internal.hash.HashCode
 import org.gradle.internal.operations.trace.BuildOperationRecord
 import org.gradle.operations.dependencies.transforms.ExecuteTransformActionBuildOperationType
@@ -34,11 +35,12 @@ import org.gradle.operations.execution.ExecuteWorkBuildOperationType
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.junit.Rule
 
 import static org.gradle.internal.service.scopes.DefaultGradleUserHomeScopeServiceRegistry.REUSE_USER_HOME_SERVICES
 
+@ToBeFixedForIsolatedProjects(because = "ArtifactTransformTestFixture is not IP compatible")
 class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIntegrationSpec implements ArtifactTransformTestFixture, DirectoryBuildCacheFixture {
 
     def buildOperations = new BuildOperationsFixture(executer, testDirectoryProvider)
@@ -76,7 +78,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
         buildFile << """
             allprojects {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
 
                 dependencies {
@@ -171,15 +173,15 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
             inputValueHashes.keySet() ==~ ['inputArtifactPath', 'inputPropertiesHash']
             outputPropertyNames == ['outputDirectory', 'resultsFile']
             inputFileProperties.keySet() ==~ ['inputArtifact', 'inputArtifactDependencies']
-            with(inputFileProperties.inputArtifactDependencies) {
+            this.with(inputFileProperties.inputArtifactDependencies) {
                 hash != null
                 attributes == ['DIRECTORY_SENSITIVITY_DEFAULT', 'FINGERPRINTING_STRATEGY_ABSOLUTE_PATH', 'LINE_ENDING_SENSITIVITY_DEFAULT']
                 roots == []
             }
-            with(inputFileProperties.inputArtifact) {
+            this.with(inputFileProperties.inputArtifact) {
                 hash != null
                 attributes == ['DIRECTORY_SENSITIVITY_DEFAULT', 'FINGERPRINTING_STRATEGY_ABSOLUTE_PATH', 'LINE_ENDING_SENSITIVITY_DEFAULT']
-                with(Iterables.getOnlyElement(roots)) {
+                this.with(Iterables.getOnlyElement(roots)) {
                     hash != null
                     path.endsWith('producer.jar')
                 }
@@ -193,15 +195,15 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
             inputValueHashes.keySet() ==~ ['inputArtifactPath', 'inputPropertiesHash']
             outputPropertyNames == ['outputDirectory', 'resultsFile']
             inputFileProperties.keySet() ==~ ['inputArtifact', 'inputArtifactDependencies']
-            with(inputFileProperties.inputArtifactDependencies) {
+            this.with(inputFileProperties.inputArtifactDependencies) {
                 hash != null
                 attributes == ['DIRECTORY_SENSITIVITY_DEFAULT', 'FINGERPRINTING_STRATEGY_ABSOLUTE_PATH', 'LINE_ENDING_SENSITIVITY_DEFAULT']
                 roots == []
             }
-            with(inputFileProperties.inputArtifact) {
+            this.with(inputFileProperties.inputArtifact) {
                 hash != null
                 attributes == ['DIRECTORY_SENSITIVITY_DEFAULT', 'FINGERPRINTING_STRATEGY_ABSOLUTE_PATH', 'LINE_ENDING_SENSITIVITY_DEFAULT']
-                with(Iterables.getOnlyElement(roots)) {
+                this.with(Iterables.getOnlyElement(roots)) {
                     hash != null
                     path.endsWith('test-4.2.jar')
                 }
@@ -222,7 +224,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
             skipMessage == 'UP-TO-DATE'
             originExecutionTime > 0
             originBuildInvocationId != null
-            HashCode.fromBytes(originBuildCacheKeyBytes as byte[]).toString() == projectTransformBuildCacheKey
+            owner.readHashCode(originBuildCacheKeyBytes) == projectTransformBuildCacheKey
             executionReasons.empty
             cachingDisabledReasonMessage == 'Cacheability was not determined'
             cachingDisabledReasonCategory == 'UNKNOWN'
@@ -260,18 +262,18 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
             inputValueHashes.keySet() ==~ ['inputArtifactPath', 'inputPropertiesHash']
             outputPropertyNames == ['outputDirectory', 'resultsFile']
             inputFileProperties.keySet() ==~ ['inputArtifact', 'inputArtifactDependencies']
-            with(inputFileProperties.inputArtifactDependencies) {
+            this.with(inputFileProperties.inputArtifactDependencies) {
                 hash != null
                 attributes == ['DIRECTORY_SENSITIVITY_DEFAULT', 'FINGERPRINTING_STRATEGY_CLASSPATH', 'LINE_ENDING_SENSITIVITY_DEFAULT']
-                with(Iterables.getOnlyElement(roots)) {
+                this.with(Iterables.getOnlyElement(roots)) {
                     hash != null
                     path.endsWith('test-4.2.jar')
                 }
             }
-            with(inputFileProperties.inputArtifact) {
+            this.with(inputFileProperties.inputArtifact) {
                 hash != null
                 attributes == ['DIRECTORY_SENSITIVITY_IGNORE_DIRECTORIES', 'FINGERPRINTING_STRATEGY_RELATIVE_PATH', 'LINE_ENDING_SENSITIVITY_NORMALIZE_LINE_ENDINGS']
-                with(Iterables.getOnlyElement(roots)) {
+                this.with(Iterables.getOnlyElement(roots)) {
                     hash != null
                     path.endsWith('producer.jar')
                 }
@@ -298,7 +300,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
         "non-incremental" | false        | "UP-TO-DATE"        | "Cacheability was not determined"    | "UNKNOWN"
     }
 
-    @Requires(value = [IntegTestPreconditions.NotEmbeddedExecutor, IntegTestPreconditions.NotNoDaemonExecutor], reason = "Identity cache is off for embedded executor due to file locking issues")
+    @Requires(value = [TestExecutionPreconditions.NotEmbeddedExecutor, TestExecutionPreconditions.NotNoDaemonExecutor], reason = "Identity cache is off for embedded executor due to file locking issues")
     @LeaksFileHandles
     def "emits origin metadata for skipped transform executions"() {
         settingsFile << """
@@ -357,21 +359,21 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
         skippedTransformExecutions.size() == 2
         skippedTransformExecutions.findAll { it.identity == projectTransformIdentification.identity }.each {
             with(it) {
-                HashCode.fromBytes(originBuildCacheKeyBytes as byte[]).toString() == projectTransformBuildCacheKey
+                owner.readHashCode(originBuildCacheKeyBytes) == projectTransformBuildCacheKey
                 originBuildInvocationId == firstBuildInvocationId.asString()
                 originExecutionTime > 0
             }
         }
         skippedTransformExecutions.findAll { it.identity == externalTransformIdentification.identity }.each {
             with(it) {
-                HashCode.fromBytes(originBuildCacheKeyBytes as byte[]).toString() == externalTransformBuildCacheKey
+                owner.readHashCode(originBuildCacheKeyBytes) == externalTransformBuildCacheKey
                 originBuildInvocationId == firstBuildInvocationId.asString()
                 originExecutionTime > 0
             }
         }
     }
 
-    @Requires(value = [IntegTestPreconditions.NotEmbeddedExecutor, IntegTestPreconditions.NotNoDaemonExecutor], reason = "Identity cache is off for embedded executor due to file locking issues")
+    @Requires(value = [TestExecutionPreconditions.NotEmbeddedExecutor, TestExecutionPreconditions.NotNoDaemonExecutor], reason = "Identity cache is off for embedded executor due to file locking issues")
     @LeaksFileHandles
     def "emits origin metadata when executed in first identity cached build"() {
         settingsFile << """
@@ -424,14 +426,14 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
         skippedTransformExecutions.size() == 2
         skippedTransformExecutions.findAll { it.identity == projectTransformIdentification.identity }.each {
             with(it) {
-                HashCode.fromBytes(originBuildCacheKeyBytes as byte[]).toString() == projectTransformBuildCacheKey
+                owner.readHashCode(originBuildCacheKeyBytes) == projectTransformBuildCacheKey
                 originBuildInvocationId == firstBuildInvocationId.asString()
                 originExecutionTime > 0
             }
         }
         skippedTransformExecutions.findAll { it.identity == externalTransformIdentification.identity }.each {
             with(it) {
-                HashCode.fromBytes(originBuildCacheKeyBytes as byte[]).toString() == externalTransformBuildCacheKey
+                owner.readHashCode(originBuildCacheKeyBytes) == externalTransformBuildCacheKey
                 originBuildInvocationId == firstBuildInvocationId.asString()
                 originExecutionTime > 0
             }
@@ -470,7 +472,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
                         }
                     }
                 }
-                resolve.dependsOn(':consumer1:resolve')
+                tasks.resolve.dependsOn(':consumer1:resolve')
             }
         """
 
@@ -497,7 +499,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
         skippedTransformExecutions.size() == 4
         skippedTransformExecutions.findAll { it.identity == externalTransformIdentification.identity }.each {
             with(it) {
-                HashCode.fromBytes(originBuildCacheKeyBytes as byte[]).toString() == externalTransformBuildCacheKey
+                owner.readHashCode(originBuildCacheKeyBytes) == externalTransformBuildCacheKey
                 originBuildInvocationId == buildInvocationId.asString()
                 originExecutionTime > 0
             }
@@ -535,7 +537,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
                         }
                     }
                 }
-                resolve.dependsOn(':consumer1:resolve')
+                tasks.resolve.dependsOn(':consumer1:resolve')
             }
         """
 
@@ -561,7 +563,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
         skippedTransformExecutions.size() == 2
         skippedTransformExecutions.each {
             with(it) {
-                HashCode.fromBytes(originBuildCacheKeyBytes as byte[]).toString() == projectTransformBuildCacheKey
+                owner.readHashCode(originBuildCacheKeyBytes) == projectTransformBuildCacheKey
                 originBuildInvocationId == buildInvocationId.asString()
                 originExecutionTime > 0
             }
@@ -599,7 +601,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
                         }
                     }
                 }
-                resolve.dependsOn(':consumer1:resolve')
+                tasks.resolve.dependsOn(':consumer1:resolve')
             }
         """
 
@@ -629,7 +631,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
         skippedTransformExecutions.size() == 2
         skippedTransformExecutions.findAll { it.identity == projectTransformIdentification.identity }.each {
             with(it) {
-                HashCode.fromBytes(originBuildCacheKeyBytes as byte[]).toString() == projectTransformBuildCacheKey
+                owner.readHashCode(originBuildCacheKeyBytes) == projectTransformBuildCacheKey
                 originBuildInvocationId == firstBuildInvocationId.asString()
                 originExecutionTime > 0
             }
@@ -688,7 +690,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
             inputValueHashes.keySet() ==~ ['inputArtifactPath', 'inputPropertiesHash']
             outputPropertyNames == ['outputDirectory', 'resultsFile']
             inputFileProperties.keySet() ==~ ['inputArtifact', 'inputArtifactDependencies']
-            with(inputFileProperties.inputArtifact) {
+            owner.with(inputFileProperties.inputArtifact) {
                 hash != null
                 attributes == ['DIRECTORY_SENSITIVITY_DEFAULT', 'FINGERPRINTING_STRATEGY_RELATIVE_PATH', 'LINE_ENDING_SENSITIVITY_NORMALIZE_LINE_ENDINGS']
                 roots
@@ -739,7 +741,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
 
         executionIdentifications.each {
             with(it) {
-                with(componentId) {
+                owner.with(componentId) {
                     displayName == displayName
                 }
             }
@@ -786,7 +788,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
         def executionIdentifications = buildOperations.progress(IdentifyTransformExecutionProgressDetails).details
 
         executionIdentifications.each {
-            with(it) {
+            owner.with(it) {
                 artifactName == componentId.displayName
             }
         }
@@ -892,7 +894,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
 
         // Check the final component ids do not change within the chain.
         outputContains("""components = ${
-            ((['file1.jar', 'file2.jar'] + (['Local Groovy'] * 14) + ['project :producer', 'com.test:test:4.2'])).collectMany {
+            ((['file1.jar', 'file2.jar'] + (['Local Groovy'] * 11) + ["project ':producer'", 'com.test:test:4.2'])).collectMany {
                 [it] * 3 // The multiplier creates three copies of everything.
             }
         }""")
@@ -927,7 +929,7 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
     }
 
     List<BuildOperationRecord> getTransformExecutions() {
-        buildOperations.all(ExecuteWorkBuildOperationType)
+        buildOperations.typed(ExecuteWorkBuildOperationType)
     }
 
     @NamedVariant
@@ -964,5 +966,9 @@ class ArtifactTransformExecutionBuildOperationIntegrationTest extends AbstractIn
                 }
             }
         """
+    }
+
+    String readHashCode(base64HashCode) {
+        HashCode.fromBytes(Base64.getDecoder().decode(base64HashCode as String)).toString()
     }
 }

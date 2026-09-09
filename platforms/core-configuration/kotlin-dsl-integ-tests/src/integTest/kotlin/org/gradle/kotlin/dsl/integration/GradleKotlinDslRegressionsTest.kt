@@ -19,7 +19,7 @@ package org.gradle.kotlin.dsl.integration
 import org.gradle.integtests.fixtures.RepoScriptBlockUtil.mavenCentralRepository
 import org.gradle.kotlin.dsl.fixtures.AbstractKotlinIntegrationTest
 import org.gradle.test.fixtures.dsl.GradleDsl.KOTLIN
-import org.gradle.util.internal.ToBeImplemented
+import org.gradle.util.GradleVersion
 import org.junit.Test
 import spock.lang.Issue
 
@@ -56,47 +56,6 @@ class GradleKotlinDslRegressionsTest : AbstractKotlinIntegrationTest() {
         build("help")
     }
 
-    /**
-     * When this issue gets fixed in a future Kotlin version, remove -XXLanguage:+DisableCompatibilityModeForNewInference from Kotlin DSL compiler arguments.
-     */
-    @Test
-    @Issue("https://youtrack.jetbrains.com/issue/KT-44303")
-    @ToBeImplemented
-    fun `kotlin resolution and inference issue KT-44303`() {
-        withBuildScript("""
-            import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
-            plugins { `embedded-kotlin` }
-            $repositoriesBlock
-            dependencies {
-                implementation(gradleKotlinDsl())
-            }
-            tasks.withType<KotlinCompile>().configureEach {
-                // Work around JVM validation issue: https://youtrack.jetbrains.com/issue/KT-66919
-                jvmTargetValidationMode = org.jetbrains.kotlin.gradle.dsl.jvm.JvmTargetValidationMode.WARNING
-            }
-        """)
-
-        withFile("src/main/kotlin/code.kt", """
-            import org.gradle.api.*
-
-            class MyPlugin : Plugin<Project> {
-                override fun apply(project: Project): Unit = project.run {
-                    ext {
-                        set("foo", "bar")
-                    }
-                }
-            }
-        """)
-
-        val result = buildAndFail("classes")
-
-        result.assertHasFailure("Execution failed for task ':compileKotlin'.") {
-            it.assertHasCause("Compilation error. See log for more details")
-        }
-        result.assertHasErrorOutput("src/main/kotlin/code.kt:7:25 Unresolved reference 'set'.")
-    }
-
     @Test
     @Issue("https://youtrack.jetbrains.com/issue/KT-55068")
     fun `kotlin ir backend issue kt-55068`() {
@@ -116,21 +75,27 @@ class GradleKotlinDslRegressionsTest : AbstractKotlinIntegrationTest() {
 
         withKotlinBuildSrc()
         withFile("buildSrc/src/main/kotlin/my-plugin.gradle.kts", """
+            @file:Suppress("DEPRECATION")
+
             tasks.withType<DefaultTask>().configureEach {
                 val p: String by project
             }
         """)
         withBuildScript("""plugins { id("my-plugin") }""")
 
+        executer.expectDocumentedDeprecationWarning(
+            "The 'val name: Type by project' property delegate syntax has been deprecated. " +
+                "This is scheduled to be removed in Gradle 10. " +
+                "Use 'val property = project.property(name)' instead. " +
+                "Consult the upgrading guide for further information: " +
+                "https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#kotlin_dsl_delegated_properties"
+        )
+
         build("help")
     }
 
-    /**
-     * When this issue gets fixed in a future Kotlin version, remove -XXLanguage:-TypeEnhancementImprovementsInStrictMode from Kotlin DSL compiler arguments.
-     */
     @Test
     @Issue("https://youtrack.jetbrains.com/issue/KT-55542")
-    @ToBeImplemented
     fun `nullable type parameters on non-nullable member works without disabling Koltlin type enhancement improvements in strict mode`() {
         withBuildScript("""
             import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
@@ -143,7 +108,7 @@ class GradleKotlinDslRegressionsTest : AbstractKotlinIntegrationTest() {
             tasks.withType<KotlinCompile>().configureEach {
                 // Work around JVM validation issue: https://youtrack.jetbrains.com/issue/KT-66919
                 jvmTargetValidationMode = org.jetbrains.kotlin.gradle.dsl.jvm.JvmTargetValidationMode.WARNING
-                compilerOptions.freeCompilerArgs.add("-Xjsr305=strict")
+                compilerOptions.freeCompilerArgs.addAll("-Xjsr305=strict", "-Xjspecify-annotations=strict")
             }
         """)
 
@@ -157,12 +122,7 @@ class GradleKotlinDslRegressionsTest : AbstractKotlinIntegrationTest() {
             }
         """)
 
-        val result = buildAndFail("classes")
-
-        result.assertHasFailure("Execution failed for task ':compileKotlin'.") {
-            it.assertHasCause("Compilation error. See log for more details")
-        }
-        result.assertHasErrorOutput("src/main/kotlin/code.kt:6:48 Null cannot be a value of a non-null type '@Nullable() S & Any'.")
+        build("classes")
     }
 
     @Test
@@ -218,7 +178,7 @@ class GradleKotlinDslRegressionsTest : AbstractKotlinIntegrationTest() {
             apply(from = "applied.gradle.kts")
         """)
         buildAndFail("help").apply {
-            assertHasErrorOutput("Unresolved reference: sourceCompatibility")
+            assertHasErrorOutput("Unresolved reference 'sourceCompatibility'.")
         }
 
         withFile("applied.gradle.kts", """
@@ -228,7 +188,7 @@ class GradleKotlinDslRegressionsTest : AbstractKotlinIntegrationTest() {
             println(java.sourceCompatibility)
         """)
         buildAndFail("help").apply {
-            assertHasErrorOutput("Unresolved reference: sourceCompatibility")
+            assertHasErrorOutput("Unresolved reference 'sourceCompatibility'.")
         }
     }
 }

@@ -16,13 +16,12 @@
 
 package org.gradle.api.internal.project
 
-import org.gradle.api.artifacts.component.BuildIdentifier
 import org.gradle.api.internal.GradleInternal
 import org.gradle.api.internal.initialization.ClassLoaderScope
 import org.gradle.groovy.scripts.TextResourceScriptSource
-import org.gradle.initialization.DefaultProjectDescriptor
 import org.gradle.internal.build.BuildState
 import org.gradle.internal.management.DependencyResolutionManagementInternal
+import org.gradle.internal.project.ImmutableProjectDescriptor
 import org.gradle.internal.reflect.Instantiator
 import org.gradle.internal.resource.DefaultTextFileResourceLoader
 import org.gradle.internal.resource.EmptyFileTextResource
@@ -30,6 +29,7 @@ import org.gradle.internal.scripts.ProjectScopedScriptResolution
 import org.gradle.internal.service.ServiceRegistry
 import org.gradle.internal.service.scopes.ServiceRegistryFactory
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
+import org.gradle.util.Path
 import org.junit.Rule
 import spock.lang.Specification
 
@@ -37,89 +37,64 @@ class ProjectFactoryTest extends Specification {
     @Rule
     TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     def instantiator = Mock(Instantiator)
-    def projectDescriptor = Stub(DefaultProjectDescriptor)
-    def gradle = Stub(GradleInternal)
+    def buildId = Path.ROOT
+    def buildFile = tmpDir.file("build.gradle")
+    def projectDir = tmpDir.file("project")
+    def projectIdentity = ProjectIdentity.forRootProject(buildId, "name")
+    def projectDescriptor = Stub(ImmutableProjectDescriptor) {
+        getIdentity() >> projectIdentity
+        getProjectDir() >> projectDir
+        getBuildFile() >> buildFile
+    }
     def serviceRegistryFactory = Stub(ServiceRegistryFactory)
-    def projectRegistry = Mock(ProjectRegistry)
     def project = Stub(DefaultProject)
-    def buildId = Stub(BuildIdentifier)
-    def owner = Stub(BuildState)
-    def projectState = Stub(ProjectState)
+    def projectState = Stub(ProjectState) {
+        getIdentity() >> projectIdentity
+    }
     def scriptResolution = Stub(ProjectScopedScriptResolution) {
-        resolveScriptsForProject(_, _, _, _) >> { identityPath, buildPath, projectPath, action -> action.get() }
+        resolveScriptsForProject(_, _) >> { project, action -> action.get() }
     }
     def factory = new ProjectFactory(instantiator, new DefaultTextFileResourceLoader(), scriptResolution)
     def rootProjectScope = Mock(ClassLoaderScope)
     def baseScope = Mock(ClassLoaderScope)
-    def serviceRegistry = Mock(ServiceRegistry)
     def dependencyResolutionManagement = Mock(DependencyResolutionManagementInternal)
+    def serviceRegistry = Mock(ServiceRegistry) {
+        get(DependencyResolutionManagementInternal) >> dependencyResolutionManagement
+    }
+    def gradle = Stub(GradleInternal) {
+        getServices() >> serviceRegistry
+    }
+    def buildState = Stub(BuildState) {
+        getMutableModel() >> gradle
+    }
 
     def setup() {
-        owner.buildIdentifier >> buildId
+        projectDir.createDir()
     }
 
     def "creates a project with build script"() {
-        def buildFile = tmpDir.createFile("build.gradle")
-        def projectDir = tmpDir.createFile("project")
-
         given:
-        projectDescriptor.name >> "name"
-        projectDescriptor.projectDir >> projectDir
-        projectDescriptor.buildFile >> buildFile
-        gradle.projectRegistry >> projectRegistry
-        gradle.services >> serviceRegistry
-        serviceRegistry.get(DependencyResolutionManagementInternal) >> dependencyResolutionManagement
+        buildFile.createFile()
 
         when:
-        def result = factory.createProject(gradle, projectDescriptor, projectState, null, serviceRegistryFactory, rootProjectScope, baseScope)
+        def result = factory.createProject(buildState, projectDescriptor, projectState, serviceRegistryFactory, rootProjectScope, baseScope)
 
         then:
         result == project
-        1 * instantiator.newInstance(DefaultProject, "name", null, projectDir, buildFile, { it instanceof TextResourceScriptSource }, gradle, projectState, serviceRegistryFactory, rootProjectScope, baseScope) >> project
-        1 * projectRegistry.addProject(project)
+        1 * instantiator.newInstance(DefaultProject, buildFile, { it instanceof TextResourceScriptSource }, projectState, serviceRegistryFactory, rootProjectScope, baseScope) >> project
         1 * dependencyResolutionManagement.configureProject(project)
     }
 
     def "creates a project with missing build script"() {
-        def buildFile = tmpDir.file("build.gradle")
-        def projectDir = tmpDir.createFile("project")
-
         given:
-        projectDescriptor.name >> "name"
-        projectDescriptor.projectDir >> projectDir
-        projectDescriptor.buildFile >> buildFile
-        gradle.projectRegistry >> projectRegistry
-        gradle.services >> serviceRegistry
-        serviceRegistry.get(DependencyResolutionManagementInternal) >> dependencyResolutionManagement
+        assert !buildFile.exists()
+
         when:
-        def result = factory.createProject(gradle, projectDescriptor, projectState, null, serviceRegistryFactory, rootProjectScope, baseScope)
+        def result = factory.createProject(buildState, projectDescriptor, projectState, serviceRegistryFactory, rootProjectScope, baseScope)
 
         then:
         result == project
-        1 * instantiator.newInstance(DefaultProject, "name", null, projectDir, buildFile, { it.resource instanceof EmptyFileTextResource }, gradle, projectState, serviceRegistryFactory, rootProjectScope, baseScope) >> project
-        1 * projectRegistry.addProject(project)
-        1 * dependencyResolutionManagement.configureProject(project)
+        1 * instantiator.newInstance(DefaultProject, buildFile, { it.resource instanceof EmptyFileTextResource }, projectState, serviceRegistryFactory, rootProjectScope, baseScope) >> project
     }
 
-    def "creates a child project"() {
-        def parent = Mock(ProjectInternal)
-        def buildFile = tmpDir.file("build.gradle")
-        def projectDir = tmpDir.createFile("project")
-
-        given:
-        projectDescriptor.name >> "name"
-        projectDescriptor.projectDir >> projectDir
-        projectDescriptor.buildFile >> buildFile
-        gradle.projectRegistry >> projectRegistry
-        gradle.services >> serviceRegistry
-        serviceRegistry.get(DependencyResolutionManagementInternal) >> dependencyResolutionManagement
-        when:
-        def result = factory.createProject(gradle, projectDescriptor, projectState, parent, serviceRegistryFactory, rootProjectScope, baseScope)
-
-        then:
-        result == project
-        1 * instantiator.newInstance(DefaultProject, "name", parent, projectDir, buildFile, _, gradle, projectState, serviceRegistryFactory, rootProjectScope, baseScope) >> project
-        1 * projectRegistry.addProject(project)
-        1 * dependencyResolutionManagement.configureProject(project)
-    }
 }

@@ -16,18 +16,16 @@
 
 package org.gradle.language.swift
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.app.SwiftAppWithCppLibrary
 import org.gradle.test.fixtures.file.DoesNotSupportNonAsciiPaths
 import org.gradle.vcs.fixtures.GitFileRepository
-import spock.lang.Ignore
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 @DoesNotSupportNonAsciiPaths(reason = "Swift sometimes fails when executed from non-ASCII directory")
-@Ignore("Inconsistent Swift SDK and tooling discovered on our Intel Macs")
 class SwiftDependenciesCppInteroperabilityIntegrationTest extends AbstractSwiftMixedLanguageIntegrationTest {
     def app = new SwiftAppWithCppLibrary()
 
-    @ToBeFixedForConfigurationCache(because = "source dependencies")
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "can depend on both swift and cpp libraries from VCS"() {
         given:
         createDirs("app")
@@ -55,7 +53,7 @@ class SwiftDependenciesCppInteroperabilityIntegrationTest extends AbstractSwiftM
         succeeds ":app:installDebug"
 
         then:
-        result.assertTasksExecuted(":hello:compileDebugSwift", ":hello:linkDebug",
+        result.assertTasksScheduled(":hello:compileDebugSwift", ":hello:linkDebug",
             ":log:compileDebugCpp", ":log:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug")
         assertAppHasOutputFor("debug")
@@ -64,7 +62,7 @@ class SwiftDependenciesCppInteroperabilityIntegrationTest extends AbstractSwiftM
         succeeds ":app:installRelease"
 
         then:
-        result.assertTasksExecuted(":hello:compileReleaseSwift", ":hello:linkRelease", ":hello:stripSymbolsRelease",
+        result.assertTasksScheduled(":hello:compileReleaseSwift", ":hello:linkRelease", ":hello:stripSymbolsRelease",
             ":log:compileReleaseCpp", ":log:linkRelease", ":log:stripSymbolsRelease",
             ":app:compileReleaseSwift", ":app:linkRelease", ":app:stripSymbolsRelease", ":app:installRelease")
         assertAppHasOutputFor("release")

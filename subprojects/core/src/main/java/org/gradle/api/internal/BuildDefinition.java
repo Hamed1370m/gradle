@@ -21,11 +21,14 @@ import org.gradle.api.Action;
 import org.gradle.api.artifacts.DependencySubstitutions;
 import org.gradle.internal.Actions;
 import org.gradle.internal.build.PublicBuildPath;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.plugin.management.internal.PluginRequests;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 
+@ServiceScope(Scope.Build.class)
 public class BuildDefinition {
     @Nullable
     private final String name;
@@ -130,7 +133,7 @@ public class BuildDefinition {
     }
 
     private static StartParameterInternal startParameterForIncludedBuildFrom(StartParameterInternal startParameter, @Nullable File buildRootDir) {
-        StartParameterInternal includedBuildStartParam = startParameter.newBuild();
+        StartParameterInternal includedBuildStartParam = startParameter.newBuildInternal();
         includedBuildStartParam.setCurrentDir(buildRootDir);
         includedBuildStartParam.doNotSearchUpwards();
         includedBuildStartParam.setInitScripts(startParameter.getInitScripts());
@@ -142,6 +145,6 @@ public class BuildDefinition {
      * Creates a defensive copy of this build definition, to isolate this instance from mutations made to the {@link StartParameter} during execution of the build.
      */
     public BuildDefinition newInstance() {
-        return new BuildDefinition(name, buildRootDir, startParameter.newInstance(), injectedSettingsPlugins, dependencySubstitutions, fromBuild, pluginBuild);
+        return new BuildDefinition(name, buildRootDir, startParameter.newInstanceInternal(), injectedSettingsPlugins, dependencySubstitutions, fromBuild, pluginBuild);
     }
 }

@@ -24,11 +24,16 @@ import org.gradle.api.credentials.PasswordCredentials;
 import org.gradle.api.file.FileContents;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.initialization.Settings;
+import org.gradle.api.services.GradleService;
+import org.gradle.api.services.ProjectService;
+import org.gradle.api.services.SettingsService;
+import org.gradle.api.services.TaskService;
 import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.process.ExecOutput;
 import org.gradle.process.ExecSpec;
 import org.gradle.process.JavaExecSpec;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -44,17 +49,33 @@ import java.util.function.BiFunction;
  */
 @NonExtensible
 @ServiceScope(Scope.Build.class)
-public interface ProviderFactory {
+public interface ProviderFactory extends GradleService, ProjectService, SettingsService, TaskService {
 
     /**
      * Creates a {@link Provider} whose value is calculated using the given {@link Callable}.
      *
      * <p>The provider is live and will call the {@link Callable} each time its value is queried. The {@link Callable} may return {@code null}, in which case the provider is considered to have no value.
      *
+     * <h4>Configuration Cache</h4>
+     * <p>This provider is always <a href="provider/Provider.html#configuration-cache">computed and its value is cached</a> by the Configuration Cache.
+     * If this provider is created at configuration time, the {@link Callable} may call configuration-time only APIs and capture objects of arbitrary types.
+     * <p>This can be useful when you need to lazily compute some value to use at execution time based on configuration-time only data. For example, you can compute an archive name based on the name
+     * and the version of the project:
+     * <pre class='autoTested'>
+     *   tasks.register("createArchive") {
+     *       def archiveNameProvider = providers.provider { project.name + "-" + project.version + ".jar" }
+     *       doLast {
+     *           def archiveName = new File(archiveNameProvider.get())
+     *           // ... create the archive and put in its contents.
+     *       }
+     *   }
+     * </pre>
+     *
      * @param value The {@code java.util.concurrent.Callable} use to calculate the value.
      * @return The provider. Never returns null.
+     * @since 4.0
      */
-    <T> Provider<T> provider(Callable<? extends @org.jetbrains.annotations.Nullable T> value);
+    <T> Provider<T> provider(Callable<? extends @Nullable T> value);
 
     /**
      * Creates a {@link Provider} whose value is fetched from the environment variable with the given name.
@@ -134,6 +155,23 @@ public interface ProviderFactory {
 
     /**
      * Creates a {@link Provider} whose value is fetched from the Gradle property of the given name.
+     * <p>
+     * The property value is resolved from the following sources, in order of priority:
+     * <ol>
+     * <li>Command-line project properties ({@code -P} arguments)</li>
+     * <li>System properties with the {@code org.gradle.project.} prefix</li>
+     * <li>Environment variables with the {@code ORG_GRADLE_PROJECT_} prefix</li>
+     * <li>{@code gradle.properties} in the Gradle User Home directory</li>
+     * <li>{@code gradle.properties} in the build root directory</li>
+     * <li>{@code gradle.properties} in the Gradle installation directory</li>
+     * </ol>
+     * <p>
+     * Note that this method resolves properties at the <strong>build level</strong>.
+     * It does not include properties from {@code gradle.properties} files in subproject directories,
+     * nor does it include extra properties or other properties set dynamically on individual
+     * {@link org.gradle.api.Project} instances.
+     * <p>
+     * <a href="https://docs.gradle.org/current/userguide/build_environment.html#sec:project_properties">More information on project properties.</a>
      *
      * @param propertyName the name of the Gradle property
      * @return the provider for the Gradle property, never returns null
@@ -143,6 +181,23 @@ public interface ProviderFactory {
 
     /**
      * Creates a {@link Provider} whose value is fetched from the Gradle property of the given name.
+     * <p>
+     * The property value is resolved from the following sources, in order of priority:
+     * <ol>
+     * <li>Command-line project properties ({@code -P} arguments)</li>
+     * <li>System properties with the {@code org.gradle.project.} prefix</li>
+     * <li>Environment variables with the {@code ORG_GRADLE_PROJECT_} prefix</li>
+     * <li>{@code gradle.properties} in the Gradle User Home directory</li>
+     * <li>{@code gradle.properties} in the build root directory</li>
+     * <li>{@code gradle.properties} in the Gradle installation directory</li>
+     * </ol>
+     * <p>
+     * Note that this method resolves properties at the <strong>build level</strong>.
+     * It does not include properties from {@code gradle.properties} files in subproject directories,
+     * nor does it include extra properties or other properties set dynamically on individual
+     * {@link org.gradle.api.Project} instances.
+     * <p>
+     * <a href="https://docs.gradle.org/current/userguide/build_environment.html#sec:project_properties">More information on project properties.</a>
      *
      * @param propertyName the name of the Gradle property
      * @return the provider for the Gradle property, never returns null
@@ -153,22 +208,30 @@ public interface ProviderFactory {
     /**
      * Creates a {@link Provider} whose value is a name-to-value map of the Gradle properties with the names starting with the given prefix.
      * The prefix comparison is case-sensitive. The returned map is immutable.
+     * <p>
+     * Properties are resolved at the <strong>build level</strong> from the same sources as {@link #gradleProperty(String)}.
+     * <p>
+     * <a href="https://docs.gradle.org/current/userguide/build_environment.html#sec:project_properties">More information on project properties.</a>
      *
-     * @param variableNamePrefix The prefix of the Gradle property names
+     * @param propertyNamePrefix The prefix of the Gradle property names
      * @return The provider. Never returns null.
      * @since 8.0
      */
-    Provider<Map<String, String>> gradlePropertiesPrefixedBy(String variableNamePrefix);
+    Provider<Map<String, String>> gradlePropertiesPrefixedBy(String propertyNamePrefix);
 
     /**
      * Creates a {@link Provider} whose value is a name-to-value map of the Gradle properties with the names starting with the given prefix.
      * The prefix comparison is case-sensitive. The returned map is immutable.
+     * <p>
+     * Properties are resolved at the <strong>build level</strong> from the same sources as {@link #gradleProperty(String)}.
+     * <p>
+     * <a href="https://docs.gradle.org/current/userguide/build_environment.html#sec:project_properties">More information on project properties.</a>
      *
-     * @param variableNamePrefix The prefix of the Gradle property names
+     * @param propertyNamePrefix The prefix of the Gradle property names
      * @return The provider. Never returns null.
      * @since 8.0
      */
-    Provider<Map<String, String>> gradlePropertiesPrefixedBy(Provider<String> variableNamePrefix);
+    Provider<Map<String, String>> gradlePropertiesPrefixedBy(Provider<String> propertyNamePrefix);
 
     /**
      * Allows lazy access to the contents of the given file.

@@ -1,5 +1,6 @@
 plugins {
     id("gradlebuild.root-build")
+    id("gradlebuild.root-target-runtimes")
 
     id("gradlebuild.teamcity-import-test-data")  // CI: Import Test tasks' JUnit XML if they're UP-TO-DATE or FROM-CACHE
     id("gradlebuild.lifecycle")                  // CI: Add lifecycle tasks to for the CI pipeline (currently needs to be applied early as it might modify global properties)
@@ -12,15 +13,8 @@ plugins {
 
 description = "Adaptable, fast automation for all"
 
-dependencyAnalysis {
-    issues {
-        all {
-            onUnusedAnnotationProcessors {
-                // Ignore check for internal-instrumentation-processor, since we apply
-                // it to all distribution.api-java projects but projects might not have any upgrade
-                exclude(":internal-instrumentation-processor")
-            }
-            ignoreSourceSet("archTest", "crossVersionTest", "docsTest", "integTest", "jmh", "peformanceTest", "smokeTest", "testInterceptors", "testFixtures", "smokeIdeTest")
-        }
-    }
+dependencies {
+    runtimeAware(projects.distributionsFull)
+    runtimeAware(projects.instrumentationAgent)
+    runtimeAware(projects.kotlinDslPlugins)
 }

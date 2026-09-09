@@ -16,10 +16,11 @@
 
 package org.gradle.internal.declarativedsl.settings
 
-
+import org.gradle.declarative.dsl.model.annotations.VisibleInDefinition
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 
-import static org.hamcrest.CoreMatchers.*
+import static org.hamcrest.CoreMatchers.allOf
+import static org.hamcrest.CoreMatchers.containsString
 
 class DeclarativeDslProjectSettingsIntegrationSpec extends AbstractIntegrationSpec {
 
@@ -156,14 +157,11 @@ class DeclarativeDslProjectSettingsIntegrationSpec extends AbstractIntegrationSp
         file("included-settings-plugin/src/main/java/com/example/restricted/Extension.java") << """
             package com.example.restricted;
 
-            import org.gradle.declarative.dsl.model.annotations.Restricted;
             import org.gradle.api.provider.Property;
+            import ${VisibleInDefinition.name};
 
-            import javax.inject.Inject;
-
-            @Restricted
+            @${VisibleInDefinition.simpleName}
             public abstract class Extension {
-                @Restricted
                 public abstract Property<String> getId();
             }
         """
@@ -216,8 +214,8 @@ class DeclarativeDslProjectSettingsIntegrationSpec extends AbstractIntegrationSp
         def failure = fails(":projects")
 
         then:
-        failure.assertHasErrorOutput('2:1: Value reassigned in (this:(top-level-object)).rootProject.name := "bar"')
-        failure.assertHasErrorOutput('3:1: Value reassigned in (this:(top-level-object)).rootProject.name := "baz"')
+        failure.assertHasErrorOutput('2:1: reassigned value in \'rootProject.name = "bar"\'')
+        failure.assertHasErrorOutput('3:1: reassigned value in \'rootProject.name = "baz"\'')
     }
 
     def "resolution failures are reported nicely"() {

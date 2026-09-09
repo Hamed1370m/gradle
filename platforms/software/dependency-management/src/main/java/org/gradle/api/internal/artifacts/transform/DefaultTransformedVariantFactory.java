@@ -39,7 +39,11 @@ public class DefaultTransformedVariantFactory implements TransformedVariantFacto
     private final TransformStepNodeFactory transformStepNodeFactory;
     private final ConcurrentMap<VariantKey, ResolvedArtifactSet> variants = new ConcurrentHashMap<>();
 
-    public DefaultTransformedVariantFactory(BuildOperationRunner buildOperationRunner, CalculatedValueContainerFactory calculatedValueContainerFactory, TransformStepNodeFactory transformStepNodeFactory) {
+    public DefaultTransformedVariantFactory(
+        BuildOperationRunner buildOperationRunner,
+        CalculatedValueContainerFactory calculatedValueContainerFactory,
+        TransformStepNodeFactory transformStepNodeFactory
+    ) {
         this.buildOperationRunner = buildOperationRunner;
         this.calculatedValueContainerFactory = calculatedValueContainerFactory;
         this.transformStepNodeFactory = transformStepNodeFactory;
@@ -101,6 +105,7 @@ public class DefaultTransformedVariantFactory implements TransformedVariantFacto
     ) {
         return new TransformedExternalArtifactSet(
             componentIdentifier,
+            sourceVariant.getSourceVariantId(),
             sourceVariant.getArtifacts(),
             variantDefinition.getTargetAttributes(),
             sourceVariant.getCapabilities(),
@@ -128,7 +133,7 @@ public class DefaultTransformedVariantFactory implements TransformedVariantFacto
         }
         ComponentVariantIdentifier targetComponentVariant = new ComponentVariantIdentifier(componentIdentifier, variantDefinition.getTargetAttributes(), sourceVariant.getCapabilities());
         List<TransformStepNode> transformStepNodes = createTransformStepNodes(sourceArtifacts, sourceAttributes, targetComponentVariant, variantDefinition, dependenciesResolver);
-        return new TransformedProjectArtifactSet(targetComponentVariant, transformStepNodes);
+        return new TransformedProjectArtifactSet(sourceVariant.getSourceVariantId(), targetComponentVariant, transformStepNodes);
     }
 
     private List<TransformStepNode> createTransformStepNodes(

@@ -16,11 +16,13 @@
 
 package org.gradle.tooling.events.problems.internal;
 
-import org.gradle.api.NonNullApi;
 import org.gradle.tooling.events.problems.ProblemGroup;
 import org.gradle.tooling.events.problems.ProblemId;
+import org.jspecify.annotations.NullMarked;
 
-@NonNullApi
+import java.util.Objects;
+
+@NullMarked
 public class DefaultProblemId implements ProblemId {
 
     private final String name;
@@ -46,5 +48,22 @@ public class DefaultProblemId implements ProblemId {
     @Override
     public ProblemGroup getGroup() {
         return group;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof DefaultProblemId)) {
+            return false;
+        }
+        DefaultProblemId that = (DefaultProblemId) o;
+        return Objects.equals(name, that.name) && Objects.equals(displayName, that.displayName) && Objects.equals(group, that.group);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(name, displayName, group);
     }
 }

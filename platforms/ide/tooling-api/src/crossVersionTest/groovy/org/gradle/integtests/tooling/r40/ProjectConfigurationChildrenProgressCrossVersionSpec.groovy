@@ -18,7 +18,6 @@ package org.gradle.integtests.tooling.r40
 
 import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
 import org.gradle.integtests.tooling.fixture.ProgressEvents
-import org.gradle.integtests.tooling.fixture.TargetGradleVersion
 import org.gradle.integtests.tooling.fixture.TextUtil
 import org.gradle.test.fixtures.file.DoesNotSupportNonAsciiPaths
 import org.gradle.test.fixtures.maven.MavenFileRepository
@@ -31,7 +30,6 @@ import spock.lang.Timeout
 import java.util.concurrent.TimeUnit
 
 @IntegrationTestTimeout(300)
-@TargetGradleVersion('>=4.0')
 @DoesNotSupportNonAsciiPaths(reason = "Gradle versions prior to 8.3 have issues with non-ascii paths and worker daemons – see https://github.com/gradle/gradle/issues/13843")
 class ProjectConfigurationChildrenProgressCrossVersionSpec extends AbstractProgressCrossVersionSpec {
 
@@ -239,14 +237,15 @@ class ProjectConfigurationChildrenProgressCrossVersionSpec extends AbstractProgr
 
         settingsFile << """
             rootProject.name = 'root'
-            include 'a'
         """.stripIndent()
+
+        includeProjects("a")
         buildFile << """
             allprojects {
                 apply plugin:'java'
             }
             repositories {
-               maven { url '${mavenHttpRepo.uri}' }
+               maven { url = '${mavenHttpRepo.uri}' }
             }
 
             dependencies {
@@ -306,8 +305,9 @@ class ProjectConfigurationChildrenProgressCrossVersionSpec extends AbstractProgr
         given:
         settingsFile << """
             rootProject.name = 'multi'
-            include 'a', 'b'
         """
+        includeProjects("a", "b")
+
         buildFile << """
             allprojects { apply plugin: 'java' }
             dependencies {
@@ -377,7 +377,7 @@ class ProjectConfigurationChildrenProgressCrossVersionSpec extends AbstractProgr
         events.operation(applyBuildScriptRootProject('root')).with { applyRoot ->
             applyRoot.child(applyBuildScriptPluginRootProject(scriptPluginGroovy1, 'root')).with { applyGroovy1 ->
                 applyGroovy1.child(applyBuildScriptPluginRootProject(scriptPluginKotlin, 'root')).with { applyKotlin ->
-                    applyKotlin.child(applyBuildScriptPluginRootProject(scriptPluginGroovy2, 'root'))
+                    applyKotlin.descendant(applyBuildScriptPluginRootProject(scriptPluginGroovy2, 'root'))
                 }
             }
         }

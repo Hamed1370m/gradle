@@ -20,13 +20,15 @@ import org.gradle.api.Action;
 import org.gradle.api.Named;
 import org.gradle.api.NamedDomainObjectProvider;
 import org.gradle.api.Transformer;
+import org.gradle.api.internal.lambdas.SerializableLambdas.SerializableSupplier;
 import org.gradle.api.provider.Provider;
 import org.gradle.internal.Cast;
 import org.gradle.internal.DisplayName;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.Serializable;
 import java.util.concurrent.Callable;
+import java.util.function.Supplier;
 
 public class Providers {
     private static final NoValueProvider<Object> NULL_PROVIDER = new NoValueProvider<>(ValueSupplier.Value.MISSING);
@@ -91,6 +93,93 @@ public class Providers {
 
     public static <T> ProviderInternal<T> changing(SerializableCallable<T> value) {
         return new ChangingProvider<>(value);
+    }
+
+    /**
+     * Creates a provider that caches the once computed value of the given provider.
+     * The returned provider is thread-safe but may trigger computation of the inner provider multiple times if accessed under contention.
+     * <p>
+     * The returned provider has the same dependencies as the given provider, but only until computed.
+     *
+     * @param provider the provider of value to cache
+     * @return the caching provider
+     * @param <T> the type of the value
+     */
+    public static <T> ProviderInternal<T> memoizing(ProviderInternal<T> provider) {
+        return memoizing(provider, null);
+    }
+
+    /**
+     * Creates a provider that caches the once computed value of the given provider.
+     * The returned provider is thread-safe but may trigger computation of the inner provider multiple times if accessed under contention.
+     * <p>
+     * The returned provider has the same dependencies as the given provider, but only until computed.
+     *
+     * @param provider the provider of value to cache
+     * @param displayName the optional supplier of display name for the returned provider
+     * @return the caching provider
+     * @param <T> the type of the value
+     */
+    public static <T> ProviderInternal<T> memoizing(ProviderInternal<T> provider, @Nullable SerializableSupplier<DisplayName> displayName) {
+        return new MemoizingProvider<>(provider, displayName);
+    }
+
+    private static class MemoizingProvider<T> extends AbstractMinimalProvider<T> {
+        private final ProviderInternal<T> provider;
+        // We may compute the value multiple times under contention.
+        @Nullable
+        private volatile Value<? extends T> value;
+        @Nullable
+        private final Supplier<DisplayName> displayName;
+
+        public MemoizingProvider(ProviderInternal<T> provider, @Nullable SerializableSupplier<DisplayName> displayName) {
+            this.provider = provider;
+            this.displayName = displayName;
+        }
+
+        @Override
+        protected @Nullable DisplayName getDeclaredDisplayName() {
+            return displayName != null ? displayName.get() : null;
+        }
+
+        @Override
+        public ExecutionTimeValue<? extends T> calculateExecutionTimeValue() {
+            Value<? extends T> fixedValue = value;
+            if (fixedValue != null) {
+                return ExecutionTimeValue.value(fixedValue);
+            }
+            ExecutionTimeValue<? extends T> executionTimeValue = provider.calculateExecutionTimeValue();
+            if (executionTimeValue.isMissing()) {
+                return executionTimeValue;
+            }
+            if (executionTimeValue.hasFixedValue()) {
+                value = fixedValue = executionTimeValue.toValue();
+                return ExecutionTimeValue.value(fixedValue);
+            }
+            return ExecutionTimeValue.changingValue(this);
+        }
+
+        @Override
+        public ValueProducer getProducer() {
+            if (value != null) {
+                return ValueProducer.noProducer();
+            }
+            return provider.getProducer();
+        }
+
+        @Override
+        protected Value<? extends T> calculateOwnValue(ValueConsumer consumer) {
+            Value<? extends T> result = value;
+            if (result == null) {
+                value = result = provider.calculateValue(consumer);
+            }
+            return result;
+        }
+
+        @Override
+        public @Nullable Class<T> getType() {
+            return provider.getType();
+        }
     }
 
     public static class FixedValueProvider<T> extends AbstractProviderWithValue<T> {

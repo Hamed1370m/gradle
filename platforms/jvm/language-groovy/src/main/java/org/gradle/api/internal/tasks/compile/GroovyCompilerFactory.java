@@ -16,18 +16,18 @@
 
 package org.gradle.api.internal.tasks.compile;
 
-import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.internal.ClassPathRegistry;
 import org.gradle.api.internal.tasks.compile.daemon.ClassloaderIsolatedCompilerWorkerExecutor;
 import org.gradle.api.internal.tasks.compile.daemon.CompilerWorkerExecutor;
 import org.gradle.api.internal.tasks.compile.daemon.DaemonGroovyCompiler;
 import org.gradle.api.internal.tasks.compile.daemon.ProcessIsolatedCompilerWorkerExecutor;
 import org.gradle.api.internal.tasks.compile.processing.AnnotationProcessorDetector;
-import org.gradle.api.problems.internal.InternalProblems;
-import org.gradle.api.tasks.WorkResult;
+import org.gradle.api.problems.internal.ProblemsInternal;
 import org.gradle.initialization.ClassLoaderRegistry;
 import org.gradle.initialization.layout.ProjectCacheDir;
 import org.gradle.internal.jvm.inspection.JvmVersionDetector;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.language.base.internal.compile.CompilerFactory;
 import org.gradle.process.internal.JavaForkOptionsFactory;
@@ -36,10 +36,7 @@ import org.gradle.workers.internal.ActionExecutionSpecFactory;
 import org.gradle.workers.internal.IsolatedClassloaderWorkerFactory;
 import org.gradle.workers.internal.WorkerDaemonFactory;
 
-import javax.inject.Inject;
-import java.io.File;
-import java.util.List;
-
+@ServiceScope(Scope.Project.class)
 public class GroovyCompilerFactory implements CompilerFactory<GroovyJavaJointCompileSpec> {
     private final WorkerDaemonFactory workerDaemonFactory;
     private final IsolatedClassloaderWorkerFactory inProcessWorkerFactory;
@@ -51,9 +48,21 @@ public class GroovyCompilerFactory implements CompilerFactory<GroovyJavaJointCom
     private final ClassLoaderRegistry classLoaderRegistry;
     private final ActionExecutionSpecFactory actionExecutionSpecFactory;
     private final ProjectCacheDir projectCacheDir;
-    private final InternalProblems problems;
+    private final ProblemsInternal problems;
 
-    public GroovyCompilerFactory(WorkerDaemonFactory workerDaemonFactory, IsolatedClassloaderWorkerFactory inProcessWorkerFactory, JavaForkOptionsFactory forkOptionsFactory, AnnotationProcessorDetector processorDetector, JvmVersionDetector jvmVersionDetector, WorkerDirectoryProvider workerDirectoryProvider, ClassPathRegistry classPathRegistry, ClassLoaderRegistry classLoaderRegistry, ActionExecutionSpecFactory actionExecutionSpecFactory, ProjectCacheDir projectCacheDir, InternalProblems problems) {
+    public GroovyCompilerFactory(
+        WorkerDaemonFactory workerDaemonFactory,
+        IsolatedClassloaderWorkerFactory inProcessWorkerFactory,
+        JavaForkOptionsFactory forkOptionsFactory,
+        AnnotationProcessorDetector processorDetector,
+        JvmVersionDetector jvmVersionDetector,
+        WorkerDirectoryProvider workerDirectoryProvider,
+        ClassPathRegistry classPathRegistry,
+        ClassLoaderRegistry classLoaderRegistry,
+        ActionExecutionSpecFactory actionExecutionSpecFactory,
+        ProjectCacheDir projectCacheDir,
+        ProblemsInternal problems
+    ) {
         this.workerDaemonFactory = workerDaemonFactory;
         this.inProcessWorkerFactory = inProcessWorkerFactory;
         this.forkOptionsFactory = forkOptionsFactory;
@@ -70,33 +79,15 @@ public class GroovyCompilerFactory implements CompilerFactory<GroovyJavaJointCom
     @Override
     public Compiler<GroovyJavaJointCompileSpec> newCompiler(GroovyJavaJointCompileSpec spec) {
         MinimalGroovyCompileOptions groovyOptions = spec.getGroovyCompileOptions();
-        CompilerWorkerExecutor compilerWorkerExecutor =
-            groovyOptions.isFork() ?
-                new ProcessIsolatedCompilerWorkerExecutor(workerDaemonFactory, actionExecutionSpecFactory, projectCacheDir) :
-                new ClassloaderIsolatedCompilerWorkerExecutor(inProcessWorkerFactory, actionExecutionSpecFactory, projectCacheDir);
-
-        Compiler<GroovyJavaJointCompileSpec> groovyCompiler = new DaemonGroovyCompiler(workerDirectoryProvider.getWorkingDirectory(), DaemonSideCompiler.class, classPathRegistry, compilerWorkerExecutor, classLoaderRegistry, forkOptionsFactory, jvmVersionDetector, problems.getInternalReporter());
+        CompilerWorkerExecutor compilerWorkerExecutor = newExecutor(groovyOptions);
+        Compiler<GroovyJavaJointCompileSpec> groovyCompiler = new DaemonGroovyCompiler(workerDirectoryProvider.getWorkingDirectory(), classPathRegistry, compilerWorkerExecutor, classLoaderRegistry, forkOptionsFactory, jvmVersionDetector, problems.getInternalReporter());
         return new AnnotationProcessorDiscoveringCompiler<>(new NormalizingGroovyCompiler(groovyCompiler), processorDetector);
     }
 
-    public static class DaemonSideCompiler implements Compiler<GroovyJavaJointCompileSpec> {
-        private final ProjectLayout projectLayout;
-        private final List<File> javaCompilerPlugins;
-        private final InternalProblems problemsService;
-
-        @Inject
-        public DaemonSideCompiler(ProjectLayout projectLayout, List<File> javaCompilerPlugins, InternalProblems problemsService) {
-            this.projectLayout = projectLayout;
-            this.javaCompilerPlugins = javaCompilerPlugins;
-            this.problemsService = problemsService;
-        }
-
-        @Override
-        public WorkResult execute(GroovyJavaJointCompileSpec spec) {
-            Compiler<JavaCompileSpec> javaCompiler = new JdkJavaCompiler(new JavaHomeBasedJavaCompilerFactory(javaCompilerPlugins), problemsService);
-            Compiler<GroovyJavaJointCompileSpec> groovyCompiler = new ApiGroovyCompiler(javaCompiler, projectLayout);
-            return groovyCompiler.execute(spec);
-        }
+    private CompilerWorkerExecutor newExecutor(MinimalGroovyCompileOptions groovyOptions) {
+        return groovyOptions.isFork() ?
+            new ProcessIsolatedCompilerWorkerExecutor(workerDaemonFactory, actionExecutionSpecFactory, projectCacheDir) :
+            new ClassloaderIsolatedCompilerWorkerExecutor(inProcessWorkerFactory, actionExecutionSpecFactory, projectCacheDir);
     }
 
 }

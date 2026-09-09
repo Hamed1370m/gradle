@@ -17,17 +17,18 @@
 package org.gradle.internal.declarativedsl.ndoc
 
 import org.gradle.api.NamedDomainObjectContainer
-import org.gradle.api.tasks.Internal
 import org.gradle.declarative.dsl.schema.ConfigureAccessor
+import org.gradle.declarative.dsl.schema.CustomAccessorIdentifier.ContainerAccessorIdentifier
 import org.gradle.declarative.dsl.schema.DataClass
 import org.gradle.declarative.dsl.schema.DataMemberFunction
 import org.gradle.declarative.dsl.schema.DataParameter
 import org.gradle.declarative.dsl.schema.DataTypeRef
 import org.gradle.declarative.dsl.schema.SchemaFunction
 import org.gradle.declarative.dsl.schema.SchemaMemberFunction
+import org.gradle.internal.declarativedsl.InstanceAndPublicType
 import org.gradle.internal.declarativedsl.analysis.ConfigureAccessorInternal
 import org.gradle.internal.declarativedsl.analysis.DataTypeRefInternal
-import org.gradle.internal.declarativedsl.analysis.DeclarativeDslInterpretationException
+import org.gradle.internal.declarativedsl.analysis.DefaultContainerAccessorIdentifier
 import org.gradle.internal.declarativedsl.analysis.DefaultDataClass
 import org.gradle.internal.declarativedsl.analysis.DefaultDataMemberFunction
 import org.gradle.internal.declarativedsl.analysis.DefaultDataParameter
@@ -36,6 +37,7 @@ import org.gradle.internal.declarativedsl.analysis.FunctionSemanticsInternal
 import org.gradle.internal.declarativedsl.analysis.FunctionSemanticsInternal.DefaultAccessAndConfigure.DefaultReturnType.DefaultUnit
 import org.gradle.internal.declarativedsl.analysis.FunctionSemanticsInternal.DefaultConfigureBlockRequirement.DefaultRequired
 import org.gradle.internal.declarativedsl.analysis.ParameterSemanticsInternal
+import org.gradle.internal.declarativedsl.analysis.SchemaItemMetadataInternal.SchemaMemberOriginInternal.DefaultContainerElementFactory
 import org.gradle.internal.declarativedsl.analysis.ref
 import org.gradle.internal.declarativedsl.evaluationSchema.AnalysisSchemaComponent
 import org.gradle.internal.declarativedsl.evaluationSchema.EvaluationSchemaBuilder
@@ -45,25 +47,41 @@ import org.gradle.internal.declarativedsl.language.DataTypeInternal
 import org.gradle.internal.declarativedsl.mappingToJvm.DeclarativeRuntimeFunction
 import org.gradle.internal.declarativedsl.mappingToJvm.RuntimeCustomAccessors
 import org.gradle.internal.declarativedsl.mappingToJvm.RuntimeFunctionResolver
+import org.gradle.internal.declarativedsl.ndoc.DclContainerMemberExtractionUtils.elementFactoryFunctionNameFromElementType
+import org.gradle.internal.declarativedsl.ndoc.DclContainerMemberExtractionUtils.elementTypeFromNdocContainerType
 import org.gradle.internal.declarativedsl.schemaBuilder.DataSchemaBuilder
+import org.gradle.internal.declarativedsl.schemaBuilder.ExtractionResult
+import org.gradle.internal.declarativedsl.schemaBuilder.FunctionExtractionMetadata
+import org.gradle.internal.declarativedsl.schemaBuilder.FunctionExtractionResult
 import org.gradle.internal.declarativedsl.schemaBuilder.FunctionExtractor
+import org.gradle.internal.declarativedsl.schemaBuilder.LossySchemaBuildingOperation
+import org.gradle.internal.declarativedsl.schemaBuilder.MemberKind
+import org.gradle.internal.declarativedsl.schemaBuilder.SchemaBuildingHost
+import org.gradle.internal.declarativedsl.schemaBuilder.SchemaBuildingTags
+import org.gradle.internal.declarativedsl.schemaBuilder.SchemaResult
+import org.gradle.internal.declarativedsl.schemaBuilder.SupportedCallable
+import org.gradle.internal.declarativedsl.schemaBuilder.SupportedTypeProjection
 import org.gradle.internal.declarativedsl.schemaBuilder.TypeDiscovery
-import org.gradle.internal.declarativedsl.schemaBuilder.annotationsWithGetters
-import org.gradle.internal.declarativedsl.schemaBuilder.toDataTypeRef
-import org.gradle.internal.declarativedsl.utils.DclContainerMemberExtractionUtils.elementFactoryFunctionNameFromElementType
-import org.gradle.internal.declarativedsl.utils.DclContainerMemberExtractionUtils.elementTypeFromNdocContainerType
+import org.gradle.internal.declarativedsl.schemaBuilder.TypeDiscovery.DiscoveredClass
+import org.gradle.internal.declarativedsl.schemaBuilder.TypeDiscovery.DiscoveredClass.DiscoveryTag
+import org.gradle.internal.declarativedsl.schemaBuilder.asSupported
+import org.gradle.internal.declarativedsl.schemaBuilder.flatMap
+import org.gradle.internal.declarativedsl.schemaBuilder.inContextOfModelClass
+import org.gradle.internal.declarativedsl.schemaBuilder.inContextOfModelMember
+import org.gradle.internal.declarativedsl.schemaBuilder.isJavaBeanGetter
+import org.gradle.internal.declarativedsl.schemaBuilder.map
+import org.gradle.internal.declarativedsl.schemaBuilder.orError
+import org.gradle.internal.declarativedsl.schemaBuilder.orFailWith
+import org.gradle.internal.declarativedsl.schemaBuilder.schemaResult
+import org.gradle.internal.declarativedsl.schemaBuilder.toKType
+import org.gradle.internal.declarativedsl.schemaBuilder.withTag
 import java.util.Locale
 import kotlin.reflect.KCallable
 import kotlin.reflect.KClass
-import kotlin.reflect.KClassifier
-import kotlin.reflect.KFunction
 import kotlin.reflect.KProperty
-import kotlin.reflect.KType
-import kotlin.reflect.KVisibility
 import kotlin.reflect.full.isSubclassOf
-import kotlin.reflect.full.memberFunctions
-import kotlin.reflect.full.memberProperties
 import kotlin.reflect.full.starProjectedType
+import kotlin.reflect.jvm.jvmErasure
 
 
 internal fun EvaluationSchemaBuilder.namedDomainObjectContainers() {
@@ -77,17 +95,25 @@ internal fun EvaluationSchemaBuilder.namedDomainObjectContainers() {
 
 
 internal class ContainersSchemaComponent : AnalysisSchemaComponent, ObjectConversionComponent {
-    private val containerByAccessorId = mutableMapOf<String, ContainerProperty>()
+    private val containerByAccessorId = mutableMapOf<ContainerAccessorIdentifier, ContainerProperty>()
     private val elementFactoryFunctions = hashSetOf<SchemaMemberFunction>()
+    private val elementPublicTypes = mutableMapOf<SchemaMemberFunction, KClass<*>>()
 
     override fun functionExtractors(): List<FunctionExtractor> = listOf(
         // For subtypes of NDOC<T>, generate the element factory function as a member:
         object : FunctionExtractor {
-            override fun memberFunctions(kClass: KClass<*>, preIndex: DataSchemaBuilder.PreIndex) =
+            override fun memberFunctions(host: SchemaBuildingHost, kClass: KClass<*>, preIndex: DataSchemaBuilder.PreIndex): List<FunctionExtractionResult> =
                 if (kClass.isSubclassOf(NamedDomainObjectContainer::class) && kClass != NamedDomainObjectContainer::class) {
-                    val elementType = elementTypeFromNdocContainerType(kClass.starProjectedType)
+                    val elementType = kClass.starProjectedType.asSupported(host)
+                        .flatMap { elementTypeFromNdocContainerType(host, it) }
+                        .orFailWith { return listOf(ExtractionResult.of(it, FunctionExtractionMetadata(emptyList()))) }
+
+                    val containerTypeRef = host.containerTypeRef(kClass).orFailWith { return listOf(ExtractionResult.of(it, FunctionExtractionMetadata(emptyList()))) }
+
                     if (elementType != null) {
-                        listOf(newElementFactoryFunction(kClass.toDataTypeRef(), elementType, inContext = kClass))
+                        host.withTag(SchemaBuildingTags.elementTypeOfContainerSubtype(kClass)) {
+                            listOf(ExtractionResult.of(newElementFactoryFunction(host, containerTypeRef, elementType), FunctionExtractionMetadata(emptyList())))
+                        }
                     } else emptyList()
                 } else emptyList()
         },
@@ -95,22 +121,36 @@ internal class ContainersSchemaComponent : AnalysisSchemaComponent, ObjectConver
         // For all types, if they have an NDOC-typed property, add a configuring function for it. Also, maybe generate a synthetic type
         // for NDOC<T> (if it is not a real subtype of NDOC<T>) which will be the configuring function's receiver:
         object : FunctionExtractor {
-            override fun memberFunctions(kClass: KClass<*>, preIndex: DataSchemaBuilder.PreIndex): Iterable<SchemaMemberFunction> {
-                val containerProperties = containerProperties(kClass)
-
-                containerProperties.forEach { containerProperty ->
-                    containerByAccessorId[containerProperty.accessorId()] = containerProperty
+            override fun memberFunctions(host: SchemaBuildingHost, kClass: KClass<*>, preIndex: DataSchemaBuilder.PreIndex): List<FunctionExtractionResult> {
+                val containerProperties = containerProperties(host, kClass).entries.distinctBy { (_, value) ->
+                    when (value) {
+                        is SchemaResult.Result -> value.result.name
+                        else -> value
+                    }
                 }
 
-                return containerProperties.map { containerProperty ->
-                    val containerType = containerProperty.containerType
-                    val containerTypeRef = if (containerType.classifier == NamedDomainObjectContainer::class) {
-                        val typeId = ndocTypeId(containerProperty.originDeclaration.callable, containerProperty.elementType)
-                        preIndex.getOrRegisterSyntheticType(typeId, containerProperty::generateSyntheticContainerType).ref
-                    } else containerType.toDataTypeRef()
-                        ?: throw DeclarativeDslInterpretationException("Cannot use $containerType as a container type in ${containerProperty.originDeclaration.callable}")
+                containerProperties.forEach { (_, containerProperty) ->
+                    val property = containerProperty.orFailWith { return@forEach }
+                    containerByAccessorId[property.accessorId(host)] = property
+                }
 
-                    containerProperty.containerConfiguringFunction(kClass, containerTypeRef)
+                return containerProperties.map { (callable, prop) ->
+                    prop.flatMap { containerProperty->
+                        host.withTag(SchemaBuildingTags.namedDomainObjectContainer(containerProperty.name)) {
+                            val containerType = containerProperty.containerType
+                            val containerTypeRef = if (containerType.classifier == NamedDomainObjectContainer::class) {
+                                val typeId = ndocTypeId(host, containerProperty.elementType)
+                                val syntheticContainerType = containerProperty.generateSyntheticContainerType(host)
+                                    .orFailWith { return@withTag it }
+                                preIndex.getOrRegisterSyntheticType(typeId) { syntheticContainerType }.ref
+                            } else host.inContextOfModelMember(containerProperty.originDeclaration.kCallable) {
+                                host.modelTypeRef(containerType.toKType())
+                                    .orFailWith { return@withTag it }
+                            }
+
+                            containerProperty.containerConfiguringFunction(host, kClass, containerTypeRef)
+                        }
+                    }.let { ExtractionResult.of(it, FunctionExtractionMetadata(listOf(callable))) }
                 }
             }
         }
@@ -119,105 +159,132 @@ internal class ContainersSchemaComponent : AnalysisSchemaComponent, ObjectConver
 
     override fun typeDiscovery(): List<TypeDiscovery> = listOf(
         object : TypeDiscovery {
-            override fun getClassesToVisitFrom(kClass: KClass<*>): Iterable<KClass<*>> =
-                containerProperties(kClass).flatMap { property ->
-                    listOfNotNull(
-                        property.elementType.classifier, // the element type
-                        property.containerType.classifier.takeIf { it != NamedDomainObjectContainer::class } // the container type, if it is a proper subtype of NDOC<T>
-                    )
-                }.filterIsInstance<KClass<*>>()
+            override fun getClassesToVisitFrom(typeDiscoveryServices: TypeDiscovery.TypeDiscoveryServices, kClass: KClass<*>): Iterable<SchemaResult<DiscoveredClass>> =
+                typeDiscoveryServices.host.inContextOfModelClass(kClass) {
+                    containerProperties(typeDiscoveryServices.host, kClass).values.flatMap { propertyResult ->
+                        when (propertyResult) {
+                            is SchemaResult.Failure -> listOf(propertyResult)
+                            is SchemaResult.Result -> {
+                                listOfNotNull(
+                                    // discover the element type, only if the declared container type is not NDOC<T>; otherwise, it will be discovered from the signature
+                                    (propertyResult.result.containerType.takeIf { it.classifier != NamedDomainObjectContainer::class })
+                                        ?.let { DiscoveredClass.classesOf(it, DiscoveryTag.ContainerElement(propertyResult.result.originDeclaration.kCallable)).map(::schemaResult) }
+                                ).flatten()
+                            }
+                        }
+                    }
+                }
         }
     )
 
     override fun runtimeCustomAccessors(): List<RuntimeCustomAccessors> = listOf(
         object : RuntimeCustomAccessors {
-            override fun getObjectFromCustomAccessor(receiverObject: Any, accessor: ConfigureAccessor.Custom): Any? {
-                val callable = containerByAccessorId[accessor.customAccessorIdentifier]?.originDeclaration?.callable ?: return null
-                return callable.call(receiverObject)
+            override fun getObjectFromCustomAccessor(receiverObject: Any, accessor: ConfigureAccessor.Custom): InstanceAndPublicType {
+                val callable = containerByAccessorId[accessor.accessorIdentifier]?.originDeclaration?.kCallable ?: return InstanceAndPublicType.NULL
+                return InstanceAndPublicType.of(callable.call(receiverObject), callable.returnType.jvmErasure)
             }
         }
     )
 
     override fun runtimeFunctionResolvers(): List<RuntimeFunctionResolver> = listOf(
         object : RuntimeFunctionResolver {
-            override fun resolve(receiverClass: KClass<*>, schemaFunction: SchemaFunction): RuntimeFunctionResolver.Resolution =
+            override fun resolve(receiverClass: KClass<*>, schemaFunction: SchemaFunction, scopeClassLoader: ClassLoader): RuntimeFunctionResolver.Resolution =
                 // TODO: this check relies on the hashing+equality implementation of the schema functions; if those get proxied (e.g. to TAPI), it won't work; We do not need that for now, though.
                 if (schemaFunction in elementFactoryFunctions) {
                     RuntimeFunctionResolver.Resolution.Resolved(object : DeclarativeRuntimeFunction {
-                        override fun callBy(receiver: Any, binding: Map<DataParameter, Any?>, hasLambda: Boolean): DeclarativeRuntimeFunction.InvocationResult {
+                        override fun callBy(receiver: Any?, binding: Map<DataParameter, Any?>, hasLambda: Boolean): DeclarativeRuntimeFunction.InvocationResult {
                             val result = (receiver as NamedDomainObjectContainer<*>).maybeCreate(binding.values.single() as String)
-                            return DeclarativeRuntimeFunction.InvocationResult(result, result)
+                            val resultInstanceAndPublicType = InstanceAndPublicType.of(result, elementPublicTypes[schemaFunction])
+                            return DeclarativeRuntimeFunction.InvocationResult(resultInstanceAndPublicType, resultInstanceAndPublicType)
                         }
                     })
                 } else RuntimeFunctionResolver.Resolution.Unresolved
         }
     )
 
-    private fun newElementFactoryFunction(receiverTypeRef: DataTypeRef, elementKType: KType, inContext: Any) =
-        elementFactoryFunction(receiverTypeRef, elementKType, inContext).also(elementFactoryFunctions::add)
+    private fun newElementFactoryFunction(host: SchemaBuildingHost, receiverTypeRef: DataTypeRef, elementKType: SupportedTypeProjection.SupportedType): SchemaResult<SchemaMemberFunction> {
+        val elementFactoryFunction = elementFactoryFunction(host, receiverTypeRef, elementKType)
+        if (elementFactoryFunction is SchemaResult.Result) {
+            elementFactoryFunctions.add(elementFactoryFunction.result)
+            elementPublicTypes[elementFactoryFunction.result] = elementKType.classifier.starProjectedType.jvmErasure
+        }
+        return elementFactoryFunction
+    }
 
     private inner class ContainerProperty(
         val ownerType: KClass<*>,
         val name: String,
-        val containerType: KType,
-        val elementType: KType,
-        val originDeclaration: ContainerPropertyDeclaration
+        val containerType: SupportedTypeProjection.SupportedType,
+        val elementType: SupportedTypeProjection.SupportedType,
+        val originDeclaration: SupportedCallable
     ) {
-        fun syntheticTypeName() = DefaultFqName.parse(NamedDomainObjectContainer::class.qualifiedName!! + "\$of\$" + elementTypeName().replace(".", "_"))
+        fun syntheticTypeName(host: SchemaBuildingHost) =
+            DefaultFqName.parse(NamedDomainObjectContainer::class.qualifiedName!! + "\$of\$" + elementTypeName(host).replace(".", "_"))
 
-        private fun elementTypeName() = dataTypeRefName(elementType.classifier!!)
+        private fun elementTypeName(host: SchemaBuildingHost) = dataTypeRefName(host, elementType.classifier as KClass<*>)
 
-        private fun syntheticContainerTypeRef() = DataTypeRefInternal.DefaultName(syntheticTypeName())
+        private fun syntheticContainerTypeRef(host: SchemaBuildingHost) = DataTypeRefInternal.DefaultName(syntheticTypeName(host))
 
-        fun containerConfiguringFunction(ownerType: KClass<*>, containerTypeRef: DataTypeRef) = DefaultDataMemberFunction(
-            ownerType.toDataTypeRef(),
+        fun containerConfiguringFunction(host: SchemaBuildingHost, ownerType: KClass<*>, containerTypeRef: DataTypeRef): SchemaResult<DataMemberFunction> = DefaultDataMemberFunction(
+            host.containerTypeRef(ownerType)
+                .orFailWith { return it },
             name,
             emptyList(),
             false,
             FunctionSemanticsInternal.DefaultAccessAndConfigure(
-                ConfigureAccessorInternal.DefaultCustom(containerTypeRef, accessorId()),
+                ConfigureAccessorInternal.DefaultContainer(containerTypeRef, accessorId(host)),
                 DefaultUnit,
+                containerTypeRef,
                 DefaultRequired
             )
-        )
+        ).let(::schemaResult)
 
-        fun accessorId() = "container:${dataTypeRefName(ownerType)}:$name"
+        fun accessorId(host: SchemaBuildingHost) = DefaultContainerAccessorIdentifier(name, dataTypeRefName(host, ownerType))
 
-        fun generateSyntheticContainerType(): DataClass = DefaultDataClass(
-            syntheticTypeName(),
+        fun generateSyntheticContainerType(host: SchemaBuildingHost): SchemaResult<DataClass> = DefaultDataClass(
+            syntheticTypeName(host),
+            NamedDomainObjectContainer::class.java.name,
+            listOfNotNull((elementType.classifier as? KClass<*>)?.java?.name),
             emptySet(),
             emptyList(),
-            listOf(newElementFactoryFunction(syntheticContainerTypeRef(), elementType, inContext = originDeclaration.callable)),
-            emptyList()
-        )
+            listOf(newElementFactoryFunction(host, syntheticContainerTypeRef(host), elementType).orFailWith { return it }),
+            emptyList(),
+            metadata = emptyList() // TODO include the metadata telling about the NDOC type?
+        ).let(::schemaResult)
     }
 
-    sealed interface ContainerPropertyDeclaration {
-        val callable: KCallable<*>
-            get() = when (this) {
-                is KotlinProperty -> property
-                is Getter -> getter
+    private fun containerProperties(host: SchemaBuildingHost, kClass: KClass<*>): Map<SupportedCallable, SchemaResult<ContainerProperty>> {
+        val members = host.classMembers(kClass).declarativeMembers
+
+        val propertiesFromMemberProperties = members.mapNotNull { member ->
+            if (member.kind != MemberKind.READ_ONLY_PROPERTY) return@mapNotNull null
+
+            member to host.inContextOfModelMember(member.kCallable) {
+                elementTypeFromNdocContainerType(host, member.returnType)
+                    .map {
+                        if (it == null) return@mapNotNull null
+                        ContainerProperty(kClass, member.name, member.returnType, it, member)
+                    }
             }
+        }.toMap()
 
-        data class KotlinProperty(val property: KProperty<*>) : ContainerPropertyDeclaration
-        data class Getter(val getter: KFunction<*>) : ContainerPropertyDeclaration
+        val propertiesFromMemberFunctions = members.mapNotNull { member ->
+            if (!member.isJavaBeanGetter) return@mapNotNull null
+
+            member to host.inContextOfModelMember(member.kCallable) {
+                elementTypeFromNdocContainerType(host, member.returnType)
+                    .map {
+                        if (it == null) return@mapNotNull null
+                        ContainerProperty(kClass, member.kCallable.propertyName(), member.returnType, it, member)
+                    }
+            }
+        }.toMap()
+
+        return (propertiesFromMemberProperties + propertiesFromMemberFunctions)
     }
 
-    private fun containerProperties(kClass: KClass<*>): List<ContainerProperty> {
-        val propertiesFromMemberProperties = kClass.memberProperties.filter(::isPublicAndNotInternal).mapNotNull {
-            val elementType = elementTypeFromNdocContainerType(it.returnType) ?: return@mapNotNull null
-            ContainerProperty(kClass, it.propertyName(), it.returnType, elementType, ContainerPropertyDeclaration.KotlinProperty(it))
-        }
-        val propertiesFromMemberFunctions = kClass.memberFunctions.filter(::isPublicAndNotInternal).mapNotNull {
-            val elementType = elementTypeFromNdocContainerType(it.returnType) ?: return@mapNotNull null
-            ContainerProperty(kClass, it.propertyName(), it.returnType, elementType, ContainerPropertyDeclaration.Getter(it))
-        }
-
-        return (propertiesFromMemberProperties + propertiesFromMemberFunctions).distinctBy { it.name }
-    }
-
-    private fun ndocTypeId(context: KCallable<*>, elementType: KType): String {
-        val elementTypeName = elementType.classifier?.let { dataTypeRefName(it) } ?: throw DeclarativeDslInterpretationException("Non-class container element type $elementType in $context")
+    private fun ndocTypeId(host: SchemaBuildingHost, elementType: SupportedTypeProjection.SupportedType): String {
+        val elementTypeName = dataTypeRefName(host, elementType.classifier as KClass<*>)
         return "\$ndocOf_$elementTypeName"
     }
 
@@ -228,12 +295,13 @@ internal class ContainersSchemaComponent : AnalysisSchemaComponent, ObjectConver
 }
 
 private fun elementFactoryFunction(
+    host: SchemaBuildingHost,
     receiverTypeRef: DataTypeRef,
-    elementType: KType,
-    context: Any
-): DataMemberFunction {
-    val elementTypeRef = elementType.toDataTypeRef() as? DataTypeRef.Name
-        ?: throw DeclarativeDslInterpretationException("Cannot use $elementType as container element type in $context")
+    elementType: SupportedTypeProjection.SupportedType
+): SchemaResult<DataMemberFunction> {
+    val elementTypeRef = host.withTag(SchemaBuildingTags.containerElementType(elementType)) {
+        host.modelTypeRef(elementType.toKType())
+    }.orFailWith { return it }
 
     val elementFactoryName = elementFactoryFunctionNameFromElementType(elementType)
 
@@ -247,14 +315,16 @@ private fun elementFactoryFunction(
         FunctionSemanticsInternal.DefaultAccessAndConfigure(
             ConfigureAccessorInternal.DefaultConfiguringLambdaArgument(elementTypeRef),
             FunctionSemanticsInternal.DefaultAccessAndConfigure.DefaultReturnType.DefaultConfiguredObject,
+            elementTypeRef,
             DefaultRequired
-        )
-    )
+        ),
+        metadata = listOf(DefaultContainerElementFactory(elementTypeRef))
+    ).let(::schemaResult)
 }
 
+@OptIn(LossySchemaBuildingOperation::class) // modelTypeRef of a KClass \star projection should not fail; avoid the hassle of wrapping it into a result here
+private fun dataTypeRefName(
+    host: SchemaBuildingHost,
+    it: KClass<*>
+) = (host.modelTypeRef(it.starProjectedType).orError() as DataTypeRef.Name).fqName.toString()
 
-private fun dataTypeRefName(it: KClassifier) = (it.toDataTypeRef() as DataTypeRef.Name).fqName.toString()
-
-private fun isPublicAndNotInternal(member: KCallable<*>): Boolean =
-    member.visibility == KVisibility.PUBLIC &&
-        member.annotationsWithGetters.none { it is Internal } // TODO: @Internal might not be the best fit, as it is more related to the task models

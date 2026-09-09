@@ -19,10 +19,9 @@ import org.gradle.api.InvalidUserDataException
 import org.gradle.api.internal.artifacts.DefaultProjectDependencyFactory
 import org.gradle.api.internal.artifacts.dsl.CapabilityNotationParserFactory
 import org.gradle.api.internal.artifacts.dsl.dependencies.ProjectFinder
-import org.gradle.api.internal.file.TestFiles
-import org.gradle.api.internal.project.ProjectInternal
+import org.gradle.api.internal.project.ProjectIdentity
 import org.gradle.api.internal.project.ProjectState
-import org.gradle.api.internal.project.ProjectStateRegistry
+import org.gradle.api.internal.project.ProjectStateLookup
 import org.gradle.util.AttributeTestUtil
 import org.gradle.util.Path
 import org.gradle.util.TestUtil
@@ -31,17 +30,25 @@ import spock.lang.Specification
 
 class ProjectDependencyFactoryTest extends Specification {
 
-    def projectDummy = Mock(ProjectInternal)
-    def projectFinder = Mock(ProjectFinder)
+    def projectState = Mock(ProjectState) {
+        getIdentity() >> ProjectIdentity.forRootProject(Path.ROOT, "foo")
+    }
+
+    def projectFinder = Mock(ProjectFinder) {
+        resolveIdentityPath(_ as String) >> { args -> Path.path(args[0]) }
+    }
+
     def capabilityNotationParser = new CapabilityNotationParserFactory(false).create()
-    def projectStateRegistry = Mock(ProjectStateRegistry) {
-        stateFor(Path.path(":foo")) >> Mock(ProjectState) {
-            getMutableModel() >> projectDummy
-        }
+    def projectStateLookup = Mock(ProjectStateLookup) {
+        findProject(Path.path(":foo:bar")) >> projectState
     }
     def depFactory = new DefaultProjectDependencyFactory(
-        TestUtil.instantiatorFactory().decorateLenient(), true, capabilityNotationParser, TestUtil.objectFactory(),
-        AttributeTestUtil.attributesFactory(), TestFiles.taskDependencyFactory(), projectStateRegistry
+        TestUtil.instantiatorFactory().decorateLenient(),
+        capabilityNotationParser,
+        TestUtil.objectFactory(),
+        AttributeTestUtil.attributesFactory(),
+        projectStateLookup,
+        projectFinder
     )
     def factory = new ProjectDependencyFactory(depFactory)
 
@@ -50,24 +57,18 @@ class ProjectDependencyFactoryTest extends Specification {
         boolean expectedTransitive = false;
         final Map<String, Object> mapNotation = GUtil.map("path", ":foo:bar", "configuration", "compile", "transitive", expectedTransitive);
 
-        and:
-        projectFinder.getProject(':foo:bar') >> projectDummy
-
         when:
-        def projectDependency = factory.createFromMap(projectFinder, mapNotation);
+        def projectDependency = factory.createFromMap(mapNotation);
 
         then:
-        projectDependency.getDependencyProject() == projectDummy
+        projectDependency.path == projectState.identity.projectPath.asString()
         projectDependency.targetConfiguration == "compile"
         projectDependency.isTransitive() == expectedTransitive
     }
 
     def "fails with decent message if provided map is invalid"() {
-        given:
-        projectFinder.getProject(':foo:bar') >> projectDummy
-
         when:
-        factory.createFromMap(projectFinder, GUtil.map("paths", ":foo:bar"));
+        factory.createFromMap(GUtil.map("paths", ":foo:bar"));
 
         then:
         def ex = thrown(InvalidUserDataException)
@@ -76,6 +77,6 @@ class ProjectDependencyFactoryTest extends Specification {
 
     def "can create project dependency from path"() {
         expect:
-        depFactory.create(Path.path(":foo")).dependencyProject == projectDummy
+        depFactory.create(Path.path(":foo:bar")).path == projectState.identity.projectPath.asString()
     }
 }

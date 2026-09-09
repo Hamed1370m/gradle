@@ -18,12 +18,14 @@ package org.gradle.api.publish.maven
 
 import org.gradle.integtests.fixtures.publish.maven.AbstractMavenPublishIntegTest
 import spock.lang.Issue
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 class MavenPublishMultiProjectIntegTest extends AbstractMavenPublishIntegTest {
     def project1 = javaLibrary(mavenRepo.module("org.gradle.test", "project1", "1.0"))
     def project2 = javaLibrary(mavenRepo.module("org.gradle.test", "project2", "2.0"))
     def project3 = javaLibrary(mavenRepo.module("org.gradle.test", "project3", "3.0"))
 
+    @ToBeFixedForIsolatedProjects(because = "publishing plugin accesses subproject state at config time")
     def "project dependency correctly reflected in POM"() {
         createBuildScripts()
 
@@ -34,6 +36,7 @@ class MavenPublishMultiProjectIntegTest extends AbstractMavenPublishIntegTest {
         projectsCorrectlyPublished()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "publishing plugin accesses subproject state at config time")
     def "project dependencies reference publication identity of dependent project (version mapping: #mapping)"() {
         def project3 = javaLibrary(mavenRepo.module("changed.group", "changed-artifact-id", "changed"))
 
@@ -41,9 +44,9 @@ class MavenPublishMultiProjectIntegTest extends AbstractMavenPublishIntegTest {
 project(":project3") {
     publishing {
         publications.maven {
-            groupId "changed.group"
-            artifactId "changed-artifact-id"
-            version "changed"
+            groupId = "changed.group"
+            artifactId = "changed-artifact-id"
+            version = "changed"
         }
     }
 }
@@ -87,6 +90,7 @@ project(":project1") {
         mapping << [false, true]
     }
 
+    @ToBeFixedForIsolatedProjects(because = "publishing plugin accesses subproject state at config time")
     def "reports failure when project dependency references a project with multiple conflicting publications"() {
         createBuildScripts("""
 project(":project2") {
@@ -94,14 +98,14 @@ project(":project2") {
         publications {
             extraComp(MavenPublication) {
                 from components.java
-                groupId "extra.group"
-                artifactId "extra-comp"
-                version "extra"
+                groupId = "extra.group"
+                artifactId = "extra-comp"
+                version = "extra"
             }
             extra(MavenPublication) {
-                groupId "extra.group"
-                artifactId "extra"
-                version "extra"
+                groupId = "extra.group"
+                artifactId = "extra"
+                version = "extra"
             }
         }
     }
@@ -119,15 +123,16 @@ Found the following publications in project ':project2':
   - Maven publication 'extra' with coordinates extra.group:extra:extra"""
     }
 
+    @ToBeFixedForIsolatedProjects(because = "publishing plugin accesses subproject state at config time")
     def "referenced project can have additional non-component publications"() {
         createBuildScripts("""
 project(":project3") {
     publishing {
         publications {
             extra(MavenPublication) {
-                groupId "extra.group"
-                artifactId "extra"
-                version "extra"
+                groupId = "extra.group"
+                artifactId = "extra"
+                version = "extra"
             }
         }
     }
@@ -138,6 +143,7 @@ project(":project3") {
         succeeds "publish"
     }
 
+    @ToBeFixedForIsolatedProjects(because = "publishing plugin accesses subproject state at config time")
     def "referenced project can have multiple additional publications that contain a child of some other publication"() {
         createBuildScripts("""
 // TODO - replace this with a public API when available
@@ -154,15 +160,15 @@ project(":project3") {
         publications {
             extra1(MavenPublication) {
                 from c1
-                groupId "extra.group"
-                artifactId "extra1"
-                version "extra"
+                groupId = "extra.group"
+                artifactId = "extra1"
+                version = "extra"
             }
             extra2(MavenPublication) {
                 from c2
-                groupId "custom"
-                artifactId "custom3"
-                version "456"
+                groupId = "custom"
+                artifactId = "custom3"
+                version = "456"
             }
         }
     }
@@ -176,6 +182,7 @@ project(":project3") {
         project1.assertApiDependencies("org.gradle.test:project2:2.0", "custom:custom3:456")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "publishing plugin accesses subproject state at config time")
     def "maven-publish plugin does not take archivesBaseName into account when publishing"() {
         createBuildScripts("""
 project(":project2") {
@@ -210,54 +217,67 @@ project(":project2") {
     @Issue("GRADLE-3366")
     def "project dependency excludes are correctly reflected in pom when using maven-publish plugin"() {
         given:
-        createDirs("project1", "project2")
         settingsFile << """
-include "project1", "project2"
-"""
+            include "project1", "project2"
+        """
 
-        buildFile << """
-allprojects {
-    apply plugin: 'java-library'
-    apply plugin: 'maven-publish'
-
-    group = "org.gradle.test"
-
-    ${mavenCentralRepository()}
-}
-
-project(":project1") {
-    version = "1.0"
-
-    dependencies {
-        api "commons-collections:commons-collections:3.2.2"
-        api "commons-io:commons-io:1.4"
-    }
-}
-
-project(":project2") {
-    version = "2.0"
-
-    dependencies {
-        api project(":project1"), {
-            exclude module: "commons-collections"
-            exclude group: "commons-io"
-        }
-    }
-
-    publishing {
-        repositories {
-            maven { url "${mavenRepo.uri}" }
-        }
-        publications {
-            maven(MavenPublication) {
-                from components.java
+        file("project1/build.gradle") << """
+            plugins {
+                id("java-library")
+                id("maven-publish")
             }
-        }
-    }
-}
-"""
+
+            group = "org.gradle.test"
+            version = "1.0"
+
+            ${mavenCentralRepository()}
+
+            dependencies {
+                api "commons-collections:commons-collections:3.2.2"
+                api "commons-io:commons-io:1.4"
+            }
+
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
+        """
+
+        file("project2/build.gradle") << """
+            plugins {
+                id("java-library")
+                id("maven-publish")
+            }
+
+            group = "org.gradle.test"
+            version = "2.0"
+
+            ${mavenCentralRepository()}
+
+            dependencies {
+                api project(":project1"), {
+                    exclude module: "commons-collections"
+                    exclude group: "commons-io"
+                }
+            }
+
+            publishing {
+                repositories {
+                    maven { url = "${mavenRepo.uri}" }
+                }
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
+        """
+
         when:
-        run "publish"
+        run ":project2:publish"
 
         then:
         project2.assertPublished()
@@ -281,6 +301,7 @@ project(":project2") {
         }
     }
 
+    @ToBeFixedForIsolatedProjects(because = "publishing plugin accesses subproject state at config time")
     def "publish and resolve java-library with dependency on java-platform (named #platformName)"() {
         given:
         javaLibrary(mavenRepo.module("org.test", "foo", "1.0")).withModuleMetadata().publish()
@@ -316,7 +337,7 @@ project(":$platformName") {
     }
     publishing {
         repositories {
-            maven { url "${mavenRepo.uri}" }
+            maven { url = "${mavenRepo.uri}" }
         }
         publications {
             maven(MavenPublication) { from components.javaPlatform }
@@ -333,7 +354,7 @@ project(":library") {
     }
     publishing {
         repositories {
-            maven { url "${mavenRepo.uri}" }
+            maven { url = "${mavenRepo.uri}" }
         }
         publications {
             maven(MavenPublication) { from components.java }
@@ -397,7 +418,7 @@ subprojects {
 
     publishing {
         repositories {
-            maven { url "${mavenRepo.uri}" }
+            maven { url = "${mavenRepo.uri}" }
         }
         publications {
             maven(MavenPublication) {

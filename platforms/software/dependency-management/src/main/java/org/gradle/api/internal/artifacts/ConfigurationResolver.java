@@ -16,12 +16,20 @@
 package org.gradle.api.internal.artifacts;
 
 import org.gradle.api.artifacts.ResolveException;
+import org.gradle.api.internal.DomainObjectContext;
+import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal;
+import org.gradle.api.internal.artifacts.configurations.ConfigurationsProvider;
 import org.gradle.api.internal.artifacts.repositories.ResolutionAwareRepository;
+import org.gradle.api.internal.artifacts.transform.DefaultTransformUpstreamDependenciesResolver;
+import org.gradle.api.internal.attributes.AttributesSchemaInternal;
+import org.gradle.internal.model.CalculatedValue;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 
 import java.util.List;
 
 /**
- * Resolves {@link ResolveContext}s and produces {@link ResolverResults}.
+ * Resolves {@link ConfigurationInternal}s and produces {@link ResolverResults}.
  * <p>
  * This resolution is lenient, except for some fatal failure cases,
  * in the sense that resolution failures in most cases will not cause exceptions
@@ -29,17 +37,49 @@ import java.util.List;
  */
 public interface ConfigurationResolver {
     /**
-     * Traverses enough of the graph to calculate the build dependencies of the given resolve context. All failures are packaged in the result.
+     * Traverses enough of the graph to calculate the build dependencies of the given configuration. All failures are packaged in the result.
+     *
+     * @param configuration The resolve context to resolve.
+     * @param futureCompleteResults The future value of the output of {@link #resolveGraph(ConfigurationInternal)}. See
+     * {@link DefaultTransformUpstreamDependenciesResolver} for why this is needed.
      */
-    ResolverResults resolveBuildDependencies(ResolveContext configuration);
+    ResolverResults resolveBuildDependencies(ConfigurationInternal configuration, CalculatedValue<ResolverResults> futureCompleteResults);
 
     /**
-     * Traverses the full dependency graph of the given resolve context. All failures are packaged in the result.
+     * Traverses the full dependency graph of the given configuration. All failures are packaged in the result.
      */
-    ResolverResults resolveGraph(ResolveContext resolveContext) throws ResolveException;
+    ResolverResults resolveGraph(ConfigurationInternal configuration) throws ResolveException;
 
     /**
-     * Returns the list of repositories available to resolve a given resolve context.
+     * Returns the list of repositories available to resolve a given configuration.
      */
     List<ResolutionAwareRepository> getAllRepositories();
+
+    /**
+     * Creates {@link ConfigurationResolver} instances.
+     * <p>
+     * We require this factory since configuration resolvers within a project
+     * need a reference to the configuration container, and the configuration container
+     * needs a reference to the configuration resolver (since new configurations also
+     * need a reference to the resolver).
+     * <p>
+     * In future versions, we will want to avoid this circular dependency by making
+     * the root variant of a resolved configuration live in an adhoc root component,
+     * just like all other resolved configurations.
+     */
+    @ServiceScope(Scope.Project.class)
+    interface Factory {
+
+        /**
+         * Create a new configuration resolver, potentially using the given configurations
+         * provider as a source of variants for the root component that will own the root
+         * variant of the dependency graph.
+         */
+        ConfigurationResolver create(
+            ConfigurationsProvider configurations,
+            DomainObjectContext owner,
+            AttributesSchemaInternal schema
+        );
+
+    }
 }

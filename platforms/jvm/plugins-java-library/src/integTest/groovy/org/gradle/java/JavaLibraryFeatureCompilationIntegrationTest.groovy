@@ -18,7 +18,6 @@ package org.gradle.java
 
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForIsolatedProjects
 import spock.lang.Issue
 
 class JavaLibraryFeatureCompilationIntegrationTest extends AbstractIntegrationSpec {
@@ -91,7 +90,6 @@ class JavaLibraryFeatureCompilationIntegrationTest extends AbstractIntegrationSp
         true                      | "myFeatureImplementation"
     }
 
-    @ToBeFixedForIsolatedProjects(because = "Property dynamic lookup")
     def "Java Library can depend on feature of component [compileClasspathPackaging=#compileClasspathPackaging]"() {
         toggleCompileClasspathPackaging(compileClasspathPackaging)
         settingsFile << """
@@ -147,8 +145,8 @@ class JavaLibraryFeatureCompilationIntegrationTest extends AbstractIntegrationSp
                     } as Set
                 }
                 doLast {
-                    assert incomingCompileClasspath.get() == ['project :b', 'project :c', 'project :e'] as Set // only API dependencies
-                    assert incomingRuntimeClasspath.get() == ['project :b', 'project :c', 'project :d', 'project :g'] as Set // all dependencies (except compile only)
+                    assert incomingCompileClasspath.get() == ['project \\':b\\'', 'project \\':c\\'', 'project \\':e\\''] as Set // only API dependencies
+                    assert incomingRuntimeClasspath.get() == ['project \\':b\\'', 'project \\':c\\'', 'project \\':d\\'', 'project \\':g\\''] as Set // all dependencies (except compile only)
                 }
             }
         """
@@ -207,7 +205,6 @@ class JavaLibraryFeatureCompilationIntegrationTest extends AbstractIntegrationSp
 
     }
 
-    @ToBeFixedForIsolatedProjects(because = "Property dynamic lookup")
     def "main component doesn't expose dependencies from feature [compileClasspathPackaging=#compileClasspathPackaging]"() {
         toggleCompileClasspathPackaging(compileClasspathPackaging)
         settingsFile << """
@@ -415,8 +412,8 @@ class JavaLibraryFeatureCompilationIntegrationTest extends AbstractIntegrationSp
                     } as Set
                 }
                 doLast {
-                    assert incomingCompileClasspath.get() == ['project :b', 'project :c'] as Set // only API dependencies
-                    assert incomingRuntimeClasspath.get() == ['project :b', 'project :c', 'project :d'] as Set // all dependencies
+                    assert incomingCompileClasspath.get() == ['project \\':b\\'', 'project \\':c\\''] as Set // only API dependencies
+                    assert incomingRuntimeClasspath.get() == ['project \\':b\\'', 'project \\':c\\'', 'project \\':d\\''] as Set // all dependencies
                     assert runtimeClasspath.files.name as Set == ['b-my-feature.jar', 'c.jar', 'd.jar'] as Set
                 }
             }
@@ -506,7 +503,7 @@ class JavaLibraryFeatureCompilationIntegrationTest extends AbstractIntegrationSp
         """
 
         when:
-        executer.expectDocumentedDeprecationWarning("The 'feat' feature was created using the main source set. This behavior has been deprecated. This will fail with an error in Gradle 9.0. The main source set is reserved for production code and should not be used for features. Use another source set instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_register_feature_main_source_set")
+        executer.expectDocumentedDeprecationWarning("The 'feat' feature was created using the main source set. This behavior has been deprecated. This will fail with an error in Gradle 10. The main source set is reserved for production code and should not be used for features. Use another source set instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_register_feature_main_source_set")
         run 'test'
 
         then:
@@ -549,6 +546,7 @@ class JavaLibraryFeatureCompilationIntegrationTest extends AbstractIntegrationSp
         """
 
         when:
+        2.times { executer.expectDocumentedDeprecationWarning("The `registerFeature` method was called, but the Java plugin has not yet been applied. This behavior has been deprecated. This will fail with an error in Gradle 10. `registerFeature` should only be called in projects where the Java plugin has been applied. Apply the `java`, `java-library`, `application`, `groovy`, or any other plugin that applies the Java plugin. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_register_feature_no_java_plugin") }
         succeeds ':compileMain211Java', ':compileMain212Java'
 
         then:
@@ -579,7 +577,8 @@ class JavaLibraryFeatureCompilationIntegrationTest extends AbstractIntegrationSp
         """
 
         when:
-        executer.expectDocumentedDeprecationWarning("The 'main' feature was created using the main source set. This behavior has been deprecated. This will fail with an error in Gradle 9.0. The main source set is reserved for production code and should not be used for features. Use another source set instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_register_feature_main_source_set")
+        executer.expectDocumentedDeprecationWarning("The 'main' feature was created using the main source set. This behavior has been deprecated. This will fail with an error in Gradle 10. The main source set is reserved for production code and should not be used for features. Use another source set instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_register_feature_main_source_set")
+        executer.expectDocumentedDeprecationWarning("The `registerFeature` method was called, but the Java plugin has not yet been applied. This behavior has been deprecated. This will fail with an error in Gradle 10. `registerFeature` should only be called in projects where the Java plugin has been applied. Apply the `java`, `java-library`, `application`, `groovy`, or any other plugin that applies the Java plugin. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_register_feature_no_java_plugin")
         succeeds 'dependencies'
 
         then:
@@ -616,7 +615,8 @@ class JavaLibraryFeatureCompilationIntegrationTest extends AbstractIntegrationSp
         """
 
         when:
-        executer.expectDocumentedDeprecationWarning("The 'feature' feature was created using the main source set. This behavior has been deprecated. This will fail with an error in Gradle 9.0. The main source set is reserved for production code and should not be used for features. Use another source set instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_register_feature_main_source_set")
+        executer.expectDocumentedDeprecationWarning("The 'feature' feature was created using the main source set. This behavior has been deprecated. This will fail with an error in Gradle 10. The main source set is reserved for production code and should not be used for features. Use another source set instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_register_feature_main_source_set")
+        executer.expectDocumentedDeprecationWarning("The `registerFeature` method was called, but the Java plugin has not yet been applied. This behavior has been deprecated. This will fail with an error in Gradle 10. `registerFeature` should only be called in projects where the Java plugin has been applied. Apply the `java`, `java-library`, `application`, `groovy`, or any other plugin that applies the Java plugin. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_register_feature_no_java_plugin")
         succeeds 'dependencies'
 
         then:
@@ -643,7 +643,7 @@ class JavaLibraryFeatureCompilationIntegrationTest extends AbstractIntegrationSp
         """
 
         when:
-        executer.expectDocumentedDeprecationWarning("The 'main' feature was created using the main source set. This behavior has been deprecated. This will fail with an error in Gradle 9.0. The main source set is reserved for production code and should not be used for features. Use another source set instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_register_feature_main_source_set")
+        executer.expectDocumentedDeprecationWarning("The 'main' feature was created using the main source set. This behavior has been deprecated. This will fail with an error in Gradle 10. The main source set is reserved for production code and should not be used for features. Use another source set instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecate_register_feature_main_source_set")
         run 'dependencies'
 
         then:
@@ -680,9 +680,9 @@ class JavaLibraryFeatureCompilationIntegrationTest extends AbstractIntegrationSp
                 [apiElements, runtimeElements].each {
                     assert it.canBeConsumed == true
                     assert it.canBeResolved == false
-                    assert it.canBeDeclared == true
+                    assert it.canBeDeclared == false
 
-                    assert it.deprecatedForDeclarationAgainst == true
+                    assert it.deprecatedForDeclarationAgainst == false
                     assert it.deprecatedForResolution == false
                     assert it.deprecatedForConsumption == false
                 }

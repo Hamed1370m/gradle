@@ -17,7 +17,7 @@
 package org.gradle.model.managed
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 
 @UnsupportedWithConfigurationCache(because = "software model")
 class InvalidManagedModelRuleIntegrationTest extends AbstractIntegrationSpec {
@@ -46,6 +46,7 @@ class InvalidManagedModelRuleIntegrationTest extends AbstractIntegrationSpec {
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
         fails "tasks"
 
         and:
@@ -83,6 +84,7 @@ class InvalidManagedModelRuleIntegrationTest extends AbstractIntegrationSpec {
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
         fails "tasks"
 
         and:
@@ -129,6 +131,8 @@ class InvalidManagedModelRuleIntegrationTest extends AbstractIntegrationSpec {
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
         fails "tasks"
 
         and:
@@ -148,6 +152,7 @@ class InvalidManagedModelRuleIntegrationTest extends AbstractIntegrationSpec {
         '''
 
         then:
+        expectSoftwareModelDeprecation("Rules")
         fails "tasks"
 
         and:
@@ -169,6 +174,7 @@ class InvalidManagedModelRuleIntegrationTest extends AbstractIntegrationSpec {
         '''
 
         then:
+        expectSoftwareModelDeprecation("Rules")
         fails "tasks"
 
         and:
@@ -191,13 +197,28 @@ class InvalidManagedModelRuleIntegrationTest extends AbstractIntegrationSpec {
             }
 
             apply type: RulePlugin
+            apply plugin: 'model-reporting-tasks'
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelReportTaskDeprecation()
         fails "model"
 
         and:
         failure.assertHasCause("Exception thrown while executing model rule: RulePlugin#createPerson(Person)")
         failure.assertHasCause("Invalid managed model type 'Person': read only property 'name' has non managed type java.lang.String, only managed types can be used")
+    }
+
+    private void expectSoftwareModelDeprecation(String pluginName) {
+        executer.expectDocumentedDeprecationWarning("The ${pluginName} plugin has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
+    }
+
+    private void expectModelDslDeprecation() {
+        executer.expectDocumentedDeprecationWarning("The model DSL has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
+    }
+
+    private void expectModelReportTaskDeprecation() {
+        executer.expectDocumentedDeprecationWarning("The task type org.gradle.api.reporting.model.ModelReport (used by the :model task) has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
     }
 }

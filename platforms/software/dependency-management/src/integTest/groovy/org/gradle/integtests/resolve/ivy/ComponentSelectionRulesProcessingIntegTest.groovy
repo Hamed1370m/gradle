@@ -18,13 +18,11 @@ package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.GradleMetadataResolveRunner
 import org.gradle.integtests.fixtures.RequiredFeature
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.ivy.IvyModule
 import org.gradle.test.fixtures.maven.MavenModule
 
 class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelectionRulesIntegrationTest {
 
-    @ToBeFixedForConfigurationCache(because = "task uses Configuration API")
     def "rules are not fired when no candidate matches selector"() {
         buildFile << """
 
@@ -43,8 +41,9 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
             }
 
             task lenientCheck {
+                def avArtifacts = configurations.conf.getIncoming().artifactView { lenient = true }.artifacts
                 doLast {
-                    def artifacts = configurations.conf.getIncoming().artifactView { lenient = true }.artifacts.artifacts
+                    def artifacts = avArtifacts.artifacts
                     assert artifacts.size() == 0
                     assert candidates.empty
                 }
@@ -81,7 +80,7 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
                 }
             }
 
-            checkDeps.doLast {
+            tasks.checkDeps.doLast {
                 assert extraRuleCandidates == ['1.1']
             }
 """
@@ -109,7 +108,7 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         buildFile << """
             configurations { conf }
             repositories {
-                maven { url "${mavenRepo.uri}" }
+                maven { url = "${mavenRepo.uri}" }
             }
 
             dependencies {
@@ -252,7 +251,7 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
                 }
             }
 
-            checkDeps.doLast {
+            tasks.checkDeps.doLast {
                 assert rule1candidates == ['2.0']
                 assert rule2candidates == ['2.0']
             }
@@ -309,7 +308,7 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         buildFile.text = """
             $commonBuildFile
 
-            checkDeps.doLast {
+            tasks.checkDeps.doLast {
                 assert status11 == 'milestone'
                 assert branch11 == 'test'
             }
@@ -349,7 +348,7 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         buildFile.text = """
             $commonBuildFile
 
-            checkDeps.doLast {
+            tasks.checkDeps.doLast {
                 assert status11 == 'release'
                 assert branch11 == 'master'
             }
@@ -455,7 +454,7 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
                 }
             }
 
-            checkDeps.doLast {
+            tasks.checkDeps.doLast {
                 assert candidates == ['1.2', '1.2', '1.2', '1.2']
             }
         """
@@ -473,8 +472,7 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         checkDependencies()
     }
 
-    @ToBeFixedForConfigurationCache(because = "task uses Configuration API")
-    def "can provide component selection rule as rule source"() {
+    def "can provide component selection all rule as rule source"() {
         buildFile << """
 
             dependencies {
@@ -491,11 +489,14 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
                 }
             }
 
-            checkDeps.doLast {
-                def artifacts = configurations.conf.incoming.artifacts.artifacts
-                assert artifacts.size() == 1
-                assert artifacts[0].id.componentIdentifier.version == '1.1'
-                assert ruleSource.candidates == ['1.2', '1.1']
+            tasks.checkDeps {
+                def avArtifacts = configurations.conf.incoming.artifacts
+                doLast {
+                    def artifacts = avArtifacts.artifacts
+                    assert artifacts.size() == 1
+                    assert artifacts[0].id.componentIdentifier.version == '1.1'
+                    assert ruleSource.candidates == ['1.2', '1.1']
+                }
             }
 
             class Select11 {
@@ -522,7 +523,62 @@ class ComponentSelectionRulesProcessingIntegTest extends AbstractComponentSelect
         }
 
         then:
+        executer.expectDocumentedDeprecationWarning("The ComponentSelectionRules.all(Object) method has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#dependency_management_rules")
         checkDependencies()
+    }
 
+    def "can provide component selection withModule rule as rule source"() {
+        buildFile << """
+
+            dependencies {
+                conf "org.utils:api:1.+"
+            }
+
+            def ruleSource = new Select11()
+
+            configurations.all {
+                resolutionStrategy {
+                    componentSelection {
+                        withModule("org.utils:api", ruleSource)
+                    }
+                }
+            }
+
+            tasks.checkDeps {
+                def avArtifacts = configurations.conf.incoming.artifacts
+                doLast {
+                    def artifacts = avArtifacts.artifacts
+                    assert artifacts.size() == 1
+                    assert artifacts[0].id.componentIdentifier.version == '1.1'
+                    assert ruleSource.candidates == ['1.2', '1.1']
+                }
+            }
+
+            class Select11 {
+                def candidates = []
+
+                @Mutate
+                void select(ComponentSelection selection) {
+                    if (selection.candidate.version != '1.1') {
+                        selection.reject("not 1.1")
+                    }
+                    candidates << selection.candidate.version
+                }
+            }
+        """
+
+        when:
+        repositoryInteractions {
+            'org.utils:api' {
+                expectVersionListing()
+                '1.1' {
+                    expectResolve()
+                }
+            }
+        }
+
+        then:
+        executer.expectDocumentedDeprecationWarning("The ComponentSelectionRules.withModule(Object,Object) method has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#dependency_management_rules")
+        checkDependencies()
     }
 }

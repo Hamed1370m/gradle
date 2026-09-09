@@ -39,7 +39,7 @@ class MavenPublishIdentifierValidationIntegTest extends AbstractMavenPublishInte
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 publications {
                     maven(MavenPublication) {
@@ -84,7 +84,7 @@ class MavenPublishIdentifierValidationIntegTest extends AbstractMavenPublishInte
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 publications {
                     maven(MavenPublication) {
@@ -122,7 +122,7 @@ class MavenPublishIdentifierValidationIntegTest extends AbstractMavenPublishInte
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 publications {
                     maven(MavenPublication)
@@ -133,7 +133,7 @@ class MavenPublishIdentifierValidationIntegTest extends AbstractMavenPublishInte
         fails 'publish'
 
         then:
-        failure.assertHasDescription "Execution failed for task ':publishMavenPublicationToMavenRepository'."
+        failure.assertHasDescription "Execution failed for task ':publishMavenPublicationToMavenRepository' (registered by plugin 'org.gradle.maven-publish')."
         failure.assertHasCause "Failed to publish publication 'maven' to repository 'maven'"
         failure.assertHasCause "Invalid publication 'maven': groupId cannot be empty"
     }
@@ -150,8 +150,8 @@ class MavenPublishIdentifierValidationIntegTest extends AbstractMavenPublishInte
             publishing {
                 repositories {
                     maven {
-                        name '${repoName}'
-                        url "${mavenRepo.uri}"
+                        name = '${repoName}'
+                        url = "${mavenRepo.uri}"
                     }
                 }
                 publications {

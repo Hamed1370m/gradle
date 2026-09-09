@@ -31,6 +31,7 @@ import org.gradle.plugins.ide.IdeWorkspace;
 import org.gradle.plugins.ide.api.XmlFileContentMerger;
 import org.gradle.plugins.ide.idea.internal.IdeaModuleMetadata;
 import org.gradle.plugins.ide.internal.IdeArtifactRegistry;
+import org.gradle.plugins.ide.internal.IdeDeprecations;
 
 import javax.inject.Inject;
 import java.io.File;
@@ -46,7 +47,7 @@ import static org.gradle.util.internal.ConfigureUtil.configure;
  * Example of use with a blend of all possible properties.
  * Typically you don't have to configure IDEA module directly because Gradle configures it for you.
  *
- * <pre class='autoTested'>
+ * <pre class='autoTestedWithDeprecations'>
  * import org.gradle.plugins.ide.idea.model.*
  *
  * plugins {
@@ -86,7 +87,7 @@ import static org.gradle.util.internal.ConfigureUtil.configure;
  * <p>
  * Examples of advanced configuration:
  *
- * <pre class='autoTested'>
+ * <pre class='autoTestedWithDeprecations'>
  * plugins {
  *     id 'java'
  *     id 'idea'
@@ -116,8 +117,10 @@ import static org.gradle.util.internal.ConfigureUtil.configure;
  *   }
  * }
  * </pre>
+ * @since 1.0
  */
 public abstract class IdeaProject implements IdeWorkspace {
+
     private final org.gradle.api.Project project;
     private final XmlFileContentMerger ipr;
     private final ProjectStateRegistry projectPathRegistry;
@@ -125,11 +128,22 @@ public abstract class IdeaProject implements IdeWorkspace {
 
     private List<IdeaModule> modules;
     private String jdkName;
+    /**
+     * The language level.
+     *
+     * @since 8.6
+     */
     protected IdeaLanguageLevel languageLevel;
+    /**
+     * The target bytecode version.
+     *
+     * @since 8.6
+     */
     protected JavaVersion targetBytecodeVersion;
     private String vcs;
     private Set<String> wildcards = new LinkedHashSet<>();
     private RegularFileProperty outputFile;
+    @SuppressWarnings("deprecation")
     private Set<ProjectLibrary> projectLibraries = new LinkedHashSet<>();
     private PathFactory pathFactory;
 
@@ -158,6 +172,7 @@ public abstract class IdeaProject implements IdeWorkspace {
      * An owner of this IDEA project.
      * <p>
      * If IdeaProject requires some information from gradle this field should not be used for this purpose.
+     * @since 2.11
      */
     public org.gradle.api.Project getProject() {
         return project;
@@ -165,8 +180,13 @@ public abstract class IdeaProject implements IdeWorkspace {
 
     /**
      * See {@link #ipr(Action) }
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
      */
+    @Deprecated
     public XmlFileContentMerger getIpr() {
+        IdeDeprecations.nagDeprecatedProperty(IdeaProject.class, "ipr");
         return ipr;
     }
 
@@ -175,8 +195,13 @@ public abstract class IdeaProject implements IdeWorkspace {
      * or affecting the way existing *.ipr content is merged with Gradle build information.
      * <p>
      * See the examples in the docs for {@link IdeaProject}
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
      */
+    @Deprecated
     public void ipr(@SuppressWarnings("rawtypes") @DelegatesTo(XmlFileContentMerger.class) Closure closure) {
+        IdeDeprecations.nagDeprecatedProperty(IdeaProject.class, "ipr");
         configure(closure, ipr);
     }
 
@@ -187,15 +212,20 @@ public abstract class IdeaProject implements IdeWorkspace {
      * See the examples in the docs for {@link IdeaProject}
      *
      * @since 3.5
+     * @deprecated Will be removed in Gradle 10.
      */
+    @Deprecated
     public void ipr(Action<? super XmlFileContentMerger> action) {
+        IdeDeprecations.nagDeprecatedProperty(IdeaProject.class, "ipr");
         action.execute(ipr);
     }
 
     /**
      * The name of the IDEA project. It is a convenience property that returns the name of the output file (without the file extension).
      * In IDEA, the project name is driven by the name of the 'ipr' file.
+     * @since 1.0
      */
+    @SuppressWarnings("deprecation")
     public String getName() {
         return getOutputFile().getName().replaceFirst("\\.ipr$", "");
     }
@@ -204,11 +234,17 @@ public abstract class IdeaProject implements IdeWorkspace {
      * Modules for the ipr file.
      * <p>
      * See the examples in the docs for {@link IdeaProject}
+     * @since 1.0
      */
     public List<IdeaModule> getModules() {
         return modules;
     }
 
+    /**
+     * Sets the modules.
+     *
+     * @since 1.0
+     */
     public void setModules(List<IdeaModule> modules) {
         this.modules = modules;
     }
@@ -217,11 +253,17 @@ public abstract class IdeaProject implements IdeWorkspace {
      * The java version used for defining the project sdk.
      * <p>
      * See the examples in the docs for {@link IdeaProject}
+     * @since 1.0
      */
     public String getJdkName() {
         return jdkName;
     }
 
+    /**
+     * Sets the jdk name.
+     *
+     * @since 1.0
+     */
     public void setJdkName(String jdkName) {
         this.jdkName = jdkName;
     }
@@ -234,6 +276,7 @@ public abstract class IdeaProject implements IdeWorkspace {
      * settings when compiling.
      * <p>
      * When not explicitly set, this is calculated as the maximum language level for the Idea modules of this Idea project.
+     * @since 1.0
      */
     public IdeaLanguageLevel getLanguageLevel() {
         return languageLevel;
@@ -259,6 +302,7 @@ public abstract class IdeaProject implements IdeWorkspace {
      * <p>
      * When explicitly set in the build script, this setting overrides any calculated values for Idea project
      * and Idea module.
+     * @since 1.0
      */
     public void setLanguageLevel(Object languageLevel) {
         this.languageLevel = new IdeaLanguageLevel(languageLevel);
@@ -272,11 +316,17 @@ public abstract class IdeaProject implements IdeWorkspace {
      * settings when compiling.
      * <p>
      * When {@code languageLevel} is not explicitly set, this is calculated as the maximum target bytecode version for the Idea modules of this Idea project.
+     * @since 2.11
      */
     public JavaVersion getTargetBytecodeVersion() {
         return targetBytecodeVersion;
     }
 
+    /**
+     * Sets the target bytecode version.
+     *
+     * @since 2.12
+     */
     public void setTargetBytecodeVersion(JavaVersion targetBytecodeVersion) {
         this.targetBytecodeVersion = targetBytecodeVersion;
     }
@@ -284,14 +334,20 @@ public abstract class IdeaProject implements IdeWorkspace {
     /**
      * The vcs for the project.
      * <p>
-     * Values are the same as used in IDEA's “Version Control” preference window (e.g. 'Git', 'Subversion').
+     * Values are the same as used in IDEA's "Version Control" preference window (e.g. 'Git', 'Subversion').
      * <p>
      * See the examples in the docs for {@link IdeaProject}.
+     * @since 2.2
      */
     public String getVcs() {
         return vcs;
     }
 
+    /**
+     * Sets the vcs.
+     *
+     * @since 2.2
+     */
     public void setVcs(String vcs) {
         this.vcs = vcs;
     }
@@ -300,11 +356,17 @@ public abstract class IdeaProject implements IdeWorkspace {
      * The wildcard resource patterns.
      * <p>
      * See the examples in the docs for {@link IdeaProject}.
+     * @since 1.0
      */
     public Set<String> getWildcards() {
         return wildcards;
     }
 
+    /**
+     * Sets the wildcards.
+     *
+     * @since 1.0
+     */
     public void setWildcards(Set<String> wildcards) {
         this.wildcards = wildcards;
     }
@@ -313,42 +375,86 @@ public abstract class IdeaProject implements IdeWorkspace {
      * Output *.ipr
      * <p>
      * See the examples in the docs for {@link IdeaProject}.
+     * @since 1.0
      */
     public File getOutputFile() {
         return outputFile.get().getAsFile();
     }
 
+    /**
+     * Sets the output file.
+     *
+     * @since 1.0
+     */
     public void setOutputFile(File outputFile) {
         this.outputFile.set(outputFile);
     }
 
     /**
      * The project-level libraries to be added to the IDEA project.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.5
      */
+    @Deprecated
     public Set<ProjectLibrary> getProjectLibraries() {
+        IdeDeprecations.nagDeprecatedProperty(IdeaProject.class, "projectLibraries");
         return projectLibraries;
     }
 
+    /**
+     * Sets the project-level libraries.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.5
+     */
+    @Deprecated
     public void setProjectLibraries(Set<ProjectLibrary> projectLibraries) {
+        IdeDeprecations.nagDeprecatedProperty(IdeaProject.class, "projectLibraries");
         this.projectLibraries = projectLibraries;
     }
 
+    /**
+     * Returns the path factory used to construct paths in the generated *.ipr file.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
+     */
+    @Deprecated
     public PathFactory getPathFactory() {
+        IdeDeprecations.nagDeprecatedProperty(IdeaProject.class, "pathFactory");
         return pathFactory;
     }
 
+    /**
+     * Sets the path factory used to construct paths in the generated *.ipr file.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
+     */
+    @Deprecated
     public void setPathFactory(PathFactory pathFactory) {
+        IdeDeprecations.nagDeprecatedProperty(IdeaProject.class, "pathFactory");
         this.pathFactory = pathFactory;
     }
 
+    /**
+     * Merges the existing *.ipr content with the configuration from this model.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
+     */
+    @Deprecated
     @SuppressWarnings("unchecked")
     public void mergeXmlProject(Project xmlProject) {
+        IdeDeprecations.nagDeprecatedProperty(IdeaProject.class, "ipr");
         ipr.getBeforeMerged().execute(xmlProject);
         xmlProject.configure(getModules(), getJdkName(), getLanguageLevel(), getTargetBytecodeVersion(), getWildcards(), getProjectLibraries(), getVcs());
         configureModulePaths(xmlProject);
         ipr.getWhenMerged().execute(xmlProject);
     }
 
+    @SuppressWarnings("deprecation")
     private void configureModulePaths(Project xmlProject) {
         ProjectComponentIdentifier thisProjectId = projectPathRegistry.stateFor(project).getComponentIdentifier();
         for (IdeArtifactRegistry.Reference<IdeaModuleMetadata> reference : artifactRegistry.getIdeProjects(IdeaModuleMetadata.class)) {

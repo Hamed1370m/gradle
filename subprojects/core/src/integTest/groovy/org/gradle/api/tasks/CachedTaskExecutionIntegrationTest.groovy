@@ -20,14 +20,12 @@ import org.gradle.initialization.StartParameterBuildOptions.BuildCacheDebugLoggi
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.BuildCacheOperationFixtures
 import org.gradle.integtests.fixtures.DirectoryBuildCacheFixture
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
 import org.gradle.internal.jvm.Jvm
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.gradle.util.internal.TextUtil
-
-import static org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache.Skip.INVESTIGATE
 
 class CachedTaskExecutionIntegrationTest extends AbstractIntegrationSpec implements DirectoryBuildCacheFixture {
 
@@ -207,12 +205,12 @@ class CachedTaskExecutionIntegrationTest extends AbstractIntegrationSpec impleme
 
     def "tasks get cached when source code changes back to previous state"() {
         expect:
-        withBuildCache().run "jar" assertTaskNotSkipped ":compileJava" assertTaskNotSkipped ":jar"
+        withBuildCache().run "jar" assertTaskExecuted ":compileJava" assertTaskExecuted ":jar"
 
         when:
         file("src/main/java/Hello.java").text = CHANGED_HELLO_WORLD
         then:
-        withBuildCache().run "jar" assertTaskNotSkipped ":compileJava" assertTaskNotSkipped ":jar"
+        withBuildCache().run "jar" assertTaskExecuted ":compileJava" assertTaskExecuted ":jar"
 
         when:
         file("src/main/java/Hello.java").text = ORIGINAL_HELLO_WORLD
@@ -304,11 +302,11 @@ class CachedTaskExecutionIntegrationTest extends AbstractIntegrationSpec impleme
         withBuildCache().fails 'adHocTask'
 
         then:
-        failure.assertHasDescription("Execution failed for task ':adHocTask'.")
+        failure.assertHasDescription("Execution failed for task ':adHocTask' (registered in build file 'build.gradle').")
         failure.assertHasCause("Could not evaluate spec for 'on CI'.")
     }
 
-    @Requires(IntegTestPreconditions.NotParallelExecutor)
+    @Requires(TestExecutionPreconditions.NotParallelExecutor)
     def "can load twice from the cache with no changes"() {
         given:
         buildFile << """
@@ -419,7 +417,10 @@ class CachedTaskExecutionIntegrationTest extends AbstractIntegrationSpec impleme
         noneSkipped()
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
+    @ToBeFixedForConfigurationCache(
+        issue = "https://github.com/gradle/gradle/issues/37246",
+        because = "Custom actions flag is not restored"
+    )
     def "task with custom actions gets logged"() {
         when:
         withBuildCache().run "compileJava", "--info"

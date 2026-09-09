@@ -34,16 +34,17 @@ import org.gradle.api.attributes.plugin.GradlePluginApiVersion;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.artifacts.dsl.DependencyHandlerInternal;
 import org.gradle.api.internal.artifacts.dsl.dependencies.DependencyFactoryInternal.ClassPathNotation;
+import org.gradle.api.internal.initialization.transform.ClassLoadTimeInstrumentationComposer;
 import org.gradle.api.internal.initialization.transform.registration.InstrumentationTransformRegisterer;
 import org.gradle.api.internal.initialization.transform.services.CacheInstrumentationDataBuildService;
 import org.gradle.api.internal.initialization.transform.services.CacheInstrumentationDataBuildService.ResolutionScope;
 import org.gradle.api.internal.initialization.transform.utils.InstrumentationClasspathMerger;
 import org.gradle.api.internal.initialization.transform.utils.InstrumentationClasspathMerger.FileType;
-import org.gradle.api.internal.model.NamedObjectInstantiator;
 import org.gradle.api.invocation.Gradle;
 import org.gradle.internal.classpath.ClassPath;
 import org.gradle.internal.classpath.TransformedClassPath;
 import org.gradle.internal.component.local.model.OpaqueComponentIdentifier;
+import org.gradle.internal.execution.SafeInternalArtifactTransformAccess;
 import org.gradle.internal.instrumentation.agent.AgentStatus;
 import org.gradle.internal.instrumentation.reporting.MethodInterceptionReportCollector;
 import org.gradle.internal.instrumentation.reporting.PropertyUpgradeReportConfig;
@@ -93,17 +94,16 @@ public class DefaultScriptClassPathResolver implements ScriptClassPathResolver {
 
     public static final Attribute<String> INSTRUMENTED_ATTRIBUTE = Attribute.of("org.gradle.internal.instrumented", String.class);
 
-    private final NamedObjectInstantiator instantiator;
     private final InstrumentationTransformRegisterer instrumentationTransformRegisterer;
     private final PropertyUpgradeReportConfig propertyUpgradeReportConfig;
+    private final ClassLoadTimeInstrumentationComposer classLoadTimeInstrumentationComposer;
 
     public DefaultScriptClassPathResolver(
-        NamedObjectInstantiator instantiator,
         AgentStatus agentStatus,
         Gradle gradle,
-        PropertyUpgradeReportConfig propertyUpgradeReportConfig
+        PropertyUpgradeReportConfig propertyUpgradeReportConfig,
+        ClassLoadTimeInstrumentationComposer classLoadTimeInstrumentationComposer
     ) {
-        this.instantiator = instantiator;
         // Shared services must be provided lazily, otherwise they are instantiated too early and some cases can fail
         this.instrumentationTransformRegisterer = new InstrumentationTransformRegisterer(
             agentStatus,
@@ -111,6 +111,7 @@ public class DefaultScriptClassPathResolver implements ScriptClassPathResolver {
             Lazy.atomic().of(gradle::getSharedServices)
         );
         this.propertyUpgradeReportConfig = propertyUpgradeReportConfig;
+        this.classLoadTimeInstrumentationComposer = classLoadTimeInstrumentationComposer;
     }
 
     @Override
@@ -127,12 +128,12 @@ public class DefaultScriptClassPathResolver implements ScriptClassPathResolver {
         // should ideally reuse the `JvmPluginServices` but this code is too low level
         // and this service is therefore not available!
         AttributeContainer attributes = configuration.getAttributes();
-        attributes.attribute(Usage.USAGE_ATTRIBUTE, instantiator.named(Usage.class, Usage.JAVA_RUNTIME));
-        attributes.attribute(Category.CATEGORY_ATTRIBUTE, instantiator.named(Category.class, Category.LIBRARY));
-        attributes.attribute(LIBRARY_ELEMENTS_ATTRIBUTE, instantiator.named(LibraryElements.class, LibraryElements.JAR));
-        attributes.attribute(Bundling.BUNDLING_ATTRIBUTE, instantiator.named(Bundling.class, Bundling.EXTERNAL));
+        attributes.attribute(Usage.USAGE_ATTRIBUTE, attributes.named(Usage.class, Usage.JAVA_RUNTIME));
+        attributes.attribute(Category.CATEGORY_ATTRIBUTE, attributes.named(Category.class, Category.LIBRARY));
+        attributes.attribute(LIBRARY_ELEMENTS_ATTRIBUTE, attributes.named(LibraryElements.class, LibraryElements.JAR));
+        attributes.attribute(Bundling.BUNDLING_ATTRIBUTE, attributes.named(Bundling.class, Bundling.EXTERNAL));
         attributes.attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, Integer.parseInt(JavaVersion.current().getMajorVersion()));
-        attributes.attribute(GradlePluginApiVersion.GRADLE_PLUGIN_API_VERSION_ATTRIBUTE, instantiator.named(GradlePluginApiVersion.class, GradleVersion.current().getVersion()));
+        attributes.attribute(GradlePluginApiVersion.GRADLE_PLUGIN_API_VERSION_ATTRIBUTE, attributes.named(GradlePluginApiVersion.class, GradleVersion.current().getVersion()));
 
         DependencyHandler dependencyHandler = resolutionContext.getDependencyHandler();
         configuration.getDependencyConstraints().add(dependencyHandler.getConstraints().create(Log4jBannedVersion.LOG4J2_CORE_COORDINATES, constraint -> constraint.version(version -> {
@@ -150,17 +151,40 @@ public class DefaultScriptClassPathResolver implements ScriptClassPathResolver {
             ArtifactView originalDependencies = getOriginalDependencies(classpathConfiguration);
             resolutionScope.setTypeHierarchyAnalysisResult(getAnalysisResult(classpathConfiguration));
             resolutionScope.setOriginalClasspath(originalDependencies.getFiles());
+
             ArtifactCollection instrumentedExternalDependencies = getInstrumentedExternalDependencies(classpathConfiguration);
             ArtifactCollection instrumentedProjectDependencies = getInstrumentedProjectDependencies(classpathConfiguration);
-            Map<FileType, List<File>> instrumentedClasspath = InstrumentationClasspathMerger.mergeToClasspath(
+            Map<FileType, List<File>> instrumentedClasspath = mergeInstrumentedClasspath(originalDependencies, instrumentedExternalDependencies, instrumentedProjectDependencies);
+
+            MethodInterceptionReportCollector reportCollector = propertyUpgradeReportConfig.getReportCollector();
+            instrumentedClasspath.getOrDefault(INTERCEPTED_METHODS_REPORT, Collections.emptyList()).forEach(reportCollector::collect);
+            ClassPath classPath = TransformedClassPath.handleInstrumentingArtifactTransform(instrumentedClasspath.getOrDefault(ARTIFACT, Collections.emptyList()));
+            // The composition is repeated by the configuration cache class decoder when the classpath is restored
+            // from the cache, see DefaultClassDecoder.scopeFor.
+            return classLoadTimeInstrumentationComposer.composeWithThirdPartyAgentIfPresent(classPath);
+        }
+    }
+
+    /**
+     * Visits the artifact collections to produce the merged instrumented classpath.
+     * <p>
+     * The visit invokes project-artifact transforms from inside the calling task action.
+     * The resolver owns input tracking for these transforms and cannot route their outputs
+     * through a user task's {@code @InputFiles} property, so this method enters a
+     * {@link SafeInternalArtifactTransformAccess} scope to suppress the
+     * "undeclared artifact transform input" deprecation that would otherwise fire.
+     */
+    private static Map<FileType, List<File>> mergeInstrumentedClasspath(
+        ArtifactView originalDependencies,
+        ArtifactCollection instrumentedExternalDependencies,
+        ArtifactCollection instrumentedProjectDependencies
+    ) {
+        try (SafeInternalArtifactTransformAccess.Scope ignored = SafeInternalArtifactTransformAccess.safely()) {
+            return InstrumentationClasspathMerger.mergeToClasspath(
                 originalDependencies.getArtifacts(),
                 instrumentedExternalDependencies,
                 instrumentedProjectDependencies
             );
-
-            MethodInterceptionReportCollector reportCollector = propertyUpgradeReportConfig.getReportCollector();
-            instrumentedClasspath.getOrDefault(INTERCEPTED_METHODS_REPORT, Collections.emptyList()).forEach(reportCollector::collect);
-            return TransformedClassPath.handleInstrumentingArtifactTransform(instrumentedClasspath.getOrDefault(ARTIFACT, Collections.emptyList()));
         }
     }
 
@@ -168,7 +192,7 @@ public class DefaultScriptClassPathResolver implements ScriptClassPathResolver {
         return classpathConfiguration.getIncoming().artifactView((Action<? super ArtifactView.ViewConfiguration>) config -> {
             config.attributes(attributes -> {
                 attributes.attribute(INSTRUMENTED_ATTRIBUTE, ANALYZED_ARTIFACT.value);
-                attributes.attribute(LIBRARY_ELEMENTS_ATTRIBUTE, instantiator.named(LibraryElements.class, LibraryElements.CLASSES));
+                attributes.attribute(LIBRARY_ELEMENTS_ATTRIBUTE, attributes.named(LibraryElements.class, LibraryElements.CLASSES));
             });
             // We have to analyze external and project dependencies to get full hierarchies, since
             // for example user could use dependency substitution to replace external dependency with project dependency.

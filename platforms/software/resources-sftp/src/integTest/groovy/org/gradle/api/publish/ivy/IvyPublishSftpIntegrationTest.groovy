@@ -48,7 +48,7 @@ class IvyPublishSftpIntegrationTest extends AbstractIvyPublishIntegTest {
             publishing {
                 repositories {
                     ivy {
-                        url "${ivySftpRepo.uri}"
+                        url = "${ivySftpRepo.uri}"
                         credentials(PasswordCredentials)
                     }
                 }
@@ -78,7 +78,7 @@ class IvyPublishSftpIntegrationTest extends AbstractIvyPublishIntegTest {
             publishing {
                 repositories {
                     ivy {
-                        url "${ivySftpRepo.uri}"
+                        url = "${ivySftpRepo.uri}"
                         credentials(PasswordCredentials)
                         layout "$layout"
                     }
@@ -147,7 +147,7 @@ class IvyPublishSftpIntegrationTest extends AbstractIvyPublishIntegTest {
             publishing {
                 repositories {
                     ivy {
-                        url "${ivySftpRepo.uri}"
+                        url = "${ivySftpRepo.uri}"
                         credentials(PasswordCredentials)
                         patternLayout {
                             artifact "${ivySftpRepo.baseArtifactPattern}"
@@ -209,7 +209,7 @@ class IvyPublishSftpIntegrationTest extends AbstractIvyPublishIntegTest {
 
         then:
         fails 'publish'
-        failure.assertHasDescription("Execution failed for task ':publishIvyPublicationToIvyRepository'.")
+        failure.assertHasDescription("Execution failed for task ':publishIvyPublicationToIvyRepository' (registered by plugin 'org.gradle.ivy-publish').")
             .assertHasCause("Failed to publish publication 'ivy' to repository 'ivy'")
             .assertHasCause("Could not create resource '${ivySftpRepo.uri}'.")
     }
@@ -226,7 +226,7 @@ class IvyPublishSftpIntegrationTest extends AbstractIvyPublishIntegTest {
 
         then:
         fails 'publish'
-        failure.assertHasDescription("Execution failed for task ':publishIvyPublicationToIvyRepository'.")
+        failure.assertHasDescription("Execution failed for task ':publishIvyPublicationToIvyRepository' (registered by plugin 'org.gradle.ivy-publish').")
             .assertHasCause("Failed to publish publication 'ivy' to repository 'ivy'")
             .assertHasCause("Could not write to resource '${module.jar.uri}'.")
 

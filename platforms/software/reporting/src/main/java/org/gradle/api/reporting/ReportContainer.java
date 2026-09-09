@@ -20,10 +20,12 @@ import org.gradle.api.GradleException;
 import org.gradle.api.NamedDomainObjectSet;
 import org.gradle.api.Namer;
 import org.gradle.api.Rule;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Nested;
 import org.gradle.util.Configurable;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
@@ -41,6 +43,7 @@ import java.util.SortedSet;
  * the addition of new report object and/or the removal of existing report objects.
  *
  * @param <T> The base report type for reports of this container.
+ * @since 1.0
  */
 public interface ReportContainer<T extends Report> extends NamedDomainObjectSet<T>, Configurable<ReportContainer<T>> {
 
@@ -49,8 +52,14 @@ public interface ReportContainer<T extends Report> extends NamedDomainObjectSet<
      * <p>
      * This applies to the standard {@link java.util.Collection} methods such as {@code add()}, {@code remove()}
      * and {@code clear()}.
+     * @since 1.0
      */
     class ImmutableViolationException extends GradleException {
+        /**
+         * Creates a new {@code ImmutableViolationException}.
+         *
+         * @since 1.0
+         */
         public ImmutableViolationException() {
             super("ReportContainer objects are immutable");
         }
@@ -63,6 +72,7 @@ public interface ReportContainer<T extends Report> extends NamedDomainObjectSet<
      * reflects the current set of enabled reports.
      *
      * @return The enabled reports.
+     * @since 1.0
      */
     @Internal
     NamedDomainObjectSet<T> getEnabled();
@@ -86,6 +96,10 @@ public interface ReportContainer<T extends Report> extends NamedDomainObjectSet<
     @Override
     @Internal
     boolean isEmpty();
+
+    @Override
+    @Internal
+    Provider<? extends Collection<T>> getElements();
 
     /**
      * Returns the enabled reports, keyed by report name.

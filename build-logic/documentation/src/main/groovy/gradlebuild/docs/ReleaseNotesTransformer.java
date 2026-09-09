@@ -18,12 +18,14 @@ package gradlebuild.docs;
 
 import com.google.common.io.CharStreams;
 import org.gradle.api.GradleException;
-import org.gradle.api.UncheckedIOException;
+import org.gradle.internal.UncheckedException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.DocumentType;
 import org.jsoup.nodes.Element;
+import org.jsoup.nodes.Node;
 import org.jsoup.select.Elements;
+import org.jsoup.select.NodeVisitor;
 
 import java.io.File;
 import java.io.FileReader;
@@ -34,7 +36,6 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 /**
  * Deeply opinionated file filter that adds elements to the release notes HTML page.
@@ -43,7 +44,6 @@ public class ReleaseNotesTransformer extends FilterReader {
     private File baseCss;
     private File releaseNotesCss;
     private File releaseNotesJavascript;
-    private Set<File> jqueryFiles;
 
     public ReleaseNotesTransformer(Reader original) {
         super(original);
@@ -69,7 +69,7 @@ public class ReleaseNotesTransformer extends FilterReader {
     }
 
     private Reader transform(Reader in) throws IOException {
-        if (jqueryFiles == null || releaseNotesJavascript == null || baseCss == null || releaseNotesCss == null) {
+        if (releaseNotesJavascript == null || baseCss == null || releaseNotesCss == null) {
             throw new GradleException("filter isn't ready to transform");
         }
 
@@ -83,63 +83,82 @@ public class ReleaseNotesTransformer extends FilterReader {
                 append("<link rel='stylesheet' type='text/css' href='https://assets.gradle.com/lato/css/lato-font.css'/>");
         addCssToHead(document);
         addJavascriptToHead(document);
+        addHighlightJsToHead(document);
 
         wrapH2InSectionTopic(document);
-        addAnchorsForHeadings(document);
         document.body().prepend("<h1>Gradle Release Notes</h1>");
         addTOC(document);
         wrapContentInContainer(document);
 
+        cleanUpIssueLinks(document);
+        handleVideos(document);
+        removeLeftoverComments(document);
+
+        return new StringReader(document.toString());
+    }
+
+    private void cleanUpIssueLinks(Document document) {
         String rewritten = document.body().html();
         // Turn Gradle Jira issue numbers into issue links
         rewritten = rewritten.replaceAll("GRADLE-\\d+", "<a href=\"https://issues.gradle.org/browse/$0\">$0</a>");
         // Turn Gradle Github issue numbers into issue links
         rewritten = rewritten.replaceAll("(gradle/[a-zA-Z\\-_]+)#(\\d+)", "<a href=\"https://github.com/$1/issues/$2\">$0</a>");
-        
+        document.body().html(rewritten);
+    }
+
+    private void handleVideos(Document document) {
+        String rewritten = document.body().html();
+
         // Replace YouTube references by embedded videos, ?si= attribute is a must
         // E.g. @youtube(Summary,UN0AFCLASZA?si=9aG5tDzj6nL1_IKT&start=371)@ => https://www.youtube.com/embed/UN0AFCLASZA?si=9aG5tDzj6nL1_IKT&amp;start=371"
         // "&rel=0" is also force-injected to prevent video recommendations from other channels
-        rewritten = rewritten.replaceAll("\\@youtube\\(([a-zA-Z\\-_]+)\\,([^\\s<]+)\\)\\@", 
-"<details> \n" +
-"  <summary>📺 Watch the $1</summary> \n" +
-"  <div class=\"youtube-video\"> \n" +
-"    <div class=\"youtube-player\"> \n" +
-"        <iframe src=\"https://www.youtube.com/embed/$2&rel=0\" title=\"YouTube video player\"  \n" +
-"          frameborder=\"0\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share\" \n" +
-"          referrerpolicy=\"strict-origin-when-cross-origin\" allowfullscreen> \n" +
-"        </iframe> \n" +
-"    </div> \n" +
-"  </div> \n" +
-"</details>");
+        rewritten = rewritten.replaceAll("\\@youtube\\(([a-zA-Z\\-_]+)\\,([^\\s<]+)\\)\\@",
+            "<details> \n" +
+                "  <summary>📺 Watch the $1</summary> \n" +
+                "  <div class=\"youtube-video\"> \n" +
+                "    <div class=\"youtube-player\"> \n" +
+                "        <iframe src=\"https://www.youtube.com/embed/$2&rel=0\" title=\"YouTube video player\"  \n" +
+                "          frameborder=\"0\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share\" \n" +
+                "          referrerpolicy=\"strict-origin-when-cross-origin\" allowfullscreen> \n" +
+                "        </iframe> \n" +
+                "    </div> \n" +
+                "  </div> \n" +
+                "</details>");
 
         // Same for the Wistia-hosted videos
-        rewritten = rewritten.replaceAll("\\@wistia\\(([a-zA-Z\\-_]+)\\,([^\\s<]+)\\)\\@", 
-"<details> \n" +
-"  <summary>📺 Watch the $1</summary> \n" +
-"  <div class=\"wistia-video\"> \n" +
-"    <div class=\"wistia-player\"> \n" +
-"      <script src=\"https://fast.wistia.com/embed/medias/$2.jsonp\" async></script> \n" +
-"      <script src=\"https://fast.wistia.com/assets/external/E-v1.js\" async></script> \n" +
-"        <div class=\"wistia_responsive_padding\" style=\"padding:55.94% 0 0 0;position:relative;\"> \n" +
-"           <div class=\"wistia_responsive_wrapper\" style=\"height:100%;left:0;position:absolute;top:0;width:100%;\"> \n" +
-"             <div class=\"wistia_embed wistia_async_$2 seo=true videoFoam=true\" style=\"height:100%;position:relative;width:100%\"> \n" +
-"              <div class=\"wistia_swatch\" style=\"height:100%;left:0;opacity:0;overflow:hidden;position:absolute;top:0;transition:opacity 200ms;width:100%;\"> \n" +
-"                <img src=\"https://fast.wistia.com/embed/medias/$2/swatch\" style=\"filter:blur(5px);height:100%;object-fit:contain;width:100%;\" alt=\"$1\" aria-hidden=\"true\" onload=\"this.parentNode.style.opacity=1;\" /> \n" +
-"        </div></div></div></div> \n" +
-"    </div> \n" +
-"  </div> \n" +
-"</details>");
-
+        rewritten = rewritten.replaceAll("\\@wistia\\(([a-zA-Z\\-_]+)\\,([^\\s<]+)\\)\\@",
+            "<details> \n" +
+                "  <summary>📺 Watch the $1</summary> \n" +
+                "  <div class=\"wistia-video\"> \n" +
+                "    <div class=\"wistia-player\"> \n" +
+                "      <script src=\"https://fast.wistia.com/embed/medias/$2.jsonp\" async></script> \n" +
+                "      <script src=\"https://fast.wistia.com/assets/external/E-v1.js\" async></script> \n" +
+                "        <div class=\"wistia_responsive_padding\" style=\"padding:55.94% 0 0 0;position:relative;\"> \n" +
+                "           <div class=\"wistia_responsive_wrapper\" style=\"height:100%;left:0;position:absolute;top:0;width:100%;\"> \n" +
+                "             <div class=\"wistia_embed wistia_async_$2 seo=true videoFoam=true\" style=\"height:100%;position:relative;width:100%\"> \n" +
+                "              <div class=\"wistia_swatch\" style=\"height:100%;left:0;opacity:0;overflow:hidden;position:absolute;top:0;transition:opacity 200ms;width:100%;\"> \n" +
+                "                <img src=\"https://fast.wistia.com/embed/medias/$2/swatch\" style=\"filter:blur(5px);height:100%;object-fit:contain;width:100%;\" alt=\"$1\" aria-hidden=\"true\" onload=\"this.parentNode.style.opacity=1;\" /> \n" +
+                "        </div></div></div></div> \n" +
+                "    </div> \n" +
+                "  </div> \n" +
+                "</details>");
 
         document.body().html(rewritten);
+    }
 
-        return new StringReader(document.toString());
+    private void addHighlightJsToHead(Document document) {
+        String base = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1";
+        Element head = document.head();
+
+        head.appendElement("link")
+            .attr("rel", "stylesheet")
+            .attr("href", base + "/styles/stackoverflow-light.min.css");
+        head.appendElement("script").attr("src", base + "/highlight.min.js");
+        head.appendElement("script").attr("src", base + "/languages/groovy.min.js");
+        head.appendElement("script").append("hljs.highlightAll();");
     }
 
     private void addJavascriptToHead(Document document) {
-        for (File jquery : this.jqueryFiles) {
-            appendFileContentsTo(document.head(), "<script type='text/javascript'>", jquery, "</script>");
-        }
         appendFileContentsTo(document.head(), "<script type='text/javascript'>", releaseNotesJavascript, "</script>");
     }
 
@@ -152,8 +171,24 @@ public class ReleaseNotesTransformer extends FilterReader {
         try (FileReader reader = new FileReader(file)) {
             element.append(open + CharStreams.toString(reader) + close);
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
+    }
+
+    private void removeLeftoverComments(Document document) {
+        document.traverse(new NodeVisitor() {
+            @Override
+            public void head(Node node, int depth) {
+                if (node.nodeName().equals("#comment")) {
+                    node.remove();
+                }
+            }
+
+            @Override
+            public void tail(Node node, int depth) {
+                // Do nothing
+            }
+        });
     }
 
     private void wrapH2InSectionTopic(Document document) {
@@ -200,7 +235,8 @@ public class ReleaseNotesTransformer extends FilterReader {
         for (Element h23element: h23elements) {
             String tag = h23element.tagName();
             String name = h23element.text();
-            String anchor = h23element.attr("id");
+            Element link = h23element.selectFirst("a");
+            String anchor = (link != null) ? link.attr("id") : "";
             if(!name.startsWith("Table") && tag.equals("h2")){
                 toc.append("<li class=\"mainTopic\"><a/></li>").children().last().select("a").first().text(name).attr("href", "#" + anchor);
             } else if(!name.startsWith("Table") && tag.equals("h3")){
@@ -215,10 +251,6 @@ public class ReleaseNotesTransformer extends FilterReader {
             String anchorName = heading.text().toLowerCase(Locale.ROOT).replaceAll(" ", "-");
             heading.attr("id", anchorName);
         }
-    }
-
-    public void setJqueryFiles(Set<File> jqueryFiles) {
-        this.jqueryFiles = jqueryFiles;
     }
 
     public void setBaseCss(File baseCss) {

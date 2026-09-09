@@ -16,19 +16,24 @@
 package org.gradle.scala.compile
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.ScalaCoverage
 import org.gradle.integtests.fixtures.TestResources
-import org.gradle.integtests.fixtures.ZincScalaCompileFixture
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 import org.junit.Rule
 
+@Requires(value = JdkVersionTestPreconditions.Jdk23OrEarlier, reason = "Scala does not work with Java 24 without warnings yet")
 class ScalaCompileWithJavaLibraryIntegrationTest extends AbstractIntegrationSpec {
 
     @Rule TestResources resources = new TestResources(temporaryFolder)
-    @Rule public final ZincScalaCompileFixture zincScalaCompileFixture = new ZincScalaCompileFixture(executer, temporaryFolder)
 
     def setup() {
         executer.withRepositoryMirrors()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "multi-project test fixture configures from root")
     def javaLibraryCanDependOnScalaLibraryProject() {
         when:
         run ":compileJava"
@@ -54,7 +59,7 @@ class ScalaCompileWithJavaLibraryIntegrationTest extends AbstractIntegrationSpec
                 mavenCentral()
             }
             dependencies {
-                implementation("org.scala-lang:scala-library:2.11.12")
+                implementation("org.scala-lang:scala-library:${ScalaCoverage.latestSupportedScala2Version}")
             }
         """
 
@@ -62,7 +67,7 @@ class ScalaCompileWithJavaLibraryIntegrationTest extends AbstractIntegrationSpec
         succeeds 'compileJava'
 
         then:
-        result.assertTasksExecutedInOrder(':compileScala', ':compileJava')
+        result.assertTasksScheduledInOrder(':compileScala', ':compileJava')
 
         where:
         configurationStyle | setup
@@ -92,7 +97,7 @@ class ScalaCompileWithJavaLibraryIntegrationTest extends AbstractIntegrationSpec
                 mavenCentral()
             }
             dependencies {
-                mySourcesImplementation("org.scala-lang:scala-library:2.11.12")
+                mySourcesImplementation("org.scala-lang:scala-library:${ScalaCoverage.latestSupportedScala2Version}")
             }
         """
 
@@ -100,7 +105,7 @@ class ScalaCompileWithJavaLibraryIntegrationTest extends AbstractIntegrationSpec
         succeeds 'compileMySourcesJava'
 
         then:
-        result.assertTasksExecutedInOrder(':compileMySourcesScala', ':compileMySourcesJava')
+        result.assertTasksScheduledInOrder(':compileMySourcesScala', ':compileMySourcesJava')
     }
 
 }

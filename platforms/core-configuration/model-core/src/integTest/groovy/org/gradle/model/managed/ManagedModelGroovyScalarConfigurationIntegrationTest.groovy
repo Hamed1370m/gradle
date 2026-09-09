@@ -17,12 +17,13 @@
 package org.gradle.model.managed
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.StableConfigurationCacheDeprecations
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 
 import static org.hamcrest.CoreMatchers.containsString
 
 @UnsupportedWithConfigurationCache(because = "software model")
-class ManagedModelGroovyScalarConfigurationIntegrationTest extends AbstractIntegrationSpec {
+class ManagedModelGroovyScalarConfigurationIntegrationTest extends AbstractIntegrationSpec implements StableConfigurationCacheDeprecations {
 
     private static final String CLASSES = '''
         enum Thing {
@@ -145,6 +146,8 @@ class ManagedModelGroovyScalarConfigurationIntegrationTest extends AbstractInteg
             """
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
         fails 'printResolvedValues'
 
         and:
@@ -173,6 +176,8 @@ class ManagedModelGroovyScalarConfigurationIntegrationTest extends AbstractInteg
             """
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
         fails 'printResolvedValues'
 
         and:
@@ -198,6 +203,8 @@ The following types/formats are supported:
             """
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
         fails 'printResolvedValues'
 
         and:
@@ -235,6 +242,8 @@ The following types/formats are supported:
             """
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
         fails 'printResolvedValues'
 
         and:
@@ -279,6 +288,8 @@ The following types/formats are supported:
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
         succeeds 'printResolvedValues'
 
         and:
@@ -308,6 +319,8 @@ The following types/formats are supported:
             """
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
         fails 'printResolvedValues'
 
         and:
@@ -328,6 +341,8 @@ The following types/formats are supported:
             """
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
         succeeds 'printResolvedValues'
 
         and:
@@ -372,6 +387,8 @@ The following types/formats are supported:
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
         succeeds 'printResolvedValues'
 
         and:
@@ -415,6 +432,8 @@ The following types/formats are supported:
         '''
 
         then:
+        expectSoftwareModelDeprecation("ConvertRules")
+        expectSoftwareModelDeprecation("RulePlugin")
         succeeds 'printResolvedValues'
 
         and:
@@ -495,6 +514,9 @@ The following types/formats are supported:
         '''
 
         then:
+        expectTaskGetProjectDeprecations(5)
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
         succeeds 'printResolvedValues'
 
         and:
@@ -504,7 +526,7 @@ The following types/formats are supported:
         output.contains '4: true'
     }
 
-    void 'CharSequence to File error cases'() {
+    void 'File error cases'() {
         given:
         String model = '''
             @Managed
@@ -519,22 +541,8 @@ The following types/formats are supported:
             }
 
             apply type: RulePlugin
+            apply plugin: 'model-reporting-tasks'
         '''
-
-        when:
-        buildFile.text = model + '''
-            model {
-                props {
-                    theFile = 'http://gradle.org'
-                }
-            }
-        '''
-
-        then:
-        fails 'model'
-
-        and:
-        failure.assertThatCause(containsString("Cannot convert URL 'http://gradle.org' to a file."))
 
         when:
         buildFile.text = model + '''
@@ -546,6 +554,9 @@ The following types/formats are supported:
         '''
 
         then:
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
+        expectModelReportTaskDeprecation()
         fails 'model'
 
         and:
@@ -605,10 +616,26 @@ The following types/formats are supported:
         file('p2/build.gradle') << model
 
         then:
+        expectTaskGetProjectDeprecations(3)
+        expectSoftwareModelDeprecation("RulePlugin")
+        expectModelDslDeprecation()
+        expectModelDslDeprecation()
         succeeds ':p1:printResolvedValues', ':p2:printResolvedValues'
 
         and:
         output.contains 'p1 file: /path/to/Thing.java true'.replace('/' as char, File.separatorChar)
         output.contains 'p2 file: /path/to/Thing.java true'.replace('/' as char, File.separatorChar)
+    }
+
+    private void expectSoftwareModelDeprecation(String pluginName) {
+        executer.expectDocumentedDeprecationWarning("The ${pluginName} plugin has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
+    }
+
+    private void expectModelDslDeprecation() {
+        executer.expectDocumentedDeprecationWarning("The model DSL has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
+    }
+
+    private void expectModelReportTaskDeprecation() {
+        executer.expectDocumentedDeprecationWarning("The task type org.gradle.api.reporting.model.ModelReport (used by the :model task) has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
     }
 }

@@ -17,13 +17,11 @@
 package org.gradle.caching.http;
 
 import org.gradle.api.Action;
-import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.tasks.Nested;
 import org.gradle.caching.configuration.AbstractBuildCache;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
-import javax.inject.Inject;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -60,26 +58,28 @@ public abstract class HttpBuildCache extends AbstractBuildCache {
     private boolean allowInsecureProtocol;
     private boolean useExpectContinue;
 
+    /**
+     * Creates a new {@code HttpBuildCache}.
+     *
+     * @since 3.5
+     */
     public HttpBuildCache() {
-        this.credentials = getObjectFactory().newInstance(HttpBuildCacheCredentials.class);
-    }
-
-    @Inject
-    protected ObjectFactory getObjectFactory() {
-        throw new UnsupportedOperationException();
+        this.credentials = new HttpBuildCacheCredentials();
     }
 
     /**
      * Returns the URI to the cache.
+     * @since 3.5
      */
     @Nullable
-    @Nested
+    @ToBeReplacedByLazyProperty
     public URI getUrl() {
         return url;
     }
 
     /**
      * Sets the URL of the cache. The URL must end in a '/'.
+     * @since 3.5
      */
     public void setUrl(String url) {
         setUrl(URI.create(url));
@@ -87,6 +87,7 @@ public abstract class HttpBuildCache extends AbstractBuildCache {
 
     /**
      * Sets the URL of the cache. The URL must end in a '/'.
+     * @since 3.5
      */
     public void setUrl(URL url) throws URISyntaxException {
         setUrl(url.toURI());
@@ -94,6 +95,7 @@ public abstract class HttpBuildCache extends AbstractBuildCache {
 
     /**
      * Sets the URL of the cache. The URL must end in a '/'.
+     * @since 3.5
      */
     public void setUrl(@Nullable URI url) {
         this.url = url;
@@ -101,6 +103,7 @@ public abstract class HttpBuildCache extends AbstractBuildCache {
 
     /**
      * Returns the credentials used to access the HTTP cache backend.
+     * @since 3.5
      */
     @Nested
     public HttpBuildCacheCredentials getCredentials() {
@@ -109,6 +112,7 @@ public abstract class HttpBuildCache extends AbstractBuildCache {
 
     /**
      * Configures the credentials used to access the HTTP cache backend.
+     * @since 3.5
      */
     public void credentials(Action<? super HttpBuildCacheCredentials> configuration) {
         configuration.execute(credentials);

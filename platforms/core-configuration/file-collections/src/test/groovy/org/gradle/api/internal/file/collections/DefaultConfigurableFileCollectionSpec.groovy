@@ -30,7 +30,9 @@ import org.gradle.api.internal.tasks.DefaultTaskDependencyFactory
 import org.gradle.api.internal.tasks.TaskDependencyResolveContext
 import org.gradle.api.internal.tasks.TaskResolver
 import org.gradle.api.specs.Spec
+import org.gradle.util.Path
 import org.spockframework.lang.Wildcard
+import spock.lang.Issue
 
 import java.util.concurrent.Callable
 import java.util.function.Consumer
@@ -42,7 +44,7 @@ class DefaultConfigurableFileCollectionSpec extends FileCollectionSpec {
     def taskResolver = Mock(TaskResolver)
     def host = Mock(PropertyHost)
     def patternSetFactory = TestFiles.patternSetFactory
-    def taskDependencyFactory = DefaultTaskDependencyFactory.forProject(taskResolver, (tasks) -> { })
+    def taskDependencyFactory = new DefaultTaskDependencyFactory(taskResolver, (tasks) -> { })
     def collection = new DefaultConfigurableFileCollection("<display>", fileResolver, taskDependencyFactory, patternSetFactory, host)
 
     @Override
@@ -538,7 +540,7 @@ class DefaultConfigurableFileCollectionSpec extends FileCollectionSpec {
 
         then:
         dependencies.toList() == [task]
-        1 * taskResolver.resolveTask("c") >> task
+        1 * taskResolver.resolveTask(Path.path("c")) >> task
         0 * _
     }
 
@@ -557,7 +559,7 @@ class DefaultConfigurableFileCollectionSpec extends FileCollectionSpec {
         then:
         dependencies.toList() == [taskA, taskB]
         1 * fileCollectionMock.visitDependencies(_) >> { TaskDependencyResolveContext context -> context.add(taskA) }
-        1 * taskResolver.resolveTask("b") >> taskB
+        1 * taskResolver.resolveTask(Path.path("b")) >> taskB
         0 * _
     }
 
@@ -575,7 +577,7 @@ class DefaultConfigurableFileCollectionSpec extends FileCollectionSpec {
         dependencies.toList() == [task]
         fileTreeDependencies.toList() == [task]
         filteredFileTreeDependencies.toList() == [task]
-        3 * taskResolver.resolveTask("task") >> task
+        3 * taskResolver.resolveTask(Path.path("task")) >> task
         0 * _
     }
 
@@ -1769,7 +1771,7 @@ class DefaultConfigurableFileCollectionSpec extends FileCollectionSpec {
         then:
         copyDeps == [task] as Set<Task>
 
-        _ * taskResolver.resolveTask("a") >> task
+        _ * taskResolver.resolveTask(Path.path("a")) >> task
     }
 
     def "shallow copy does not follow changes to dependencies of the original"() {
@@ -1786,7 +1788,7 @@ class DefaultConfigurableFileCollectionSpec extends FileCollectionSpec {
         then:
         copyDeps == [task] as Set<Task>
 
-        _ * taskResolver.resolveTask("a") >> task
+        _ * taskResolver.resolveTask(Path.path("a")) >> task
     }
 
     def "shallow copy reflects changes to inner collection"() {
@@ -2045,5 +2047,30 @@ class DefaultConfigurableFileCollectionSpec extends FileCollectionSpec {
         ["src2"]        | _             | _                 | "from() before convention prevents it"        | { it.from("src2"); it.convention("src1") }
         ["src1", "src2"]| _             | ["src1"]          | "from() commits convention"                   | { it.from("src2"); it.unsetConvention() }
         ["src1"]        | _             | ["src1"]          | "from() does not modify convention"           | { it.from("src2"); it.unset() }
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/8755#issuecomment-2075260802")
+    def "self-referencing using minus operator leads to StackOverflowError"() {
+        given:
+        def file1 = new File("1")
+        def file2 = new File("2")
+        _ * fileResolver.resolve(file1) >> file1
+        _ * fileResolver.resolve(file2) >> file2
+        collection.from(file1, file2)
+        def child1 = containing(file1)
+
+        when:
+        collection.setFrom(child1 - collection)
+        collection.files
+
+        then:
+        thrown StackOverflowError
+
+        when:
+        collection.setFrom(collection - child1)
+        collection.files
+
+        then:
+        thrown StackOverflowError
     }
 }

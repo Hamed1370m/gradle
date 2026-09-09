@@ -21,17 +21,19 @@ import org.gradle.api.artifacts.ProjectDependency;
 import org.gradle.api.internal.artifacts.dependencies.ProjectDependencyInternal;
 import org.gradle.api.internal.project.ProjectState;
 import org.gradle.api.internal.project.ProjectStateRegistry;
-import org.gradle.api.internal.tasks.TaskDependencyContainerInternal;
 import org.gradle.api.internal.tasks.TaskDependencyFactory;
+import org.gradle.api.internal.tasks.TaskDependencyInternal;
 import org.gradle.api.internal.tasks.TaskDependencyResolveContext;
 import org.gradle.util.Path;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Set;
 import java.util.function.Supplier;
 
-class TasksFromProjectDependencies implements TaskDependencyContainerInternal {
-    private final TaskDependencyContainerInternal taskDependencyDelegate;
+@Deprecated
+public class TasksFromProjectDependencies implements TaskDependencyInternal {
+
+    private final TaskDependencyInternal taskDependencyDelegate;
 
     public TasksFromProjectDependencies(
         String taskName,
@@ -56,7 +58,7 @@ class TasksFromProjectDependencies implements TaskDependencyContainerInternal {
         String taskName
     ) {
         for (ProjectDependency projectDependency : projectDependencies) {
-            Path identityPath = ((ProjectDependencyInternal) projectDependency).getIdentityPath();
+            Path identityPath = ((ProjectDependencyInternal) projectDependency).getTargetProjectIdentity().getBuildTreePath();
             ProjectState projectState = projectStateRegistry.stateFor(identityPath);
             projectState.ensureTasksDiscovered();
 
@@ -72,8 +74,4 @@ class TasksFromProjectDependencies implements TaskDependencyContainerInternal {
         return taskDependencyDelegate.getDependencies(task);
     }
 
-    @Override
-    public Set<? extends Task> getDependenciesForInternalUse(@Nullable Task task) {
-        return taskDependencyDelegate.getDependenciesForInternalUse(task);
-    }
 }

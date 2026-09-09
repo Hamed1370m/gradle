@@ -29,6 +29,7 @@ import java.util.Map;
 
 /**
  * SourceFolder.path contains only project relative path.
+ * @since 1.0
  */
 public class SourceFolder extends AbstractClasspathEntry {
     private String output;
@@ -38,6 +39,12 @@ public class SourceFolder extends AbstractClasspathEntry {
     private File dir;
     private String name;
 
+    /**
+     * Creates a new {@code SourceFolder}.
+     *
+     * @since 1.0
+     */
+    @SuppressWarnings("this-escape")
     public SourceFolder(Node node) {
         super(node);
         this.output = normalizePath((String) node.attribute("output"));
@@ -54,6 +61,12 @@ public class SourceFolder extends AbstractClasspathEntry {
         }
     }
 
+    /**
+     * Creates a new {@code SourceFolder}.
+     *
+     * @since 1.0
+     */
+    @SuppressWarnings("this-escape")
     public SourceFolder(String projectRelativePath, String output) {
         super(projectRelativePath);
         this.output = normalizePath(output);
@@ -61,42 +74,92 @@ public class SourceFolder extends AbstractClasspathEntry {
         this.excludes = ImmutableList.of();
     }
 
+    /**
+     * Returns the output.
+     *
+     * @since 1.0
+     */
     public String getOutput() {
         return output;
     }
 
+    /**
+     * Sets the output.
+     *
+     * @since 1.0
+     */
     public void setOutput(String output) {
         this.output = output;
     }
 
+    /**
+     * Returns the includes.
+     *
+     * @since 1.0
+     */
     public List<String> getIncludes() {
         return includes;
     }
 
+    /**
+     * Sets the includes.
+     *
+     * @since 1.0
+     */
     public void setIncludes(List<String> includes) {
         this.includes = includes;
     }
 
+    /**
+     * Returns the excludes.
+     *
+     * @since 1.0
+     */
     public List<String> getExcludes() {
         return excludes;
     }
 
+    /**
+     * Sets the excludes.
+     *
+     * @since 1.0
+     */
     public void setExcludes(List<String> excludes) {
         this.excludes = excludes;
     }
 
+    /**
+     * Returns the dir.
+     *
+     * @since 1.0
+     */
     public File getDir() {
         return dir;
     }
 
+    /**
+     * Sets the dir.
+     *
+     * @since 1.0
+     */
     public void setDir(File dir) {
         this.dir = dir;
     }
 
+    /**
+     * Returns the name.
+     *
+     * @since 1.0
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Sets the name.
+     *
+     * @since 2.7
+     */
     public void setName(String name) {
         this.name = name;
     }
@@ -106,14 +169,29 @@ public class SourceFolder extends AbstractClasspathEntry {
         return "src";
     }
 
+    /**
+     * Returns the absolute path.
+     *
+     * @since 1.0
+     */
     public String getAbsolutePath() {
         return dir.getAbsolutePath();
     }
 
+    /**
+     * Trim.
+     *
+     * @since 2.7
+     */
     public void trim() {
         trim(null);
     }
 
+    /**
+     * Trim.
+     *
+     * @since 2.7
+     */
     public void trim(String prefix) {
         if(prefix != null) {
             name = prefix + "-" + name;
@@ -144,7 +222,7 @@ public class SourceFolder extends AbstractClasspathEntry {
             return false;
         }
         SourceFolder that = (SourceFolder) o;
-        return Objects.equal(exported, that.exported)
+        return exported == that.exported
             && Objects.equal(accessRules, that.accessRules)
             && Objects.equal(excludes, that.excludes)
             && Objects.equal(includes, that.includes)

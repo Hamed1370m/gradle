@@ -16,14 +16,13 @@
 
 package promotion
 
+import common.PLUGINS_PORTAL_URL_OVERRIDE
 import common.VersionedSettingsBranch
 import common.gradleWrapper
-import common.pluginPortalUrlOverride
 import jetbrains.buildServer.configs.kotlin.triggers.schedule
 import jetbrains.buildServer.configs.kotlin.triggers.vcs
-import vcsroots.gradlePromotionBranches
 
-object StartReleaseCycleTest : BasePromotionBuildType(vcsRootId = gradlePromotionBranches, cleanCheckout = false) {
+object StartReleaseCycleTest : BasePromotionBuildType(cleanCheckout = false) {
     init {
         id("Promotion_AllBranchesStartReleaseCycleTest")
         name = "Start Release Cycle Test"
@@ -34,20 +33,22 @@ object StartReleaseCycleTest : BasePromotionBuildType(vcsRootId = gradlePromotio
                 name = "PromoteTest"
                 tasks = "clean promoteStartReleaseCycle"
                 useGradleWrapper = true
-                gradleParams = """-PconfirmationCode=startCycle -PtestRun=1 "-PgitUserName=test" "-PgitUserEmail=test@example.com" $pluginPortalUrlOverride"""
+                gradleParams =
+                    """-PconfirmationCode=startCycle -PtestRun=1 "-PgitUserName=test" "-PgitUserEmail=test@example.com" $PLUGINS_PORTAL_URL_OVERRIDE"""
             }
         }
 
-        val enableTriggers = VersionedSettingsBranch.fromDslContext().enableVcsTriggers
+        val enableTriggers = VersionedSettingsBranch.fromDslContext().isMainBranch
         triggers {
             vcs {
                 branchFilter = "+:master"
                 enabled = enableTriggers
             }
             schedule {
-                schedulingPolicy = daily {
-                    hour = 3
-                }
+                schedulingPolicy =
+                    daily {
+                        hour = 3
+                    }
                 branchFilter = "+:master"
                 triggerBuild = always()
                 withPendingChangesOnly = false

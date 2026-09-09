@@ -15,9 +15,13 @@
  */
 package org.gradle.api;
 
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
+
 /**
  * Types can implement this interface and use the embedded {@link Namer} implementation, to satisfy API that calls for a namer.
+ * @since 1.0
  */
+@HiddenInDefinition
 public interface Named {
 
     /**
@@ -26,19 +30,21 @@ public interface Named {
      * Must be constant for the life of the object.
      *
      * @return The name. Never null.
+     * @since 1.0
      */
     String getName();
 
-    // -- Internal note --
-    // It would be better to only require getName() to return Object and just call toString() on it, but
-    // if you have a groovy class with a “String name” property the generated getName() method will not
-    // satisfy the Named interface. This seems to be a bug in the Groovy compiler - LD.
-
     /**
      * An implementation of the namer interface for objects implementing the named interface.
+     * @since 1.0
      */
     class Namer implements org.gradle.api.Namer<Named> {
 
+        /**
+         * Namer.
+         *
+         * @since 2.4
+         */
         public static final org.gradle.api.Namer<Named> INSTANCE = new Namer();
 
         @Override
@@ -46,6 +52,11 @@ public interface Named {
             return object.getName();
         }
 
+        /**
+         * For type.
+         *
+         * @since 1.0
+         */
         @SuppressWarnings("unchecked")
         public static <T> org.gradle.api.Namer<? super T> forType(Class<? extends T> type) {
             if (Named.class.isAssignableFrom(type)) {

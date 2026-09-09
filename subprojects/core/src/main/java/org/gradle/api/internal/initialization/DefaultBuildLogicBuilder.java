@@ -22,28 +22,37 @@ import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.internal.TaskInternal;
 import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.api.internal.tasks.TaskDependencyContainer;
+import org.gradle.api.internal.tasks.TaskDependencyUtil;
 import org.gradle.composite.internal.TaskIdentifier;
 import org.gradle.internal.build.BuildState;
 import org.gradle.internal.classpath.ClassPath;
+import org.gradle.internal.operations.BuildOperationContext;
+import org.gradle.internal.operations.BuildOperationDescriptor;
+import org.gradle.internal.operations.BuildOperationRunner;
+import org.gradle.internal.operations.CallableBuildOperation;
 
 import java.util.ArrayList;
 import java.util.List;
-
-import static org.gradle.api.internal.tasks.TaskDependencyUtil.getDependenciesForInternalUse;
+import java.util.Set;
 
 public class DefaultBuildLogicBuilder implements BuildLogicBuilder {
+
     private final BuildState currentBuild;
     private final ScriptClassPathResolver scriptClassPathResolver;
     private final BuildLogicBuildQueue buildQueue;
+    private final BuildOperationRunner buildOperationRunner;
 
     public DefaultBuildLogicBuilder(
         BuildState currentBuild,
         ScriptClassPathResolver scriptClassPathResolver,
-        BuildLogicBuildQueue buildQueue
+        BuildLogicBuildQueue buildQueue,
+        BuildOperationRunner buildOperationRunner
     ) {
         this.currentBuild = currentBuild;
         this.scriptClassPathResolver = scriptClassPathResolver;
         this.buildQueue = buildQueue;
+        this.buildOperationRunner = buildOperationRunner;
     }
 
     @Override
@@ -58,21 +67,34 @@ public class DefaultBuildLogicBuilder implements BuildLogicBuilder {
 
     @Override
     public ClassPath resolveClassPath(Configuration classpathConfiguration, ScriptClassPathResolutionContext resolutionContext) {
-        return buildQueue.build(
-            currentBuild,
-            taskIdentifiersForBuildDependenciesOf(classpathConfiguration),
-            () -> scriptClassPathResolver.resolveClassPath(classpathConfiguration, resolutionContext)
-        );
+        return buildOperationRunner.call(new CallableBuildOperation<ClassPath>() {
+            @Override
+            public ClassPath call(BuildOperationContext context) {
+                return buildQueue.build(
+                    currentBuild,
+                    taskIdentifiersForBuildDependenciesOf(classpathConfiguration),
+                    () -> scriptClassPathResolver.resolveClassPath(classpathConfiguration, resolutionContext)
+                );
+            }
+
+            @Override
+            public BuildOperationDescriptor.Builder description() {
+                return BuildOperationDescriptor.displayName("Resolve buildscript classpath for " + classpathConfiguration);
+            }
+        });
     }
 
-    private List<TaskIdentifier.TaskBasedTaskIdentifier> taskIdentifiersForBuildDependenciesOf(Configuration classpath) {
-        List<TaskIdentifier.TaskBasedTaskIdentifier> tasksToBuild = new ArrayList<>();
-        for (Task task : getDependenciesForInternalUse(classpath)) {
+    private List<TaskIdentifier> taskIdentifiersForBuildDependenciesOf(Configuration classpath) {
+        TaskDependencyContainer taskDependencies = (TaskDependencyContainer) classpath;
+        Set<? extends Task> tasks = TaskDependencyUtil.newTaskResolver().getDependencies(null, taskDependencies);
+
+        List<TaskIdentifier> tasksToBuild = new ArrayList<>();
+        for (Task task : tasks) {
             BuildState targetBuild = owningBuildOf(task);
             if (targetBuild == currentBuild) {
                 throw new InvalidUserDataException("Script classpath dependencies must reside in a separate build from the script itself.");
             }
-            tasksToBuild.add(TaskIdentifier.of(targetBuild.getBuildIdentifier(), (TaskInternal) task));
+            tasksToBuild.add(new TaskIdentifier(targetBuild.getBuildIdentity(), (TaskInternal) task));
         }
         return tasksToBuild;
     }
@@ -80,4 +102,5 @@ public class DefaultBuildLogicBuilder implements BuildLogicBuilder {
     private static BuildState owningBuildOf(Task task) {
         return ((ProjectInternal) task.getProject()).getOwner().getOwner();
     }
+
 }

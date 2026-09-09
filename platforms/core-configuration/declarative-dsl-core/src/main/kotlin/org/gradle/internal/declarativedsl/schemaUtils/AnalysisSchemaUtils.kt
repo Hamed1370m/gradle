@@ -19,13 +19,22 @@ package org.gradle.internal.declarativedsl.schemaUtils
 import org.gradle.declarative.dsl.schema.AnalysisSchema
 import org.gradle.declarative.dsl.schema.DataClass
 import org.gradle.declarative.dsl.schema.DataType
+import org.gradle.declarative.dsl.schema.DataType.ParameterizedTypeInstance.TypeArgument
+import org.gradle.declarative.dsl.schema.DataType.ParameterizedTypeInstance.TypeArgument.ConcreteTypeArgument
+import org.gradle.declarative.dsl.schema.DataType.ParameterizedTypeInstance.TypeArgument.StarProjection
 import org.gradle.declarative.dsl.schema.DataTypeRef
 import org.gradle.declarative.dsl.schema.SchemaMemberFunction
+import org.gradle.internal.declarativedsl.analysis.DefaultFqName
+import org.gradle.internal.declarativedsl.analysis.TypeArgumentInternal
+import org.gradle.internal.declarativedsl.analysis.ref
 import org.gradle.internal.declarativedsl.dom.mutation.TypedMember
+import org.gradle.internal.declarativedsl.language.DataTypeInternal
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.KProperty1
 import kotlin.reflect.KType
+import kotlin.reflect.KTypeProjection
+import kotlin.reflect.KVariance
 import kotlin.reflect.full.extensionReceiverParameter
 import kotlin.reflect.full.instanceParameter
 
@@ -138,16 +147,51 @@ fun AnalysisSchema.findFunctionsFor(functionReference: KFunction<*>): List<Typed
 
 
 private
-fun AnalysisSchema.findTypeFor(kType: KType): DataClass? {
-    val classifier = kType.classifier
-    return if (classifier is KClass<*>) {
-        findTypeFor(classifier.java)
-    } else null
+fun AnalysisSchema.findTypeFor(kType: KType): DataType? {
+    return when (val classifier = kType.classifier) {
+        String::class -> DataTypeInternal.DefaultStringDataType
+        Int::class -> DataTypeInternal.DefaultIntDataType
+        Long::class -> DataTypeInternal.DefaultLongDataType
+        Boolean::class -> DataTypeInternal.DefaultBooleanDataType
+        Unit::class -> DataTypeInternal.DefaultUnitType
+        is KClass<*> -> if (classifier.typeParameters.isEmpty()) {
+            findTypeFor(classifier.java)
+        } else {
+            if (kType.arguments.all { it == KTypeProjection.STAR || it.variance == KVariance.INVARIANT && it.type != null }) {
+                genericInstantiationsByFqName[DefaultFqName.parse(classifier.qualifiedName ?: return null)]
+                    ?.get(kType.arguments.map { typeArgument(it) ?: return null })
+            } else null
+        }
+
+        else -> null
+    }
 }
 
+private fun AnalysisSchema.typeArgument(typeProjection: KTypeProjection): TypeArgument? {
+    return if (typeProjection == KTypeProjection.STAR)
+        TypeArgumentInternal.DefaultStarProjection()
+    else TypeArgumentInternal.DefaultConcreteTypeArgument(findTypeFor(typeProjection.type ?: return null)?.ref ?: return null)
+}
 
 private
 fun DataType.matchesRef(ref: DataTypeRef): Boolean = when (ref) {
     is DataTypeRef.Name -> this is DataClass && this.name == ref.fqName
     is DataTypeRef.Type -> this == ref.dataType
+    is DataTypeRef.NameWithArgs -> this is DataType.ParameterizedTypeInstance &&
+        this.typeSignature.name == ref.fqName &&
+        typeArguments.zip(ref.typeArguments).all { (thisArg, otherArg) -> thisArg.isEquivalentTypeArgument(otherArg) }
+}
+
+private
+fun DataTypeRef.isRefToSameType(other: DataTypeRef): Boolean = when (this) {
+    is DataTypeRef.Type -> other is DataTypeRef.Type && other.dataType == dataType || dataType.matchesRef(other)
+    is DataTypeRef.Name -> other is DataTypeRef.Name && fqName == other.fqName || other is DataTypeRef.Type && other.dataType.matchesRef(this)
+    is DataTypeRef.NameWithArgs -> other is DataTypeRef.NameWithArgs && other.fqName == fqName && other.typeArguments.zip(typeArguments).all { (thisArg, otherArg) ->
+        thisArg.isEquivalentTypeArgument(otherArg)
+    }
+}
+
+private fun TypeArgument.isEquivalentTypeArgument(otherArg: TypeArgument) = when (this) {
+    is StarProjection -> otherArg is StarProjection
+    is ConcreteTypeArgument -> otherArg is ConcreteTypeArgument && type.isRefToSameType(otherArg.type)
 }

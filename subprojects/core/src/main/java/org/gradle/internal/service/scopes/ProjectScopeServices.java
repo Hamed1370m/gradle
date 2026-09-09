@@ -16,45 +16,46 @@
 
 package org.gradle.internal.service.scopes;
 
-import org.gradle.api.AntBuilder;
 import org.gradle.api.component.SoftwareComponentContainer;
+import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.internal.CollectionCallbackActionDecorator;
-import org.gradle.api.internal.ExternalProcessStartedListener;
+import org.gradle.api.internal.DomainObjectContext;
+import org.gradle.api.internal.GradleInternal;
+import org.gradle.api.internal.artifacts.DependencyManagementParameters;
 import org.gradle.api.internal.artifacts.DependencyManagementServices;
 import org.gradle.api.internal.artifacts.dsl.dependencies.ProjectFinder;
 import org.gradle.api.internal.collections.DefaultDomainObjectCollectionFactory;
 import org.gradle.api.internal.collections.DomainObjectCollectionFactory;
 import org.gradle.api.internal.component.DefaultSoftwareComponentContainer;
+import org.gradle.api.internal.file.DefaultProjectLayout;
 import org.gradle.api.internal.file.FileCollectionFactory;
 import org.gradle.api.internal.file.FileFactory;
 import org.gradle.api.internal.file.FilePropertyFactory;
 import org.gradle.api.internal.file.FileResolver;
+import org.gradle.api.internal.file.TaskFileVarFactory;
 import org.gradle.api.internal.file.collections.ManagedFactories;
 import org.gradle.api.internal.file.temp.DefaultTemporaryFileProvider;
 import org.gradle.api.internal.file.temp.TemporaryFileProvider;
-import org.gradle.api.internal.initialization.ActionBasedModelDefaultsHandler;
 import org.gradle.api.internal.initialization.BuildLogicBuilder;
 import org.gradle.api.internal.initialization.DefaultScriptHandlerFactory;
 import org.gradle.api.internal.initialization.ScriptHandlerFactory;
 import org.gradle.api.internal.initialization.ScriptHandlerInternal;
 import org.gradle.api.internal.plugins.DefaultPluginManager;
 import org.gradle.api.internal.plugins.ImperativeOnlyPluginTarget;
-import org.gradle.api.internal.plugins.SoftwareFeatureApplyingPluginTarget;
 import org.gradle.api.internal.plugins.PluginInstantiator;
 import org.gradle.api.internal.plugins.PluginManagerInternal;
 import org.gradle.api.internal.plugins.PluginRegistry;
 import org.gradle.api.internal.plugins.PluginTarget;
 import org.gradle.api.internal.plugins.PluginTargetType;
 import org.gradle.api.internal.plugins.RuleBasedPluginTarget;
+import org.gradle.api.internal.project.BuildScopedTaskResolver;
 import org.gradle.api.internal.project.CrossProjectConfigurator;
 import org.gradle.api.internal.project.CrossProjectModelAccess;
-import org.gradle.api.internal.project.DefaultAntBuilderFactory;
 import org.gradle.api.internal.project.DeferredProjectConfiguration;
 import org.gradle.api.internal.project.ProjectInternal;
-import org.gradle.api.internal.project.ProjectRegistry;
+import org.gradle.api.internal.project.ProjectScopedTaskResolver;
 import org.gradle.api.internal.project.ProjectState;
 import org.gradle.api.internal.project.ProjectStateRegistry;
-import org.gradle.api.internal.project.ant.DefaultAntLoggingAdapterFactory;
 import org.gradle.api.internal.project.taskfactory.ITaskFactory;
 import org.gradle.api.internal.project.taskfactory.TaskIdentityFactory;
 import org.gradle.api.internal.project.taskfactory.TaskInstantiator;
@@ -66,19 +67,22 @@ import org.gradle.api.internal.tasks.DefaultTaskDependencyFactory;
 import org.gradle.api.internal.tasks.TaskContainerInternal;
 import org.gradle.api.internal.tasks.TaskDependencyFactory;
 import org.gradle.api.internal.tasks.TaskDependencyUsageTracker;
+import org.gradle.api.internal.tasks.TaskResolver;
 import org.gradle.api.internal.tasks.TaskStatistics;
 import org.gradle.api.internal.tasks.properties.TaskScheme;
-import org.gradle.api.model.ObjectFactory;
-import org.gradle.api.problems.internal.InternalProblems;
+import org.gradle.api.problems.internal.ProblemsInternal;
+import org.gradle.api.tasks.util.internal.PatternSetFactory;
 import org.gradle.configuration.ConfigurationTargetIdentifier;
 import org.gradle.configuration.project.DefaultProjectConfigurationActionContainer;
 import org.gradle.configuration.project.ProjectConfigurationActionContainer;
-import org.gradle.internal.Factory;
+import org.gradle.execution.taskgraph.TaskExecutionGraphInternal;
+import org.gradle.initialization.layout.BuildLayout;
+import org.gradle.internal.Describables;
+import org.gradle.internal.build.BuildState;
 import org.gradle.internal.code.UserCodeApplicationContext;
-import org.gradle.internal.event.ListenerManager;
 import org.gradle.internal.file.PathToFileResolver;
 import org.gradle.internal.instantiation.InstantiatorFactory;
-import org.gradle.internal.jvm.JavaModuleDetector;
+import org.gradle.internal.logging.LoggingManagerFactory;
 import org.gradle.internal.logging.LoggingManagerInternal;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
 import org.gradle.internal.operations.BuildOperationRunner;
@@ -97,18 +101,12 @@ import org.gradle.model.internal.inspect.ModelRuleExtractor;
 import org.gradle.model.internal.inspect.ModelRuleSourceDetector;
 import org.gradle.model.internal.registry.DefaultModelRegistry;
 import org.gradle.model.internal.registry.ModelRegistry;
-import org.gradle.normalization.internal.DefaultInputNormalizationHandler;
-import org.gradle.normalization.internal.DefaultRuntimeClasspathNormalization;
-import org.gradle.normalization.internal.InputNormalizationHandlerInternal;
-import org.gradle.normalization.internal.RuntimeClasspathNormalizationInternal;
-import org.gradle.plugin.software.internal.ModelDefaultsHandler;
-import org.gradle.plugin.software.internal.PluginScheme;
-import org.gradle.plugin.software.internal.SoftwareFeatureApplicator;
-import org.gradle.plugin.software.internal.SoftwareTypeRegistry;
-import org.gradle.process.internal.ExecFactory;
+import org.gradle.plugin.internal.PluginScheme;
 import org.gradle.tooling.provider.model.internal.DefaultToolingModelBuilderRegistry;
+import org.gradle.tooling.provider.model.internal.ToolingModelBuilderRegistrant;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
+import java.io.File;
 import java.util.List;
 
 /**
@@ -117,23 +115,24 @@ import java.util.List;
 public class ProjectScopeServices implements ServiceRegistrationProvider {
 
     public static CloseableServiceRegistry create(
-        ServiceRegistry parent,
+        ServiceRegistry buildServices,
         ProjectInternal project,
-        Factory<LoggingManagerInternal> loggingManagerInternalFactory
+        LoggingManagerFactory loggingManagerInternalFactory
     ) {
         return ServiceRegistryBuilder.builder()
-            .scope(Scope.Project.class)
+            .scopeStrictly(Scope.Project.class)
             .displayName("project services")
-            .parent(parent)
+            .parent(buildServices)
             .provider(new ProjectScopeServices(project, loggingManagerInternalFactory))
             .provider(new WorkerSharedProjectScopeServices(project.getProjectDir()))
             .build();
     }
 
     private final ProjectInternal project;
-    private final Factory<LoggingManagerInternal> loggingManagerInternalFactory;
+    private final LoggingManagerFactory loggingManagerInternalFactory;
 
-    public ProjectScopeServices(final ProjectInternal project, Factory<LoggingManagerInternal> loggingManagerInternalFactory) {
+
+    public ProjectScopeServices(ProjectInternal project, LoggingManagerFactory loggingManagerInternalFactory) {
         this.project = project;
         this.loggingManagerInternalFactory = loggingManagerInternalFactory;
     }
@@ -145,7 +144,11 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
         DependencyManagementServices dependencyManagementServices
     ) {
         registration.add(ProjectInternal.class, project);
-        dependencyManagementServices.addDslServices(registration, project);
+
+        ProjectDomainObjectContext domainObjectContext = new ProjectDomainObjectContext(project.getOwner());
+        registration.add(DomainObjectContext.class, domainObjectContext);
+
+        dependencyManagementServices.addDslServices(registration, new DependencyManagementParameters(project.getOwner().getDisplayName(), "", false, false, false));
         for (GradleModuleServices services : gradleModuleServiceProviders) {
             services.registerProjectServices(registration);
         }
@@ -154,7 +157,7 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
     @Provides
     protected PluginRegistry createPluginRegistry(PluginRegistry rootRegistry) {
         PluginRegistry parentRegistry;
-        ProjectState parent = project.getOwner().getBuildParent();
+        ProjectState parent = project.getOwner().getParent();
         if (parent == null) {
             parentRegistry = rootRegistry.createChild(project.getBaseClassLoaderScope());
         } else {
@@ -170,7 +173,7 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
 
     @Provides
     protected LoggingManagerInternal createLoggingManager() {
-        return loggingManagerInternalFactory.create();
+        return loggingManagerInternalFactory.createLoggingManager();
     }
 
     @Provides
@@ -190,30 +193,21 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
     }
 
     @Provides
-    protected ExecFactory decorateExecFactory(ExecFactory execFactory, FileResolver fileResolver, FileCollectionFactory fileCollectionFactory, InstantiatorFactory instantiatorFactory, ObjectFactory objectFactory, JavaModuleDetector javaModuleDetector, ListenerManager listenerManager) {
-        return execFactory.forContext()
-            .withFileResolver(fileResolver)
-            .withFileCollectionFactory(fileCollectionFactory)
-            .withInstantiator(instantiatorFactory.decorateLenient())
-            .withObjectFactory(objectFactory)
-            .withJavaModuleDetector(javaModuleDetector)
-            .withExternalProcessStartedListener(listenerManager.getBroadcaster(ExternalProcessStartedListener.class))
-            .build();
-    }
-
-    @Provides
     protected TemporaryFileProvider createTemporaryFileProvider() {
         return new DefaultTemporaryFileProvider(() -> project.getLayout().getBuildDirectory().dir("tmp").get().getAsFile());
     }
 
     @Provides
-    protected Factory<AntBuilder> createAntBuilderFactory() {
-        return new DefaultAntBuilderFactory(project, new DefaultAntLoggingAdapterFactory());
-    }
-
-    @Provides
-    protected DefaultToolingModelBuilderRegistry decorateToolingModelRegistry(DefaultToolingModelBuilderRegistry buildScopedToolingModelBuilders, BuildOperationRunner buildOperationRunner, ProjectStateRegistry projectStateRegistry) {
-        return buildScopedToolingModelBuilders.createChild();
+    protected DefaultToolingModelBuilderRegistry decorateToolingModelRegistry(
+        DefaultToolingModelBuilderRegistry buildScopedToolingModelBuilders,
+        BuildOperationRunner buildOperationRunner,
+        ProjectStateRegistry projectStateRegistry,
+        List<ToolingModelBuilderRegistrant> toolingModelBuilderRegistrants
+    ) {
+        DefaultToolingModelBuilderRegistry registry = buildScopedToolingModelBuilders.createChild();
+        boolean isRootProject = project.getParent() == null;
+        toolingModelBuilderRegistrants.forEach(provider -> provider.registerForProject(registry, isRootProject));
+        return registry;
     }
 
     @Provides
@@ -229,9 +223,7 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
         CollectionCallbackActionDecorator decorator,
         DomainObjectCollectionFactory domainObjectCollectionFactory,
         PluginScheme pluginScheme,
-        InternalProblems problems,
-        SoftwareTypeRegistry softwareTypeRegistry,
-        SoftwareFeatureApplicator softwareFeatureApplicator
+        ProblemsInternal problems
     ) {
 
         PluginTarget ruleBasedTarget = new RuleBasedPluginTarget(
@@ -240,7 +232,6 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
             modelRuleExtractor,
             modelRuleSourceDetector
         );
-        PluginTarget pluginTarget = new SoftwareFeatureApplyingPluginTarget(project, ruleBasedTarget, softwareTypeRegistry, softwareFeatureApplicator);
         return instantiator.newInstance(
             DefaultPluginManager.class,
             pluginRegistry,
@@ -248,7 +239,7 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
                 instantiatorFactory.injectScheme().withServices(projectScopeServiceRegistry).instantiator(),
                 pluginScheme.getInstantiationScheme().withServices(projectScopeServiceRegistry).instantiator()
             ),
-            pluginTarget,
+            ruleBasedTarget,
             buildOperationRunner,
             userCodeApplicationContext,
             decorator,
@@ -262,8 +253,8 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
     }
 
     @Provides
-    protected TaskInstantiator createTaskInstantiator(TaskIdentityFactory taskIdentityFactory, ITaskFactory taskFactory) {
-        return new TaskInstantiator(taskIdentityFactory, taskFactory, project);
+    protected TaskInstantiator createTaskInstantiator(TaskIdentityFactory taskIdentityFactory, ITaskFactory taskFactory, UserCodeApplicationContext userCodeApplicationContext) {
+        return new TaskInstantiator(taskIdentityFactory, taskFactory, project, userCodeApplicationContext);
     }
 
     @Provides
@@ -275,7 +266,8 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
         BuildOperationRunner buildOperationRunner,
         CrossProjectConfigurator crossProjectConfigurator,
         CollectionCallbackActionDecorator decorator,
-        ProjectRegistry<ProjectInternal> projectRegistry
+        UserCodeApplicationContext userCodeApplicationContext,
+        CrossProjectModelAccess crossProjectModelAccess
     ) {
         return new DefaultTaskContainerFactory(
             instantiator,
@@ -286,7 +278,8 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
             buildOperationRunner,
             crossProjectConfigurator,
             decorator,
-            projectRegistry
+            userCodeApplicationContext,
+            crossProjectModelAccess
         ).create();
     }
 
@@ -298,7 +291,7 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
 
     @Provides
     protected ProjectFinder createProjectFinder() {
-        return new DefaultProjectFinder(() -> project);
+        return new DefaultProjectFinder(project.getOwner().getIdentity());
     }
 
     @Provides
@@ -318,12 +311,12 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
             buildLogicBuilder
         );
 
-        return factory.createProjectScriptHandler(
+        return factory.create(
             project.getBuildScriptSource(),
             project.getClassLoaderScope(),
             fileResolver,
             fileCollectionFactory,
-            project
+            new DependencyManagementParameters(Describables.of("buildscript of", project.getOwner().getDisplayName()), "buildscript-", true, true, true)
         );
     }
 
@@ -338,24 +331,32 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
     }
 
     @Provides
-    protected RuntimeClasspathNormalizationInternal createRuntimeClasspathNormalizationStrategy(Instantiator instantiator) {
-        return instantiator.newInstance(DefaultRuntimeClasspathNormalization.class);
+    protected GradleInternal decorateGradle(GradleInternal gradle, CrossProjectModelAccess crossProjectModelAccess) {
+        return crossProjectModelAccess.gradleInstanceForProject(project.getProjectIdentity(), gradle);
     }
 
     @Provides
-    protected InputNormalizationHandlerInternal createInputNormalizationHandler(Instantiator instantiator, RuntimeClasspathNormalizationInternal runtimeClasspathNormalizationStrategy) {
-        return instantiator.newInstance(DefaultInputNormalizationHandler.class, runtimeClasspathNormalizationStrategy);
+    protected TaskExecutionGraphInternal decorateTaskExecutionGraph(TaskExecutionGraphInternal taskGraph, CrossProjectModelAccess crossProjectModelAccess) {
+        return crossProjectModelAccess.taskGraphForProject(project.getProjectIdentity(), taskGraph);
     }
 
     @Provides
-    protected TaskDependencyFactory createTaskDependencyFactory() {
-        @Nullable TaskDependencyUsageTracker tracker = project.getServices().get(CrossProjectModelAccess.class).taskDependencyUsageTracker(project);
-        return DefaultTaskDependencyFactory.forProject(project.getTasks(), tracker);
+    protected TaskDependencyFactory createTaskDependencyFactory(BuildState build, CrossProjectModelAccess crossProjectModelAccess) {
+        @Nullable TaskDependencyUsageTracker tracker = crossProjectModelAccess.taskDependencyUsageTracker(project.getProjectIdentity());
+        TaskResolver taskResolver = new ProjectScopedTaskResolver(
+            new BuildScopedTaskResolver(build),
+            project.getProjectIdentity(),
+            project.getTasks()
+        );
+        return new DefaultTaskDependencyFactory(
+            taskResolver,
+            tracker
+        );
     }
 
     @Provides
     protected ConfigurationTargetIdentifier createConfigurationTargetIdentifier() {
-        return ConfigurationTargetIdentifier.of(project);
+        return ConfigurationTargetIdentifier.of(project.getProjectIdentity());
     }
 
     @Provides
@@ -378,8 +379,13 @@ public class ProjectScopeServices implements ServiceRegistrationProvider {
         );
     }
 
-    @Provides
-    protected ModelDefaultsHandler createActionBasedModelDefaultsHandler(SoftwareTypeRegistry softwareTypeRegistry, PluginScheme pluginScheme, InternalProblems problems) {
-        return new ActionBasedModelDefaultsHandler(softwareTypeRegistry, pluginScheme.getInspectionScheme(), problems);
+    @Provides({ProjectLayout.class, TaskFileVarFactory.class})
+    DefaultProjectLayout createProjectLayout(
+        BuildLayout buildLayout, FileResolver fileResolver, FileCollectionFactory fileCollectionFactory, TaskDependencyFactory taskDependencyFactory,
+        FilePropertyFactory filePropertyFactory, PatternSetFactory patternSetFactory, PropertyHost propertyHost, FileFactory fileFactory
+    ) {
+        File settingsDir = buildLayout.getSettingsDir();
+        File projectDir = project.getProjectDir();
+        return new DefaultProjectLayout(settingsDir, projectDir, fileResolver, taskDependencyFactory, patternSetFactory, propertyHost, fileCollectionFactory, filePropertyFactory, fileFactory);
     }
 }

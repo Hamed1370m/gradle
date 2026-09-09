@@ -16,7 +16,6 @@
 package org.gradle.api;
 
 import groovy.lang.Closure;
-import groovy.lang.DelegatesTo;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.ConfigurableFileTree;
 import org.gradle.api.file.CopySpec;
@@ -25,12 +24,9 @@ import org.gradle.api.initialization.dsl.ScriptHandler;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.LoggingManager;
 import org.gradle.api.provider.Provider;
-import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.resources.ResourceHandler;
 import org.gradle.api.tasks.WorkResult;
-import org.gradle.process.ExecResult;
-import org.gradle.process.ExecSpec;
-import org.gradle.process.JavaExecSpec;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 import java.net.URI;
@@ -46,6 +42,7 @@ import java.util.concurrent.Callable;
  * have a {@link Project} instance attached to it, and an initialization script will have a {@link
  * org.gradle.api.invocation.Gradle} instance attached to it. Any property reference or method call which is not found
  * on this {@code Script} object is forwarded to the delegate object.</p>
+ * @since 0.9
  */
 public interface Script {
     /**
@@ -55,6 +52,7 @@ public interface Script {
      * then used to configure the delegate object.</p>
      *
      * @param closure The closure to configure the {@code ObjectConfigurationAction}.
+     * @since 0.9
      */
     void apply(Closure closure);
 
@@ -73,6 +71,7 @@ public interface Script {
      * <p>For more detail, see {@link org.gradle.api.plugins.ObjectConfigurationAction}.</p>
      *
      * @param options The options to use to configure the {@code ObjectConfigurationAction}.
+     * @since 0.9
      */
     void apply(Map<String, ?> options);
 
@@ -81,6 +80,7 @@ public interface Script {
      * execute this script.
      *
      * @return the classpath handler. Never returns null.
+     * @since 0.9
      */
     ScriptHandler getBuildscript();
 
@@ -91,6 +91,7 @@ public interface Script {
      * to the closure as the closure's delegate.
      *
      * @param configureClosure the closure to use to configure the script classpath.
+     * @since 0.9
      */
     void buildscript(Closure configureClosure);
 
@@ -100,6 +101,7 @@ public interface Script {
      *
      * @param path The object to resolve as a File.
      * @return The resolved file. Never returns null.
+     * @since 0.9
      */
     File file(Object path);
 
@@ -111,6 +113,7 @@ public interface Script {
      * @param validation The validation to perform on the file.
      * @return The resolved file. Never returns null.
      * @throws InvalidUserDataException When the file does not meet the given validation constraint.
+     * @since 0.9
      */
     File file(Object path, PathValidation validation) throws InvalidUserDataException;
 
@@ -121,6 +124,7 @@ public interface Script {
      *
      * @param path The object to resolve as a URI.
      * @return The resolved URI. Never returns null.
+     * @since 0.9
      */
     URI uri(Object path);
 
@@ -130,8 +134,9 @@ public interface Script {
      *
      * @param paths The paths to the files. May be empty.
      * @return The file collection. Never returns null.
+     * @since 0.9
      */
-    ConfigurableFileCollection files(Object... paths);
+    ConfigurableFileCollection files(@Nullable Object... paths);
 
     /**
      * <p>Creates a new {@code ConfigurableFileCollection} using the given paths. The file collection is configured
@@ -141,6 +146,7 @@ public interface Script {
      * @param paths The contents of the file collection. Evaluated as per {@link #files(Object...)}.
      * @param configureClosure The closure to use to configure the file collection.
      * @return the configured file tree. Never returns null.
+     * @since 0.9
      */
     ConfigurableFileCollection files(Object paths, Closure configureClosure);
 
@@ -150,6 +156,7 @@ public interface Script {
      *
      * @param path The path to convert to a relative path.
      * @return The relative path. Never returns null.
+     * @since 0.9
      */
     String relativePath(Object path);
 
@@ -163,6 +170,7 @@ public interface Script {
      *
      * @param baseDir The base directory of the file tree. Evaluated as per {@link #file(Object)}.
      * @return the file tree. Never returns null.
+     * @since 0.9
      */
     ConfigurableFileTree fileTree(Object baseDir);
 
@@ -178,6 +186,7 @@ public interface Script {
      *
      * @param args map of property assignments to {@code ConfigurableFileTree} object
      * @return the configured file tree. Never returns null.
+     * @since 0.9
      */
     ConfigurableFileTree fileTree(Map<String, ?> args);
 
@@ -199,6 +208,7 @@ public interface Script {
      * @param baseDir The base directory of the file tree. Evaluated as per {@link #file(Object)}.
      * @param configureClosure Closure to configure the {@code ConfigurableFileTree} object.
      * @return the configured file tree. Never returns null.
+     * @since 1.0
      */
     ConfigurableFileTree fileTree(Object baseDir, Closure configureClosure);
 
@@ -213,6 +223,7 @@ public interface Script {
      *
      * @param zipPath The ZIP file. Evaluated as per {@link #file(Object)}.
      * @return the file tree. Never returns null.
+     * @since 0.9
      */
     FileTree zipTree(Object zipPath);
 
@@ -250,6 +261,7 @@ public interface Script {
      *
      * @param tarPath The TAR file or an instance of {@link org.gradle.api.resources.Resource}.
      * @return the file tree. Never returns null.
+     * @since 0.9
      */
     FileTree tarTree(Object tarPath);
 
@@ -279,6 +291,7 @@ public interface Script {
      *
      * @param closure Closure to configure the CopySpec
      * @return {@link org.gradle.api.tasks.WorkResult} that can be used to check if the copy did any work.
+     * @since 0.9
      */
     WorkResult copy(Closure closure);
 
@@ -289,6 +302,7 @@ public interface Script {
      *
      * @param closure Closure to configure the CopySpec
      * @return The CopySpec
+     * @since 0.9
      */
     CopySpec copySpec(Closure closure);
 
@@ -298,6 +312,7 @@ public interface Script {
      * @param path The path for the directory to be created. Evaluated as per {@link #file(Object)}.
      * @return the created directory
      * @throws org.gradle.api.InvalidUserDataException If the path points to an existing file.
+     * @since 0.9
      */
     File mkdir(Object path);
 
@@ -306,48 +321,9 @@ public interface Script {
      *
      * @param paths Any type of object accepted by {@link org.gradle.api.Project#files(Object...)}
      * @return true if anything got deleted, false otherwise
+     * @since 0.9
      */
-    boolean delete(Object... paths);
-
-    /**
-     * Executes a Java main class. The closure configures a {@link org.gradle.process.JavaExecSpec}.
-     *
-     * @param closure The closure for configuring the execution.
-     * @return the result of the execution
-     * @deprecated Since 8.11. This method will be removed in Gradle 9.0. Use {@link org.gradle.process.ExecOperations#javaexec(Action)} or {@link ProviderFactory#javaexec(Action)} instead.
-     */
-    @Deprecated
-    ExecResult javaexec(@DelegatesTo(JavaExecSpec.class) Closure closure);
-
-    /**
-     * Executes a Java main class.
-     *
-     * @param action The action for configuring the execution.
-     * @return the result of the execution
-     * @deprecated Since 8.11. This method will be removed in Gradle 9.0. Use {@link org.gradle.process.ExecOperations#javaexec(Action)} or {@link ProviderFactory#javaexec(Action)} instead.
-     */
-    @Deprecated
-    ExecResult javaexec(Action<? super JavaExecSpec> action);
-
-    /**
-     * Executes an external command. The closure configures a {@link org.gradle.process.ExecSpec}.
-     *
-     * @param closure The closure for configuring the execution.
-     * @return the result of the execution
-     * @deprecated Since 8.11. This method will be removed in Gradle 9.0. Use {@link org.gradle.process.ExecOperations#exec(Action)} or {@link ProviderFactory#exec(Action)} instead.
-     */
-    @Deprecated
-    ExecResult exec(@DelegatesTo(ExecSpec.class) Closure closure);
-
-    /**
-     * Executes an external command.
-     *
-     * @param action The action for configuring the execution.
-     * @return the result of the execution
-     * @deprecated Since 8.11. This method will be removed in Gradle 9.0. Use {@link org.gradle.process.ExecOperations#exec(Action)} or {@link ProviderFactory#exec(Action)} instead.
-     */
-    @Deprecated
-    ExecResult exec(Action<? super ExecSpec> action);
+    boolean delete(@Nullable Object... paths);
 
     /**
      * Returns the {@link org.gradle.api.logging.LoggingManager} which can be used to receive logging and to control the
@@ -355,6 +331,7 @@ public interface Script {
      * at the QUIET log level, and System.err is redirected at the ERROR log level.
      *
      * @return the LoggingManager. Never returns null.
+     * @since 0.9
      */
     LoggingManager getLogging();
 
@@ -362,6 +339,7 @@ public interface Script {
      * Returns the logger for this script. You can use this in your script to write log messages.
      *
      * @return The logger. Never returns null.
+     * @since 0.9
      */
     Logger getLogger();
 
@@ -369,11 +347,27 @@ public interface Script {
      * Provides access to resource-specific utility methods, for example factory methods that create various resources.
      *
      * @return Returned instance contains various resource-specific utility methods.
+     * @since 1.0
      */
     ResourceHandler getResources();
 
     /**
      * Creates a {@code Provider} implementation based on the provided value.
+     *
+     * <h4>Configuration Cache</h4>
+     * <p>This provider is always <a href="provider/Provider.html#configuration-cache">computed and its value is cached</a> by the Configuration Cache.
+     * If this provider is created at configuration time, the {@link Callable} may call configuration-time only APIs and capture objects of arbitrary types.
+     * <p>This can be useful when you need to lazily compute some value to use at execution time based on configuration-time only data. For example, you can compute an archive name based on the name
+     * and the version of the project:
+     * <pre class='autoTested'>
+     *   tasks.register("createArchive") {
+     *       def archiveNameProvider = { project.name + "-" + project.version + ".jar" }
+     *       doLast {
+     *           def archiveName = new File(archiveNameProvider.get())
+     *           // ... create the archive and put in its contents.
+     *       }
+     *   }
+     * </pre>
      *
      * @param value The {@code java.util.concurrent.Callable} use to calculate the value.
      * @return The provider. Never returns null.

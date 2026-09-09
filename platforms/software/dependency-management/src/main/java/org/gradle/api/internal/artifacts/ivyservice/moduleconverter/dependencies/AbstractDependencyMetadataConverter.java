@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,7 @@ import org.gradle.api.artifacts.ExcludeRule;
 import org.gradle.internal.component.model.DefaultIvyArtifactName;
 import org.gradle.internal.component.model.ExcludeMetadata;
 import org.gradle.internal.component.model.IvyArtifactName;
-import org.gradle.util.internal.CollectionUtils;
 
-import java.util.Collections;
-import java.util.List;
 import java.util.Set;
 
 public abstract class AbstractDependencyMetadataConverter implements DependencyMetadataConverter {
@@ -39,15 +36,22 @@ public abstract class AbstractDependencyMetadataConverter implements DependencyM
         return artifact.getExtension() != null ? artifact.getExtension() : artifact.getType();
     }
 
-    protected List<ExcludeMetadata> convertExcludeRules(Set<ExcludeRule> excludeRules) {
-        return CollectionUtils.collect((Iterable<ExcludeRule>) excludeRules, excludeRuleConverter::convertExcludeRule);
+    protected ImmutableList<ExcludeMetadata> convertExcludeRules(Set<ExcludeRule> excludeRules) {
+        if (excludeRules.isEmpty()) {
+            return ImmutableList.of();
+        }
+        ImmutableList.Builder<ExcludeMetadata> builder = ImmutableList.builderWithExpectedSize(excludeRules.size());
+        for (ExcludeRule excludeRule : excludeRules) {
+            builder.add(excludeRuleConverter.convertExcludeRule(excludeRule));
+        }
+        return builder.build();
     }
 
-    protected List<IvyArtifactName> convertArtifacts(Set<DependencyArtifact> dependencyArtifacts) {
+    protected ImmutableList<IvyArtifactName> convertArtifacts(Set<DependencyArtifact> dependencyArtifacts) {
         if (dependencyArtifacts.isEmpty()) {
-            return Collections.emptyList();
+            return ImmutableList.of();
         }
-        ImmutableList.Builder<IvyArtifactName> names = ImmutableList.builder();
+        ImmutableList.Builder<IvyArtifactName> names = ImmutableList.builderWithExpectedSize(dependencyArtifacts.size());
         for (DependencyArtifact dependencyArtifact : dependencyArtifacts) {
             DefaultIvyArtifactName name = new DefaultIvyArtifactName(dependencyArtifact.getName(), dependencyArtifact.getType(), getExtension(dependencyArtifact), dependencyArtifact.getClassifier());
             names.add(name);

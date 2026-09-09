@@ -30,8 +30,8 @@ class CachedChangingModulesIntegrationTest extends AbstractHttpDependencyResolut
         buildFile << """
         repositories {
             maven {
-                name 'repo'
-                url '${repo.uri}'
+                name = 'repo'
+                url = '${repo.uri}'
             }
         }
         configurations {
@@ -101,8 +101,8 @@ class CachedChangingModulesIntegrationTest extends AbstractHttpDependencyResolut
         buildFile << """
         repositories {
             maven {
-                name 'repo'
-                url '${repo.uri}'
+                name = 'repo'
+                url = '${repo.uri}'
             }
         }
         configurations {
@@ -169,29 +169,35 @@ class CachedChangingModulesIntegrationTest extends AbstractHttpDependencyResolut
 
         module.publish()
         buildFile << """
-          repositories {
-              ivy {
-                  name 'repo'
-                  url '${repo.uri}'
-              }
-          }
-          configurations {
-              compile
-          }
+            repositories {
+                ivy {
+                    name = 'repo'
+                    url = '${repo.uri}'
+                }
+            }
+            configurations {
+                compile
+            }
 
-          configurations.all {
-              resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-          }
+            configurations.all {
+                resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+            }
 
-          dependencies {
-                compile group: "group", name: "projectA", version: "1.0", classifier: "source", changing: true
-          }
+            dependencies {
+                compile("group:projectA:1.0") {
+                    artifact {
+                        classifier = 'source'
+                        type = 'jar'
+                    }
+                    changing = true
+                }
+            }
 
-          task retrieve(type: Sync) {
-              into 'libs'
-              from configurations.compile
-          }
-          """
+            task retrieve(type: Sync) {
+                into 'libs'
+                from configurations.compile
+            }
+        """
         when:
         module.ivy.expectGet()
         module.getArtifact(classifier: "source").expectGet()

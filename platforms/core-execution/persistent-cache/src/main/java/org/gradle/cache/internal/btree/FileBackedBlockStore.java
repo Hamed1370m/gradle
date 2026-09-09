@@ -15,7 +15,7 @@
  */
 package org.gradle.cache.internal.btree;
 
-import org.gradle.api.UncheckedIOException;
+import org.gradle.internal.UncheckedException;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 
 public class FileBackedBlockStore implements BlockStore {
+    static final long FILE_GROWTH_CHUNK_SIZE = 64 * 1024;
     private final File cacheFile;
     private RandomAccessFile file;
     private ByteOutput output;
@@ -56,7 +57,7 @@ public class FileBackedBlockStore implements BlockStore {
                 runnable.run();
             }
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     }
 
@@ -74,10 +75,30 @@ public class FileBackedBlockStore implements BlockStore {
 
     @Override
     public void close() {
+        IOException failure = null;
         try {
-            file.close();
+            // Trim chunk-growth padding so the next open() starts allocating right after the last block,
+            // and we don't waste disk space. If a daemon is killed before close is called, we still may waste max FILE_GROWTH_CHUNK_SIZE.
+            if (nextBlock < currentFileSize) {
+                file.setLength(nextBlock);
+            }
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            failure = e;
+        } finally {
+            try {
+                // We try really hard to close the file even if setLength fails, since
+                // on Windows leaking the handle can prevent a new daemon from reopening the cache.
+                file.close();
+            } catch (IOException e) {
+                if (failure != null) {
+                    failure.addSuppressed(e);
+                } else {
+                    failure = e;
+                }
+            }
+        }
+        if (failure != null) {
+            throw UncheckedException.throwAsUncheckedException(failure);
         }
     }
 
@@ -87,7 +108,7 @@ public class FileBackedBlockStore implements BlockStore {
             file.setLength(0);
             currentFileSize = 0;
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
         nextBlock = 0;
     }
@@ -125,7 +146,7 @@ public class FileBackedBlockStore implements BlockStore {
         } catch (CorruptedCacheException e) {
             throw e;
         } catch (Exception e) {
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     }
 
@@ -137,7 +158,7 @@ public class FileBackedBlockStore implements BlockStore {
         } catch (CorruptedCacheException e) {
             throw e;
         } catch (Exception e) {
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     }
 
@@ -209,7 +230,6 @@ public class FileBackedBlockStore implements BlockStore {
             // Write header
             outputStream.writeByte(payload.getType());
             outputStream.writeInt(payloadSize);
-            long finalSize = pos + HEADER_SIZE + TAIL_SIZE + payloadSize;
 
             // Write body
             payload.write(outputStream);
@@ -222,10 +242,14 @@ public class FileBackedBlockStore implements BlockStore {
             outputStream.writeInt((int) bytesWritten);
             output.done();
 
-            // Pad
-            if (currentFileSize < finalSize) {
-                file.setLength(finalSize);
-                currentFileSize = finalSize;
+            // Grow the file in FILE_GROWTH_CHUNK_SIZE chunks instead of exact sizes to reduce ftruncate syscalls.
+            // On cloud block storage (e.g. EBS), ftruncate triggers expensive metadata journal commits.
+            // Growing in chunks reduces the number of ftruncate syscalls and improves performance on such storages.
+            long blockEnd = pos + getSize();
+            if (blockEnd > currentFileSize) {
+                long nextFileSize = (blockEnd + FILE_GROWTH_CHUNK_SIZE - 1) / FILE_GROWTH_CHUNK_SIZE * FILE_GROWTH_CHUNK_SIZE;
+                file.setLength(nextFileSize);
+                currentFileSize = nextFileSize;
             }
         }
 

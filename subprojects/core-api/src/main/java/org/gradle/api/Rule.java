@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,14 @@ package org.gradle.api;
 /**
  * <p>A {@code Rule} represents some action to perform when an unknown domain object is referenced. The rule can use the
  * domain object name to add an implicit domain object.</p>
+ * @since 0.7
  */
 public interface Rule {
     /**
      * Returns the description of the rule. This is used for reporting purposes.
      *
      * @return the description. should not return null.
+     * @since 0.7
      */
     String getDescription();
 
@@ -32,6 +34,7 @@ public interface Rule {
      * object with the given name.
      *
      * @param domainObjectName The name of the unknown domain object.
+     * @since 0.7
      */
     void apply(String domainObjectName);
 }

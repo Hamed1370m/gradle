@@ -13,10 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import gradlebuild.integrationtests.configureTestSourceSetInIde
 import gradlebuild.jmh.tasks.JmhHTMLReport
 
 plugins {
     id("me.champeau.jmh")
+    id("gradlebuild.jvm-compile")
+}
+
+configureTestSourceSetInIde(sourceSets.jmh.get())
+
+jvmCompile {
+    addCompilationFrom(sourceSets.jmh) {
+        associate(tasks.jmhCompileGeneratedClasses)
+    }
 }
 
 configurations {

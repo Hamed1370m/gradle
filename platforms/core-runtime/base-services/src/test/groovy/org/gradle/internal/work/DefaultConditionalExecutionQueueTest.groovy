@@ -30,7 +30,7 @@ class DefaultConditionalExecutionQueueTest extends ConcurrentSpec {
     private static final int MAX_WORKERS = 4
     def coordinationService = new DefaultResourceLockCoordinationService()
     def workerLimits = new DefaultWorkerLimits(MAX_WORKERS)
-    def workerLeaseService = new DefaultWorkerLeaseService(coordinationService, workerLimits)
+    def workerLeaseService = new DefaultWorkerLeaseService(coordinationService, workerLimits, ResourceLockStatistics.NO_OP)
     def queue = new DefaultConditionalExecutionQueue(DISPLAY_NAME, workerLimits, new DefaultExecutorFactory(), workerLeaseService)
 
     def "can run an action and wait for the result"() {
@@ -148,7 +148,7 @@ class DefaultConditionalExecutionQueueTest extends ConcurrentSpec {
 
         and:
         ConcurrentTestUtil.poll {
-            queue.workerCount <= maxWorkers
+            queue.helper.workerCount <= maxWorkers
         }
 
         where:
@@ -171,12 +171,12 @@ class DefaultConditionalExecutionQueueTest extends ConcurrentSpec {
             }
         }
         thread.blockUntil.allSubmitted
-        assert queue.workerCount <= MAX_WORKERS
+        assert queue.helper.workerCount <= MAX_WORKERS
         executions.each { it.await() }
 
         and:
         ConcurrentTestUtil.poll {
-            queue.workerCount <= MAX_WORKERS
+            queue.helper.workerCount <= MAX_WORKERS
         }
     }
 

@@ -25,25 +25,31 @@ import org.gradle.api.artifacts.dsl.DependencyHandler
 import org.gradle.api.artifacts.dsl.RepositoryHandler
 import org.gradle.api.initialization.Settings
 import org.gradle.api.initialization.SharedModelDefaults
+import org.gradle.api.internal.initialization.ClassLoaderScope
 import org.gradle.api.plugins.ExtensionAware
-import org.gradle.api.reflect.HasPublicType
 import org.gradle.api.reflect.TypeOf
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.TaskContainer
-import org.gradle.internal.Factory
 import org.gradle.internal.deprecation.DeprecatableConfiguration
-import org.gradle.internal.deprecation.DeprecationLogger
 import org.gradle.kotlin.dsl.accessors.ConfigurationEntry
 import org.gradle.kotlin.dsl.accessors.ContainerElementFactoryEntry
+import org.gradle.kotlin.dsl.accessors.NestedModelEntry
 import org.gradle.kotlin.dsl.accessors.ProjectSchema
 import org.gradle.kotlin.dsl.accessors.ProjectSchemaEntry
 import org.gradle.kotlin.dsl.accessors.ProjectSchemaProvider
 import org.gradle.kotlin.dsl.accessors.SchemaType
+import org.gradle.kotlin.dsl.accessors.ProjectFeatureEntry
 import org.gradle.kotlin.dsl.accessors.TypedProjectSchema
 import org.gradle.kotlin.dsl.accessors.isDclEnabledForScriptTarget
+import org.gradle.kotlin.dsl.provider.plugins.schema.TypeProjection
+import org.gradle.kotlin.dsl.provider.plugins.schema.TypeProjectionKind
+import org.gradle.kotlin.dsl.provider.plugins.schema.parameterizedTypeOfRawGenericClass
 import org.gradle.kotlin.dsl.support.serviceOf
-import org.gradle.plugin.software.internal.SoftwareTypeRegistry
+import org.gradle.features.binding.Definition
+import org.gradle.features.binding.TargetTypeInformation
+import org.gradle.features.internal.binding.ProjectFeatureDeclarations
+import org.gradle.features.internal.binding.ProjectFeatureImplementation
 import java.lang.reflect.Modifier
 import kotlin.reflect.KVisibility
 
@@ -52,17 +58,17 @@ internal class DefaultProjectSchemaProvider(
     private val dclSchemaCollector: KotlinDslDclSchemaCollector,
 ) : ProjectSchemaProvider {
 
-    override fun schemaFor(scriptTarget: Any): TypedProjectSchema? =
+    override fun schemaFor(scriptTarget: Any, classLoaderScope: ClassLoaderScope): TypedProjectSchema? =
         targetTypeOf(scriptTarget)
             ?.let { scriptTargetType ->
                 targetSchemaFor(
                     scriptTarget,
-                    scriptTargetType
+                    scriptTargetType,
+                    classLoaderScope
                 )
             }?.let { targetSchema ->
                 ProjectSchema(
                     targetSchema.extensions,
-                    targetSchema.conventions,
                     targetSchema.tasks,
                     targetSchema.containerElements,
                     (scriptTarget as? Project)
@@ -70,6 +76,8 @@ internal class DefaultProjectSchemaProvider(
                         ?: emptyList(),
                     targetSchema.modelDefaults,
                     targetSchema.containerElementFactories,
+                    targetSchema.projectFeatureEntries,
+                    targetSchema.nestedModels,
                     scriptTarget
                 ).map(::SchemaType)
             }
@@ -81,15 +89,12 @@ internal class DefaultProjectSchemaProvider(
         else -> null
     }
 
-    internal fun targetSchemaFor(target: Any, targetType: TypeOf<*>): TargetTypedSchema {
+    internal fun targetSchemaFor(target: Any, targetType: TypeOf<*>, classLoaderScope: ClassLoaderScope): TargetTypedSchema {
         val extensions = mutableListOf<ProjectSchemaEntry<TypeOf<*>>>()
         val conventions = mutableListOf<ProjectSchemaEntry<TypeOf<*>>>()
         val tasks = mutableListOf<ProjectSchemaEntry<TypeOf<*>>>()
         val containerElements = mutableListOf<ProjectSchemaEntry<TypeOf<*>>>()
         val buildModelDefaults = mutableListOf<ProjectSchemaEntry<TypeOf<*>>>()
-        val containerElementFactories = mutableListOf<ContainerElementFactoryEntry<TypeOf<*>>>()
-
-        val isDclEnabled = isDclEnabledForScriptTarget(target)
 
         fun collectSchemaOf(target: Any, targetType: TypeOf<*>) {
             if (target is ExtensionAware) {
@@ -99,13 +104,6 @@ internal class DefaultProjectSchemaProvider(
                 }
             }
             if (target is Project) {
-                @Suppress("deprecation")
-                val plugins: Map<String, Any> = DeprecationLogger.whileDisabled(Factory { target.convention.plugins })!!
-                accessibleConventionsSchema(plugins).forEach { (name, type) ->
-                    conventions.add(ProjectSchemaEntry(targetType, name, type))
-                    val plugin = DeprecationLogger.whileDisabled(Factory { plugins[name] })!!
-                    collectSchemaOf(plugin, type)
-                }
                 accessibleContainerSchema(target.tasks.collectionSchema).forEach { schema ->
                     tasks.add(ProjectSchemaEntry(typeOfTaskContainer, schema.name, schema.publicType))
                 }
@@ -117,9 +115,15 @@ internal class DefaultProjectSchemaProvider(
                 }
             }
             if (target is Settings) {
-                val softwareTypeRegistry = target.serviceOf<SoftwareTypeRegistry>()
-                accessibleContainerSchema(softwareTypeRegistry.schema).forEach { schema ->
-                    buildModelDefaults.add(ProjectSchemaEntry(typeOfModelDefaults, schema.name, schema.publicType))
+                val projectFeatureDeclarations = target.serviceOf<ProjectFeatureDeclarations>()
+                projectFeatureDeclarations.projectFeatureImplementations.forEach { (name, impls) ->
+                    if (!isPublic(name)) return@forEach
+                    impls.forEach { impl ->
+                        val receiver = receiverTypeForDefaults(impl)
+                        buildModelDefaults.add(
+                            ProjectSchemaEntry(receiver, name, TypeOf.typeOf(impl.definitionPublicType as Class<*>))
+                        )
+                    }
                 }
             }
             if (target is NamedDomainObjectContainer<*>) {
@@ -127,14 +131,13 @@ internal class DefaultProjectSchemaProvider(
                     containerElements.add(ProjectSchemaEntry(targetType, schema.name, schema.publicType))
                 }
             }
-
-            if (isDclEnabled) {
-                dclSchemaCollector.collectNestedContainerFactories(targetType.concreteClass)
-                    .forEach(containerElementFactories::add)
-            }
         }
 
         collectSchemaOf(target, targetType)
+
+        val dclSchema = if (isDclEnabledForScriptTarget(target)) {
+            dclSchemaCollector.collectDclSchemaForKotlinDslTarget(target, classLoaderScope)
+        } else null
 
         return TargetTypedSchema(
             extensions,
@@ -142,7 +145,9 @@ internal class DefaultProjectSchemaProvider(
             tasks,
             containerElements,
             buildModelDefaults,
-            containerElementFactories
+            dclSchema?.projectFeatures.orEmpty(),
+            dclSchema?.containerElementFactories.orEmpty(),
+            dclSchema?.nestedModels.orEmpty()
         )
     }
 }
@@ -153,15 +158,12 @@ data class TargetTypedSchema(
     val conventions: List<ProjectSchemaEntry<TypeOf<*>>>,
     val tasks: List<ProjectSchemaEntry<TypeOf<*>>>,
     val containerElements: List<ProjectSchemaEntry<TypeOf<*>>>,
+    // DCL:
     val modelDefaults: List<ProjectSchemaEntry<TypeOf<*>>>,
-    val containerElementFactories: List<ContainerElementFactoryEntry<TypeOf<*>>>
+    val projectFeatureEntries: List<ProjectFeatureEntry<TypeOf<*>>>,
+    val containerElementFactories: List<ContainerElementFactoryEntry<TypeOf<*>>>,
+    val nestedModels: List<NestedModelEntry<TypeOf<*>>>
 )
-
-private
-fun accessibleConventionsSchema(plugins: Map<String, Any>) =
-    DeprecationLogger.whileDisabled(Factory {
-        plugins.filterKeys(::isPublic).mapValues { inferPublicTypeOfConvention(it.value) }
-    })!!
 
 
 private
@@ -273,22 +275,6 @@ fun sourceSetsOf(project: Project) =
 
 
 private
-fun inferPublicTypeOfConvention(instance: Any) =
-    if (instance is HasPublicType) instance.publicType
-    else TypeOf.typeOf(instance::class.java.firstNonSyntheticOrSelf)
-
-
-private
-val Class<*>.firstNonSyntheticOrSelf
-    get() = firstNonSyntheticOrNull ?: this
-
-
-private
-val Class<*>.firstNonSyntheticOrNull: Class<*>?
-    get() = takeIf { !isSynthetic } ?: superclass?.firstNonSyntheticOrNull
-
-
-private
 fun accessibleConfigurationsOf(project: Project) =
     project.configurations
         .filter { isPublic(it.name) }
@@ -332,6 +318,26 @@ val typeOfTaskContainer = typeOf<TaskContainer>()
 
 private
 val typeOfModelDefaults = typeOf<SharedModelDefaults>()
+
+
+private
+fun receiverTypeForDefaults(impl: ProjectFeatureImplementation<*, *>): TypeOf<*> =
+    when (val target = impl.targetDefinitionType) {
+        is TargetTypeInformation.DefinitionTargetTypeInformation<*> ->
+            if (target.definitionType == Project::class.java) typeOfModelDefaults
+            else TypeOf.typeOf(target.definitionType as Class<*>)
+
+        is TargetTypeInformation.BuildModelTargetTypeInformation<*> ->
+            // Definition<out U> — matches exactly the set of definitions whose
+            // build model is assignable to U, which is the same rule
+            // TargetTypeInformationChecks.isValidBindingType applies at runtime.
+            parameterizedTypeOfRawGenericClass(
+                listOf(TypeProjection(target.buildModelType, TypeProjectionKind.OUT)),
+                Definition::class.java
+            )
+
+        else -> error("Unknown TargetTypeInformation subclass: $target — receiver type for defaults accessor cannot be determined")
+    }
 
 
 internal

@@ -17,13 +17,11 @@
 package org.gradle.integtests.resolve
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import spock.lang.Issue
 import spock.lang.Unroll
 
 class ConcurrentDerivationStrategyIntegTest extends AbstractIntegrationSpec {
 
-    @ToBeFixedForConfigurationCache
     @Issue("https://github.com/gradle/gradle/issues/13555")
     @Unroll("consistent resolution using rules=#displayName")
     // If this test becomes flaky it means we broke the code which prevents mutation of in-memory cached module metadata
@@ -32,15 +30,15 @@ class ConcurrentDerivationStrategyIntegTest extends AbstractIntegrationSpec {
         settingsFile << """
             include 'app'
             include 'lib'
+            dependencyResolutionManagement {
+                ${mavenCentralRepository()}
+            }
         """
 
-        buildFile << """
-            subprojects {
-                ${mavenCentralRepository()}
-                dependencies {
-                    components {
-                        $rules
-                    }
+        def common = """
+            dependencies {
+                components {
+                    $rules
                 }
             }
 
@@ -61,6 +59,8 @@ class ConcurrentDerivationStrategyIntegTest extends AbstractIntegrationSpec {
         """
 
         file('app/build.gradle') << """
+            $common
+
             configurations {
                foo
             }
@@ -70,47 +70,21 @@ class ConcurrentDerivationStrategyIntegTest extends AbstractIntegrationSpec {
                foo 'org.springframework.boot:spring-boot-starter-web:2.2.2.RELEASE'
             }
 
-            tasks.register("resolve") {
-               doLast {
-                  configurations.foo.incoming.resolutionResult.allComponents {
-                      assert it instanceof ResolvedComponentResult
-                      if (id instanceof ModuleComponentIdentifier) {
-                          variants.each {
-                              println "\$id -> \${it.displayName}"
-                              if (it.displayName != 'default') {
-                                  throw new AssertionError("Unexpected resolved variant \$it")
-                              }
-                          }
-                      }
-                  }
-               }
-            }
+            ${getResolveTask("foo", "default")}
         """
         file("lib/build.gradle") << """
             plugins {
                id 'java-library'
             }
 
+            $common
+
             dependencies {
                api 'org.apache.commons:commons-lang3:3.3.1'
                implementation 'org.springframework.boot:spring-boot-starter-web:2.2.2.RELEASE'
             }
 
-            tasks.register("resolve") {
-               doLast {
-                  configurations.compileClasspath.incoming.resolutionResult.allComponents {
-                      assert it instanceof ResolvedComponentResult
-                      if (id instanceof ModuleComponentIdentifier) {
-                          variants.each {
-                              println "\$id -> \${it.displayName}"
-                              if (it.displayName != 'compile') {
-                                  throw new AssertionError("Unexpected resolved variant \$it")
-                              }
-                          }
-                      }
-                  }
-               }
-            }
+            ${getResolveTask("compileClasspath", "compile")}  
         """
 
         when:
@@ -132,5 +106,46 @@ class ConcurrentDerivationStrategyIntegTest extends AbstractIntegrationSpec {
         "no rules"        | ""
         "non-cached rule" | "all(NonCachedRule)"
         "cached rule"     | "all(CachedRule)"
+    }
+
+    def static getResolveTask(String configuration, String displayName) {
+        """
+            tasks.register("resolve") {
+               def resolutionRoot = configurations.${configuration}.incoming.resolutionResult.getRootComponent()
+               doLast {
+                  Util.getAllComponents(resolutionRoot.get()).forEach {res -> 
+                        assert res instanceof ResolvedComponentResult
+                        if (res.id instanceof ModuleComponentIdentifier) {
+                            res.variants.each {
+                                println "\${res.id} -> \${it.displayName}"
+                                if (it.displayName != '$displayName') {
+                                    throw new AssertionError("Unexpected resolved variant \$it")
+                                }
+                            }
+                        }
+                    }
+               }
+            }
+
+            class Util {
+                static Set<ResolvedComponentResult> getAllComponents(ResolvedComponentResult root) {
+                    final Set<ResolvedComponentResult> out = new LinkedHashSet<>();
+                    eachElement(root, out);
+                    return out;
+                }
+                
+                static void eachElement(ResolvedComponentResult root, Set<ResolvedComponentResult> visited) {
+                    if (!visited.add(root)) {
+                        return;
+                    }
+                    for (DependencyResult d : root.getDependencies()) {
+                        if (d instanceof ResolvedDependencyResult) {
+                            eachElement(((ResolvedDependencyResult) d).getSelected(), visited);
+                        }
+                    }
+                }
+            }
+        """
+        // TODO: the utility methods is basically missing API, which we need to add: https://github.com/gradle/gradle/issues/26897
     }
 }

@@ -21,5 +21,7 @@ import org.gradle.api.Action
 
 /**
  * Enables function invocation syntax on [Action] references.
+ *
+ * @since 5.6
  */
-operator fun <T> Action<in T>.invoke(target: T) = execute(target)
+operator fun <T : Any> Action<in T>.invoke(target: T) = execute(target)

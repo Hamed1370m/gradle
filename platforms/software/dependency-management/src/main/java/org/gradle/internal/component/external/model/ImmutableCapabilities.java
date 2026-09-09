@@ -16,25 +16,24 @@
 package org.gradle.internal.component.external.model;
 
 import com.google.common.collect.ImmutableSet;
-import org.gradle.api.capabilities.CapabilitiesMetadata;
 import org.gradle.api.capabilities.Capability;
 import org.gradle.api.internal.capabilities.ImmutableCapability;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
+import java.util.AbstractCollection;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 
 /**
- * A deeply immutable implementation of {@link CapabilitiesMetadata}.
+ * A deeply immutable collection of {@link Capability capabilities}.
  *
  * This type will ensure that all contents are immutable upon construction,
  * in order to allow instances of this type to be safely reused whenever possible
  * to avoid unnecessary memory allocations.
- *
- * Note that while this class is not itself {@code final}, all fields are private, so
- * subclassing should not break the immutability contract.
  */
-public class ImmutableCapabilities implements Iterable<ImmutableCapability> {
+public final class ImmutableCapabilities extends AbstractCollection<ImmutableCapability> {
+
     public static final ImmutableCapabilities EMPTY = new ImmutableCapabilities(ImmutableSet.of());
 
     private final ImmutableSet<ImmutableCapability> capabilities;
@@ -47,7 +46,7 @@ public class ImmutableCapabilities implements Iterable<ImmutableCapability> {
         if (capability == null) {
             return EMPTY;
         }
-        return new ImmutableCapabilities(ImmutableSet.of(asImmutable(capability)));
+        return new ImmutableCapabilities(ImmutableSet.of(DefaultImmutableCapability.of(capability)));
     }
 
     public static ImmutableCapabilities of(@Nullable Collection<? extends Capability> capabilities) {
@@ -61,30 +60,28 @@ public class ImmutableCapabilities implements Iterable<ImmutableCapability> {
 
         ImmutableSet.Builder<ImmutableCapability> builder = ImmutableSet.builderWithExpectedSize(capabilities.size());
         for (Capability capability : capabilities) {
-            builder.add(asImmutable(capability));
+            builder.add(DefaultImmutableCapability.of(capability));
         }
         return new ImmutableCapabilities(builder.build());
     }
 
-    private static ImmutableCapability asImmutable(Capability capability) {
-        if (capability instanceof ImmutableCapability) {
-            return (ImmutableCapability) capability;
-        } else {
-            return new DefaultImmutableCapability(capability.getGroup(), capability.getName(), capability.getVersion());
-        }
-    }
-
+    // Avoid this method if possible. ImmutableCapabilitie is already a Collection.
     public ImmutableSet<ImmutableCapability> asSet() {
         return capabilities;
     }
 
     @Override
     public Iterator<ImmutableCapability> iterator() {
+        if (capabilities.isEmpty()) {
+            // Avoid allocating an iterator object for the empty set
+            return Collections.emptyIterator();
+        }
         return capabilities.iterator();
     }
 
-    public boolean isEmpty() {
-        return capabilities.isEmpty();
+    @Override
+    public int size() {
+        return capabilities.size();
     }
 
     /**
@@ -103,7 +100,7 @@ public class ImmutableCapabilities implements Iterable<ImmutableCapability> {
     }
 
     @Override
-    public boolean equals(Object o) {
+    public boolean equals(@Nullable Object o) {
         if (this == o) {
             return true;
         }
@@ -118,4 +115,5 @@ public class ImmutableCapabilities implements Iterable<ImmutableCapability> {
     public int hashCode() {
         return capabilities.hashCode();
     }
+
 }

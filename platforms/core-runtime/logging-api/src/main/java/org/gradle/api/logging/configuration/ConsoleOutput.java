@@ -16,23 +16,40 @@
 
 package org.gradle.api.logging.configuration;
 
+import org.gradle.api.Incubating;
+
 /**
  * Specifies how to treat color and dynamic console output.
+ * @since 2.14
  */
 public enum ConsoleOutput {
     /**
      * Disable all color and rich output. Generate plain text only.
+     * @since 2.14
      */
     Plain,
+
+    /**
+     * Enable color output while omitting rich features such as progress bars.
+     *
+     * @since 9.1.0
+     */
+    @Incubating
+    Colored,
+
     /**
      * Enable color and rich output when the current process is attached to a console, disable when not attached to a console.
+     * @since 2.14
      */
     Auto,
+
     /**
      * Enable color and rich output, regardless of whether the current process is attached to a console or not.
      * When not attached to a console, the color and rich output is encoded using ANSI control characters.
+     * @since 2.14
      */
     Rich,
+
     /**
      * Enable color and rich output like Rich, but output more detailed message.
      *

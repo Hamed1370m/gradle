@@ -19,8 +19,8 @@ import groovy.lang.GroovyRuntimeException;
 import groovy.lang.MissingMethodException;
 import groovy.lang.MissingPropertyException;
 import org.codehaus.groovy.runtime.metaclass.MissingMethodExecutionFailed;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
@@ -29,6 +29,7 @@ import java.util.Map;
  * An empty {@link DynamicObject}.
  */
 public abstract class AbstractDynamicObject implements DynamicObject {
+    @Override
     public abstract String getDisplayName();
 
     @Override
@@ -75,6 +76,11 @@ public abstract class AbstractDynamicObject implements DynamicObject {
         if (!result.isFound()) {
             throw setMissingProperty(name);
         }
+    }
+
+    @Override
+    public DynamicInvokeResult trySetPropertyWithoutInstrumentation(String name, @Nullable Object value) {
+        return DynamicInvokeResult.notFound();
     }
 
     @Override
@@ -144,7 +150,7 @@ public abstract class AbstractDynamicObject implements DynamicObject {
     }
 
     @Override
-    public Map<String, ?> getProperties() {
+    public Map<String, ? extends @Nullable Object> getProperties() {
         return Collections.emptyMap();
     }
 

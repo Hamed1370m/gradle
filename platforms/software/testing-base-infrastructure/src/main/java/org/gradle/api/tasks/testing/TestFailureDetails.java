@@ -17,13 +17,12 @@
 package org.gradle.api.tasks.testing;
 
 import org.gradle.api.Incubating;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contains serializable structural information about a test failure.
  *
- * @see org.gradle.api.internal.tasks.testing.junit.result.TestFailure
+ * @see org.gradle.api.tasks.testing.TestFailure
  * @since 7.6
  */
 @Incubating
@@ -33,6 +32,7 @@ public interface TestFailureDetails {
      * Returns the failure message.
      *
      * @return the failure message
+     * @since 7.6
      */
     @Nullable
     String getMessage();
@@ -41,6 +41,7 @@ public interface TestFailureDetails {
      * The fully-qualified name of the underlying exception type.
      *
      * @return the class name
+     * @since 7.6
      */
     String getClassName();
 
@@ -50,6 +51,7 @@ public interface TestFailureDetails {
      * The instances are created on the test worker side allowing the clients not to deal with non-serializable exceptions.
      *
      * @return the stacktrace string
+     * @since 7.6
      */
     String getStacktrace();
 
@@ -57,6 +59,7 @@ public interface TestFailureDetails {
      * Returns true if the represented failure is recognized as an assertion failure.
      *
      * @return {@code true} for assertion failures
+     * @since 7.6
      */
     boolean isAssertionFailure();
 
@@ -77,8 +80,7 @@ public interface TestFailureDetails {
      * @see #isFileComparisonFailure()
      * @return the expected file contents or {@code null} if the test framework doesn't supply detailed information on assertion failures, or it is not a file comparison failure
      */
-    @Nullable
-    byte[] getExpectedContent();
+    byte @Nullable [] getExpectedContent();
 
     /**
      * Returns the actual content of a file comparison assertion failure.
@@ -87,8 +89,7 @@ public interface TestFailureDetails {
      * @see #isFileComparisonFailure()
      * @return the expected file contents or {@code null} if the test framework doesn't supply detailed information on assertion failures, or it is not a file comparison failure
      */
-    @Nullable
-    byte[] getActualContent();
+    byte @Nullable [] getActualContent();
 
     /**
      * Returns a string representation of the expected value for an assertion failure.
@@ -96,6 +97,7 @@ public interface TestFailureDetails {
      * If the current instance does not represent an assertion failure, or the test failure doesn't provide any information about expected and actual values then the method returns {@code null}.
      *
      * @return The expected value
+     * @since 7.6
      */
     @Nullable
     String getExpected();
@@ -106,7 +108,37 @@ public interface TestFailureDetails {
      * If the current instance does not represent an assertion failure, or the test failure doesn't provide any information about expected and actual values then the method returns {@code null}.
      *
      * @return The actual value
+     * @since 7.6
      */
     @Nullable
     String getActual();
+
+    /**
+     * Is this an assumption failure?
+     *
+     * @since 8.14
+     * @return true if this is an assumption failure
+     */
+    boolean isAssumptionFailure();
+
+    /**
+     * Is this a test-framework failure (as opposed to a failure raised from inside a test method)?
+     * <p>
+     * Framework failures arise when the test framework itself signals that something went wrong
+     * outside the body of a test method — for example, a TestNG test class whose constructor
+     * throws, a JUnit Jupiter {@code @BeforeAll} hook that aborts the container, or a custom
+     * JUnit 4 runner whose {@code run()} method throws. Such failures are typically attached to
+     * a synthesized leaf or to a composite descriptor (the worker root suite, the test class,
+     * etc.) rather than to a leaf test.
+     * <p>
+     * These failures are surfaced to the user even under test logging configurations that would
+     * otherwise filter out the descriptor they are attached to.
+     *
+     * @since 9.7.0
+     * @return {@code true} if this is a test-framework failure
+     */
+    @Incubating
+    default boolean isFrameworkFailure() {
+        return false;
+    }
 }

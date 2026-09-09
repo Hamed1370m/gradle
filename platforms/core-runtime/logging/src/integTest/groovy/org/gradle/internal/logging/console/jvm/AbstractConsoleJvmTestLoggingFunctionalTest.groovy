@@ -18,7 +18,6 @@ package org.gradle.internal.logging.console.jvm
 
 import org.gradle.api.logging.configuration.ConsoleOutput
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.executer.ExecutionResult
 
 abstract class AbstractConsoleJvmTestLoggingFunctionalTest extends AbstractIntegrationSpec {
@@ -132,16 +131,18 @@ abstract class AbstractConsoleJvmTestLoggingFunctionalTest extends AbstractInteg
         matchesTaskOutput(taskOutput, testLogEventRegex(TestLogEvent.FAILED.consoleMarker))
     }
 
-    @ToBeFixedForConfigurationCache(because = "https://github.com/gradle/gradle/issues/24613")
     def "can group output from custom test listener with task"() {
-        buildFile << """
+        buildFile """
             test {
-                beforeTest { descriptor ->
-                    logger.quiet 'Starting test: ' + descriptor.className + ' > ' + descriptor.name
-                }
-                afterTest { descriptor, result ->
-                    logger.quiet 'Finishing test: ' + descriptor.className + ' > ' + descriptor.name
-                }
+                def taskLogger = logger
+                addTestListener(new TestListener() {
+                    void beforeTest(TestDescriptor descriptor) {
+                        taskLogger.quiet 'Starting test: ' + descriptor.className + ' > ' + descriptor.name
+                    }
+                    void afterTest(TestDescriptor descriptor, TestResult result) {
+                        taskLogger.quiet 'Finishing test: ' + descriptor.className + ' > ' + descriptor.name
+                    }
+                })
             }
         """
         file(JAVA_TEST_FILE_PATH) << javaTestClass { '' }

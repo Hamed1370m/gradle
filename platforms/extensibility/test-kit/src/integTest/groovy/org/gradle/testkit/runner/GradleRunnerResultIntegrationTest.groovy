@@ -16,9 +16,9 @@
 
 package org.gradle.testkit.runner
 
-
+import org.gradle.integtests.fixtures.ProjectDirectoryCreator
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.gradle.testkit.runner.fixtures.InspectsExecutedTasks
 import org.gradle.testkit.runner.fixtures.WithNoSourceTaskOutcome
 
@@ -33,8 +33,8 @@ import static org.gradle.testkit.runner.TaskOutcome.UP_TO_DATE
  * Tests more intricate aspects of the BuildResult object
  */
 @InspectsExecutedTasks
-@Requires(value = IntegTestPreconditions.NotEmbeddedExecutor, reason = "Test causes builds to hang")
-class GradleRunnerResultIntegrationTest extends BaseGradleRunnerIntegrationTest {
+@Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = "Test causes builds to hang")
+class GradleRunnerResultIntegrationTest extends BaseGradleRunnerIntegrationTest implements ProjectDirectoryCreator {
 
     def "execute task actions marked as up-to-date or skipped"() {
         given:
@@ -106,7 +106,7 @@ class GradleRunnerResultIntegrationTest extends BaseGradleRunnerIntegrationTest 
 
     def "task order represents execution order"() {
         when:
-        file("settings.gradle") << "include 'a', 'b', 'c', 'd'"
+        includeProjects("a", "b", "c", "d")
         buildFile << """
             def startLatch = new java.util.concurrent.CountDownLatch(1)
             def stopLatch = new java.util.concurrent.CountDownLatch(1)

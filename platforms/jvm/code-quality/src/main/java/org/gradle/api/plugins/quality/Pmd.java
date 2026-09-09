@@ -22,8 +22,8 @@ import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTree;
 import org.gradle.api.model.ObjectFactory;
-import org.gradle.api.plugins.quality.internal.PmdAction;
 import org.gradle.api.plugins.quality.internal.PmdActionParameters;
+import org.gradle.api.plugins.quality.internal.PmdInvoker;
 import org.gradle.api.plugins.quality.internal.PmdReportsImpl;
 import org.gradle.api.provider.Property;
 import org.gradle.api.reporting.Reporting;
@@ -40,14 +40,15 @@ import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.internal.Describables;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 import org.gradle.internal.nativeintegration.console.ConsoleDetector;
 import org.gradle.internal.nativeintegration.console.ConsoleMetaData;
 import org.gradle.internal.nativeintegration.services.NativeServices;
 import org.gradle.util.internal.ClosureBackedAction;
 import org.gradle.workers.WorkQueue;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -57,8 +58,10 @@ import java.util.stream.Collectors;
  *
  * @see PmdPlugin
  * @see PmdExtension
+ * @since 1.0
  */
 @CacheableTask
+@SuppressWarnings("deprecation") // The targetJdk property and TargetJdk type are themselves deprecated.
 public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<PmdReports> {
 
     private FileCollection pmdClasspath;
@@ -69,34 +72,37 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
     private final PmdReports reports;
     private boolean consoleOutput;
     private FileCollection classpath;
-    private final Property<Integer> rulesMinimumPriority;
-    private final Property<Integer> maxFailures;
-    private final Property<Boolean> incrementalAnalysis;
-    private final Property<Integer> threads;
 
+    /**
+     * Creates a new {@code Pmd}.
+     *
+     * @since 1.0
+     */
+    @SuppressWarnings("this-escape")
     public Pmd() {
         super();
         ObjectFactory objects = getObjectFactory();
         reports = objects.newInstance(PmdReportsImpl.class, Describables.quoted("Task", getIdentityPath()));
-        this.rulesMinimumPriority = objects.property(Integer.class);
-        this.incrementalAnalysis = objects.property(Boolean.class);
-        this.maxFailures = objects.property(Integer.class);
-        this.threads = objects.property(Integer.class);
     }
 
+    /**
+     * Run.
+     *
+     * @since 1.0
+     */
     @TaskAction
     public void run() {
-        validate(rulesMinimumPriority.get());
-        validateThreads(threads.get());
+        validate(getRulesMinimumPriority().get());
+        validateThreads(getThreads().get());
 
         WorkQueue workQueue = getWorkerExecutor().processIsolation(spec -> configureForkOptions(spec.getForkOptions()));
-        workQueue.submit(PmdAction.class, this::setupParameters);
+        workQueue.submit(PmdInvoker.class, this::setupParameters);
     }
 
     private void setupParameters(PmdActionParameters parameters) {
         parameters.getAntLibraryClasspath().setFrom(getPmdClasspath());
         parameters.getPmdClasspath().setFrom(getPmdClasspath());
-        parameters.getTargetJdk().set(getTargetJdk());
+        parameters.getTargetJdk().set(DeprecationLogger.whileDisabled(this::getTargetJdk));
         parameters.getRuleSets().set(getRuleSets());
         parameters.getRuleSetConfigFiles().from(getRuleSetFiles());
         if (getRuleSetConfig() != null) {
@@ -122,11 +128,16 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
         }).collect(Collectors.toList()));
     }
 
+    /**
+     * Std out is attached to terminal.
+     *
+     * @since 2.1
+     */
     public boolean stdOutIsAttachedToTerminal() {
         try {
             ConsoleDetector consoleDetector = NativeServices.getInstance().get(ConsoleDetector.class);
             ConsoleMetaData consoleMetaData = consoleDetector.getConsole();
-            return consoleMetaData != null && consoleMetaData.isStdOut();
+            return consoleMetaData != null && consoleMetaData.isStdOutATerminal();
         } catch (RuntimeException e) {
             return false;
         }
@@ -156,6 +167,7 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
      * Validates the value is a valid PMD rules minimum priority (1-5)
      *
      * @param value rules minimum priority threshold
+     * @since 2.8
      */
     public static void validate(int value) {
         if (value > 5 || value < 1) {
@@ -186,6 +198,7 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
 
     /**
      * The class path containing the PMD library to be used.
+     * @since 1.0
      */
     @Classpath
     @ToBeReplacedByLazyProperty
@@ -195,17 +208,19 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
 
     /**
      * The class path containing the PMD library to be used.
+     * @since 1.0
      */
     public void setPmdClasspath(FileCollection pmdClasspath) {
         this.pmdClasspath = pmdClasspath;
     }
 
     /**
-     * The built-in rule sets to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_rules_java.html">official list</a> of built-in rule sets.
+     * The built-in rule sets to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_rules_java.html">official list</a> of built-in rule sets.
      *
      * <pre>
      *     ruleSets = ["basic", "braces"]
      * </pre>
+     * @since 1.0
      */
     @Input
     @ToBeReplacedByLazyProperty
@@ -214,11 +229,12 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
     }
 
     /**
-     * The built-in rule sets to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_rules_java.html">official list</a> of built-in rule sets.
+     * The built-in rule sets to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_rules_java.html">official list</a> of built-in rule sets.
      *
      * <pre>
      *     ruleSets = ["basic", "braces"]
      * </pre>
+     * @since 1.0
      */
     public void setRuleSets(List<String> ruleSets) {
         this.ruleSets = ruleSets;
@@ -226,24 +242,43 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
 
     /**
      * The target JDK to use with PMD.
+     *
+     * @deprecated This property has no effect for PMD 5.0 and later, which infer the language version from the rule sets.
+     *     Scheduled to be removed in Gradle 10.
+     * @since 1.5
      */
+    @Deprecated
     @Input
-    @ToBeReplacedByLazyProperty
     public TargetJdk getTargetJdk() {
+        nagAboutTargetJdkDeprecation("getTargetJdk()");
         return targetJdk;
     }
 
     /**
      * The target JDK to use with PMD.
+     *
+     * @deprecated This property has no effect for PMD 5.0 and later, which infer the language version from the rule sets.
+     *     Scheduled to be removed in Gradle 10.
+     * @since 1.5
      */
+    @Deprecated
     public void setTargetJdk(TargetJdk targetJdk) {
+        nagAboutTargetJdkDeprecation("setTargetJdk(TargetJdk)");
         this.targetJdk = targetJdk;
+    }
+
+    private static void nagAboutTargetJdkDeprecation(String methodWithParams) {
+        DeprecationLogger.deprecateMethod(Pmd.class, methodWithParams)
+            .withAdvice("This property has no effect for PMD 5.0 and later, which infer the language version from the rule sets. Remove the targetJdk configuration from your build.")
+            .willBeRemovedInGradle10()
+            .withUpgradeGuideSection(9, "deprecated_pmd_target_jdk")
+            .nagUser();
     }
 
     /**
      * The custom rule set to be used (if any). Replaces {@code ruleSetFiles}, except that it does not currently support multiple rule sets.
      *
-     * See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set.
+     * See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set.
      *
      * <pre>
      *     ruleSetConfig = resources.text.fromFile(resources.file("config/pmd/myRuleSets.xml"))
@@ -261,7 +296,7 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
     /**
      * The custom rule set to be used (if any). Replaces {@code ruleSetFiles}, except that it does not currently support multiple rule sets.
      *
-     * See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set.
+     * See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set.
      *
      * <pre>
      *     ruleSetConfig = resources.text.fromFile(resources.file("config/pmd/myRuleSets.xml"))
@@ -274,12 +309,13 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
     }
 
     /**
-     * The custom rule set files to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set file.
+     * The custom rule set files to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set file.
      * If you want to only use custom rule sets, you must clear {@code ruleSets}.
      *
      * <pre>
      *     ruleSetFiles = files("config/pmd/myRuleSet.xml")
      * </pre>
+     * @since 1.0
      */
     @InputFiles
     @PathSensitive(PathSensitivity.NONE)
@@ -289,12 +325,13 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
     }
 
     /**
-     * The custom rule set files to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set file.
+     * The custom rule set files to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set file.
      * This adds to the default rule sets defined by {@link #getRuleSets()}.
      *
      * <pre>
      *     ruleSetFiles = files("config/pmd/myRuleSets.xml")
      * </pre>
+     * @since 1.0
      */
     public void setRuleSetFiles(FileCollection ruleSetFiles) {
         this.ruleSetFiles = ruleSetFiles;
@@ -319,9 +356,7 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
      * @since 6.4
      */
     @Input
-    public Property<Integer> getMaxFailures() {
-        return maxFailures;
-    }
+    public abstract Property<Integer> getMaxFailures();
 
     /**
      * Specifies the rule priority threshold.
@@ -330,9 +365,7 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
      * @since 6.8
      */
     @Input
-    public Property<Integer> getRulesMinimumPriority() {
-        return rulesMinimumPriority;
-    }
+    public abstract Property<Integer> getRulesMinimumPriority();
 
     /**
      * Whether or not to write PMD results to {@code System.out}.
@@ -387,14 +420,12 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
     /**
      * Controls whether to use incremental analysis or not.
      *
-     * This is only supported for PMD 6.0.0 or better. See <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_userdocs_incremental_analysis.html"></a> for more details.
+     * This is only supported for PMD 6.0.0 or better. See <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_userdocs_incremental_analysis.html"></a> for more details.
      *
      * @since 5.6
      */
     @Internal
-    public Property<Boolean> getIncrementalAnalysis() {
-        return incrementalAnalysis;
-    }
+    public abstract Property<Boolean> getIncrementalAnalysis();
 
     /**
      * Path to the incremental cache file, if incremental analysis is used.
@@ -414,7 +445,5 @@ public abstract class Pmd extends AbstractCodeQualityTask implements Reporting<P
      * @since 7.5
      */
     @Input
-    public Property<Integer> getThreads() {
-        return threads;
-    }
+    public abstract Property<Integer> getThreads();
 }

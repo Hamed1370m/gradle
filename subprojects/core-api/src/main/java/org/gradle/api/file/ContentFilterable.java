@@ -18,12 +18,14 @@ package org.gradle.api.file;
 import groovy.lang.Closure;
 import org.gradle.api.Action;
 import org.gradle.api.Transformer;
+import org.jspecify.annotations.Nullable;
 
 import java.io.FilterReader;
 import java.util.Map;
 
 /**
  * Represents some binary resource whose content can be filtered.
+ * @since 0.9
  */
 public interface ContentFilterable {
     /**
@@ -42,6 +44,7 @@ public interface ContentFilterable {
      * @param properties map of filter properties
      * @param filterType Class of filter to add
      * @return this
+     * @since 0.9
      */
     ContentFilterable filter(Map<String, ?> properties, Class<? extends FilterReader> filterType);
 
@@ -58,6 +61,7 @@ public interface ContentFilterable {
      *
      * @param filterType Class of filter to add
      * @return this
+     * @since 0.9
      */
     ContentFilterable filter(Class<? extends FilterReader> filterType);
 
@@ -68,6 +72,7 @@ public interface ContentFilterable {
      *
      * @param closure to implement line based filtering
      * @return this
+     * @since 0.9
      */
     ContentFilterable filter(Closure closure);
 
@@ -78,8 +83,9 @@ public interface ContentFilterable {
      *
      * @param transformer to implement line based filtering
      * @return this
+     * @since 3.0
      */
-    ContentFilterable filter(Transformer<@org.jetbrains.annotations.Nullable String, String> transformer);
+    ContentFilterable filter(Transformer<@Nullable String, String> transformer);
 
     /**
      * <p>Expands property references in each file as it is copied. More specifically, each file is transformed using
@@ -93,6 +99,7 @@ public interface ContentFilterable {
      *
      * @param properties reference-to-value map for substitution
      * @return this
+     * @since 0.9
      */
     ContentFilterable expand(Map<String, ?> properties);
 

@@ -18,10 +18,12 @@ package org.gradle.api.tasks.javadoc
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.AvailableJavaHomes
-import org.gradle.integtests.fixtures.executer.DocumentationUtils
 import org.gradle.integtests.fixtures.jvm.JavaToolchainFixture
 import org.gradle.internal.jvm.Jvm
+import org.gradle.internal.os.OperatingSystem
 import org.gradle.test.fixtures.file.TestFile
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.InstalledJdkTestPreconditions
 import org.gradle.util.internal.TextUtil
 
 import static org.gradle.integtests.fixtures.SuggestionsMessages.GET_HELP
@@ -44,6 +46,7 @@ class JavadocToolchainIntegrationTest extends AbstractIntegrationSpec implements
         """
     }
 
+    @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
     def "changing toolchain invalidates task"() {
         def jdk1 = Jvm.current()
         def jdk2 = AvailableJavaHomes.getDifferentVersion()
@@ -86,6 +89,7 @@ class JavadocToolchainIntegrationTest extends AbstractIntegrationSpec implements
         skipped(":javadoc")
     }
 
+    @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
     def "fails on toolchain and executable mismatch (with java plugin)"() {
         def jdkCurrent = Jvm.current()
         def jdkOther = AvailableJavaHomes.differentVersion
@@ -99,10 +103,11 @@ class JavadocToolchainIntegrationTest extends AbstractIntegrationSpec implements
         withInstallations(jdkCurrent, jdkOther).runAndFail(":javadoc")
 
         then:
-        failureDescriptionStartsWith("Execution failed for task ':javadoc'.")
+        failureDescriptionStartsWith("Execution failed for task ':javadoc' (registered by plugin 'org.gradle.java').")
         failureHasCause("Toolchain from `executable` property does not match toolchain from `javadocTool` property")
     }
 
+    @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
     def "fails on toolchain and executable mismatch (without java-base plugin)"() {
         def jdkCurrent = Jvm.current()
         def jdkOther = AvailableJavaHomes.differentVersion
@@ -116,10 +121,11 @@ class JavadocToolchainIntegrationTest extends AbstractIntegrationSpec implements
         withInstallations(jdkCurrent, jdkOther).runAndFail(":javadoc")
 
         then:
-        failureDescriptionStartsWith("Execution failed for task ':javadoc'.")
+        failureDescriptionStartsWith("Execution failed for task ':javadoc' (registered in build file 'build.gradle').")
         failureHasCause("Toolchain from `executable` property does not match toolchain from `javadocTool` property")
     }
 
+    @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
     def "uses #what toolchain #when (with java plugin)"() {
         Jvm currentJdk = Jvm.current()
         Jvm otherJdk = AvailableJavaHomes.differentVersion
@@ -157,6 +163,22 @@ class JavadocToolchainIntegrationTest extends AbstractIntegrationSpec implements
         "assigned tool"  | "over everything else"               | "other"  | null           | "current"         | "other"
     }
 
+    def "can generate javadoc with java version #jdk.javaVersionMajor"() {
+        configureProjectWithJavaPlugin()
+        configureJavadocTool(jdk)
+
+        when:
+        withInstallations(jdk)
+        succeeds(":javadoc")
+
+        then:
+        executedAndNotSkipped(":javadoc")
+
+        where:
+        jdk << AvailableJavaHomes.allJdkVersions
+    }
+
+    @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
     def "uses #what toolchain #when (without java-base plugin)"() {
         Jvm currentJdk = Jvm.current()
         Jvm otherJdk = AvailableJavaHomes.differentVersion
@@ -205,9 +227,10 @@ class JavadocToolchainIntegrationTest extends AbstractIntegrationSpec implements
         withInstallations(jre).fails("javadoc")
 
         then:
-        failure.assertHasCause("No locally installed toolchains match and toolchain auto-provisioning is not enabled.")
+        failure.assertHasCause("Cannot find a Java installation on your machine (${OperatingSystem.current()}) matching: {languageVersion=${jre.javaVersionMajor}, vendor=any vendor, implementation=vendor-specific, nativeImageCapable=false}. " +
+                "Toolchain auto-provisioning is not enabled.")
             .assertHasResolutions(
-                DocumentationUtils.normalizeDocumentationLink("Learn more about toolchain auto-detection at https://docs.gradle.org/current/userguide/toolchains.html#sec:auto_detection."),
+                "Learn more about toolchain auto-detection and auto-provisioning at https://docs.gradle.org/current/userguide/toolchains.html#sec:auto_detection.",
                 STACKTRACE_MESSAGE,
                 INFO_DEBUG,
                 SCAN,

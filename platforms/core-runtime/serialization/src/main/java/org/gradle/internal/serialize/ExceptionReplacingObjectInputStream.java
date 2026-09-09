@@ -16,38 +16,33 @@
 
 package org.gradle.internal.serialize;
 
-import org.gradle.internal.InternalTransformer;
 import org.gradle.internal.UncheckedException;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.function.Function;
 
 public class ExceptionReplacingObjectInputStream extends ClassLoaderObjectInputStream {
-    private InternalTransformer<Object, Object> objectTransformer = new InternalTransformer<Object, Object>() {
-        @Override
-        public Object transform(Object o) {
-            try {
-                return doResolveObject(o);
-            } catch (IOException e) {
-                throw UncheckedException.throwAsUncheckedException(e);
-            }
+    private Function<Object, Object> objectTransformer = o -> {
+        try {
+            return doResolveObject(o);
+        } catch (IOException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     };
 
+    @SuppressWarnings("this-escape")
     public ExceptionReplacingObjectInputStream(InputStream inputSteam, ClassLoader classLoader) throws IOException {
         super(inputSteam, classLoader);
         enableResolveObject(true);
     }
 
-    public final InternalTransformer<ExceptionReplacingObjectInputStream, InputStream> getObjectInputStreamCreator() {
-        return new InternalTransformer<ExceptionReplacingObjectInputStream, InputStream>() {
-            @Override
-            public ExceptionReplacingObjectInputStream transform(InputStream inputStream) {
-                try {
-                    return createNewInstance(inputStream);
-                } catch (IOException e) {
-                    throw UncheckedException.throwAsUncheckedException(e);
-                }
+    public final Function<InputStream, ExceptionReplacingObjectInputStream> getObjectInputStreamCreator() {
+        return inputStream -> {
+            try {
+                return createNewInstance(inputStream);
+            } catch (IOException e) {
+                throw UncheckedException.throwAsUncheckedException(e);
             }
         };
     }
@@ -58,7 +53,7 @@ public class ExceptionReplacingObjectInputStream extends ClassLoaderObjectInputS
 
     @Override
     protected final Object resolveObject(Object obj) throws IOException {
-        return getObjectTransformer().transform(obj);
+        return getObjectTransformer().apply(obj);
     }
 
     protected Object doResolveObject(Object obj) throws IOException {
@@ -68,15 +63,12 @@ public class ExceptionReplacingObjectInputStream extends ClassLoaderObjectInputS
         return obj;
     }
 
-    protected final InternalTransformer<Class<?>, String> getClassNameTransformer() {
-        return new InternalTransformer<Class<?>, String>() {
-            @Override
-            public Class<?> transform(String type) {
-                try {
-                    return lookupClass(type);
-                } catch (ClassNotFoundException e) {
-                    throw UncheckedException.throwAsUncheckedException(e);
-                }
+    protected final Function<String, Class<?>> getClassNameTransformer() {
+        return type -> {
+            try {
+                return lookupClass(type);
+            } catch (ClassNotFoundException e) {
+                throw UncheckedException.throwAsUncheckedException(e);
             }
         };
     }
@@ -85,11 +77,11 @@ public class ExceptionReplacingObjectInputStream extends ClassLoaderObjectInputS
         return getClassLoader().loadClass(type);
     }
 
-    public InternalTransformer<Object, Object> getObjectTransformer() {
+    public Function<Object, Object> getObjectTransformer() {
         return objectTransformer;
     }
 
-    public void setObjectTransformer(InternalTransformer<Object, Object> objectTransformer) {
+    public void setObjectTransformer(Function<Object, Object> objectTransformer) {
         this.objectTransformer = objectTransformer;
     }
 }

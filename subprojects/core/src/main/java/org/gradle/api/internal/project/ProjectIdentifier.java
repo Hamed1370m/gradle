@@ -15,19 +15,20 @@
  */
 package org.gradle.api.internal.project;
 
-import javax.annotation.Nullable;
+import org.gradle.internal.scan.UsedByScanPlugin;
+
 import java.io.File;
 
-// TODO need a better name for this
+/**
+ * A legacy identifier for a project, used in some legacy software model implementations.
+ * <p>
+ * Avoid this type if possible. Prefer {@link ProjectIdentity}.
+ */
+@UsedByScanPlugin("ImportJUnitXmlReports")
 public interface ProjectIdentifier {
-    String getName();
 
     String getPath();
 
-    @Nullable
-    ProjectIdentifier getParentIdentifier();
-
     File getProjectDir();
 
-    File getBuildFile();
 }

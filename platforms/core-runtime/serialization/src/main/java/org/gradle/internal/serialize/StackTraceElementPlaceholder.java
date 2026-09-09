@@ -17,15 +17,16 @@
 package org.gradle.internal.serialize;
 
 import org.gradle.api.JavaVersion;
+import org.jspecify.annotations.Nullable;
 
 import java.io.Serializable;
 
 public class StackTraceElementPlaceholder implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    private final String classLoaderName;
-    private final String moduleName;
-    private final String moduleVersion;
+    private final @Nullable String classLoaderName;
+    private final @Nullable String moduleName;
+    private final @Nullable String moduleVersion;
     private final String declaringClass;
     private final String methodName;
     private final String fileName;
@@ -34,6 +35,7 @@ public class StackTraceElementPlaceholder implements Serializable {
     @SuppressWarnings("Since15")
     public StackTraceElementPlaceholder(StackTraceElement ste) {
         if (JavaVersion.current().isJava9Compatible()) {
+            // FUTURE-STDLIB: StackTraceElement.getClassLoaderName/getModuleName/getModuleVersion are JDK 9+; gated above.
             classLoaderName = ste.getClassLoaderName();
             moduleName = ste.getModuleName();
             moduleVersion = ste.getModuleVersion();
@@ -50,6 +52,7 @@ public class StackTraceElementPlaceholder implements Serializable {
 
     public StackTraceElement toStackTraceElement() {
         if (JavaVersion.current().isJava9Compatible()) {
+            // FUTURE-STDLIB: the 7-arg StackTraceElement constructor is JDK 9+; gated above.
             return new StackTraceElement(classLoaderName, moduleName, moduleVersion, declaringClass, methodName, fileName, lineNumber);
         } else {
             return new StackTraceElement(declaringClass, methodName, fileName, lineNumber);

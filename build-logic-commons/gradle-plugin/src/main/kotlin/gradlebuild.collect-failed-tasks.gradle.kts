@@ -13,9 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import com.gradle.develocity.agent.gradle.scan.BuildScanConfiguration
 import gradlebuild.AbstractBuildScanInfoCollectingService
 import gradlebuild.registerBuildScanInfoCollectingService
-import io.gitlab.arturbosch.detekt.Detekt
+import dev.detekt.gradle.Detekt
 import org.gradle.tooling.events.task.TaskFailureResult
 import org.gradle.tooling.events.task.TaskOperationResult
 import java.io.Serializable
@@ -25,10 +26,12 @@ import java.util.concurrent.CopyOnWriteArrayList
  * Register a build service that monitors compilation tasks and code quality tasks (Checkstyle/CodeNarc/detekt)
  * and reports them as TeamCity build problems.
  */
-registerBuildScanInfoCollectingService(CollectFailedTaskPathsBuildService::class.java, ::shouldBeReportedAsTeamCityBuildProblem) { failedTasksInBuildLogic, failedTasksInMainBuild ->
-    buildScanPublished {
-        ((failedTasksInBuildLogic as List<*>) + (failedTasksInMainBuild as List<*>)).forEach {
-            println("##teamcity[buildProblem description='${buildScanUri}/console-log?task=$it']")
+registerBuildScanInfoCollectingService(CollectFailedTaskPathsBuildService::class.java, ::shouldBeReportedAsTeamCityBuildProblem) { gradleRootProject, failedTasksInBuildLogic, failedTasksInMainBuild ->
+    gradleRootProject.extensions.findByType<BuildScanConfiguration>()?.run {
+        buildScanPublished {
+            ((failedTasksInBuildLogic as List<*>) + (failedTasksInMainBuild as List<*>)).forEach {
+                println("##teamcity[buildProblem description='${buildScanUri}/console-log?task=$it']")
+            }
         }
     }
 }

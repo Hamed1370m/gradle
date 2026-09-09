@@ -20,8 +20,7 @@ import com.google.common.base.Strings;
 import org.gradle.api.internal.tasks.DefaultTaskDependency;
 import org.gradle.api.internal.tasks.TaskDependencyFactory;
 import org.gradle.api.tasks.TaskDependency;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 public abstract class AbstractIvyArtifact implements IvyArtifactInternal {
     private final TaskDependency allBuildDependencies;
@@ -33,6 +32,7 @@ public abstract class AbstractIvyArtifact implements IvyArtifactInternal {
     private String classifier;
     private String conf;
 
+    @SuppressWarnings("this-escape")
     protected AbstractIvyArtifact(TaskDependencyFactory taskDependencyFactory) {
         this.additionalBuildDependencies = new DefaultTaskDependency();
         this.allBuildDependencies = taskDependencyFactory.visitingDependencies(context -> {

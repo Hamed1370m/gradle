@@ -17,13 +17,13 @@
 package org.gradle.api.tasks.testing
 
 import org.gradle.api.GradleException
+import org.gradle.api.internal.file.TestFiles
 import org.gradle.api.internal.tasks.testing.TestCompleteEvent
 import org.gradle.api.internal.tasks.testing.TestDescriptorInternal
 import org.gradle.api.internal.tasks.testing.TestExecuter
 import org.gradle.api.internal.tasks.testing.TestExecutionSpec
 import org.gradle.api.internal.tasks.testing.TestResultProcessor
 import org.gradle.api.internal.tasks.testing.TestStartEvent
-import org.gradle.api.internal.tasks.testing.report.TestReporter
 import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 import org.gradle.util.TestUtil
 
@@ -37,9 +37,9 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
     def setup() {
         task = TestUtil.create(temporaryFolder).task(Test)
         task.testExecuter = testExecuter
-        task.testReporter = Mock(TestReporter)
         task.binaryResultsDirectory.set(task.project.file('build/test-results'))
         task.reports.junitXml.outputLocation.set(task.project.file('build/test-results'))
+        task.reports.html.outputLocation.set(task.project.file('build/test-report'))
         task.testClassesDirs = task.project.layout.files()
     }
 
@@ -48,6 +48,9 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
         suiteDescriptor.id >> testId
         suiteDescriptor.parent >> null
         suiteDescriptor.composite >> true
+        suiteDescriptor.name >> "suite"
+        suiteDescriptor.displayName >> "suite"
+
         def startEvent = Stub(TestStartEvent) {
             getParentId() >> null
         }
@@ -61,28 +64,12 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
         }
     }
 
-    def expectTestSuitePasses() {
-        def testId = "test"
-        suiteDescriptor.id >> testId
-        suiteDescriptor.parent >> null
-        suiteDescriptor.composite >> true
-        def startEvent = Stub(TestStartEvent) {
-            getParentId() >> null
-        }
-        def finishEvent = Stub(TestCompleteEvent) {
-            getResultType() >> TestResult.ResultType.SUCCESS
-        }
-
-        _ * testExecuter.execute(_ as TestExecutionSpec, _) >> { TestExecutionSpec testExecutionSpec, TestResultProcessor processor ->
-            processor.started(suiteDescriptor, startEvent)
-            processor.completed(testId, finishEvent)
-        }
-    }
-
     def expectTestPasses() {
         suiteDescriptor.id >> "suite"
         suiteDescriptor.parent >> null
         suiteDescriptor.composite >> true
+        suiteDescriptor.name >> "suite"
+        suiteDescriptor.displayName >> "suite"
 
         testDescriptor.id >> "test"
         testDescriptor.parent >> suiteDescriptor
@@ -115,6 +102,9 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
         suiteDescriptor.id >> testId
         suiteDescriptor.parent >> null
         suiteDescriptor.composite >> true
+        suiteDescriptor.name >> "suite"
+        suiteDescriptor.displayName >> "suite"
+
         def startEvent = Stub(TestStartEvent) {
             getParentId() >> null
         }
@@ -135,6 +125,8 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
         suiteDescriptor.id >> "suite"
         suiteDescriptor.parent >> null
         suiteDescriptor.composite >> true
+        suiteDescriptor.name >> "suite"
+        suiteDescriptor.displayName >> "suite"
 
         testDescriptor.id >> "test"
         testDescriptor.parent >> suiteDescriptor
@@ -174,7 +166,7 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
 
         then:
         GradleException e = thrown()
-        e.message.startsWith("There were failing tests. See the report at")
+        assertTestFailuresReported(e)
     }
 
     def "notifies listener of test progress"() {
@@ -200,7 +192,7 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
         def closure = Mock(Closure)
 
         given:
-        expectTestSuitePasses()
+        expectTestPasses()
 
         task.beforeSuite(closure)
 
@@ -217,7 +209,7 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
         def closure = Mock(Closure)
 
         given:
-        expectTestSuitePasses()
+        expectTestPasses()
 
         task.afterSuite(closure)
 
@@ -278,8 +270,6 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
         1 * testListener.beforeTest(_)
 
         when:
-        // rewire a mocked TestReporter as it gets removed by AbstractTestTask#createReporting()
-        task.testReporter = Mock(TestReporter)
         task.executeTests()
 
         then:
@@ -298,17 +288,15 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
 
         then:
         GradleException e = thrown()
-        e.message.startsWith("There were failing tests. See the report at")
+        assertTestFailuresReported(e)
         1 * closure.call()
 
         when:
-        // rewire a mocked TestReporter as it gets removed by AbstractTestTask#createReporting()
-        task.testReporter = Mock(TestReporter)
         task.executeTests()
 
         then:
         e = thrown()
-        e.message.startsWith("There were failing tests. See the report at")
+        assertTestFailuresReported(e)
         0 * closure.call()
     }
 
@@ -321,7 +309,7 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
 
         then:
         GradleException e = thrown()
-        e.message.startsWith("There were failing tests. See the report at")
+        assertTestFailuresReported(e)
     }
 
     def "does not report task as failed if first suite contained tests"() {
@@ -331,10 +319,19 @@ class TestTaskSpec extends AbstractProjectBuilderSpec {
             it.includePatterns = "Foo"
         }
 
+        def testDir = temporaryFolder.createDir("testClasses")
+        testDir.mkdir()
+        new File(testDir, "Foo.class").createNewFile()
+        task.setTestClassesDirs(TestFiles.fixed(testDir))
+
         when:
         task.executeTests()
 
         then:
         noExceptionThrown()
+    }
+
+    private void assertTestFailuresReported(GradleException e) {
+        assert e.message.startsWith("There were failing tests. See the report at:")
     }
 }

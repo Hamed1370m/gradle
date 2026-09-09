@@ -161,7 +161,7 @@ class TaskServiceInjectionIntegrationTest extends AbstractIntegrationSpec {
         then:
         failure.assertHasCause("Could not create task ':myTask'.")
         failure.assertHasCause("Could not create task of type 'CustomTask'.")
-        failure.assertHasCause("The constructor for type CustomTask should be annotated with @Inject.")
+        failure.assertHasCause("The constructor for type CustomTask should be annotated with @Inject (javax.inject.Inject) for dependency injection.")
     }
 
     def "task creation fails when service getter is not public or protected"() {
@@ -189,7 +189,7 @@ class TaskServiceInjectionIntegrationTest extends AbstractIntegrationSpec {
         then:
         failure.assertHasCause("Could not create task ':myTask'.")
         failure.assertHasCause("Could not create task of type 'CustomTask'.")
-        failure.assertHasCause("Cannot use @Inject annotation on method CustomTask.getExecutor() as it is not public or protected.")
+        failure.assertHasCause("Cannot use @Inject annotation on method CustomTask.getExecutor(): WorkerExecutor as it is not public or protected.")
     }
 
     def "can construct a task in Kotlin with @Inject services constructor arg"() {

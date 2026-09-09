@@ -16,7 +16,7 @@
 package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.resolve.JvmLibraryArtifactResolveTestFixture
 import org.gradle.test.fixtures.ivy.IvyRepository
 
@@ -37,7 +37,7 @@ class IvyJvmLibraryArtifactResolutionIntegrationTest extends AbstractHttpDepende
     def initBuild(IvyRepository repo) {
         buildFile.text = """
 repositories {
-    ivy { url '$repo.uri' }
+    ivy { url = '$repo.uri' }
 }
 """
     }
@@ -250,7 +250,6 @@ if (project.hasProperty('nocache')) {
         "when ivy descriptor changes" | "-Pnocache"
     }
 
-    @ToBeFixedForConfigurationCache(because = "does not check for missing artifact on second invocation")
     def "reports failure to resolve artifacts of non-existing component"() {
         fixture.expectComponentNotFound().prepare()
 
@@ -264,8 +263,11 @@ Searched in the following locations:
   - ${module.ivy.uri}""")
 
         when:
-        server.resetExpectations()
-        module.ivy.expectGetMissing()
+        if (!GradleContextualExecuter.isConfigCache()) {
+            // With CC the build caches resolution failure, so rerunning the task makes no new resolution attempt.
+            server.resetExpectations()
+            module.ivy.expectGetMissing()
+        }
 
         then:
         fails("verify")
@@ -357,10 +359,11 @@ Searched in the following locations:
         fails("verify")
         failure.assertHasCause("Could not download some-artifact-1.0-broken-sources.jar (some.group:some-artifact:1.0)")
         failure.assertHasCause("Could not get resource '${brokenSources.uri}'.")
-        failure.assertHasCause("Could not GET '${brokenSources.uri}'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${brokenSources.uri}'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
         failure.assertHasCause("Could not download some-artifact-1.0-my-javadoc.jar (some.group:some-artifact:1.0)")
         failure.assertHasCause("Could not get resource '${brokenJavadoc.uri}'.")
-        failure.assertHasCause("Could not GET '${brokenJavadoc.uri}'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${brokenJavadoc.uri}'.")
 
         when:
         fixture.clearExpectations()

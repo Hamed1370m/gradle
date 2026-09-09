@@ -18,17 +18,17 @@ package org.gradle.api.plugins.quality;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableSet;
 import org.gradle.api.JavaVersion;
+import org.gradle.api.NamedDomainObjectProvider;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.attributes.java.TargetJvmVersion;
+import org.gradle.api.file.Directory;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.file.ProjectLayout;
-import org.gradle.api.file.RegularFile;
 import org.gradle.api.internal.ConventionMapping;
-import org.gradle.api.internal.artifacts.configurations.ConfigurationRolesForMigration;
 import org.gradle.api.internal.artifacts.configurations.RoleBasedConfigurationContainerInternal;
 import org.gradle.api.plugins.quality.internal.AbstractCodeQualityPlugin;
 import org.gradle.api.provider.Provider;
-import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.tasks.SourceSet;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
@@ -36,7 +36,6 @@ import org.gradle.jvm.toolchain.internal.CurrentJvmToolchainSpec;
 import org.gradle.util.internal.VersionNumber;
 
 import javax.inject.Inject;
-import java.io.File;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -58,11 +57,18 @@ import static org.gradle.api.internal.lambdas.SerializableLambdas.action;
  * @see PmdExtension
  * @see Pmd
  * @see <a href="https://docs.gradle.org/current/userguide/pmd_plugin.html">PMD plugin reference</a>
+ * @since 1.0
  */
+@SuppressWarnings("deprecation") // The targetJdk property and TargetJdk type are themselves deprecated.
 public abstract class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
 
     // When updating DEFAULT_PMD_VERSION, also update links in Pmd and PmdExtension!
-    public static final String DEFAULT_PMD_VERSION = "6.55.0";
+    /**
+     * The default pmd version.
+     *
+     * @since 2.4
+     */
+    public static final String DEFAULT_PMD_VERSION = "7.24.0";
     private static final String PMD_ADDITIONAL_AUX_DEPS_CONFIGURATION = "pmdAux";
 
     private PmdExtension extension;
@@ -78,9 +84,7 @@ public abstract class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
     }
 
     @Inject
-    protected JavaToolchainService getToolchainService() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract JavaToolchainService getToolchainService();
 
     @Override
     protected CodeQualityExtension createExtension() {
@@ -91,30 +95,44 @@ public abstract class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
         extension.getMaxFailures().convention(0);
         extension.getThreads().convention(1);
         extension.setRuleSetFiles(project.getLayout().files());
-        extension.ruleSetsConvention(project.getProviders().provider(() -> ruleSetsConvention(extension)));
+        extension.getRuleSetsProperty().convention(project.getProviders().provider(() -> ruleSetsConvention(extension)));
         conventionMappingOf(extension).map("targetJdk", () ->
-            getDefaultTargetJdk(getJavaPluginExtension().getSourceCompatibility()));
+            DeprecationLogger.whileDisabled(() -> getDefaultTargetJdk(getJavaPluginExtension().getSourceCompatibility())));
         return extension;
     }
 
+    /**
+     * Returns the default {@link TargetJdk} for the given Java source compatibility version.
+     *
+     * @deprecated The {@code targetJdk} property has no effect for PMD 5.0 and later. Scheduled to be removed in Gradle 10.
+     * @since 1.5
+     */
+    @Deprecated
     public TargetJdk getDefaultTargetJdk(JavaVersion javaVersion) {
-        try {
-            return TargetJdk.toVersion(javaVersion.toString());
-        } catch (IllegalArgumentException ignored) {
-            // TargetJDK does not include 1.1, 1.2 and 1.8;
-            // Use same fallback as PMD
-            return TargetJdk.VERSION_1_4;
-        }
+        DeprecationLogger.deprecateMethod(PmdPlugin.class, "getDefaultTargetJdk(JavaVersion)")
+            .withAdvice("This method is only used to compute the deprecated PMD targetJdk property, which has no effect for PMD 5.0 and later.")
+            .willBeRemovedInGradle10()
+            .withUpgradeGuideSection(9, "deprecated_pmd_target_jdk")
+            .nagUser();
+        return DeprecationLogger.whileDisabled(() -> {
+            try {
+                return TargetJdk.toVersion(javaVersion.toString());
+            } catch (IllegalArgumentException ignored) {
+                // TargetJDK does not include 1.1, 1.2 and 1.8;
+                // Use same fallback as PMD
+                return TargetJdk.VERSION_1_4;
+            }
+        });
     }
 
     @Override
     protected void createConfigurations() {
         super.createConfigurations();
-        Configuration auxClasspath = project.getConfigurations().dependencyScopeUnlocked(PMD_ADDITIONAL_AUX_DEPS_CONFIGURATION, additionalAuxDepsConfiguration -> {
+
+        project.getConfigurations().dependencyScopeLocked(PMD_ADDITIONAL_AUX_DEPS_CONFIGURATION, additionalAuxDepsConfiguration -> {
             additionalAuxDepsConfiguration.setDescription("The additional libraries that are available for type resolution during analysis");
-            additionalAuxDepsConfiguration.setVisible(false);
+            getJvmPluginServices().configureAsRuntimeClasspath(additionalAuxDepsConfiguration);
         });
-        getJvmPluginServices().configureAsRuntimeClasspath(auxClasspath);
     }
 
     @Override
@@ -154,7 +172,7 @@ public abstract class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
         taskMapping.map("ruleSetConfig", () -> extension.getRuleSetConfig());
         taskMapping.map("ruleSetFiles", () -> extension.getRuleSetFiles());
         taskMapping.map("consoleOutput", () -> extension.isConsoleOutput());
-        taskMapping.map("targetJdk", () -> extension.getTargetJdk());
+        taskMapping.map("targetJdk", () -> DeprecationLogger.whileDisabled(extension::getTargetJdk));
 
         task.getRulesMinimumPriority().convention(extension.getRulesMinimumPriority());
         task.getMaxFailures().convention(extension.getMaxFailures());
@@ -164,17 +182,26 @@ public abstract class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
     }
 
     private void configureReportsConventionMapping(Pmd task, final String baseName) {
-        ProjectLayout layout = project.getLayout();
-        ProviderFactory providers = project.getProviders();
-        Provider<RegularFile> reportsDir = layout.file(providers.provider(() -> extension.getReportsDir()));
+        Provider<Directory> reportsDir = extension.getReportsDirectory();
         task.getReports().all(action(report -> {
-            report.getRequired().convention(true);
-            report.getOutputLocation().convention(
-                layout.getProjectDirectory().file(providers.provider(() -> {
-                    String reportFileName = baseName + "." + report.getName();
-                    return new File(reportsDir.get().getAsFile(), reportFileName).getAbsolutePath();
-                }))
-            );
+            String name = report.getName();
+            boolean shouldRequireByDefault = name.equals("html") || name.equals("xml");
+            report.getRequired().convention(shouldRequireByDefault);
+            report.getOutputLocation().convention(reportsDir.map(dir -> {
+                String ext;
+                switch (name) {
+                    case "codeClimate":
+                        ext = "codeclimate.json";
+                        break;
+                    case "sarif":
+                        ext = "sarif.json";
+                        break;
+                    default:
+                        ext = name;
+                }
+                String reportFileName = baseName + "." + ext;
+                return dir.file(reportFileName);
+            }));
         }));
     }
 
@@ -209,26 +236,38 @@ public abstract class PmdPlugin extends AbstractCodeQualityPlugin<Pmd> {
     protected void configureForSourceSet(final SourceSet sourceSet, final Pmd task) {
         task.setDescription("Run PMD analysis for " + sourceSet.getName() + " classes");
         task.setSource(sourceSet.getAllJava());
-        ConventionMapping taskMapping = task.getConventionMapping();
+    }
+
+    @Override
+    protected void configureTaskProviderForSourceSet(SourceSet sourceSet, NamedDomainObjectProvider<Pmd> taskProvider) {
         RoleBasedConfigurationContainerInternal configurations = project.getConfigurations();
 
         Configuration compileClasspath = configurations.getByName(sourceSet.getCompileClasspathConfigurationName());
         Configuration pmdAdditionalAuxDepsConfiguration = configurations.getByName(PMD_ADDITIONAL_AUX_DEPS_CONFIGURATION);
 
         // TODO: Consider checking if the resolution consistency is enabled for compile/runtime.
-        @SuppressWarnings("deprecation") Configuration pmdAuxClasspath = configurations.migratingUnlocked(sourceSet.getName() + "PmdAuxClasspath", ConfigurationRolesForMigration.RESOLVABLE_DEPENDENCY_SCOPE_TO_RESOLVABLE);
-        pmdAuxClasspath.extendsFrom(compileClasspath, pmdAdditionalAuxDepsConfiguration);
-        pmdAuxClasspath.setVisible(false);
-        // This is important to get transitive implementation dependencies. PMD may load referenced classes for analysis so it expects the classpath to be "closed" world.
-        getJvmPluginServices().configureAsRuntimeClasspath(pmdAuxClasspath);
+        Configuration pmdAuxClasspath = configurations.resolvableLocked(sourceSet.getName() + "PmdAuxClasspath", conf -> {
+            conf.extendsFrom(compileClasspath, pmdAdditionalAuxDepsConfiguration);
+            // This is important to get transitive implementation dependencies. PMD may load referenced classes for analysis so it expects the classpath to be "closed" world.
+            getJvmPluginServices().configureAsRuntimeClasspath(conf);
+            conf.attributes(attributes ->
+                attributes.attributeProvider(
+                    TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE,
+                    taskProvider.flatMap(task -> task.getJavaLauncher().map(launcher -> launcher.getMetadata().getLanguageVersion().asInt()))));
+        });
 
-        // We have to explicitly add compileClasspath here because it may contain classes that aren't part of the compileClasspathConfiguration. In particular, compile
-        // classpath of the test sourceSet contains output of the main sourceSet.
-        taskMapping.map("classpath", () -> {
-            // It is important to subtract compileClasspath and not pmdAuxClasspath here because these configurations are resolved differently (as a compile and as a
-            // runtime classpath). Compile and runtime entries for the same dependency may resolve to different files (e.g. compiled classes directory vs. jar).
-            FileCollection nonConfigurationClasspathEntries = sourceSet.getCompileClasspath().minus(compileClasspath);
-            return sourceSet.getOutput().plus(nonConfigurationClasspathEntries).plus(pmdAuxClasspath);
+        taskProvider.configure(task -> {
+            ConventionMapping taskMapping = task.getConventionMapping();
+
+            // We have to explicitly add compileClasspath here because it may contain classes that aren't part of the compileClasspathConfiguration. In particular, compile
+            // classpath of the test sourceSet contains output of the main sourceSet.
+            taskMapping.map("classpath", () -> {
+                // It is important to subtract compileClasspath and not pmdAuxClasspath here because these configurations are resolved differently (as a compile and as a
+                // runtime classpath). Compile and runtime entries for the same dependency may resolve to different files (e.g. compiled classes directory vs. jar).
+                FileCollection nonConfigurationClasspathEntries = sourceSet.getCompileClasspath().minus(compileClasspath);
+                return sourceSet.getOutput().plus(nonConfigurationClasspathEntries).plus(pmdAuxClasspath);
+            });
         });
     }
+
 }

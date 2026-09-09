@@ -22,19 +22,21 @@ import org.gradle.integtests.fixtures.jvm.JDWPUtil
 import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.test.fixtures.Flaky
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.junit.Assume
 import spock.lang.Issue
 import spock.lang.Timeout
 
+@Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = "explicitly requests a daemon")
 class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
 
-    @Requires(IntegTestPreconditions.NotParallelExecutor)
-    def "reasonable failure message when --max-workers=#value"() {
-        given:
+    def setup() {
         executer.requireDaemon().requireIsolatedDaemons()  // otherwise exception gets thrown in testing infrastructure
+    }
 
+    @Requires(TestExecutionPreconditions.NotParallelExecutor)
+    def "reasonable failure message when --max-workers=#value"() {
         when:
         executer.withArgument("--max-workers=$value")
 
@@ -49,9 +51,6 @@ class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
     }
 
     def "reasonable failure message when org.gradle.workers.max=#value"() {
-        given:
-        executer.requireDaemon().requireIsolatedDaemons() // otherwise exception gets thrown in testing infrastructure
-
         when:
         executer.withArgument("-Dorg.gradle.workers.max=$value")
 
@@ -65,11 +64,11 @@ class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
         value << ["-1", "0", "foo", " 1"]
     }
 
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor)
+    @Issue("https://github.com/gradle/gradle/issues/21695")
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor)
     def "can debug with org.gradle.debug=true"() {
         given:
         Assume.assumeTrue(debugPortIsFree())
-        executer.requireDaemon().requireIsolatedDaemons()
         JDWPUtil jdwpClient = new JDWPUtil(5005)
 
         when:
@@ -80,15 +79,17 @@ class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
             // Connect, resume threads, and disconnect from VM
             jdwpClient.connect().dispose()
         }
-        gradle.waitForFinish()
+        def output = gradle.waitForFinish().getOutput();
+
+        expect:
+        output.contains("Listening for transport dt_socket at address")
     }
 
     @Issue('https://github.com/gradle/gradle/issues/18084')
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor)
     @Flaky(because = "https://github.com/gradle/gradle-private/issues/3636")
     def "can debug on selected port with org.gradle.debug.port"() {
         given:
-        executer.requireDaemon().requireIsolatedDaemons()
         JDWPUtil jdwpClient = new JDWPUtil()
 
         when:
@@ -108,13 +109,12 @@ class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
         jdwpClient.close()
     }
 
+    @Flaky(because = "https://github.com/gradle/gradle-private/issues/3636")
     def "can debug via host"() {
         given:
-        executer.requireDaemon().requireIsolatedDaemons()
-
         JDWPUtil jdwpClient = new JDWPUtil()
 
-        def jdwpHost = nonLoopbackAddress()
+        def jdwpHost = JDWPUtil.nonLoopbackAddress()
         Assume.assumeNotNull(jdwpHost)
         jdwpClient.host = jdwpHost
 
@@ -145,14 +145,12 @@ class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
     }
 
     @Flaky(because = "https://github.com/gradle/gradle-private/issues/3636")
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk9OrLater)
     def "can debug on explicitly any host"() {
         given:
-        executer.requireDaemon().requireIsolatedDaemons()
-
         JDWPUtil jdwpClient = new JDWPUtil()
 
-        def address = nonLoopbackAddress()
+        def address = JDWPUtil.nonLoopbackAddress()
         Assume.assumeNotNull(address)
         jdwpClient.host = address
 
@@ -170,22 +168,9 @@ class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
         jdwpClient.close()
     }
 
-    private static String nonLoopbackAddress() {
-        println("Looking at network interfaces")
-        def address = Collections.list(NetworkInterface.getNetworkInterfaces())
-            .collectMany { it.isLoopback() ? [] : Collections.list(it.inetAddresses) }
-            .find { it instanceof Inet4Address && !it.isLoopbackAddress() }
-            .hostAddress
-        println("using address=$address")
-        return address
-    }
-
     @Issue('https://github.com/gradle/gradle/issues/18084')
     @Timeout(30)
     def "reasonable failure message when org.gradle.debug.port=#value"() {
-        given:
-        executer.requireDaemon().requireIsolatedDaemons() // otherwise exception gets thrown in testing infrastructure
-
         when:
         args("-Dorg.gradle.debug=true", "-Dorg.gradle.debug.port=$value")
 
@@ -201,11 +186,10 @@ class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
 
     @Flaky(because = "Sometimes it hangs for hours")
     @Issue('https://github.com/gradle/gradle/issues/18084')
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor)
     @Timeout(30)
     def "can debug with org.gradle.debug.server=false"() {
         given:
-        executer.requireDaemon().requireIsolatedDaemons()
         JDWPUtil jdwpClient = new JDWPUtil()
         jdwpClient.listen(false)
 
@@ -225,11 +209,10 @@ class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
     }
 
     @Issue('https://github.com/gradle/gradle/issues/18084')
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor)
     @Timeout(30)
     def "can debug with org.gradle.debug.suspend=false"() {
         given:
-        executer.requireDaemon().requireIsolatedDaemons()
         JDWPUtil jdwpClient = new JDWPUtil()
         jdwpClient.listen(false)
 
@@ -250,7 +233,7 @@ class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
         jdwpClient.close()
     }
 
-    static boolean debugPortIsFree() {
+    private static boolean debugPortIsFree() {
         boolean free = true
         ConcurrentTestUtil.poll(30) {
             Socket probe

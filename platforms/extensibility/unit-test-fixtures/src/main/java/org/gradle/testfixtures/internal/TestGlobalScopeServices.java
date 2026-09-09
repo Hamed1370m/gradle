@@ -15,11 +15,20 @@
  */
 package org.gradle.testfixtures.internal;
 
+import org.gradle.api.internal.classpath.DefaultModuleRegistry;
+import org.gradle.api.internal.classpath.EffectiveClassPath;
+import org.gradle.api.internal.classpath.Module;
+import org.gradle.api.internal.classpath.ModuleRegistry;
+import org.gradle.api.internal.classpath.UnknownModuleException;
 import org.gradle.cache.FileLockManager;
 import org.gradle.cache.internal.CacheFactory;
-import org.gradle.internal.Factory;
+import org.gradle.internal.classpath.ClassPath;
+import org.gradle.internal.classpath.DefaultClassPath;
 import org.gradle.internal.concurrent.ExecutorFactory;
+import org.gradle.internal.installation.CurrentGradleInstallation;
+import org.gradle.internal.installation.GradleInstallation;
 import org.gradle.internal.instrumentation.agent.AgentStatus;
+import org.gradle.internal.logging.LoggingManagerFactory;
 import org.gradle.internal.logging.LoggingManagerInternal;
 import org.gradle.internal.operations.BuildOperationListenerManager;
 import org.gradle.internal.operations.BuildOperationProgressEventEmitter;
@@ -29,10 +38,14 @@ import org.gradle.internal.operations.NoOpBuildOperationProgressEventEmitter;
 import org.gradle.internal.service.Provides;
 import org.gradle.internal.service.scopes.GlobalScopeServices;
 import org.gradle.internal.time.Clock;
+import org.jspecify.annotations.Nullable;
+
+import java.util.Collections;
+import java.util.List;
 
 public class TestGlobalScopeServices extends GlobalScopeServices {
     public TestGlobalScopeServices() {
-        super(false, AgentStatus.disabled());
+        super(false, AgentStatus.disabled(), CurrentGradleInstallation.locate());
     }
 
     @Provides
@@ -41,9 +54,22 @@ public class TestGlobalScopeServices extends GlobalScopeServices {
         return new TestInMemoryCacheFactory();
     }
 
+    @Override
     @Provides
-    LoggingManagerInternal createLoggingManager(Factory<LoggingManagerInternal> loggingManagerFactory) {
-        return loggingManagerFactory.create();
+    protected ModuleRegistry createModuleRegistry(CurrentGradleInstallation currentGradleInstallation) {
+        GradleInstallation installation = currentGradleInstallation.getInstallation();
+        if (installation == null) {
+            // This ProjectBuilder test is being executed from outside a Gradle distribution.
+            ClassPath classpath = DefaultClassPath.of(new EffectiveClassPath(getClass().getClassLoader()).getAsFiles());
+            return new MockModuleRegistry(classpath);
+        } else {
+            return new DefaultModuleRegistry(installation);
+        }
+    }
+
+    @Provides
+    LoggingManagerInternal createLoggingManager(LoggingManagerFactory loggingManagerFactory) {
+        return loggingManagerFactory.createLoggingManager();
     }
 
     @Provides
@@ -55,4 +81,52 @@ public class TestGlobalScopeServices extends GlobalScopeServices {
     ) {
         return new NoOpBuildOperationProgressEventEmitter();
     }
+
+    /**
+     * A module registry backed by a classpath. Each module returned by this
+     * registry has the same classpath, equal to the given backing classpath.
+     * <p>
+     * This is to be used in testing scenarios where it is assumed all classes necessary for Gradle
+     * to function are present on the classpath already.
+     */
+    private static class MockModuleRegistry implements ModuleRegistry, Module {
+
+        private final ClassPath classpath;
+
+        public MockModuleRegistry(ClassPath classpath) {
+            this.classpath = classpath;
+        }
+
+        @Override
+        public @Nullable Module findModule(String name) throws UnknownModuleException {
+            return this;
+        }
+
+        @Override
+        public Module getModule(String name) throws UnknownModuleException {
+            return this;
+        }
+
+        @Override
+        public String getName() {
+            return "test";
+        }
+
+        @Override
+        public List<String> getDependencyNames() {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public ClassPath getImplementationClasspath() {
+            return classpath;
+        }
+
+        @Override
+        public @Nullable ModuleAlias getAlias() {
+            return null;
+        }
+
+    }
+
 }

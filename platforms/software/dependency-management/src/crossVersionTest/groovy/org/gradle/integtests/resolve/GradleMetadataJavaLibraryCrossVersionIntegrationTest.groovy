@@ -49,7 +49,7 @@ class GradleMetadataJavaLibraryCrossVersionIntegrationTest extends CrossVersionI
                 version = '1.0'
 
                 repositories {
-                    maven { url "\${rootProject.buildDir}/repo" }
+                    maven { url = rootProject.layout.buildDirectory.dir("repo") }
                     ${mavenCentralRepository()}
                 }
             }
@@ -72,6 +72,8 @@ class GradleMetadataJavaLibraryCrossVersionIntegrationTest extends CrossVersionI
             }
 
             java {
+                sourceCompatibility = JavaVersion.VERSION_1_8
+                targetCompatibility = JavaVersion.VERSION_1_8
                 if (JavaPluginExtension.metaClass.respondsTo(delegate, 'registerFeature')) {
                     sourceSets {
                         hibernateSupport
@@ -85,7 +87,7 @@ class GradleMetadataJavaLibraryCrossVersionIntegrationTest extends CrossVersionI
 
             publishing {
                 repositories {
-                    maven { url "\${rootProject.buildDir}/repo" }
+                    maven { url = rootProject.layout.buildDirectory.dir("repo") }
                 }
 
                 publications {

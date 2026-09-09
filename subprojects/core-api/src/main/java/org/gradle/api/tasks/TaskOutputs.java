@@ -21,11 +21,13 @@ import org.gradle.api.Task;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.specs.Spec;
 import org.gradle.internal.HasInternalProtocol;
+import org.jspecify.annotations.Nullable;
 
 /**
  * <p>A {@code TaskOutputs} represents the outputs of a task.</p>
  *
  * <p>You can obtain a {@code TaskOutputs} instance using {@link org.gradle.api.Task#getOutputs()}.</p>
+ * @since 0.9
  */
 @HasInternalProtocol
 public interface TaskOutputs {
@@ -44,6 +46,7 @@ public interface TaskOutputs {
      * </p>
      *
      * @param upToDateClosure The closure to use to determine whether the task outputs are up-to-date.
+     * @since 0.9
      */
     void upToDateWhen(Closure upToDateClosure);
 
@@ -61,6 +64,7 @@ public interface TaskOutputs {
      * </p>
      *
      * @param upToDateSpec The spec to use to determine whether the task outputs are up-to-date.
+     * @since 0.9
      */
     void upToDateWhen(Spec<? super Task> upToDateSpec);
 
@@ -116,6 +120,7 @@ public interface TaskOutputs {
      * still have an empty set of output files.
      *
      * @return true if this task has declared any outputs, otherwise false.
+     * @since 0.9
      */
     boolean getHasOutput();
 
@@ -123,6 +128,7 @@ public interface TaskOutputs {
      * Returns the output files of this task.
      *
      * @return The output files. Returns an empty collection if this task has no output files.
+     * @since 0.9
      */
     FileCollection getFiles();
 
@@ -141,8 +147,9 @@ public interface TaskOutputs {
      * @param paths The output files.
      *
      * @see CacheableTask
+     * @since 0.9
      */
-    TaskOutputFilePropertyBuilder files(Object... paths);
+    TaskOutputFilePropertyBuilder files(@Nullable Object... paths);
 
     /**
      * Registers some output directories for this task.
@@ -162,13 +169,14 @@ public interface TaskOutputs {
      *
      * @since 3.3
      */
-    TaskOutputFilePropertyBuilder dirs(Object... paths);
+    TaskOutputFilePropertyBuilder dirs(@Nullable Object... paths);
 
     /**
      * Registers some output file for this task.
      *
      * @param path The output file. The given path is evaluated as per {@link org.gradle.api.Project#file(Object)}.
      * @return a property builder to further configure this property.
+     * @since 0.9
      */
     TaskOutputFilePropertyBuilder file(Object path);
 
@@ -177,6 +185,7 @@ public interface TaskOutputs {
      *
      * @param path The output directory. The given path is evaluated as per {@link org.gradle.api.Project#file(Object)}.
      * @return a property builder to further configure this property.
+     * @since 0.9
      */
     TaskOutputFilePropertyBuilder dir(Object path);
 }

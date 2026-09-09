@@ -17,15 +17,15 @@ package org.gradle.integtests
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.ScriptExecuter
-import org.gradle.integtests.fixtures.archives.TestReproducibleArchives
+import org.gradle.integtests.fixtures.archives.TestFileSystemSensitiveArchives
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 
 import static org.hamcrest.CoreMatchers.startsWith
 
-@TestReproducibleArchives
+@TestFileSystemSensitiveArchives
 class ApplicationIntegrationSpec extends AbstractIntegrationSpec {
 
     def setup() {
@@ -62,8 +62,8 @@ class Main {
         run 'installDist'
 
         def builder = new ScriptExecuter()
-        builder.workingDir file('build/install/application/bin')
-        builder.executable "application"
+        builder.workingDir = file('build/install/application/bin')
+        builder.executable = "application"
         if (OperatingSystem.current().windows) {
             builder.environment('APPLICATION_OPTS', '-DtestValue=value -DtestValue2="some value" -DtestValue3="some value"')
         } else {
@@ -102,8 +102,8 @@ class Main {
         run 'installDist'
 
         def builder = new ScriptExecuter()
-        builder.workingDir file('build/install/application/bin')
-        builder.executable "application"
+        builder.workingDir = file('build/install/application/bin')
+        builder.executable = "application"
 
         def result = builder.run()
 
@@ -137,8 +137,8 @@ class Main {
         run 'installDist'
 
         def builder = new ScriptExecuter()
-        builder.workingDir file('build/install/application/bin')
-        builder.executable "application"
+        builder.workingDir = file('build/install/application/bin')
+        builder.executable = "application"
         builder.environment('APPLICATION_OPTS', '-Dvar3=value3')
 
         def result = builder.run()
@@ -181,8 +181,8 @@ class Main {
         run 'installDist'
 
         def builder = new ScriptExecuter()
-        builder.workingDir file('build/install/application/bin')
-        builder.executable "application"
+        builder.workingDir = file('build/install/application/bin')
+        builder.executable = "application"
 
         then:
         def result = builder.run()
@@ -384,7 +384,7 @@ class Main {
         distBase.file("dir/r2.txt").text == "r2"
     }
 
-    @Requires(IntegTestPreconditions.NotParallelExecutor)
+    @Requires(TestExecutionPreconditions.NotParallelExecutor)
     def "distribution file producing tasks are run automatically"() {
         when:
         buildFile << """
@@ -424,8 +424,8 @@ class Main {
         installDir.file("lib/application.jar").assertIsFile()
 
         def builder = new ScriptExecuter()
-        builder.workingDir installDir.file('bin')
-        builder.executable applicationName
+        builder.workingDir = installDir.file('bin')
+        builder.executable = applicationName
         builder.standardOutput = new ByteArrayOutputStream()
         builder.errorOutput = new ByteArrayOutputStream()
 
@@ -476,8 +476,8 @@ class Main {
         run 'installDist'
 
         def builder = new ScriptExecuter()
-        builder.workingDir file('build/install/application/bin')
-        builder.executable "application"
+        builder.workingDir = file('build/install/application/bin')
+        builder.executable = "application"
         def result = builder.run()
 
         then:

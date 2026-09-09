@@ -19,7 +19,7 @@ package gradlebuild.binarycompatibility
 import gradlebuild.binarycompatibility.rules.BinaryBreakingChangesRule
 import gradlebuild.binarycompatibility.rules.IncubatingMissingRule
 import gradlebuild.binarycompatibility.rules.NewIncubatingAPIRule
-import gradlebuild.binarycompatibility.rules.SinceAnnotationMissingRule
+import gradlebuild.binarycompatibility.rules.SinceAnnotationRule
 import japicmp.model.JApiAnnotation
 import japicmp.model.JApiClass
 import japicmp.model.JApiCompatibility
@@ -72,7 +72,7 @@ class PublicAPIRulesTest extends Specification {
         overrideAnnotation.fullyQualifiedName >> Override.name
         injectAnnotation.fullyQualifiedName >> Inject.name
 
-        repository = BinaryCompatibilityRepository.openRepositoryFor([new File(tmp.absolutePath)], [])
+        repository = BinaryCompatibilityRepository.openRepositoryFor([new File(tmp.absolutePath)])
     }
 
     def cleanup() {
@@ -128,7 +128,7 @@ class PublicAPIRulesTest extends Specification {
     def "each new #apiElement requires a @since annotation"() {
         given:
         JApiCompatibility jApiType = getProperty(jApiTypeName)
-        def rule = withContext(new SinceAnnotationMissingRule([:]))
+        def rule = withContext(new SinceAnnotationRule([:]))
 
         when:
         sourceFile.text = apiElement.startsWith('enum') ? """
@@ -295,7 +295,7 @@ class PublicAPIRulesTest extends Specification {
                 }
             """
 
-        def rule = withContext(new SinceAnnotationMissingRule([:]))
+        def rule = withContext(new SinceAnnotationRule([:]))
 
         then:
         def violation = rule.maybeViolation(jApiType)
@@ -316,7 +316,7 @@ class PublicAPIRulesTest extends Specification {
         given:
         JApiCompatibility jApiType = getProperty(jApiTypeName)
         def incubatingMissingRule = withContext(new IncubatingMissingRule([:]))
-        def sinceMissingRule = withContext(new SinceAnnotationMissingRule([:]))
+        def sinceMissingRule = withContext(new SinceAnnotationRule([:]))
 
         when:
         jApiType.annotations >> [deprecatedAnnotation]
@@ -345,7 +345,7 @@ class PublicAPIRulesTest extends Specification {
         given:
         JApiCompatibility jApiType = jApiMethod
         def incubatingMissingRule = withContext(new IncubatingMissingRule([:]))
-        def sinceMissingRule = withContext(new SinceAnnotationMissingRule([:]))
+        def sinceMissingRule = withContext(new SinceAnnotationRule([:]))
 
         when:
         sourceFile.text = """
@@ -397,13 +397,13 @@ class PublicAPIRulesTest extends Specification {
         rule.maybeViolation(jApiConstructor) == null
 
         where:
-        ruleElem << [new BinaryBreakingChangesRule([:]), new SinceAnnotationMissingRule([:]), new IncubatingMissingRule([:])]
+        ruleElem << [new BinaryBreakingChangesRule([:]), new SinceAnnotationRule([:]), new IncubatingMissingRule([:])]
         error << ['Is not binary compatible.', 'Is not annotated with @since', 'Is not annotated with @Incubating']
     }
 
     def "the @since annotation on inner classes is recognised"() {
         given:
-        def rule = withContext(new SinceAnnotationMissingRule([:]))
+        def rule = withContext(new SinceAnnotationRule([:]))
         def jApiInnerClass = Stub(JApiClass)
         jApiInnerClass.fullyQualifiedName >> "$TEST_INTERFACE_NAME\$Inner"
 
@@ -427,7 +427,7 @@ class PublicAPIRulesTest extends Specification {
 
     def "the @since annotation on implicit enum method '#implicitMethod#paramTypes' is not required"() {
         given:
-        def rule = withContext(new SinceAnnotationMissingRule([:]))
+        def rule = withContext(new SinceAnnotationRule([:]))
         def jApiMethod = Stub(JApiMethod)
         jApiMethod.name >> implicitMethod
         jApiMethod.jApiClass >> jApiClassifier
@@ -450,7 +450,7 @@ class PublicAPIRulesTest extends Specification {
 
     def "the @since annotation on implicit enum method '#implicitMethod' overload is required"() {
         given:
-        def rule = withContext(new SinceAnnotationMissingRule([:]))
+        def rule = withContext(new SinceAnnotationRule([:]))
         def jApiMethod = Stub(JApiMethod)
         jApiMethod.name >> implicitMethod
         jApiMethod.jApiClass >> jApiClassifier
@@ -467,6 +467,133 @@ class PublicAPIRulesTest extends Specification {
 
         where:
         implicitMethod << ["values", "valueOf"]
+    }
+
+    def "the @since annotation on the matching method overload is recognised"() {
+        given:
+        def rule = withContext(new SinceAnnotationRule([:]))
+        def jApiMethod = Stub(JApiMethod)
+        jApiMethod.name >> 'method'
+        jApiMethod.jApiClass >> jApiClassifier
+        jApiMethod.parameters >> [paramStub('int')]
+
+        when:
+        sourceFile.text = """
+            public class $TEST_INTERFACE_SIMPLE_NAME {
+                /**
+                 * @since 10.0
+                 */
+                public void method(long p) { }
+                /**
+                 * @since 11.38
+                 */
+                public void method(int p) { }
+            }
+        """
+
+        then:
+        rule.maybeViolation(jApiMethod) == null
+    }
+
+    def "the @since annotation on the matching constructor overload is recognised"() {
+        given:
+        def rule = withContext(new SinceAnnotationRule([:]))
+        def jApiConstructor = Stub(JApiConstructor)
+        jApiConstructor.name >> 'ApiTest'
+        jApiConstructor.jApiClass >> jApiClassifier
+        jApiConstructor.parameters >> [paramStub('int')]
+
+        when:
+        sourceFile.text = """
+            public class $TEST_INTERFACE_SIMPLE_NAME {
+                /**
+                 * @since 10.0
+                 */
+                public $TEST_INTERFACE_SIMPLE_NAME(long p) { }
+                /**
+                 * @since 11.38
+                 */
+                public $TEST_INTERFACE_SIMPLE_NAME(int p) { }
+            }
+        """
+
+        then:
+        rule.maybeViolation(jApiConstructor) == null
+    }
+
+    def "the @since annotation on a generic method is recognised"() {
+        given:
+        def rule = withContext(new SinceAnnotationRule([:]))
+        def jApiMethod = Stub(JApiMethod)
+        jApiMethod.name >> 'method'
+        jApiMethod.jApiClass >> jApiClassifier
+        jApiMethod.parameters >> [paramStub('java.lang.Object')]
+
+        when:
+        sourceFile.text = """
+            public class $TEST_INTERFACE_SIMPLE_NAME {
+                /**
+                 * @since 11.38
+                 */
+                public <T> void method(T p) { }
+            }
+        """
+
+        then:
+        rule.maybeViolation(jApiMethod) == null
+    }
+
+    def "the @since annotation on a method with an array type nested in a generic parameter is recognised"() {
+        given: "japicmp erases the generic parameter to its raw type, while the source declares an array type inside the generics"
+        def rule = withContext(new SinceAnnotationRule([:]))
+        def jApiMethod = Stub(JApiMethod)
+        jApiMethod.name >> 'method'
+        jApiMethod.jApiClass >> jApiClassifier
+        jApiMethod.parameters >> [paramStub('java.util.concurrent.ConcurrentMap')]
+
+        when: "the array `byte[]` lives inside the generic argument, not in the parameter type itself"
+        sourceFile.text = """
+            import java.util.concurrent.ConcurrentMap;
+            public class $TEST_INTERFACE_SIMPLE_NAME {
+                /**
+                 * @since 11.38
+                 */
+                public void method(ConcurrentMap<String, byte[]> p) { }
+            }
+        """
+
+        then: "the matcher strips generics before counting array depth, so the parameter still matches"
+        rule.maybeViolation(jApiMethod) == null
+    }
+
+    def "the @since annotation on an implicit default constructor is not required"() {
+        given:
+        def rule = withContext(new SinceAnnotationRule([:]))
+        def jApiConstructor = Stub(JApiConstructor)
+        jApiConstructor.name >> 'ApiTest'
+        jApiConstructor.jApiClass >> jApiClassifier
+        // a no-arg constructor with no parameters, matching the implicit default constructor
+
+        when: "the class declares no constructor of its own, so the no-arg constructor is compiler-generated"
+        sourceFile.text = """
+            public class $TEST_INTERFACE_SIMPLE_NAME {
+                public String field = "value";
+            }
+        """
+
+        then: "there is no source declaration to carry a @since, so it is exempt"
+        rule.maybeViolation(jApiConstructor) == null
+
+        when: "the class declares the no-arg constructor explicitly"
+        repository.emptyCaches()
+        sourceFile.text = """
+            public class $TEST_INTERFACE_SIMPLE_NAME {
+                public $TEST_INTERFACE_SIMPLE_NAME() { }
+            }
+        """
+
+        then: "the explicit declaration must be annotated"
+        rule.maybeViolation(jApiConstructor).humanExplanation =~ 'Is not annotated with @since 11.38'
     }
 
     private def paramStub(String type) {

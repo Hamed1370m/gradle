@@ -16,14 +16,14 @@
 
 package org.gradle.api.plugins.quality.codenarc
 
-import org.gradle.api.JavaVersion
+
 import org.gradle.integtests.fixtures.MultiVersionIntegrationSpec
 import org.gradle.integtests.fixtures.TargetCoverage
 import org.gradle.quality.integtest.fixtures.CodeNarcCoverage
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
-import org.gradle.test.preconditions.UnitTestPreconditions
-import org.gradle.testing.fixture.GroovyCoverage
+import org.gradle.test.preconditions.TestExecutionPreconditions
+import org.gradle.test.preconditions.TestEnvironmentPreconditions
+
 import org.gradle.util.internal.ToBeImplemented
 import spock.lang.Issue
 
@@ -33,7 +33,7 @@ import static org.hamcrest.Matchers.both
 import static org.hamcrest.Matchers.endsWith
 
 @TargetCoverage({ CodeNarcCoverage.supportedVersionsByCurrentJdk })
-@Requires(UnitTestPreconditions.StableGroovy)
+@Requires(TestEnvironmentPreconditions.StableGroovy)
 class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec implements CodeNarcTestFixture {
     def setup() {
         buildFile << """
@@ -52,12 +52,9 @@ class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec i
 
             testing.suites.test.useJUnit()
 
-            ${JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_14) ?
-            """
             configurations.codenarc {
-                resolutionStrategy.force 'org.codehaus.groovy:groovy:${GroovyCoverage.MINIMAL_GROOVY_3}' // force latest Groovy 3 when using Java 14+.  Do not use GroovySystem#version as Groovy 4 needs different coordinates
+                resolutionStrategy.force 'org.apache.groovy:groovy:${GroovySystem.version}'
             }
-            """ : ""}
         """.stripIndent()
 
         writeRuleFile()
@@ -72,7 +69,7 @@ class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec i
         report("test").exists()
     }
 
-    @Requires(IntegTestPreconditions.NotParallelExecutor)
+    @Requires(TestExecutionPreconditions.NotParallelExecutor)
     def "is incremental"() {
         given:
         goodCode()
@@ -92,7 +89,7 @@ class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec i
         executedAndNotSkipped(":codenarcMain")
     }
 
-    @Requires(IntegTestPreconditions.NotParallelExecutor)
+    @Requires(TestExecutionPreconditions.NotParallelExecutor)
     def "can generate multiple reports"() {
         given:
         buildFile << """
@@ -164,7 +161,7 @@ class CodeNarcPluginVersionIntegrationTest extends MultiVersionIntegrationSpec i
 
         expect:
         fails("check")
-        failure.assertHasDescription("Execution failed for task ':codenarcTest'.")
+        failure.assertHasDescription("Execution failed for task ':codenarcTest' (registered by plugin 'org.gradle.codenarc').")
         failure.assertThatCause(startsWith("CodeNarc rule violations were found. See the report at:"))
         failure.assertHasResolutions(SCAN)
         !report("main").text.contains("Class2")

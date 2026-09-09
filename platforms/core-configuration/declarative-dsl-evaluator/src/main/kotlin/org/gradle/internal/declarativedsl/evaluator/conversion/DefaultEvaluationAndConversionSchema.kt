@@ -18,19 +18,27 @@ package org.gradle.internal.declarativedsl.evaluator.conversion
 
 import org.gradle.declarative.dsl.evaluation.AnalysisStatementFilter
 import org.gradle.declarative.dsl.evaluation.OperationGenerationId
+import org.gradle.declarative.dsl.evaluation.SchemaBuildingFailure
 import org.gradle.declarative.dsl.schema.AnalysisSchema
 import org.gradle.internal.declarativedsl.analysis.DefaultOperationGenerationId
 import org.gradle.internal.declarativedsl.analysis.analyzeEverything
-import org.gradle.internal.declarativedsl.mappingToJvm.RuntimeCustomAccessors
-import org.gradle.internal.declarativedsl.mappingToJvm.RuntimeFunctionResolver
-import org.gradle.internal.declarativedsl.mappingToJvm.RuntimePropertyResolver
 
 
 class DefaultEvaluationAndConversionSchema(
     override val analysisSchema: AnalysisSchema,
+    override val analysisSchemaBuildingFailures: List<SchemaBuildingFailure>,
     override val analysisStatementFilter: AnalysisStatementFilter = analyzeEverything,
     override val operationGenerationId: OperationGenerationId = DefaultOperationGenerationId.finalEvaluation,
-    override val runtimePropertyResolvers: List<RuntimePropertyResolver> = listOf(),
-    override val runtimeFunctionResolvers: List<RuntimeFunctionResolver> = listOf(),
-    override val runtimeCustomAccessors: List<RuntimeCustomAccessors> = emptyList(),
-) : EvaluationAndConversionSchema
+    private val conversionSchemaComponentFactories: List<(scriptTarget: Any) -> ConversionSchema?>
+) : EvaluationAndConversionSchema {
+
+    override fun conversionSchemaForScriptTarget(target: Any): ConversionSchema {
+        val components = conversionSchemaComponentFactories.mapNotNull { it(target) }
+
+        return object : ConversionSchema {
+            override val runtimePropertyResolvers = components.flatMap { it.runtimePropertyResolvers }
+            override val runtimeFunctionResolvers = components.flatMap { it.runtimeFunctionResolvers }
+            override val runtimeCustomAccessors = components.flatMap { it.runtimeCustomAccessors }
+        }
+    }
+}

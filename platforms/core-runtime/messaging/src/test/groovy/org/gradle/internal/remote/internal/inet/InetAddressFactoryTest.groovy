@@ -20,40 +20,22 @@ import spock.lang.Specification
 
 class InetAddressFactoryTest extends Specification {
 
-    def factory = new InetAddressFactory()
+    Map<String, String> environment = [:]
+    InetAddressFactory factory
     InetAddresses addresses = Mock()
 
     def setup() {
-        factory.inetAddresses = addresses
-    }
+        factory = new InetAddressFactory(addresses) {
+            @Override
+            String getEnv(String name) {
+                return environment.get(name)
+            }
 
-    def "Loopback addresses are preferred"() {
-        when:
-        def loopback = [ip(127, 0, 0, 1)]
-        loopbackAddresses(loopback)
-        remoteAddresses([ip(192, 168, 17, 256)])
-
-        then:
-        factory.communicationAddresses == loopback
-    }
-
-    def "Use remote addresses if there are no loopback addresses"() {
-        when:
-        loopbackAddresses([])
-        def remote = [ip(192, 168, 18, 256)]
-        remoteAddresses(remote)
-
-        then:
-        factory.communicationAddresses == remote
-    }
-
-    def "Use 127.0.0.1 if there are no remote and no loopback addresses"() {
-        when:
-        loopbackAddresses([])
-        remoteAddresses([])
-
-        then:
-        factory.communicationAddresses == [InetAddress.getByName(null)]
+            @Override
+            Set<String> getEnvKeys() {
+                return environment.keySet()
+            }
+        }
     }
 
     def "communication addresses are detected"() {
@@ -61,9 +43,7 @@ class InetAddressFactoryTest extends Specification {
         loopbackAddresses([ip(127, 0, 0, 1), ip(127, 0, 0, 2)])
 
         then:
-        factory.communicationAddresses.every {
-            factory.isCommunicationAddress(it)
-        }
+        factory.isCommunicationAddress(factory.getLocalBindingAddress())
 
         !factory.isCommunicationAddress(ip(127, 0, 0, 3))
     }
@@ -96,7 +76,58 @@ class InetAddressFactoryTest extends Specification {
 
     def "Always returns some communication address"() {
         expect:
-        !new InetAddressFactory().communicationAddresses.empty
+        new InetAddressFactory().localBindingAddress
+    }
+
+    def "OPENSHIFT address overrides the default local binding address"() {
+        when:
+        defaultAddresses()
+        environment["OPENSHIFT_FOO_IP"] = "10.0.0.1"
+
+        then:
+        factory.localBindingAddress == InetAddress.getByName("10.0.0.1")
+    }
+
+    def "invalid OPENSHIFT address throws a descriptive error"() {
+        when:
+        defaultAddresses()
+        environment["OPENSHIFT_FOO_IP"] = "256.0.0.1"
+        factory.localBindingAddress
+
+        then:
+        def e = thrown(RuntimeException)
+        e.cause.message.contains("OPENSHIFT_FOO_IP")
+        e.cause.message.contains("256.0.0.1")
+    }
+
+    def "GRADLE_DAEMON_BIND_ADDRESS skips auto-detection and uses the provided address"() {
+        when:
+        environment["GRADLE_DAEMON_BIND_ADDRESS"] = "192.168.1.10"
+
+        then:
+        factory.localBindingAddress == InetAddress.getByName("192.168.1.10")
+        0 * addresses._
+    }
+
+    def "GRADLE_DAEMON_BIND_ADDRESS takes precedence over OPENSHIFT address"() {
+        when:
+        environment["OPENSHIFT_FOO_IP"] = "10.0.0.1"
+        environment["GRADLE_DAEMON_BIND_ADDRESS"] = "192.168.1.10"
+
+        then:
+        factory.localBindingAddress == InetAddress.getByName("192.168.1.10")
+        0 * addresses._
+    }
+
+    def "invalid GRADLE_DAEMON_BIND_ADDRESS throws a descriptive error"() {
+        when:
+        environment["GRADLE_DAEMON_BIND_ADDRESS"] = "256.0.0.1"
+        factory.localBindingAddress
+
+        then:
+        def e = thrown(RuntimeException)
+        e.cause.message.contains("GRADLE_DAEMON_BIND_ADDRESS")
+        e.cause.message.contains("256.0.0.1")
     }
 
     private defaultAddresses() {

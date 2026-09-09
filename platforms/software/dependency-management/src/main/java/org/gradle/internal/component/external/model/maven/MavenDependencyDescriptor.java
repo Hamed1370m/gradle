@@ -23,9 +23,8 @@ import org.gradle.internal.component.external.descriptor.MavenScope;
 import org.gradle.internal.component.external.model.ExternalDependencyDescriptor;
 import org.gradle.internal.component.model.ExcludeMetadata;
 import org.gradle.internal.component.model.IvyArtifactName;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -82,10 +81,10 @@ public class MavenDependencyDescriptor extends ExternalDependencyDescriptor {
         return type;
     }
 
-    public List<ExcludeMetadata> getConfigurationExcludes() {
+    public ImmutableList<ExcludeMetadata> getConfigurationExcludes() {
         // Ignore exclusions for dependencies with `<optional>true</optional>`, but not for <dependencyManagement>.
         if (type == MavenDependencyType.OPTIONAL_DEPENDENCY) {
-            return Collections.emptyList();
+            return ImmutableList.of();
         }
         return excludes;
     }

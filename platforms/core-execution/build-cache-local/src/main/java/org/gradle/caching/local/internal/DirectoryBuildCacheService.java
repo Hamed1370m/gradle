@@ -16,7 +16,6 @@
 
 package org.gradle.caching.local.internal;
 
-import org.gradle.api.NonNullApi;
 import org.gradle.cache.PersistentCache;
 import org.gradle.caching.BuildCacheEntryReader;
 import org.gradle.caching.BuildCacheEntryWriter;
@@ -26,12 +25,14 @@ import org.gradle.caching.BuildCacheService;
 import org.gradle.caching.internal.BuildCacheKeyInternal;
 import org.gradle.internal.file.FileAccessTracker;
 import org.gradle.internal.hash.HashCode;
+import org.jspecify.annotations.NullMarked;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.function.Consumer;
 
-@NonNullApi
+@NullMarked
 public class DirectoryBuildCacheService implements LocalBuildCacheService, BuildCacheService {
 
     private final DirectoryBuildCache cache;
@@ -52,7 +53,12 @@ public class DirectoryBuildCacheService implements LocalBuildCacheService, Build
 
     @Override
     public void store(BuildCacheKey key, BuildCacheEntryWriter result) throws BuildCacheException {
-        cache.store(((BuildCacheKeyInternal) key).getHashCodeInternal(), result::writeTo);
+        HashCode hash = ((BuildCacheKeyInternal) key).getHashCodeInternal();
+        try (InputStream input = result.getInputStream()) {
+            cache.store(hash, input);
+        } catch (IOException e) {
+            throw new BuildCacheException("storing " + key, e);
+        }
     }
 
     @Override

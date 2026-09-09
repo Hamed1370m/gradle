@@ -33,6 +33,7 @@ class KotlinDslGivenScriptsModelCrossVersionSpec extends AbstractKotlinDslScript
         def requestedScripts = spec.scripts.values()
 
         when:
+        maybeExpectExplicitScriptsDeprecation()
         def model = loadToolingModel(KotlinDslScriptsModel) {
             setModelParameters(it, false, true, requestedScripts)
         }
@@ -56,6 +57,7 @@ class KotlinDslGivenScriptsModelCrossVersionSpec extends AbstractKotlinDslScript
         """
 
         when:
+        maybeExpectExplicitScriptsDeprecation()
         def model = loadToolingModel(KotlinDslScriptsModel) {
             setModelParameters(it, true, true, [buildFileKts])
         }
@@ -70,7 +72,7 @@ class KotlinDslGivenScriptsModelCrossVersionSpec extends AbstractKotlinDslScript
         assertHasExceptionMessage(
             model,
             spec.scripts.init,
-            "Unresolved reference: script_body_compilation_error"
+            "script_body_compilation_error"
         )
     }
 }

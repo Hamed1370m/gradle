@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
+@file:Suppress("DEPRECATION")
+
 package org.gradle.kotlin.dsl.resolver
 
-import com.nhaarman.mockito_kotlin.doReturn
-import com.nhaarman.mockito_kotlin.mock
-import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext
 import org.gradle.kotlin.dsl.fixtures.AbstractKotlinIntegrationTest
 import org.gradle.test.fixtures.Flaky
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.hamcrest.CoreMatchers.equalTo
 import org.hamcrest.CoreMatchers.hasItems
 import org.hamcrest.CoreMatchers.instanceOf
@@ -35,6 +35,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.experimental.categories.Category
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
 import java.io.File
 import kotlin.reflect.KClass
 import kotlin.script.dependencies.KotlinScriptExternalDependencies
@@ -112,7 +114,7 @@ class KotlinScriptDependenciesResolverTest : AbstractKotlinIntegrationTest() {
     }
 
     @Test
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor::class)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor::class)
     fun `succeeds on precompiled init script`() {
 
         withKotlinBuildSrc()
@@ -124,7 +126,7 @@ class KotlinScriptDependenciesResolverTest : AbstractKotlinIntegrationTest() {
     }
 
     @Test
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor::class)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor::class)
     fun `succeeds on precompiled settings script`() {
 
         withKotlinBuildSrc()
@@ -142,7 +144,7 @@ class KotlinScriptDependenciesResolverTest : AbstractKotlinIntegrationTest() {
     }
 
     @Test
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor::class)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor::class)
     fun `succeeds on precompiled project script`() {
 
         withKotlinBuildSrc()
@@ -175,7 +177,7 @@ class KotlinScriptDependenciesResolverTest : AbstractKotlinIntegrationTest() {
     """
 
     @Test
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor::class)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor::class)
     fun `pass environment`() {
 
         assertSucceeds(
@@ -298,7 +300,7 @@ class KotlinScriptDependenciesResolverTest : AbstractKotlinIntegrationTest() {
 
 
     @Test
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor::class)
+    @Requires(TestExecutionPreconditions.NotEmbeddedExecutor::class)
     fun `report file warning on runtime failure in currently edited script`() {
 
         val editedScript = withBuildScript(
@@ -317,32 +319,6 @@ class KotlinScriptDependenciesResolverTest : AbstractKotlinIntegrationTest() {
         }
     }
 
-    @Test
-    @Requires(IntegTestPreconditions.NotEmbeddedExecutor::class)
-    fun `report line warning on runtime failure in currently edited script when location aware hints are enabled`() {
-
-        withFile(
-            "gradle.properties",
-            """
-            ${EditorReports.locationAwareEditorHintsPropertyName}=true
-            """
-        )
-        val editedScript = withBuildScript(
-            """
-            configurations.getByName("doNotExists")
-            """
-        )
-
-        resolvedScriptDependencies(editedScript).apply {
-            assertContainsBasicDependencies()
-        }
-
-        recorder.apply {
-            assertLastEventIsInstanceOf(ResolvedDependenciesWithErrors::class)
-            assertSingleLineWarningReport("Configuration with name 'doNotExists' not found.", 1)
-        }
-    }
-
     private
     val recorder = ResolverTestRecorder()
 
@@ -353,9 +329,10 @@ class KotlinScriptDependenciesResolverTest : AbstractKotlinIntegrationTest() {
     fun environment(vararg entries: Pair<String, Any?>) =
         mapOf(
             "projectRoot" to projectRoot,
+            "gradleHome" to buildContext.gradleHomeDir,
             "gradleUserHome" to buildContext.gradleUserHomeDir.canonicalPath
         ) + (
-            if (GradleContextualExecuter.isEmbedded()) emptyMap() else mapOf("gradleHome" to distribution.gradleHomeDir)
+            if (IntegrationTestBuildContext.isEmbedded()) emptyMap() else mapOf("gradleHome" to distribution.gradleHomeDir)
             ) + entries.toMap()
 
     private
@@ -481,15 +458,6 @@ class ResolverTestRecorder : ResolverEventLogger, (ReportSeverity, String, Posit
         }
     }
 
-    fun assertSingleLineWarningReport(message: String, line: Int) {
-        assertSingleEditorReport()
-        reports.single().let { report ->
-            assertThat(report.severity, equalTo(ReportSeverity.WARNING))
-            assertThat(report.position, notNullValue())
-            assertThat(report.position!!.line, equalTo(line))
-            assertThat(report.message, equalTo(message))
-        }
-    }
 }
 
 

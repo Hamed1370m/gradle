@@ -19,8 +19,13 @@ import java.time.Year
 plugins {
     id("gradlebuild.module-identity")
     id("gradlebuild.publish-defaults")
+    id("java-library")
     id("signing")
     `maven-publish`
+}
+
+gradleModule {
+    published = true
 }
 
 configureJavadocVariant()
@@ -37,15 +42,19 @@ publishing {
     }
 }
 
+// The key ID is required because the signing key is a subkey.
+val pgpSigningKeyId: Provider<String> = providers.environmentVariable("PGP_SIGNING_KEY_ID")
 val pgpSigningKey: Provider<String> = providers.environmentVariable("PGP_SIGNING_KEY")
+val pgpSigningPassPhrase: Provider<String> = providers.environmentVariable("PGP_SIGNING_KEY_PASSPHRASE")
 val signArtifacts: Boolean = !pgpSigningKey.orNull.isNullOrEmpty()
 
 tasks.withType<Sign>().configureEach { isEnabled = signArtifacts }
 
 signing {
     useInMemoryPgpKeys(
-        project.providers.environmentVariable("PGP_SIGNING_KEY").orNull,
-        project.providers.environmentVariable("PGP_SIGNING_KEY_PASSPHRASE").orNull
+        pgpSigningKeyId.orNull,
+        pgpSigningKey.orNull,
+        pgpSigningPassPhrase.orNull
     )
     publishing.publications.configureEach {
         if (signArtifacts) {
@@ -62,7 +71,7 @@ fun configureJavadocVariant() {
 
 fun MavenPublication.configureGradleModulePublication() {
     from(components["java"])
-    artifactId = moduleIdentity.baseName.get()
+    artifactId = gradleModule.identity.baseName.get()
     versionMapping {
         usage("java-api") {
             fromResolutionResult()
@@ -74,13 +83,13 @@ fun MavenPublication.configureGradleModulePublication() {
 
     pom {
         packaging = "jar"
-        name = moduleIdentity.baseName.map { "${project.group}:$it" }
+        name = gradleModule.identity.baseName.map { "${project.group}:$it" }
     }
 }
 
 fun publishNormalizedToLocalRepository() {
     val localRepository = layout.buildDirectory.dir("repo")
-    val baseName = moduleIdentity.baseName
+    val baseName = gradleModule.identity.baseName
 
     publishing {
         repositories {
@@ -92,7 +101,7 @@ fun publishNormalizedToLocalRepository() {
         publications {
             create<MavenPublication>("local") {
                 configureGradleModulePublication()
-                version = moduleIdentity.version.get().baseVersion.version
+                version = gradleModule.identity.version.get().baseVersion.version
             }
         }
     }
@@ -131,14 +140,10 @@ fun publishNormalizedToLocalRepository() {
     // For local consumption by tests
     configurations.create("localLibsRepositoryElements") {
         attributes {
-            attribute(Usage.USAGE_ATTRIBUTE, project.objects.named(Usage.JAVA_RUNTIME))
-            attribute(Category.CATEGORY_ATTRIBUTE, project.objects.named(Category.LIBRARY))
-            attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, project.objects.named("gradle-local-repository"))
-            attribute(Bundling.BUNDLING_ATTRIBUTE, project.objects.named(Bundling.EMBEDDED))
+            attribute(Category.CATEGORY_ATTRIBUTE, project.objects.named("gradle-local-repository"))
         }
         isCanBeResolved = false
         isCanBeConsumed = true
-        isVisible = false
         outgoing.artifact(localRepository) {
             builtBy(localPublish)
         }
@@ -163,5 +168,5 @@ fun publishNormalizedToLocalRepository() {
 tasks.register("promotionBuild") {
     description = "Build production distros, smoke test them and publish"
     group = "publishing"
-    dependsOn(":packageBuild", ":publishBuildLogic", "publish")
+    dependsOn(":packageBuild", "publish")
 }

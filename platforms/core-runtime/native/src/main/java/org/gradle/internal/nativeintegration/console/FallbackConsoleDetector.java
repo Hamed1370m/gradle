@@ -16,15 +16,18 @@
 
 package org.gradle.internal.nativeintegration.console;
 
+import org.jspecify.annotations.Nullable;
+
 public class FallbackConsoleDetector implements ConsoleDetector {
     @Override
+    @Nullable
     public ConsoleMetaData getConsole() {
         return null;
     }
 
     @Override
     @SuppressWarnings("SystemConsoleNull")
-    public boolean isConsoleInput() {
+    public boolean isInteractiveConsole() {
         return System.console() != null;
     }
 }

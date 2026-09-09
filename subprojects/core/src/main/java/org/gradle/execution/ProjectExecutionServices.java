@@ -25,18 +25,12 @@ import org.gradle.api.internal.file.FileCollectionFactory;
 import org.gradle.api.internal.file.FileOperations;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.internal.tasks.TaskDependencyFactory;
-import org.gradle.api.internal.tasks.TaskExecuter;
-import org.gradle.api.internal.tasks.execution.CatchExceptionTaskExecuter;
 import org.gradle.api.internal.tasks.execution.DefaultTaskCacheabilityResolver;
-import org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter;
-import org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter;
-import org.gradle.api.internal.tasks.execution.FinalizePropertiesTaskExecuter;
-import org.gradle.api.internal.tasks.execution.ResolveTaskExecutionModeExecuter;
-import org.gradle.api.internal.tasks.execution.SkipOnlyIfTaskExecuter;
-import org.gradle.api.internal.tasks.execution.SkipTaskWithNoActionsExecuter;
+import org.gradle.api.internal.tasks.execution.DefaultTaskNodeExecutor;
 import org.gradle.api.internal.tasks.execution.TaskCacheabilityResolver;
 import org.gradle.execution.plan.ExecutionNodeAccessHierarchies;
 import org.gradle.execution.plan.MissingTaskDependencyDetector;
+import org.gradle.execution.plan.TaskNodeExecutor;
 import org.gradle.execution.taskgraph.TaskExecutionGraphInternal;
 import org.gradle.execution.taskgraph.TaskListenerInternal;
 import org.gradle.internal.event.ListenerManager;
@@ -76,11 +70,6 @@ public class ProjectExecutionServices implements ServiceRegistrationProvider {
     }
 
     @Provides
-    org.gradle.api.execution.TaskActionListener createTaskActionListener(ListenerManager listenerManager) {
-        return listenerManager.getBroadcaster(org.gradle.api.execution.TaskActionListener.class);
-    }
-
-    @Provides
     TaskCacheabilityResolver createTaskCacheabilityResolver(RelativeFilePathResolver relativeFilePathResolver) {
         return new DefaultTaskCacheabilityResolver(relativeFilePathResolver);
     }
@@ -96,9 +85,10 @@ public class ProjectExecutionServices implements ServiceRegistrationProvider {
     }
 
     @Provides
-    TaskExecuter createTaskExecuter(
+    TaskNodeExecutor createTaskNodeExecutor(
         AsyncWorkTracker asyncWorkTracker,
         BuildOperationRunner buildOperationRunner,
+        TaskExecutionGraphInternal taskGraph,
         ClassLoaderHierarchyHasher classLoaderHierarchyHasher,
         ExecutionHistoryStore executionHistoryStore,
         FileCollectionFactory fileCollectionFactory,
@@ -106,20 +96,20 @@ public class ProjectExecutionServices implements ServiceRegistrationProvider {
         FileOperations fileOperations,
         ListenerManager listenerManager,
         ReservedFileSystemLocationRegistry reservedFileSystemLocationRegistry,
-        org.gradle.api.execution.TaskActionListener actionListener,
         TaskCacheabilityResolver taskCacheabilityResolver,
-        TaskExecutionGraphInternal taskExecutionGraph,
-        org.gradle.api.execution.TaskExecutionListener taskExecutionListener,
         TaskExecutionModeResolver repository,
-        TaskListenerInternal taskListenerInternal,
         ExecutionEngine executionEngine,
-        InputFingerprinter inputFingerprinter
+        InputFingerprinter inputFingerprinter,
+        MissingTaskDependencyDetector missingTaskDependencyDetector
     ) {
-        TaskExecuter executer = new ExecuteActionsTaskExecuter(
-            executionHistoryStore,
+        return new DefaultTaskNodeExecutor(
             buildOperationRunner,
+            taskGraph.getLegacyTaskListenerBroadcast(),
+            listenerManager.getBroadcaster(TaskListenerInternal.class),
+            repository,
+            executionHistoryStore,
             asyncWorkTracker,
-            actionListener,
+            listenerManager.getBroadcaster(org.gradle.api.execution.TaskActionListener.class),
             taskCacheabilityResolver,
             classLoaderHierarchyHasher,
             executionEngine,
@@ -129,27 +119,19 @@ public class ProjectExecutionServices implements ServiceRegistrationProvider {
             fileCollectionFactory,
             taskDependencyFactory,
             // TODO Can we inject a PathToFileResolver here directly?
-            fileOperations.getFileResolver()
+            fileOperations.getFileResolver(),
+            missingTaskDependencyDetector
         );
-        executer = new FinalizePropertiesTaskExecuter(executer);
-        executer = new ResolveTaskExecutionModeExecuter(repository, executer);
-        executer = new SkipTaskWithNoActionsExecuter(taskExecutionGraph, executer);
-        executer = new SkipOnlyIfTaskExecuter(executer);
-        executer = new CatchExceptionTaskExecuter(executer);
-        executer = new EventFiringTaskExecuter(buildOperationRunner, taskExecutionListener, taskListenerInternal, executer);
-        return executer;
     }
 
     @Provides
     FileCollectionFingerprinterRegistrations createFileCollectionFingerprinterRegistrations(
         StringInterner stringInterner,
-        FileCollectionSnapshotter fileCollectionSnapshotter,
         ResourceSnapshotterCacheService resourceSnapshotterCacheService,
         InputNormalizationHandlerInternal inputNormalizationHandler
     ) {
         return new FileCollectionFingerprinterRegistrations(
             stringInterner,
-            fileCollectionSnapshotter,
             resourceSnapshotterCacheService,
             inputNormalizationHandler.getRuntimeClasspath().getClasspathResourceFilter(),
             inputNormalizationHandler.getRuntimeClasspath().getManifestAttributeResourceEntryFilter(),

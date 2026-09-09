@@ -15,6 +15,8 @@
  */
 package org.gradle.cli;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -22,10 +24,12 @@ import java.util.Set;
 public class CommandLineOption {
     private final Set<String> options = new HashSet<String>();
     private Class<?> argumentType = Void.TYPE;
-    private String description;
+    private @Nullable String description;
     private boolean incubating;
     private final Set<CommandLineOption> groupWith = new HashSet<CommandLineOption>();
     private boolean deprecated;
+
+    private OptionCategory category = OptionCategory.OTHER;
 
     public CommandLineOption(Iterable<String> options) {
         for (String option : options) {
@@ -111,5 +115,14 @@ public class CommandLineOption {
     void groupWith(Set<CommandLineOption> options) {
         this.groupWith.addAll(options);
         this.groupWith.remove(this);
+    }
+
+    public CommandLineOption hasCategory(OptionCategory category) {
+        this.category = category == null ? OptionCategory.OTHER : category;
+        return this;
+    }
+
+    public OptionCategory getCategory() {
+        return category == null ? OptionCategory.OTHER : category;
     }
 }

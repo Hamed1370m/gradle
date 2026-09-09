@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+pluginManagement {
+    includeBuild("../build-logic-settings")
+}
+
 dependencyResolutionManagement {
     repositories {
         gradlePluginPortal()
@@ -21,7 +25,8 @@ dependencyResolutionManagement {
 }
 
 plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version("0.8.0")
+    id("gradlebuild.version-catalogs")
+    id("gradlebuild.default-settings-plugins")
 }
 
 includeBuild("../build-logic-settings")
@@ -31,6 +36,9 @@ include("basics")
 
 // Platform: defines shared dependency versions
 include("build-platform")
+
+// Plugin that applies the build-platform constraints
+include("build-platform-plugin")
 
 // Compute the identity/version we are building and related details (like current git commit)
 include("module-identity")
@@ -45,13 +53,3 @@ include("gradle-plugin")
 include("publishing")
 
 rootProject.name = "build-logic-commons"
-
-// Make sure all the build-logic is compiled for the right Java version
-gradle.lifecycle.beforeProject {
-    pluginManager.withPlugin("java-base") {
-        the<JavaPluginExtension>().toolchain {
-            languageVersion = JavaLanguageVersion.of(17)
-            vendor = JvmVendorSpec.ADOPTIUM
-        }
-    }
-}

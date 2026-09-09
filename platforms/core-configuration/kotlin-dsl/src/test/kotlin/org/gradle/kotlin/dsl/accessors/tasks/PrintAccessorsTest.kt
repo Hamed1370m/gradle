@@ -26,6 +26,7 @@ import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.TaskContainer
 import org.gradle.kotlin.dsl.accessors.ConfigurationEntry
 import org.gradle.kotlin.dsl.accessors.TypedProjectSchema
+import org.gradle.kotlin.dsl.accessors.accessible
 import org.gradle.kotlin.dsl.accessors.entry
 import org.gradle.kotlin.dsl.fixtures.standardOutputOf
 import org.hamcrest.CoreMatchers.equalTo
@@ -36,54 +37,45 @@ import org.junit.Test
 
 class PrintAccessorsTest {
 
-    abstract class CustomConvention
-
-    abstract class TestSoftwareType
+    abstract class TestProjectType
 
     @Test
     fun `prints accessors for all schema entries`() {
+        val expectedText = accessorsSourceFor(
+            TypedProjectSchema(
+                extensions = listOf(
+                    entry<Project, ExtraPropertiesExtension>("extra")
+                ),
+                tasks = listOf(
+                    entry<TaskContainer, Delete>("delete")
+                ),
+                configurations = listOf(
+                    ConfigurationEntry("api"),
+                    ConfigurationEntry("compile", listOf("api", "implementation"))
+                ),
+                containerElements = listOf(
+                    entry<SourceSetContainer, SourceSet>("main")
+                ),
+                modelDefaults = listOf(
+                    entry<SharedModelDefaults, TestProjectType>("projectType")
+                ),
+                projectFeatureEntries = emptyList(),
+                containerElementFactories = listOf(),
+                nestedModelEntries = listOf()
+            ),
+            ::accessible
+        ).withoutTrailingWhitespace()
 
-        assertThat(
-            standardOutputOf {
-                printAccessorsFor(
-                    TypedProjectSchema(
-                        extensions = listOf(
-                            entry<Project, ExtraPropertiesExtension>("extra")
-                        ),
-                        conventions = listOf(
-                            entry<Project, CustomConvention>("customConvention")
-                        ),
-                        tasks = listOf(
-                            entry<TaskContainer, Delete>("delete")
-                        ),
-                        configurations = listOf(
-                            ConfigurationEntry("api"),
-                            ConfigurationEntry("compile", listOf("api", "implementation"))
-                        ),
-                        containerElements = listOf(
-                            entry<SourceSetContainer, SourceSet>("main")
-                        ),
-                        modelDefaults = listOf(
-                            entry<SharedModelDefaults, TestSoftwareType>("softwareType")
-                        ),
-                        containerElementFactories = listOf()
-                    )
-                )
-            }.withoutTrailingWhitespace(),
-            equalTo(
-                textFromResource("PrintAccessors-expected-output.txt")
-            )
-        )
+        assertThat(expectedText, equalTo(textFromResource("PrintAccessors-expected-output.txt")))
     }
 
     @Test
     fun `does not print accessors with invalid Kotlin identifiers`() {
 
         val actualAccessors = standardOutputOf {
-            printAccessorsFor(
+            accessorsSourceFor(
                 TypedProjectSchema(
                     extensions = listOf(),
-                    conventions = listOf(),
                     tasks = listOf(
                         entry<TaskContainer, DefaultTask>("dots.not.allowed")
                     ),
@@ -92,8 +84,11 @@ class PrintAccessorsTest {
                     ),
                     containerElements = listOf(),
                     modelDefaults = listOf(),
-                    containerElementFactories = listOf()
-                )
+                    projectFeatureEntries = emptyList(),
+                    containerElementFactories = listOf(),
+                    nestedModelEntries = listOf()
+                ),
+                ::accessible
             )
         }.withoutTrailingWhitespace()
 

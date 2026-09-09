@@ -29,8 +29,6 @@ import org.gradle.api.internal.file.TestFiles
 import org.gradle.api.internal.provider.ProviderInternal
 import org.gradle.api.internal.tasks.TaskDependencyResolveContext
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
-import org.gradle.internal.reflect.Instantiator
-import org.gradle.internal.typeconversion.NotationParser
 import org.gradle.internal.typeconversion.UnsupportedNotationException
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.util.TestUtil
@@ -44,9 +42,8 @@ class PublishArtifactNotationParserFactoryTest extends Specification {
     @Rule
     public final TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
     final DependencyMetaDataProvider provider = Mock()
-    final Instantiator instantiator = TestUtil.instantiatorFactory().decorateLenient()
-    final PublishArtifactNotationParserFactory publishArtifactNotationParserFactory = new PublishArtifactNotationParserFactory(instantiator, provider, TestFiles.resolver(tmpDir.getTestDirectory()), TestFiles.taskDependencyFactory())
-    final NotationParser<Object, PublishArtifact> publishArtifactNotationParser = publishArtifactNotationParserFactory.create();
+    final PublishArtifactNotationParserFactory publishArtifactNotationParserFactory = new PublishArtifactNotationParserFactory(TestUtil.objectFactory(), provider, TestFiles.resolver(tmpDir.getTestDirectory()), TestFiles.taskDependencyFactory())
+    final PublishArtifactNotationParser publishArtifactNotationParser = publishArtifactNotationParserFactory.create();
 
     def setup() {
         Module module = Mock()
@@ -255,7 +252,7 @@ class PublishArtifactNotationParserFactoryTest extends Specification {
 
         then:
         def e = thrown(UnsupportedNotationException)
-        e.message.startsWith("Cannot convert the provided notation to a File or URI: broken.")
+        e.message.startsWith("Cannot convert the provided notation to a File: broken.")
     }
 
     def createArtifactFromFileInMap() {

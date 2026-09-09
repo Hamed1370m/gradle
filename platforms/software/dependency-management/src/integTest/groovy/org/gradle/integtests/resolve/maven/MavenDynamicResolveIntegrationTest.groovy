@@ -27,15 +27,15 @@ class MavenDynamicResolveIntegrationTest extends AbstractHttpDependencyResolutio
         buildFile << """
 repositories {
     maven {
-        url "${mavenHttpRepo.uri}"
+        url = "${mavenHttpRepo.uri}"
     }
 }
 
 configurations { compile }
 
 dependencies {
-    compile group: "org.test", name: "projectA", version: "1.+"
-    compile group: "org.test", name: "projectB", version: "1.+"
+    compile("org.test:projectA:1.+")
+    compile("org.test:projectB:1.+")
 }
 
 task retrieve(type: Sync) {
@@ -92,7 +92,7 @@ task retrieve(type: Sync) {
 
         buildFile << """
     repositories {
-        maven { url '${mavenHttpRepo.uri}' }
+        maven { url = '${mavenHttpRepo.uri}' }
     }
     configurations { compile }
     dependencies {
@@ -193,7 +193,8 @@ task retrieve(type: Sync) {
         failure.assertHasCause('Could not resolve group:projectA:1.+.')
         failure.assertHasCause('Failed to list versions for group:projectA.')
         failure.assertHasCause("Unable to load Maven meta-data from ${metaData.uri}.")
-        failure.assertHasCause("Could not GET '${metaData.uri}'. Received status code 500 from server")
+        failure.assertHasCause("Could not GET '${metaData.uri}'.")
+        failure.assertHasCause("Received status code 500 from server")
 
         when:
         metaData.expectGetMissing()
@@ -208,7 +209,8 @@ task retrieve(type: Sync) {
         failure.assertHasCause('Could not resolve group:projectA:1.+.')
         failure.assertHasCause('Failed to list versions for group:projectA.')
         failure.assertHasCause("Could not list versions using M2 pattern '${mavenHttpRepo.uri}")
-        failure.assertHasCause("Could not GET '${moduleDir.uri}'. Received status code 500 from server")
+        failure.assertHasCause("Could not GET '${moduleDir.uri}'.")
+        failure.assertHasCause("Received status code 500 from server")
 
         when:
         server.resetExpectations()
@@ -239,7 +241,8 @@ task retrieve(type: Sync) {
 
         then:
         failure.assertHasCause("Could not resolve group:projectA:1.+.")
-        failure.assertHasCause("Could not GET '${projectA.pom.uri}'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${projectA.pom.uri}'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
 
         when:
         server.resetExpectations()
@@ -251,7 +254,8 @@ task retrieve(type: Sync) {
 
         then:
         failure.assertHasCause("Could not download projectA-1.1.jar (group:projectA:1.1)")
-        failure.assertHasCause("Could not GET '${projectA.artifact.uri}'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${projectA.artifact.uri}'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
 
         when:
         server.resetExpectations()
@@ -392,7 +396,8 @@ Searched in the following locations:
         then:
         failure.assertHasCause('Could not resolve group:projectA:1.+')
         failure.assertHasCause('Could not resolve group:projectA:1.1')
-        failure.assertHasCause("Could not GET '${repo1.uri}/group/projectA/1.1/projectA-1.1.pom'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${repo1.uri}/group/projectA/1.1/projectA-1.1.pom'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
 
         when:
         server.resetExpectations()
@@ -468,7 +473,7 @@ Searched in the following locations:
     static String createBuildFile(URI... repoUris) {
         """
          repositories {
-             ${repoUris.collect { "maven { url '${it.toString()}' }" }.join("\n")}
+             ${repoUris.collect { "maven { url = uri('${it.toString()}') }" }.join("\n")}
          }
          configurations { compile }
          dependencies {

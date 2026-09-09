@@ -86,7 +86,7 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         0 * _
     }
 
-    static class MyTask extends DefaultTask {
+    static abstract class MyTask extends DefaultTask {
 
         @Input
         String myProperty = "myValue"
@@ -233,7 +233,7 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         }
     }
 
-    static class TaskWithNestedObject extends DefaultTask {
+    static abstract class TaskWithNestedObject extends DefaultTask {
         @Nested
         Object nested
     }
@@ -252,6 +252,7 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
         def typeAnnotationMetadataStore = new DefaultTypeAnnotationMetadataStore(
             [],
             ModifierAnnotationCategory.asMap(PROPERTY_TYPE_ANNOTATIONS),
+            [:],
             ["java", "groovy"],
             [],
             [Object, GroovyObject],
@@ -262,7 +263,7 @@ class DefaultPropertyWalkerTest extends AbstractProjectBuilderSpec {
             cacheFactory
         )
         def propertyHandlers = services.getAll(PropertyAnnotationHandler)
-        def typeMetadataStore = new DefaultTypeMetadataStore([], propertyHandlers, [PathSensitive], typeAnnotationMetadataStore, TestPropertyTypeResolver.INSTANCE, cacheFactory, MissingPropertyAnnotationHandler.DO_NOTHING)
+        def typeMetadataStore = new DefaultTypeMetadataStore([], propertyHandlers, [PathSensitive], [], [], typeAnnotationMetadataStore, TestPropertyTypeResolver.INSTANCE, cacheFactory, MissingPropertyAnnotationHandler.DO_NOTHING)
         new DefaultPropertyWalker(typeMetadataStore, new TestImplementationResolver(), propertyHandlers).visitProperties(task, validationContext, visitor)
     }
 }

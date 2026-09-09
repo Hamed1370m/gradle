@@ -25,6 +25,10 @@
                 <td><literal>null</literal></td>
             </tr>
             <tr>
+                <td>configurationScriptFile</td>
+                <td><literal>null</literal></td>
+            </tr>
+            <tr>
                 <td>encoding</td>
                 <td><literal>UTF-8</literal></td>
             </tr>
@@ -46,6 +50,10 @@
             </tr>
             <tr>
                 <td>stubDir</td>
+                <td><literal>null</literal></td>
+            </tr>
+            <tr>
+                <td>stubDirectory</td>
                 <td><literal>null</literal></td>
             </tr>
             <tr>
@@ -74,9 +82,6 @@
                     <td>Name</td>
                 </tr>
             </thead>
-            <tr>
-                <td>fork</td>
-            </tr>
         </table>
     </section>
 </section>

@@ -16,16 +16,19 @@
 
 package org.gradle.tooling.internal.protocol;
 
-import org.gradle.api.NonNullApi;
 import org.gradle.tooling.internal.protocol.problem.InternalDocumentationLink;
 import org.gradle.tooling.internal.protocol.problem.InternalLabel;
 import org.gradle.tooling.internal.protocol.problem.InternalProblemCategory;
 import org.gradle.tooling.internal.protocol.problem.InternalSeverity;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
-@NonNullApi
+/**
+ * <p>DO NOT CHANGE THIS INTERFACE - it is part of the cross-version protocol.
+ */
+@NullMarked
 public interface InternalProblemAggregationDetailsV2 extends InternalProblemDetails {
 
     @Nullable

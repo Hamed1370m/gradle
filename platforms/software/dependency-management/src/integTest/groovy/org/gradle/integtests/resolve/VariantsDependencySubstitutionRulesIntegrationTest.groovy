@@ -20,12 +20,22 @@ import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import spock.lang.Issue
 
 class VariantsDependencySubstitutionRulesIntegrationTest extends AbstractIntegrationSpec {
-    def resolve = new ResolveTestFixture(buildFile, "conf").expectDefaultConfiguration("runtime")
+    def resolve = new ResolveTestFixture(testDirectory)
 
     def setup() {
         settingsFile << "rootProject.name='depsub'\n"
-        resolve.prepare()
-        resolve.addDefaultVariantDerivationStrategy()
+
+        buildFile << """
+            plugins {
+                id("jvm-ecosystem")
+            }
+
+            configurations {
+                conf
+            }
+
+            ${resolve.configureProject("conf")}
+        """
     }
 
     @Issue("https://github.com/gradle/gradle/issues/13204")
@@ -46,7 +56,6 @@ class VariantsDependencySubstitutionRulesIntegrationTest extends AbstractIntegra
             }
         """
 
-        createDirs("platform")
         settingsFile << """
             include 'platform'
         """
@@ -93,7 +102,7 @@ class VariantsDependencySubstitutionRulesIntegrationTest extends AbstractIntegra
         buildFile << """
 
             repositories {
-               maven { url "${mavenRepo.uri}" }
+               maven { url = "${mavenRepo.uri}" }
             }
 
             configurations {
@@ -143,7 +152,7 @@ class VariantsDependencySubstitutionRulesIntegrationTest extends AbstractIntegra
         buildFile << """
 
             repositories {
-               maven { url "${mavenRepo.uri}" }
+               maven { url = "${mavenRepo.uri}" }
             }
 
             configurations {
@@ -167,7 +176,7 @@ class VariantsDependencySubstitutionRulesIntegrationTest extends AbstractIntegra
         fails ':checkDeps'
 
         then:
-        failure.assertHasCause "Unable to find a variant providing the requested capability 'org:lib-test-fixtures':"
+        failure.assertHasCause "Unable to find a variant of 'org:lib:1.0' with the requested capability: 'org:lib-test-fixtures':"
     }
 
     def "can substitute a project dependency without capabilities with a dependency with capabilities"() {
@@ -176,7 +185,7 @@ class VariantsDependencySubstitutionRulesIntegrationTest extends AbstractIntegra
         buildFile << """
 
             repositories {
-               maven { url "${mavenRepo.uri}" }
+               maven { url = "${mavenRepo.uri}" }
             }
 
             configurations {
@@ -196,16 +205,16 @@ class VariantsDependencySubstitutionRulesIntegrationTest extends AbstractIntegra
             }
         """
 
-        createDirs("other")
         settingsFile << """
             include 'other'
         """
+        file("other/build.gradle") << ""
 
         when:
         fails ':checkDeps'
 
         then:
-        failure.assertHasCause "Unable to find a variant providing the requested capability 'org:lib-test-fixtures':"
+        failure.assertHasCause "Unable to find a variant of 'org:lib:1.0' with the requested capability: 'org:lib-test-fixtures':"
     }
 
     def "can substitute a dependency with capabilities with a dependency without capabilities"() {
@@ -214,7 +223,7 @@ class VariantsDependencySubstitutionRulesIntegrationTest extends AbstractIntegra
         buildFile << """
 
             repositories {
-               maven { url "${mavenRepo.uri}" }
+               maven { url = "${mavenRepo.uri}" }
             }
 
             configurations {
@@ -261,7 +270,7 @@ class VariantsDependencySubstitutionRulesIntegrationTest extends AbstractIntegra
         buildFile << """
 
             repositories {
-               maven { url "${mavenRepo.uri}" }
+               maven { url = "${mavenRepo.uri}" }
             }
 
             configurations {
@@ -285,7 +294,6 @@ class VariantsDependencySubstitutionRulesIntegrationTest extends AbstractIntegra
             }
         """
 
-        createDirs("other")
         settingsFile << """
             include 'other'
         """

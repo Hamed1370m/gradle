@@ -30,11 +30,15 @@ class ImportTest {
     fun testContext(): AnalysisContext {
         return AnalysisContext(
             DefaultAnalysisSchema(
-                DefaultDataClass(DefaultFqName("", ""), emptySet(), emptyList(), emptyList(), emptyList()),
+                DefaultDataClass(DefaultFqName("", ""), "", emptyList(), emptySet(), emptyList(), emptyList(), emptyList(), emptyList()),
                 emptyMap(),
                 emptyMap(),
                 emptyMap(),
-                emptySet()
+                emptyMap(),
+                emptyMap(),
+                emptyMap(),
+                emptySet(),
+                emptyMap()
             ),
             emptyMap(),
             errorCollector,
@@ -119,5 +123,5 @@ class ImportTest {
     val sourceIdentifier = SourceIdentifier("test")
 
     private
-    val mockSourceData = mockNode.sourceData(sourceIdentifier, "", 0)
+    val mockSourceData = mockNode.sourceData(sourceIdentifier, "")
 }

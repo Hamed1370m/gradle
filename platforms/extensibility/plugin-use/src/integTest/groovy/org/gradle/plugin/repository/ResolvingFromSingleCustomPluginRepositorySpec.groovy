@@ -24,7 +24,9 @@ import org.gradle.test.fixtures.maven.MavenFileRepository
 import org.gradle.test.fixtures.maven.MavenRepository
 import org.gradle.test.fixtures.plugin.PluginBuilder
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.TestEnvironmentPreconditions
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+
 
 @LeaksFileHandles
 class ResolvingFromSingleCustomPluginRepositorySpec extends AbstractDependencyResolutionTest {
@@ -58,7 +60,7 @@ class ResolvingFromSingleCustomPluginRepositorySpec extends AbstractDependencyRe
           pluginManagement {
             repositories {
               ${repo instanceof MavenRepository ? "maven" : "ivy"} {
-                  url "${PathType.ABSOLUTE.equals(pathType) ? repo.uri : repo.rootDir.name}"
+                  url = uri("${PathType.ABSOLUTE.equals(pathType) ? repo.uri : repo.rootDir.name}")
               }
             }
           }
@@ -117,6 +119,7 @@ class ResolvingFromSingleCustomPluginRepositorySpec extends AbstractDependencyRe
         repoType << [IVY, MAVEN]
     }
 
+    @ToBeFixedForIsolatedProjects(because = "plugin repository cross-project")
     def "can apply plugin from #repoType repo to subprojects"() {
         given:
         publishTestPlugin(repoType)
@@ -163,7 +166,7 @@ class ResolvingFromSingleCustomPluginRepositorySpec extends AbstractDependencyRe
         repoType << [IVY, MAVEN]
     }
 
-    @Requires(UnitTestPreconditions.Online)
+    @Requires(TestEnvironmentPreconditions.Online)
     def "Fails gracefully if a plugin is not found in #repoType repo"() {
         given:
         publishTestPlugin(repoType)
@@ -236,7 +239,7 @@ class ResolvingFromSingleCustomPluginRepositorySpec extends AbstractDependencyRe
           pluginManagement {
             repositories {
                 maven {
-                  url "${mavenRepo.uri}"
+                  url = uri("${mavenRepo.uri}")
                 }
             }
           }
@@ -257,7 +260,7 @@ class ResolvingFromSingleCustomPluginRepositorySpec extends AbstractDependencyRe
           buildscript {
             repositories {
                 maven {
-                    url '${new MavenFileRepository(file("other-repo")).uri}'
+                    url = file("${new MavenFileRepository(file("other-repo")).uri}")
                 }
             }
           }
@@ -326,7 +329,7 @@ class ResolvingFromSingleCustomPluginRepositorySpec extends AbstractDependencyRe
             pluginManagement {
                 repositories {
                     maven {
-                        url '${mavenRepo.uri}'
+                        url = uri("${mavenRepo.uri}")
                     }
                 }
             }

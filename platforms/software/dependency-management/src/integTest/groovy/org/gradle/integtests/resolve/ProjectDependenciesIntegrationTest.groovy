@@ -19,7 +19,6 @@
 package org.gradle.integtests.resolve
 
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.extensions.FluidDependenciesResolveTest
 import spock.lang.Issue
 
@@ -28,7 +27,6 @@ class ProjectDependenciesIntegrationTest extends AbstractDependencyResolutionTes
 
     @Issue("GRADLE-2477") //this is a feature on its own but also covers one of the reported issues
     def "resolving project dependency triggers configuration of the target project"() {
-        createDirs("impl")
         settingsFile << "include 'impl'"
         buildFile << """
             apply plugin: 'java'
@@ -37,7 +35,7 @@ class ProjectDependenciesIntegrationTest extends AbstractDependencyResolutionTes
             }
             repositories {
                 //resolving project must declare the repo
-                maven { url '${mavenRepo.uri}' }
+                maven { url = '${mavenRepo.uri}' }
             }
             println "Resolved at configuration time: " + configurations.runtimeClasspath.files*.name
         """
@@ -57,46 +55,100 @@ class ProjectDependenciesIntegrationTest extends AbstractDependencyResolutionTes
         outputContains "Resolved at configuration time: [impl.jar, foo-1.0.jar]"
     }
 
-    @ToBeFixedForConfigurationCache(because = "task uses dependencies API")
-    def "configuring project dependencies by map is validated"() {
-        createDirs("impl")
-        settingsFile << "include 'impl'"
+    def "configuring project dependencies by map is validated for #description"() {
+        given:
+        settingsFile("include 'impl'")
+        buildFile("""
+            configurations {
+                def deps = dependencyScope('deps')
+                resolvable('conf') {
+                    extendsFrom(deps)
+                }
+            }
+
+            dependencies {
+                deps($declaration)
+            }
+        """)
+        buildFile("impl/build.gradle", """
+            configurations.create('conf')
+        """)
+
+        when:
+        if (expectedFailure) {
+            runAndFail("dependencies")
+        } else {
+            succeeds("dependencies")
+        }
+
+        then:
+        if (expectedFailure) {
+            failureHasCause(expectedFailure)
+        }
+
+       where:
+       description              || declaration                                                      || expectedFailure
+       "extraKey"               || 'project(path: ":impl", configuration: ":conf", foo: "bar")'     || "Could not set unknown property 'foo' for "
+       "missingConfiguration"   || 'project(path: ":impl")'                                         || null
+       "missingPath"            || 'project(paths: ":impl", configuration: ":conf")'                || "Required keys [path] are missing from map"
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/34692")
+    def "throws UnknownProjectException when creating project dependency from map with unknown project"() {
+        buildFile("""
+            configurations.dependencyScope("deps")
+            dependencies {
+                try {
+                    deps(project(path: "unknown"))
+                } catch (Exception e) {
+                    assert e instanceof UnknownProjectException
+                    throw e
+                }
+            }
+        """)
+
+        when:
+        fails("help")
+
+        then:
+        failure.assertHasCause("Project with path ':unknown' could not be found.")
+    }
+
+    def "can declare project dependency using project path string"() {
+        settingsFile << "include 'sub'"
+        file("sub/build.gradle") << """
+            apply plugin: 'java-library'
+        """
         buildFile << """
-            allprojects { configurations.create('conf') }
-            task extraKey {
-                doLast {
-                    dependencies.project(path: ":impl", configuration: ":conf", foo: "bar")
-                }
-            }
-            task missingPath {
-                doLast {
-                    dependencies.project(paths: ":impl", configuration: ":conf")
-                }
-            }
-            task missingConfiguration {
-                doLast {
-                    dependencies.project(path: ":impl")
-                }
+            apply plugin: 'java-library'
+            dependencies {
+                implementation project(':sub')
             }
         """
 
-        when:
-        runAndFail("extraKey")
+        expect:
+        succeeds 'dependencies', '--configuration', 'compileClasspath'
+        outputContains "project ':sub'"
+    }
 
-        then:
-        failureHasCause("Could not set unknown property 'foo' for ")
+    def "can declare project dependency on root project using project path string"() {
+        settingsFile << """
+            rootProject.name = 'root'
+            include 'sub'
+        """
+        file("sub/build.gradle") << """
+            apply plugin: 'java-library'
+            dependencies {
+                implementation project(':')
+            }
+        """
+        buildFile << """
+            apply plugin: 'java-library'
+        """
 
-        when:
-        run("missingConfiguration")
-
-        then:
-        noExceptionThrown()
-
-        when:
-        runAndFail("missingPath")
-
-        then:
-        failureHasCause("Required keys [path] are missing from map")
+        expect:
+        succeeds 'sub:dependencies', '--configuration', 'compileClasspath'
+        outputContains "root project 'root'"
     }
 
     def "can add constraint on root project"() {
@@ -108,12 +160,12 @@ class ProjectDependenciesIntegrationTest extends AbstractDependencyResolutionTes
                 resolvable("res")  {
                     extendsFrom(deps)
                     attributes {
-                        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, "foo"))
+                        attribute(Category.CATEGORY_ATTRIBUTE, named(Category, "foo"))
                     }
                 }
                 consumable("cons") {
                     attributes {
-                        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, "foo"))
+                        attribute(Category.CATEGORY_ATTRIBUTE, named(Category, "foo"))
                     }
                 }
             }
@@ -131,12 +183,13 @@ class ProjectDependenciesIntegrationTest extends AbstractDependencyResolutionTes
             task resolve {
                 def files = configurations.res
                 doLast {
-                    assert files*.name == ["foo-1.0.jar"]
+                    println files*.name
                 }
             }
         """
 
         expect:
         succeeds("resolve")
+        outputContains("[foo-1.0.jar]")
     }
 }

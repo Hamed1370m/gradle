@@ -28,8 +28,10 @@ import org.gradle.api.internal.GradleInternal
 import org.gradle.api.internal.MutationGuard
 import org.gradle.api.internal.SettingsInternal
 import org.gradle.api.internal.StartParameterInternal
+import org.gradle.api.internal.artifacts.DefaultBuildIdentifier
 import org.gradle.api.internal.file.FileResolver
 import org.gradle.api.internal.project.CrossProjectConfigurator
+import org.gradle.api.internal.project.CrossBuildModelAccess
 import org.gradle.api.internal.project.CrossProjectModelAccess
 import org.gradle.api.internal.project.LifecycleAwareProject
 import org.gradle.api.internal.project.ProjectInternal
@@ -40,6 +42,8 @@ import org.gradle.configuration.internal.TestListenerBuildOperationDecorator
 import org.gradle.execution.taskgraph.TaskExecutionGraphInternal
 import org.gradle.initialization.ClassLoaderScopeRegistry
 import org.gradle.initialization.SettingsState
+import org.gradle.internal.Describables
+import org.gradle.internal.build.BuildState
 import org.gradle.internal.build.DefaultPublicBuildPath
 import org.gradle.internal.build.PublicBuildPath
 import org.gradle.internal.enterprise.core.GradleEnterprisePluginManager
@@ -54,7 +58,6 @@ import org.gradle.internal.operations.TestBuildOperationRunner
 import org.gradle.internal.reflect.Instantiator
 import org.gradle.internal.service.ServiceRegistry
 import org.gradle.internal.service.scopes.Scope
-import org.gradle.internal.service.scopes.ServiceRegistryFactory
 import org.gradle.model.internal.registry.ModelRegistry
 import org.gradle.util.GradleVersion
 import org.gradle.util.Path
@@ -62,9 +65,9 @@ import org.gradle.util.TestUtil
 import spock.lang.Specification
 
 class DefaultGradleSpec extends Specification {
-    ServiceRegistryFactory serviceRegistryFactory = Stub(ServiceRegistryFactory)
     ListenerManager listenerManager = Spy(TestListenerManager)
 
+    BuildState build = Mock(BuildState)
     StartParameterInternal parameter = new StartParameterInternal()
     CurrentGradleInstallation currentGradleInstallation = Mock(CurrentGradleInstallation)
     BuildOperationRunner buildOperationRunner = new TestBuildOperationRunner()
@@ -78,7 +81,6 @@ class DefaultGradleSpec extends Specification {
 
     def setup() {
         def serviceRegistry = Stub(ServiceRegistry)
-        _ * serviceRegistryFactory.createFor(_) >> serviceRegistry
         _ * serviceRegistry.get(ClassLoaderScopeRegistry) >> Mock(ClassLoaderScopeRegistry)
         _ * serviceRegistry.get(FileResolver) >> Mock(FileResolver)
         _ * serviceRegistry.get(ScriptHandler) >> Mock(ScriptHandler)
@@ -92,6 +94,7 @@ class DefaultGradleSpec extends Specification {
         _ * serviceRegistry.get(ListenerBuildOperationDecorator) >> listenerBuildOperationDecorator
         _ * serviceRegistry.get(CrossProjectConfigurator) >> crossProjectConfigurator
         _ * serviceRegistry.get(CrossProjectModelAccess) >> Stub(CrossProjectModelAccess)
+        _ * serviceRegistry.get(CrossBuildModelAccess) >> Stub(CrossBuildModelAccess)
         _ * serviceRegistry.get(PublicBuildPath) >> new DefaultPublicBuildPath(Path.ROOT)
         _ * serviceRegistry.get(DependencyResolutionManagementInternal) >> Stub(DependencyResolutionManagementInternal)
         _ * serviceRegistry.get(GradleEnterprisePluginManager) >> new GradleEnterprisePluginManager()
@@ -104,7 +107,7 @@ class DefaultGradleSpec extends Specification {
             }
         }
 
-        gradle = TestUtil.instantiatorFactory().decorateLenient().newInstance(DefaultGradle.class, null, parameter, serviceRegistryFactory)
+        gradle = TestUtil.instantiatorFactory().decorateLenient().newInstance(DefaultGradle.class, build, parameter, serviceRegistry)
     }
 
     def "uses gradle version"() {
@@ -329,6 +332,10 @@ class DefaultGradleSpec extends Specification {
     }
 
     def "get settings throws exception when settings is not available"() {
+        given:
+        // Allow toString() to work
+        _ * build.getDisplayName() >> Describables.of(new DefaultBuildIdentifier(Path.ROOT))
+
         when:
         gradle.settings
 
@@ -374,6 +381,16 @@ class DefaultGradleSpec extends Specification {
     }
 
     def "get root project throws exception when root project is not available"() {
+        given:
+        def rootProjectState = projectState('root')
+        def rootProjectAvailable = false
+        _ * build.getRootProject() >> {
+            if (!rootProjectAvailable) {
+                throw new IllegalStateException("Projects are not yet loaded.")
+            }
+            return rootProjectState
+        }
+
         when:
         gradle.rootProject
 
@@ -381,18 +398,18 @@ class DefaultGradleSpec extends Specification {
         thrown IllegalStateException
 
         when:
-        def rootProject = project('root')
-        gradle.rootProject = rootProject
+        rootProjectAvailable = true
 
         then:
-        gradle.rootProject == rootProject
+        gradle.rootProject == rootProjectState.mutableModel
     }
 
     def "root project action is executed when projects are loaded"() {
         given:
         def action = Mock(Action)
-        def rootProject = project('root')
-        gradle.rootProject = rootProject
+        def rootProjectState = projectState('root')
+        def rootProject = rootProjectState.mutableModel
+        _ * build.getRootProject() >> rootProjectState
 
         when:
         gradle.rootProject(action)
@@ -404,7 +421,7 @@ class DefaultGradleSpec extends Specification {
         gradle.buildListenerBroadcaster.projectsLoaded(gradle)
 
         then:
-        1 * crossProjectConfigurator.rootProject(project(), _) >> { p, a ->
+        1 * crossProjectConfigurator.rootProject(rootProject, _) >> { p, a ->
             a.execute(p)
         }
         1 * action.execute(rootProject)
@@ -413,8 +430,9 @@ class DefaultGradleSpec extends Specification {
     def "allprojects action is executed when projects are loaded"() {
         given:
         def action = Mock(Action)
-        def rootProject = project('root')
-        gradle.rootProject = rootProject
+        def rootProjectState = projectState('root')
+        def rootProject = rootProjectState.mutableModel
+        _ * build.getRootProject() >> rootProjectState
 
         when:
         gradle.allprojects(action)
@@ -426,21 +444,21 @@ class DefaultGradleSpec extends Specification {
         gradle.buildListenerBroadcaster.projectsLoaded(gradle)
 
         then:
-        1 * crossProjectConfigurator.rootProject(project(), _) >> { p, a ->
+        1 * crossProjectConfigurator.rootProject(rootProject, _) >> { p, a ->
             a.execute(p)
         }
         1 * rootProject.allprojects(action)
     }
 
     def "has toString()"() {
+        given:
+        _ * build.getDisplayName() >> Describables.of(new DefaultBuildIdentifier(identityPath))
+
         expect:
-        gradle.toString() == 'build'
+        gradle.toString() == "build '$identityPath'"
 
-        when:
-        gradle.rootProject = project('rootProject')
-
-        then:
-        gradle.toString() == "build 'rootProject'"
+        where:
+        identityPath << [Path.ROOT, Path.path(":buildB")]
     }
 
     @SuppressWarnings("deprecation")
@@ -480,6 +498,16 @@ class DefaultGradleSpec extends Specification {
         def project = Mock(ProjectInternal)
         _ * project.name >> name
         return project
+    }
+
+    private org.gradle.api.internal.project.ProjectState projectState(String name) {
+        def project = project(name)
+        def state = Mock(org.gradle.api.internal.project.ProjectState)
+        _ * state.name >> name
+        _ * state.mutableModel >> project
+        _ * state.applyToMutableState(_) >> { java.util.function.Consumer c -> c.accept(project) }
+        _ * state.runWithModelLock(_) >> { java.util.function.Supplier s -> s.get() }
+        return state
     }
 
     static class TestListenerManager extends DefaultListenerManager {

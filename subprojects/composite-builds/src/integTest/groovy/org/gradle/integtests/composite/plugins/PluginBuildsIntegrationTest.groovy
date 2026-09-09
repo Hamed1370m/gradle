@@ -16,6 +16,7 @@
 
 package org.gradle.integtests.composite.plugins
 
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.resolve.ResolveFailureTestFixture
 
 class PluginBuildsIntegrationTest extends AbstractPluginBuildIntegrationTest {
@@ -105,7 +106,7 @@ class PluginBuildsIntegrationTest extends AbstractPluginBuildIntegrationTest {
         def repoDeclaration = """
             repositories {
                 maven {
-                    url("${mavenRepo.uri}")
+                    url = "${mavenRepo.uri}"
                 }
             }
         """
@@ -133,7 +134,7 @@ class PluginBuildsIntegrationTest extends AbstractPluginBuildIntegrationTest {
         def repoDeclaration = """
             repositories {
                 maven {
-                    url("${mavenRepo.uri}")
+                    url = "${mavenRepo.uri}"
                 }
             }
         """
@@ -161,7 +162,7 @@ class PluginBuildsIntegrationTest extends AbstractPluginBuildIntegrationTest {
         def repoDeclaration = """
             repositories {
                 maven {
-                    url("${mavenRepo.uri}")
+                    url = "${mavenRepo.uri}"
                 }
             }
         """
@@ -189,7 +190,7 @@ class PluginBuildsIntegrationTest extends AbstractPluginBuildIntegrationTest {
         def repoDeclaration = """
             repositories {
                 maven {
-                    url("${mavenRepo.uri}")
+                    url = "${mavenRepo.uri}"
                 }
             }
         """
@@ -219,7 +220,7 @@ class PluginBuildsIntegrationTest extends AbstractPluginBuildIntegrationTest {
         def repoDeclaration = """
             repositories {
                 maven {
-                    url("${mavenRepo.uri}")
+                    url = "${mavenRepo.uri}"
                 }
             }
         """
@@ -249,7 +250,7 @@ class PluginBuildsIntegrationTest extends AbstractPluginBuildIntegrationTest {
         def repoDeclaration = """
             repositories {
                 maven {
-                    url("${mavenRepo.uri}")
+                    url = "${mavenRepo.uri}"
                 }
             }
         """
@@ -350,6 +351,7 @@ class PluginBuildsIntegrationTest extends AbstractPluginBuildIntegrationTest {
         build.assertProjectPluginApplied()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
     def "Including a build as both plugin build and regular build does not lead to an error in the presence of include cycles"() {
         given:
         def commonsPluginBuild = pluginBuild("commons-plugin-build", dsl == 'Kotlin')
@@ -573,6 +575,7 @@ class PluginBuildsIntegrationTest extends AbstractPluginBuildIntegrationTest {
         projectPluginBuild.assertProjectPluginApplied()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "plugin composite-build configuration")
     def "plugin builds can include each other without consequences"() {
         given:
         def settingsPluginBuild = pluginBuild("settings-plugin", dsl == 'Kotlin')

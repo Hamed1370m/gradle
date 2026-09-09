@@ -16,9 +16,12 @@
 
 package org.gradle.smoketests
 
-import org.gradle.api.JavaVersion
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.versions.KotlinGradlePluginVersions
+import org.gradle.util.GradleVersion
 import org.gradle.util.internal.VersionNumber
+import org.junit.jupiter.api.Assumptions
 import spock.lang.Issue
 
 import static org.gradle.testkit.runner.TaskOutcome.SUCCESS
@@ -34,10 +37,23 @@ class KotlinMultiplatformPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
 
         def kotlinVersionNumber = VersionNumber.parse(kotlinVersion)
         replaceVariablesInBuildFile(kotlinVersion: kotlinVersion)
-        replaceCssSupportBlocksInBuildFile(kotlinVersionNumber)
+        replaceCssSupportBlocksInBuildFile()
 
         when:
-        def result = kgpRunner(false, kotlinVersionNumber, ':tasks').build()
+        def result = kgpRunner(kotlinVersionNumber, ':tasks')
+            .expectLegacyDeprecationWarningIf(
+                kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_1_21,
+                "Declaring an 'is-' property with a Boolean type has been deprecated. Starting with Gradle 9.0, this property will be ignored by Gradle. The combination of method name and return type is not consistent with Java Bean property rules and will become unsupported in future versions of Groovy. Add a method named 'getMpp' with the same behavior and mark the old one with @Deprecated, or change the type of 'org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrTarget.isMpp' (and the setter) to 'boolean'. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_8.html#groovy_boolean_properties",
+            )
+            .expectLegacyDeprecationWarningIf(
+                kotlinVersionNumber.baseVersion > KotlinGradlePluginVersions.KOTLIN_2_1_20 && kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_3_21,
+                "The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#sec:archives-configuration",
+            )
+            .expectLegacyDeprecationWarningIf(
+                kotlinVersionNumber.baseVersion >= KotlinGradlePluginVersions.KOTLIN_2_3_21 && kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_4_20,
+                "The Configuration.getTaskDependencyFromProjectDependency(boolean, String) method has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#deprecate_getTaskDependencyFromProjectDependency"
+            )
+            .build()
 
         then:
         result.task(':tasks').outcome == SUCCESS
@@ -46,21 +62,35 @@ class KotlinMultiplatformPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
         kotlinVersion << TestedVersions.kotlin.versions
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Kotlin accesses projects from tasks in task graph: https://github.com/JetBrains/kotlin/blob/d6383256f1addbe92344b932f7d278f42bfef5bb/libraries/tools/kotlin-gradle-plugin/src/common/kotlin/org/jetbrains/kotlin/compilerRunner/GradleKotlinCompilerRunner.kt#L304")
     def 'can run tests with kotlin multiplatform with js project (kotlin=#kotlinVersion)'() {
         given:
         withKotlinBuildFile()
         useSample("kotlin-multiplatform-js-jvm-example")
+        KotlinGradlePluginVersions.assumeCurrentJavaVersionIsSupportedBy(kotlinVersion)
 
         def kotlinVersionNumber = VersionNumber.parse(kotlinVersion)
         replaceVariablesInBuildFile(kotlinVersion: kotlinVersion)
-        replaceCssSupportBlocksInBuildFile(kotlinVersionNumber)
+        replaceCssSupportBlocksInBuildFile()
 
         when:
-        def result = kgpRunner(false, kotlinVersionNumber, ':allTests', '-s')
+        def result = kgpRunner(kotlinVersionNumber, ':allTests', '-s')
+            .expectLegacyDeprecationWarningIf(
+                kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_1_21,
+                "Declaring an 'is-' property with a Boolean type has been deprecated. Starting with Gradle 9.0, this property will be ignored by Gradle. The combination of method name and return type is not consistent with Java Bean property rules and will become unsupported in future versions of Groovy. Add a method named 'getMpp' with the same behavior and mark the old one with @Deprecated, or change the type of 'org.jetbrains.kotlin.gradle.targets.js.ir.KotlinJsIrTarget.isMpp' (and the setter) to 'boolean'. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_8.html#groovy_boolean_properties",
+            )
             .expectDeprecationWarningIf(
-                kotlinVersionNumber >= VersionNumber.parse('1.9.22') && kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_0_20,
+                kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_0_20,
                 "Internal API BuildOperationExecutor.getCurrentOperation() has been deprecated. This is scheduled to be removed in Gradle 9.0.",
                 "https://youtrack.jetbrains.com/issue/KT-67110"
+            )
+            .expectLegacyDeprecationWarningIf(
+                GradleContextualExecuter.notConfigCache && kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_1_20,
+                "Invocation of Task.project at execution time has been deprecated. This will fail with an error in Gradle 10. This API is incompatible with the configuration cache, which will become the only mode supported by Gradle in a future release. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_7.html#task_project"
+            )
+            .expectLegacyDeprecationWarningIf(
+                kotlinVersionNumber.baseVersion > KotlinGradlePluginVersions.KOTLIN_2_1_20 && kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_3_21,
+                "The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#sec:archives-configuration",
             )
             .build()
 
@@ -69,12 +99,8 @@ class KotlinMultiplatformPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
 
         where:
         kotlinVersion << TestedVersions.kotlin.versions.findAll {
-            def version = VersionNumber.parse(it)
-            // versions prior to 1.7.0 use the removed 'void org.gradle.api.reporting.DirectoryReport.setEnabled(boolean)' method
-            // 1.7.22 does not define implementation of the 'abstract void failure(java.lang.Object, org.gradle.api.tasks.testing.TestFailure)' of interface org.gradle.api.internal.tasks.testing.TestResultProcessor.
-            // versions prior to 2.0.0 don't support java 21
-            version > VersionNumber.parse('1.7.22') &&
-                (JavaVersion.current() < JavaVersion.VERSION_21 || version >= VersionNumber.parse('2.0.0-Beta1'))
+            // versions prior to 2.0.20 use deprecated APIs removed in Gradle 9.0
+            VersionNumber.parse(it) >= KotlinGradlePluginVersions.KOTLIN_2_0_20
         }
     }
 
@@ -102,7 +128,16 @@ class KotlinMultiplatformPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
         def kotlinVersionNumber = VersionNumber.parse(kotlinVersion)
 
         when:
-        def result = kgpRunner(false, kotlinVersionNumber, ':tasks').build()
+        def result = kgpRunner(kotlinVersionNumber, ':tasks')
+            .expectLegacyDeprecationWarningIf(
+                kotlinVersionNumber.baseVersion > KotlinGradlePluginVersions.KOTLIN_2_1_20 && kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_3_21,
+                "The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#sec:archives-configuration",
+            )
+            .expectLegacyDeprecationWarningIf(
+                kotlinVersionNumber.baseVersion >= KotlinGradlePluginVersions.KOTLIN_2_3_21 && kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_4_20,
+                "The Configuration.getTaskDependencyFromProjectDependency(boolean, String) method has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#deprecate_getTaskDependencyFromProjectDependency"
+            )
+            .build()
 
         then:
         result.task(':tasks').outcome == SUCCESS
@@ -115,6 +150,12 @@ class KotlinMultiplatformPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
     @Issue("https://github.com/gradle/gradle/issues/22952")
     def "kotlin project can consume kotlin multiplatform java project"() {
         given:
+        def kotlinVersionNumber = VersionNumber.parse(kotlinVersion)
+        if (GradleContextualExecuter.isolatedProjects) {
+            // KMP 2.0.21 and earlier are not compatible with IP
+            Assumptions.assumeTrue(kotlinVersionNumber > VersionNumber.parse("2.0.21"))
+        }
+
         buildFile << """
             plugins {
                 id 'org.jetbrains.kotlin.jvm' version '$kotlinVersion'
@@ -144,48 +185,70 @@ class KotlinMultiplatformPluginSmokeTest extends AbstractKotlinPluginSmokeTest {
 
             kotlin {
                 jvm {
-                    withJava()
+                    // Kotlin 2.1.20: Kotlin multiplatform plugin always configures Java sources compilation and 'withJava()' configuration is deprecated.
+                    ${if (kotlinVersionNumber.baseVersion < VersionNumber.parse("2.1.20")) { "withJava()" } else { "" }}
                 }
             }
         """
 
         when:
-        def kotlinVersionNumber = VersionNumber.parse(kotlinVersion)
-        def testRunner = kgpRunner(false, kotlinVersionNumber, ':resolve', '--stacktrace')
+        def testRunner = kgpRunner(kotlinVersionNumber, ':resolve', '--stacktrace')
+            .expectLegacyDeprecationWarningIf(
+                kotlinVersionNumber.baseVersion > KotlinGradlePluginVersions.KOTLIN_2_1_20 && kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_3_21,
+                "The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#sec:archives-configuration",
+            )
         def result = testRunner.build()
 
         then:
         result.output.contains("other-jvm.jar")
 
         where:
-        // withJava is incompatible pre 1.6.20 since it attempts to set the `archiveName` convention property on the Jar task.
-        kotlinVersion << TestedVersions.kotlin.versions.findAll { VersionNumber.parse(it) > VersionNumber.parse("1.6.10") }
+        kotlinVersion << TestedVersions.kotlin.versions
     }
 
     @Override
     Map<String, Versions> getPluginsToValidate() {
         [
-                'org.jetbrains.kotlin.multiplatform': TestedVersions.kotlin
+            'org.jetbrains.kotlin.multiplatform': TestedVersions.kotlin
         ]
     }
 
-    private void replaceCssSupportBlocksInBuildFile(VersionNumber kotlinVersionNumber) {
-        Map<String, String> replacementMap = [:]
-        if (kotlinVersionNumber >= VersionNumber.parse('1.8.0')) {
-            replacementMap['enableCssSupportNew'] = """
-            commonWebpackConfig {
-                cssSupport {
-                    enabled.set(true)
-                }
-            }
-            """
-            replacementMap['enableCssSupportOld'] = ''
-        } else {
-            replacementMap['enableCssSupportOld'] = """
-                    webpackConfig.cssSupport.enabled = true
-            """
-            replacementMap['enableCssSupportNew'] = ''
+    @Override
+    String getSubprojectExtensionAccess(String testedPluginId, String version) {
+        "kotlin {}"
+    }
+
+    @Override
+    List<String> getSubprojectExtensionDeprecations(String testedPluginId, String version) {
+        def kotlinVersionNumber = VersionNumber.parse(version)
+        def deprecations = [parentMethodInvocationDeprecation('kotlin')]
+        if (kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_3_20) {
+            // The Kotlin plugin calls the deprecated Configuration.setVisible(boolean) method until KT-78754 was fixed in Kotlin 2.3.20 / 2.4.0
+            deprecations << "The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#deprecate-visible-property".toString()
         }
+        if (kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_3_21) {
+            deprecations << "The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#sec:archives-configuration".toString()
+        }
+        // The KGP 2.0.x line declares an attribute of type KotlinNativeBundleArtifactsTypes,
+        // a plain enum that does not implement Named. Attribute.of allows this via a targeted
+        // compatibility exception and emits a KGP-specific deprecation warning. KGP 2.1.0+ no
+        // longer uses the plain enum, so the deprecation is expected only for the 2.0.x range.
+        if (kotlinVersionNumber.baseVersion >= KotlinGradlePluginVersions.KOTLIN_2_0_0 && kotlinVersionNumber.baseVersion < KotlinGradlePluginVersions.KOTLIN_2_1_0) {
+            deprecations << "Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum".toString()
+        }
+        return deprecations
+    }
+
+    private void replaceCssSupportBlocksInBuildFile() {
+        Map<String, String> replacementMap = [:]
+        replacementMap['enableCssSupportNew'] = """
+        commonWebpackConfig {
+            cssSupport {
+                enabled.set(true)
+            }
+        }
+        """
+        replacementMap['enableCssSupportOld'] = ''
 
         replaceVariablesInBuildFile(replacementMap)
     }

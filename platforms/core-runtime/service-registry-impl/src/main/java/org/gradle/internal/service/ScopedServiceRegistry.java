@@ -17,6 +17,7 @@
 package org.gradle.internal.service;
 
 import org.gradle.internal.service.scopes.Scope;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A registry validating that all registered services are annotated with a corresponding {@link Scope}.
@@ -25,16 +26,8 @@ class ScopedServiceRegistry extends DefaultServiceRegistry {
 
     public ScopedServiceRegistry(
         Class<? extends Scope> scope,
-        String displayName,
-        ServiceRegistry... parents
-    ) {
-        this(scope, false, displayName, parents);
-    }
-
-    public ScopedServiceRegistry(
-        Class<? extends Scope> scope,
         boolean strict,
-        String displayName,
+        @Nullable String displayName,
         ServiceRegistry... parents
     ) {
         super(displayName, parents);

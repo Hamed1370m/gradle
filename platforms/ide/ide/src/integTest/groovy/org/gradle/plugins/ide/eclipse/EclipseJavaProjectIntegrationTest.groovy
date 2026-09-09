@@ -15,11 +15,8 @@
  */
 package org.gradle.plugins.ide.eclipse
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
-
 class EclipseJavaProjectIntegrationTest extends AbstractEclipseIntegrationSpec {
 
-    @ToBeFixedForConfigurationCache
     def "generates default JRE container paths recognized by Eclipse"(String version, String expectedContainer) {
         settingsFile << "rootProject.name = 'java'"
         buildFile << """
@@ -29,6 +26,7 @@ class EclipseJavaProjectIntegrationTest extends AbstractEclipseIntegrationSpec {
         """
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run "eclipse"
 
         then:
@@ -49,7 +47,6 @@ class EclipseJavaProjectIntegrationTest extends AbstractEclipseIntegrationSpec {
         '1.10'  | 'JavaSE-10'
     }
 
-    @ToBeFixedForConfigurationCache
     def "generated JDT preferences have correct compiler version"(String version, String expectedVersion) {
         settingsFile << "rootProject.name = 'java'"
         buildFile << """
@@ -59,6 +56,7 @@ class EclipseJavaProjectIntegrationTest extends AbstractEclipseIntegrationSpec {
         """
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run "eclipse"
 
         then:
@@ -80,7 +78,6 @@ class EclipseJavaProjectIntegrationTest extends AbstractEclipseIntegrationSpec {
         '1.10'  | '10'
     }
 
-    @ToBeFixedForConfigurationCache
     def "generated JDT preferences have correct target platform version"(String version, String expectedVersion) {
         settingsFile << "rootProject.name = 'java'"
         buildFile << """
@@ -90,6 +87,7 @@ class EclipseJavaProjectIntegrationTest extends AbstractEclipseIntegrationSpec {
         """
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run "eclipse"
 
         then:

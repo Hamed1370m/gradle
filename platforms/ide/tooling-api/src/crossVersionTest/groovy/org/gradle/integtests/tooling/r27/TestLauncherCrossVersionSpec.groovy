@@ -27,7 +27,6 @@ import spock.lang.Timeout
 
 import static org.gradle.integtests.tooling.fixture.TextUtil.normaliseLineSeparators
 
-@TargetGradleVersion(">=3.0")
 @Timeout(120)
 class TestLauncherCrossVersionSpec extends TestLauncherSpec {
 
@@ -139,7 +138,7 @@ class TestLauncherCrossVersionSpec extends TestLauncherSpec {
         Test method util.TestUtil.someUtilMethod()"""
     }
 
-    @TargetGradleVersion(">=3.0 <8.4")
+    @TargetGradleVersion(">=4.0 <8.4")
     def "throws exception with meaningful error message on failing tests"() {
         setup:
         withFailingTest()
@@ -203,9 +202,9 @@ class TestLauncherCrossVersionSpec extends TestLauncherSpec {
         assertTestExecuted(className: "example.MyFailingTest", methodName: "fail2", task: ":secondTest")
         // because of --continue we get a different exception hierarchy
         def e = thrown(BuildException)
-        normaliseLineSeparators(e.cause.causes[0].cause.message) == "Execution failed for task ':secondTest'."
+        normaliseLineSeparators(e.cause.causes[0].cause.message).startsWith("Execution failed for task ':secondTest'")
         normaliseLineSeparators(e.cause.causes[0].cause.cause.message).startsWith "There were failing tests. See the report at:"
-        normaliseLineSeparators(e.cause.causes[1].cause.message) == "Execution failed for task ':test'."
+        normaliseLineSeparators(e.cause.causes[1].cause.message).startsWith("Execution failed for task ':test'")
         normaliseLineSeparators(e.cause.causes[1].cause.cause.message).startsWith "There were failing tests. See the report at:"
 
         when:
@@ -221,9 +220,9 @@ class TestLauncherCrossVersionSpec extends TestLauncherSpec {
         assertTestNotExecuted(className: "example.MyFailingTest", methodName: "fail2", task: ":test")
         assertTestNotExecuted(className: "example.MyFailingTest", methodName: "fail2", task: ":secondTest")
         e = thrown(BuildException)
-        normaliseLineSeparators(e.cause.causes[0].cause.message) == "Execution failed for task ':secondTest'."
+        normaliseLineSeparators(e.cause.causes[0].cause.message).startsWith("Execution failed for task ':secondTest'")
         normaliseLineSeparators(e.cause.causes[0].cause.cause.message).startsWith "There were failing tests. See the report at:"
-        normaliseLineSeparators(e.cause.causes[1].cause.message) == "Execution failed for task ':test'."
+        normaliseLineSeparators(e.cause.causes[1].cause.message).startsWith("Execution failed for task ':test'")
         normaliseLineSeparators(e.cause.causes[1].cause.cause.message).startsWith "There were failing tests. See the report at:"
     }
 

@@ -22,9 +22,10 @@ import org.gradle.nativeplatform.fixtures.app.SourceElement
 import org.gradle.nativeplatform.fixtures.app.Swift3
 import org.gradle.nativeplatform.fixtures.app.Swift4
 import org.gradle.nativeplatform.fixtures.app.Swift5
+import org.gradle.nativeplatform.fixtures.app.Swift6
 import org.gradle.util.Matchers
 
-@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5_OR_OLDER)
+@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC)
 abstract class AbstractSwiftIntegrationTest extends AbstractSwiftComponentIntegrationTest {
     def "skip assemble tasks when no source"() {
         given:
@@ -32,7 +33,7 @@ abstract class AbstractSwiftIntegrationTest extends AbstractSwiftComponentIntegr
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(tasksToAssembleDevelopmentBinary, ":assemble")
+        result.assertTasksScheduled(tasksToAssembleDevelopmentBinary, ":assemble")
         // TODO - should skip the task as NO-SOURCE
         result.assertTasksSkipped(tasksToAssembleDevelopmentBinary, ":assemble")
     }
@@ -46,7 +47,7 @@ abstract class AbstractSwiftIntegrationTest extends AbstractSwiftComponentIntegr
 
         expect:
         fails "assemble"
-        failure.assertHasDescription("Execution failed for task '$developmentBinaryCompileTask'.")
+        failure.assertHasDescription("Execution failed for task '$developmentBinaryCompileTask' (registered by plugin class 'org.gradle.language.swift.plugins.SwiftBasePlugin').")
         failure.assertHasCause("A build operation failed.")
         failure.assertThatCause(Matchers.containsText("Swift compiler failed while compiling swift file(s)"))
     }
@@ -67,7 +68,7 @@ abstract class AbstractSwiftIntegrationTest extends AbstractSwiftComponentIntegr
 
         expect:
         succeeds taskNameToAssembleDevelopmentBinary
-        result.assertTasksExecutedAndNotSkipped getTasksToAssembleDevelopmentBinary(currentOsFamilyName.toLowerCase()), ":${taskNameToAssembleDevelopmentBinary}"
+        result.assertTasksExecuted getTasksToAssembleDevelopmentBinary(currentOsFamilyName.toLowerCase()), ":${taskNameToAssembleDevelopmentBinary}"
     }
 
     // TODO Move this to AbstractSwiftComponentIntegrationTest when xcode test works properly with architecture
@@ -127,6 +128,11 @@ abstract class AbstractSwiftIntegrationTest extends AbstractSwiftComponentIntegr
     @Override
     SourceElement getSwift5Component() {
         return new Swift5('project')
+    }
+
+    @Override
+    SourceElement getSwift6Component() {
+        return new Swift6('project')
     }
 
     @Override

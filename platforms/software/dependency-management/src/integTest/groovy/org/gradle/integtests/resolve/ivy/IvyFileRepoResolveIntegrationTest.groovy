@@ -30,7 +30,7 @@ class IvyFileRepoResolveIntegrationTest extends AbstractDependencyResolutionTest
         buildFile << """
 repositories {
     ivy {
-        artifactPattern "${repo.uri}/[organisation]/[module]/[revision]/[artifact]-[revision].[ext]"
+        artifactPattern("${repo.uri}/[organisation]/[module]/[revision]/[artifact]-[revision].[ext]")
     }
 }
 configurations { compile }
@@ -68,7 +68,7 @@ task retrieve(type: Sync) {
         buildFile << """
 repositories {
     ivy {
-        artifactPattern "${repo.uri}/[organisation]/[module]/[revision]/[artifact]-[revision].[ext]"
+        artifactPattern("${repo.uri}/[organisation]/[module]/[revision]/[artifact]-[revision].[ext]")
     }
 }
 
@@ -77,9 +77,11 @@ configurations {
 }
 
 dependencies {
-    compile group: "group", name: "projectA", version: "1.+"
-    compile group: "group", name: "projectB", version: "latest.integration"
-    compile group: "group", name: "projectC", version: "1.0", changing: true
+    compile("group:projectA:1.+")
+    compile("group:projectB:latest.integration")
+    compile("group:projectC:1.0") {
+        changing = true
+    }
 }
 
 task retrieve(type: Sync) {
@@ -132,7 +134,7 @@ task retrieve(type: Sync) {
         buildFile << """
 repositories {
     ivy {
-        url "${ivyRepo().uri}"
+        url = "${ivyRepo().uri}"
         authentication {
             auth(BasicAuthentication)
         }
@@ -151,5 +153,40 @@ task retrieve(type: Sync) {
         fails 'retrieve'
         and:
         failure.assertHasCause("Authentication scheme 'auth'(BasicAuthentication) is not supported by protocol 'file'")
+    }
+
+    def "can use projectDir as baseUrl in artifactPattern and ivyPattern"() {
+        given:
+        def repo = ivyRepo(".")
+        def moduleA = repo.module('group', 'projectA', '1.2')
+        moduleA.publish()
+        buildFile << """
+            repositories {
+                ivy {
+                    artifactPattern('[organisation]/[module]/[revision]/[artifact]-[revision].[ext]') // note: empty baseUrl
+                    ivyPattern('[organisation]/ivy-[module]-[revision].xml') // note: empty baseUrl
+                    metadataSources {
+                        gradleMetadata()
+                        ivyDescriptor()
+                        artifact()
+                    }
+                }
+            }
+            configurations { compile }
+            dependencies {
+                compile 'group:projectA:1.2'
+            }
+            task retrieve(type: Sync) {
+                from configurations.compile
+                into 'libs'
+            }
+        """
+
+        when:
+        succeeds("retrieve")
+
+        then:
+        file('libs').assertHasDescendants('projectA-1.2.jar')
+        file('libs/projectA-1.2.jar').assertIsCopyOf(moduleA.jarFile)
     }
 }

@@ -17,8 +17,8 @@ package org.gradle.testfixtures;
 
 import org.gradle.api.Project;
 import org.gradle.testfixtures.internal.ProjectBuilderImpl;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 
 /**
@@ -42,24 +42,27 @@ import java.io.File;
  * <p>The {@code ProjectBuilder} implementation bundled with Gradle 3.0 and 3.1 suffers from a
  * binary compatibility issue exposed by applying plugins compiled with Gradle 2.7 and earlier.
  * Applying those pre-compiled plugins in a ProjectBuilder context will result in a {@link ClassNotFoundException}.</p>
+ * @since 0.9
  */
 public class ProjectBuilder {
 
-    private File projectDir;
-    private File gradleUserHomeDir;
     private String name = "test";
-    private Project parent;
+    private @Nullable File projectDir;
+    private @Nullable File gradleUserHomeDir;
+    private @Nullable Project parent;
     private final ProjectBuilderImpl impl = new ProjectBuilderImpl();
 
     /**
      * An instance should only be created via the {@link #builder()}.
+     * @since 0.9
      */
-    private ProjectBuilder() { }
+    private ProjectBuilder() {}
 
     /**
      * Creates a project builder.
      *
      * @return The builder
+     * @since 0.9
      */
     public static ProjectBuilder builder() {
         return new ProjectBuilder();
@@ -70,6 +73,7 @@ public class ProjectBuilder {
      *
      * @param dir The project directory
      * @return The builder
+     * @since 0.9
      */
     public ProjectBuilder withProjectDir(@Nullable File dir) {
         projectDir = dir;
@@ -81,6 +85,7 @@ public class ProjectBuilder {
      * will be used.
      *
      * @return The builder
+     * @since 3.0
      */
     public ProjectBuilder withGradleUserHomeDir(@Nullable File dir) {
         gradleUserHomeDir = dir;
@@ -92,6 +97,7 @@ public class ProjectBuilder {
      *
      * @param name project name
      * @return The builder
+     * @since 1.0
      */
     public ProjectBuilder withName(String name) {
         this.name = name;
@@ -103,6 +109,7 @@ public class ProjectBuilder {
      *
      * @param parent parent project
      * @return The builder
+     * @since 1.0
      */
     public ProjectBuilder withParent(@Nullable Project parent) {
         this.parent = parent;
@@ -113,6 +120,7 @@ public class ProjectBuilder {
      * Creates the project.
      *
      * @return The project
+     * @since 0.9
      */
     public Project build() {
         if (parent != null) {

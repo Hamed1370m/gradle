@@ -37,14 +37,12 @@ class CompositeBuildIncludesMultiProjectProjectDependencyConflictResolutionInteg
 
     def setup() {
         buildTestFixture.withBuildInSubDir()
-        multiProject = buildTestFixture.populate('multiProject') {
-            buildFile << checkHelper(buildId, projectPath)
-        }
+        multiProject = buildTestFixture.populate('multiProject')
         super.settingsFile << "includeBuild 'multiProject'\n";
     }
 
     @Override
-    protected TestFile getSettingsFile() {
+    TestFile getSettingsFile() {
         return multiProject.settingsFile;
     }
 
@@ -55,7 +53,7 @@ class CompositeBuildIncludesMultiProjectProjectDependencyConflictResolutionInteg
 
     @Override
     String getBuildId() {
-        "((${ProjectInternal.name}) project).getServices().get(${BuildState.name}.class).getBuildIdentifier()"
+        "((${ProjectInternal.name}) project).getServices().get(${BuildState.name}.class).getIdentityPath()"
     }
 
     @Override
@@ -80,13 +78,12 @@ class CompositeBuildIncludesMultiProjectProjectDependencyConflictResolutionInteg
 
     @Override
     void moduleDefinition(String name, String definition) {
-        multiProject.buildFile << "project(':$name') {"
-        multiProject.buildFile << definition
-        multiProject.buildFile << "}"
+        multiProject.project(name).buildFile(definition)
     }
 
     @Override
     boolean isAutoDependencySubstitution() {
         true
     }
+
 }

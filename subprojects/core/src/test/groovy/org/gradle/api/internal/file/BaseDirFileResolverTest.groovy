@@ -19,6 +19,9 @@ import org.gradle.api.InvalidUserDataException
 import org.gradle.api.PathValidation
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.test.precondition.PreconditionVerifier
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -156,19 +159,14 @@ class BaseDirFileResolverTest {
 
     @Test public void testResolveRelativeFileURI() {
         // Relative URIs were never supported when passed as a URI. They were only supported when passed as a String.
-        def ex = assertThrows(InvalidUserDataException, {
-            baseDirConverter.resolve(URI.create('file:relative'))
-        })
-        assertThat(ex.message, equalTo('Cannot convert URL \'file:relative\' to a file.'))
-        ex = assertThrows(InvalidUserDataException, {
-            baseDirConverter.resolve(URI.create('file:../relative'))
-        })
-        assertThat(ex.message, equalTo('Cannot convert URL \'file:../relative\' to a file.'))
+        assertInvalidURI(URI.create('file:relative'))
+        assertInvalidURI(URI.create('file:../relative'))
     }
 
     @Test public void testResolveRelativeFileURIString() {
-        assertEquals(new File(baseDir, 'relative'), baseDirConverter.resolve('file:relative'))
-        assertEquals(new File(baseDir.parentFile, 'relative'), baseDirConverter.resolve('file:../relative'))
+        // since 9.0 we don't support relative URIs
+        assertInvalidURI('file:relative')
+        assertInvalidURI('file:../relative')
     }
 
     @Test public void testResolveAbsoluteFileURIString() {
@@ -194,10 +192,11 @@ class BaseDirFileResolverTest {
     }
 
     @Test public void testResolveURIStringWithEncodedAndReservedCharacters() {
-        assertEquals(new File(baseDir, 'white space'), baseDirConverter.resolve('file:white%20space'))
-        assertEquals(new File(baseDir, 'not%encoded'), baseDirConverter.resolve('file:not%encoded'))
-        assertEquals(new File(baseDir, 'bad%1'), baseDirConverter.resolve('file:bad%1'))
-        assertEquals(new File(baseDir, 'white space'), baseDirConverter.resolve('file:white space'))
+        // since Gradle 9.0 we don't support encoded URIs in strings
+        assertInvalidURI('file:white%20space')
+        assertInvalidURI('file:not%encoded')
+        assertInvalidURI('file:bad%1')
+        assertInvalidURI('file:white space')
     }
 
     @Test public void testResolveURIWithReservedCharacters() {
@@ -210,13 +209,16 @@ class BaseDirFileResolverTest {
         assertEquals(absoluteFile, baseDirConverter.resolve(absoluteFile.toURI().toURL()))
     }
 
-    @Test public void testCannotResolveNonFileURI() {
-        try {
-            baseDirConverter.resolve("http://www.gradle.org")
-            fail()
-        } catch (InvalidUserDataException e) {
-            assertThat(e.message, equalTo('Cannot convert URL \'http://www.gradle.org\' to a file.'))
-        }
+    @Requires(OsTestPreconditions.NotWindows) // NTFS does not support colons in file names
+    @Test public void testCanResolveNonFileURI() {
+        // this can be a valid path
+        // % mkdir https:
+        // % echo "some text" > 'https://www.gradle.org'
+        // % cat 'https://www.gradle.org'
+        // some text
+        String path = "https://www.gradle.org"
+        File absoluteFile = new File(baseDir, path).canonicalFile
+        assertEquals(absoluteFile, baseDirConverter.resolve(path))
     }
 
     @Test public void testResolveClosure() {
@@ -253,16 +255,16 @@ class BaseDirFileResolverTest {
     }
 
     @Test public void testResolveUriStringToUri() {
-        assertEquals(new URI("http://www.gradle.org"), baseDirConverter.resolveUri("http://www.gradle.org"))
+        assertEquals(new URI("https://www.gradle.org"), baseDirConverter.resolveUri("https://www.gradle.org"))
     }
 
     @Test public void testResolveUriObjectToUri() {
-        URI uri = new URI("http://www.gradle.org")
+        URI uri = new URI("https://www.gradle.org")
         assertEquals(uri, baseDirConverter.resolveUri(uri))
     }
 
     @Test public void testResolveUrlObjectToUri() {
-        assertEquals(new URI("http://www.gradle.org"), baseDirConverter.resolveUri(new URL("http://www.gradle.org")))
+        assertEquals(new URI("https://www.gradle.org"), baseDirConverter.resolveUri(new URL("https://www.gradle.org")))
     }
 
     @Test public void testResolveAbsolutePathWithReservedCharsToUri() {
@@ -271,7 +273,7 @@ class BaseDirFileResolverTest {
     }
 
     @Test public void testResolveUriStringWithEncodedCharsToUri() {
-        assertEquals(new URI("http://www.gradle.org/white%20space"), baseDirConverter.resolveUri("http://www.gradle.org/white%20space"))
+        assertEquals(new URI("https://www.gradle.org/white%20space"), baseDirConverter.resolveUri("https://www.gradle.org/white%20space"))
     }
 
     @Test public void testResolveRelativePathToRelativePath() {
@@ -339,5 +341,12 @@ class BaseDirFileResolverTest {
     @Test public void testCreateFileResolver() {
         File newBaseDir = new File(baseDir, 'subdir')
         assertEquals(new File(newBaseDir, 'file'), baseDirConverter.withBaseDir('subdir').resolve('file'))
+    }
+
+    private def assertInvalidURI(Object input, String representation = input.toString()) {
+        def ex = assertThrows(InvalidUserDataException, {
+            baseDirConverter.resolve(input)
+        })
+        assertThat(ex.message, equalTo("Cannot convert URI '$representation' to a file.".toString()))
     }
 }

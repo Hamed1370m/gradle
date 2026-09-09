@@ -28,9 +28,8 @@ import org.gradle.api.provider.Provider;
 import org.gradle.api.specs.Spec;
 import org.gradle.api.tasks.TaskDependency;
 import org.gradle.internal.HasInternalProtocol;
-import org.gradle.internal.deprecation.DeprecationLogger;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.util.Map;
 import java.util.Set;
@@ -49,6 +48,7 @@ import static groovy.lang.Closure.DELEGATE_FIRST;
  * Read more about declaring artifacts in the configuration in docs for {@link org.gradle.api.artifacts.dsl.ArtifactHandler}
  *
  * Please see the <a href="https://docs.gradle.org/current/userguide/declaring_dependencies.html" target="_top">Declaring Dependencies</a> User Manual chapter for more information.
+ * @since 0.7
  */
 @HasInternalProtocol
 public interface Configuration extends FileCollection, HasConfigurableAttributes<Configuration>, Named {
@@ -61,7 +61,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      * @implSpec Usage: This method should only be called on resolvable configurations, but will not warn if used otherwise.
      *
      * @return resolution strategy
-     * @since 1.0-milestone-6
+     * @since 1.0
      */
     ResolutionStrategy getResolutionStrategy();
 
@@ -73,7 +73,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @param closure closure applied to the {@link ResolutionStrategy}
      * @return this configuration instance
-     * @since 1.0-milestone-6
+     * @since 1.0
      */
     Configuration resolutionStrategy(@DelegatesTo(value = ResolutionStrategy.class, strategy = DELEGATE_FIRST) Closure closure);
 
@@ -92,8 +92,21 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
     /**
      * The states a configuration can be into. A configuration is only mutable as long as it is
      * in the unresolved state.
+     * @since 0.7
      */
-    enum State { UNRESOLVED, RESOLVED, RESOLVED_WITH_FAILURES }
+    enum State {
+    /**
+     * @since 0.7
+     */
+    UNRESOLVED,
+    /**
+     * @since 0.7
+     */
+    RESOLVED,
+    /**
+     * @since 0.7
+     */
+    RESOLVED_WITH_FAILURES }
 
     /**
      * Returns the state of the configuration.
@@ -102,56 +115,41 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @see org.gradle.api.artifacts.Configuration.State
      * @return The state of the configuration
+     * @since 0.7
      */
     State getState();
 
     /**
-     * An implementation of the namer interface for configurations that returns {@link #getName()}.
+     * This is a legacy property and the value does not affect dependency resolution
+     * in any way. There is no need to read this property and this method will be deprecated
+     * in an upcoming Gradle version.
+     * <p>
+     * The value of this property does not dictate in any way the "visibility" of
+     * a configuration, or if it is accessible between projects.
      *
-     * @deprecated Use {@link Named.Namer#INSTANCE} instead (since {@link Configuration} now extends {@link Named}).
+     * @deprecated This property is deprecated and will be removed in Gradle 10.
+     * @since 0.7
      */
     @Deprecated
-    class Namer implements org.gradle.api.Namer<Configuration> {
-
-        public Namer() {
-            DeprecationLogger.deprecateType(Namer.class)
-                .replaceWith("Named.Namer.INSTANCE")
-                .withContext("Configuration implements Named, so you can use Named.Namer.INSTANCE instead of Configuration.Namer")
-                .willBeRemovedInGradle9()
-                .withUpgradeGuideSection(8, "deprecated_namers")
-                .nagUser();
-        }
-
-        @Override
-        public String determineName(Configuration configuration) {
-            return Named.Namer.INSTANCE.determineName(configuration);
-        }
-    }
-
-    /**
-     * Returns true if this is a visible configuration. A visible configuration is usable outside the project it belongs
-     * to. The default value is true.
-     *
-     * @return true if this is a visible configuration.
-     */
     boolean isVisible();
 
     /**
-     * Sets the visibility of this configuration. When visible is set to true, this configuration is visible outside
-     * the project it belongs to. The default value is true.
+     * Sets the value returned by {@link #isVisible()}. There is no need to set this property
+     * and this method will be deprecated in an upcoming Gradle version.
      *
-     * @implSpec Usage: This method should only be called on consumable configurations, but will not warn if used otherwise.
-     *
-     * @param visible true if this is a visible configuration
-     * @return this configuration
+     * @param visible the value to set.
+     * @deprecated This property is deprecated and will be removed in Gradle 10.
+     * @since 0.7
      */
+    @Deprecated
     Configuration setVisible(boolean visible);
 
     /**
-     * Returns the names of the configurations which this configuration extends from. The artifacts of the super
+     * Returns the configurations which this configuration extends from. The artifacts of the super
      * configurations are also available in this configuration.
      *
      * @return The super configurations. Returns an empty set when this configuration does not extend any others.
+     * @since 0.7
      */
     Set<Configuration> getExtendsFrom();
 
@@ -162,6 +160,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @param superConfigs The super configuration. Should not be null.
      * @return this configuration
+     * @since 2.1
      */
     Configuration setExtendsFrom(Iterable<Configuration> superConfigs);
 
@@ -172,8 +171,23 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @param superConfigs The super configurations.
      * @return this configuration
+     * @since 0.7
      */
     Configuration extendsFrom(Configuration... superConfigs);
+
+    /**
+     * Adds the given configurations to the set of configuration which this configuration extends from.
+     * <p>
+     * Configurations are only allowed to extend from other configurations in the same project.
+     *
+     * @param superConfigs The super configurations.
+     * @return this configuration
+     *
+     * @since 9.4.0
+     */
+    @Incubating
+    @SuppressWarnings("unchecked")
+    Configuration extendsFrom(Provider<? extends Configuration>... superConfigs);
 
     /**
      * Returns the transitivity of this configuration. A transitive configuration contains the transitive closure of its
@@ -181,6 +195,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      * dependencies. The default value is true.
      *
      * @return true if this is a transitive configuration, false otherwise.
+     * @since 0.7
      */
     boolean isTransitive();
 
@@ -190,6 +205,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @param t true if this is a transitive configuration.
      * @return this configuration
+     * @since 0.7
      */
     Configuration setTransitive(boolean t);
 
@@ -197,6 +213,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      * Returns the description for this configuration.
      *
      * @return the description. May be null.
+     * @since 0.7
      */
     @Nullable
     String getDescription();
@@ -206,6 +223,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @param description the description. May be null
      * @return this configuration
+     * @since 0.7
      */
     Configuration setDescription(@Nullable String description);
 
@@ -213,6 +231,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      * Gets an ordered set including this configuration and all superconfigurations
      * recursively.
      * @return the set of all configurations
+     * @since 0.7
      */
     Set<Configuration> getHierarchy();
 
@@ -224,108 +243,9 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      * called on a configuration that does not permit this usage, or has allowed this usage but marked it as deprecated.
      *
      * @return The files of this configuration.
+     * @since 0.7
      */
     Set<File> resolve();
-
-    /**
-     * Takes a closure which gets coerced into a {@link Spec}. Behaves otherwise in the same way as
-     * {@link #files(org.gradle.api.specs.Spec)}.
-     *
-     * @implSpec Usage: This method should only be called on resolvable configurations and should fail if
-     * called on a configuration that does not permit this usage.  It should warn if called on a configuration that has
-     * allowed this usage but marked it as deprecated.
-     *
-     * @param dependencySpecClosure The closure describing a filter applied to the all the dependencies of this configuration (including dependencies from extended configurations).
-     * @return The files of a subset of dependencies of this configuration.
-     *
-     * @deprecated Use {@code getIncoming().artifactView(Action)} with a {@code componentFilter} instead.
-     */
-    @Deprecated
-    Set<File> files(Closure dependencySpecClosure);
-
-    /**
-     * Resolves this configuration. This locates and downloads the files which make up this configuration.
-     * But only the resulting set of files belonging to the subset of dependencies specified by the dependencySpec
-     * is returned.
-     *
-     * @implSpec Usage: This method should only be called on resolvable configurations and should fail if
-     * called on a configuration that does not permit this usage.  It should warn if called on a configuration that has
-     * allowed this usage but marked it as deprecated.
-     *
-     * @param dependencySpec The spec describing a filter applied to the all the dependencies of this configuration (including dependencies from extended configurations).
-     * @return The files of a subset of dependencies of this configuration.
-     *
-     * @deprecated Use {@code getIncoming().artifactView(Action)} with a {@code componentFilter} instead.
-     */
-    @Deprecated
-    Set<File> files(Spec<? super Dependency> dependencySpec);
-
-    /**
-     * Resolves this configuration. This locates and downloads the files which make up this configuration.
-     * But only the resulting set of files belonging to the specified dependencies
-     * is returned.
-     *
-     * @implSpec Usage: This method should only be called on resolvable configurations and should fail if
-     * called on a configuration that does not permit this usage.  It should warn if called on a configuration that has
-     * allowed this usage but marked it as deprecated.
-     *
-     * @param dependencies The dependencies to be resolved
-     * @return The files of a subset of dependencies of this configuration.
-     *
-     * @deprecated Use {@code getIncoming().artifactView(Action)} with a {@code componentFilter} instead.
-     */
-    @Deprecated
-    Set<File> files(Dependency... dependencies);
-
-    /**
-     * Resolves this configuration lazily. The resolve happens when the elements of the returned {@link FileCollection} get accessed the first time.
-     * This locates and downloads the files which make up this configuration. Only the resulting set of files belonging to the subset
-     * of dependencies specified by the dependencySpec is contained in the FileCollection.
-     *
-     * @implSpec Usage: This method should only be called on resolvable configurations and should fail if
-     * called on a configuration that does not permit this usage.  It should warn if called on a configuration that has
-     * allowed this usage but marked it as deprecated.
-     *
-     * @param dependencySpec The spec describing a filter applied to the all the dependencies of this configuration (including dependencies from extended configurations).
-     * @return The FileCollection with a subset of dependencies of this configuration.
-     *
-     * @deprecated Use {@code getIncoming().artifactView(Action)} with a {@code componentFilter} instead.
-     */
-    @Deprecated
-    FileCollection fileCollection(Spec<? super Dependency> dependencySpec);
-
-    /**
-     * Takes a closure which gets coerced into a {@link Spec}. Behaves otherwise in the same way as
-     * {@link #fileCollection(org.gradle.api.specs.Spec)}.
-     *
-     * @implSpec Usage: This method should only be called on resolvable configurations and should fail if
-     * called on a configuration that does not permit this usage.  It should warn if called on a configuration that has
-     * allowed this usage but marked it as deprecated.
-     *
-     * @param dependencySpecClosure The closure describing a filter applied to the all the dependencies of this configuration (including dependencies from extended configurations).
-     * @return The FileCollection with a subset of dependencies of this configuration.
-     *
-     * @deprecated Use {@code getIncoming().artifactView(Action)} with a {@code componentFilter} instead.
-     */
-    @Deprecated
-    FileCollection fileCollection(Closure dependencySpecClosure);
-
-    /**
-     * Resolves this configuration lazily. The resolve happens when the elements of the returned {@link FileCollection} get accessed the first time.
-     * This locates and downloads the files which make up this configuration. Only the resulting set of files belonging to specified
-     * dependencies is contained in the FileCollection.
-     *
-     * @implSpec Usage: This method should only be called on resolvable configurations and should fail if
-     * called on a configuration that does not permit this usage.  It should warn if called on a configuration that has
-     * allowed this usage but marked it as deprecated.
-     *
-     * @param dependencies The dependencies for which the FileCollection should contain the files.
-     * @return The FileCollection with a subset of dependencies of this configuration.
-     *
-     * @deprecated Use {@code getIncoming().artifactView(Action)} with a {@code componentFilter} instead.
-     */
-    @Deprecated
-    FileCollection fileCollection(Dependency... dependencies);
 
     /**
      * Returns a {@link ResolvedConfiguration}, a legacy view of the results of dependency resolution.
@@ -339,18 +259,9 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      * allowed this usage but marked it as deprecated.
      *
      * @return The ResolvedConfiguration object
+     * @since 0.7
      */
     ResolvedConfiguration getResolvedConfiguration();
-
-    /**
-     * Returns the name of the task that upload the artifacts of this configuration to repositories
-     * declared by the user.
-     *
-     * @return The name of the associated upload task
-     * @see org.gradle.api.tasks.Upload
-     */
-    @Deprecated // TODO:Finalize Upload Removal - Issue #21439
-    String getUploadTaskName();
 
     /**
      * Returns a {@code TaskDependency} object containing all required dependencies to build the local dependencies
@@ -373,7 +284,11 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *                      from configurations with the same name that depend on this one.
      * @param taskName name of task to depend on
      * @return the populated TaskDependency object
+     *
+     * @deprecated This method will be removed in Gradle 10.
+     * @since 0.8
      */
+    @Deprecated
     TaskDependency getTaskDependencyFromProjectDependency(boolean useDependedOn, final String taskName);
 
     /**
@@ -387,6 +302,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @return the set of dependencies
      * @see #extendsFrom(Configuration...)
+     * @since 0.7
      */
     DependencySet getDependencies();
 
@@ -399,6 +315,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @return the (read-only) set of dependencies
      * @see #extendsFrom(Configuration...)
+     * @since 0.7
      */
     DependencySet getAllDependencies();
 
@@ -442,6 +359,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      * @implSpec Usage: This method should only be called on consumable configurations, but will not warn if used otherwise.
      *
      * @return The set.
+     * @since 0.7
      */
     PublishArtifactSet getArtifacts();
 
@@ -449,6 +367,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      * Returns the artifacts of this configuration including the artifacts of extended configurations.
      *
      * @return The (read-only) set.
+     * @since 0.7
      */
     PublishArtifactSet getAllArtifacts();
 
@@ -457,6 +376,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @see #exclude(java.util.Map)
      * @return The exclude rules
+     * @since 0.7
      */
     Set<ExcludeRule> getExcludeRules();
 
@@ -466,6 +386,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @param excludeProperties the properties to define the exclude rule.
      * @return this
+     * @since 0.7
      */
     Configuration exclude(Map<String, String> excludeProperties);
 
@@ -492,11 +413,12 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      * If multiple actions are supplied, each action will be executed until the set of dependencies is no longer empty.
      * Remaining actions will be ignored.
      *
-     * @implSpec Usage: This method should only be called on resolvable configurations and will emit a deprecation warning if
+     * @implSpec Usage: This method should only be called on declarable configurations and will emit a deprecation warning if
      * called on a configuration that does not permit this usage, or has allowed this usage but marked it as deprecated.
      *
      * @param action the action to execute when the configuration has no defined dependencies.
      * @return this
+     * @since 2.5
      */
     Configuration defaultDependencies(Action<? super DependencySet> action);
 
@@ -569,21 +491,13 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
     Configuration withDependencies(Action<? super DependencySet> action);
 
     /**
-     * Returns all the configurations belonging to the same configuration container as this
-     * configuration (including this configuration).
-     *
-     * @return All the configurations belonging to the configuration container that this set belongs to itself.
-     */
-    @Deprecated
-    Set<Configuration> getAll();
-
-    /**
      * Returns a {@link ResolvableDependencies} instance, exposing the results of dependency resolution.
      * This method is the primary way to consume dependency resolution outputs.
      *
      * @implSpec Usage: This method should only be called on consumable and resolvable configurations, but will not warn if used otherwise.
      *
      * @return An object that exposes the results of dependency resolution.
+     * @since 1.0
      */
     ResolvableDependencies getIncoming();
 
@@ -622,6 +536,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      * called on a configuration that does not permit this usage, or has allowed this usage but marked it as deprecated.
      *
      * @return copy of this configuration
+     * @since 0.7
      */
     Configuration copy();
 
@@ -638,6 +553,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      * called on a configuration that does not permit this usage, or has allowed this usage but marked it as deprecated.
      *
      * @return copy of this configuration
+     * @since 0.7
      */
     Configuration copyRecursive();
 
@@ -653,6 +569,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @param dependencySpec filtering requirements
      * @return copy of this configuration
+     * @since 0.7
      */
     Configuration copy(Spec<? super Dependency> dependencySpec);
 
@@ -668,6 +585,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @param dependencySpec filtering requirements
      * @return copy of this configuration
+     * @since 0.7
      */
     Configuration copyRecursive(Spec<? super Dependency> dependencySpec);
 
@@ -682,6 +600,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @param dependencySpec filtering requirements
      * @return copy of this configuration
+     * @since 0.7
      */
     Configuration copy(Closure dependencySpec);
 
@@ -696,6 +615,7 @@ public interface Configuration extends FileCollection, HasConfigurableAttributes
      *
      * @param dependencySpec filtering requirements
      * @return copy of this configuration
+     * @since 0.7
      */
     Configuration copyRecursive(Closure dependencySpec);
 

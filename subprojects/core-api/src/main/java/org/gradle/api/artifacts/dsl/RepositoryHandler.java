@@ -17,6 +17,8 @@ package org.gradle.api.artifacts.dsl;
 
 import groovy.lang.Closure;
 import groovy.lang.DelegatesTo;
+import groovy.transform.stc.ClosureParams;
+import groovy.transform.stc.SimpleType;
 import org.gradle.api.Action;
 import org.gradle.api.artifacts.ArtifactRepositoryContainer;
 import org.gradle.api.artifacts.repositories.ArtifactRepository;
@@ -25,14 +27,19 @@ import org.gradle.api.artifacts.repositories.FlatDirectoryArtifactRepository;
 import org.gradle.api.artifacts.repositories.IvyArtifactRepository;
 import org.gradle.api.artifacts.repositories.MavenArtifactRepository;
 import org.gradle.declarative.dsl.model.annotations.Adding;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
 import org.gradle.internal.HasInternalProtocol;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 
 import java.util.Map;
 
 /**
  * A {@code RepositoryHandler} manages a set of repositories, allowing repositories to be defined and queried.
+ * @since 0.7
  */
 @HasInternalProtocol
+@ServiceScope(Scope.Project.class)
 public interface RepositoryHandler extends ArtifactRepositoryContainer {
 
     /**
@@ -55,19 +62,15 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      *     <td>Specifies a list of rootDirs where to look for dependencies. These are evaluated as per {@link org.gradle.api.Project#files(Object...)}</td></tr>
      * </table>
      *
-     * <p>Examples:</p>
-     * <pre class='autoTested'>
-     * repositories {
-     *     flatDir name: 'libs', dirs: "$projectDir/libs"
-     *     flatDir dirs: ["$projectDir/libs1", "$projectDir/libs2"]
-     * }
-     * </pre>
-     *
      * @param args The arguments used to configure the repository.
      * @return the added resolver
      * @throws org.gradle.api.InvalidUserDataException In the case neither rootDir nor rootDirs is specified of if both
      * are specified.
+     * @deprecated This method is scheduled to be removed in Gradle 10. Use {@link #flatDir(Action)} instead.
+     * @since 0.7
      */
+    @Deprecated
+    @HiddenInDefinition
     FlatDirectoryArtifactRepository flatDir(Map<String, ?> args);
 
     /**
@@ -75,7 +78,9 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      *
      * @param configureClosure The closure to execute to configure the repository.
      * @return The repository.
+     * @since 1.0
      */
+    @HiddenInDefinition
     FlatDirectoryArtifactRepository flatDir(@DelegatesTo(FlatDirectoryArtifactRepository.class) Closure configureClosure);
 
     /**
@@ -83,11 +88,15 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      *
      * @param action The action to execute to configure the repository.
      * @return The repository.
+     * @since 1.0
      */
+    @HiddenInDefinition
     FlatDirectoryArtifactRepository flatDir(Action<? super FlatDirectoryArtifactRepository> action);
 
     /**
      * Adds a repository which looks in Gradle Central Plugin Repository for dependencies.
+     * <p>
+     * The return type of this method may be safely cast to {@link org.gradle.api.artifacts.repositories.UrlArtifactRepository}.
      *
      * @return The Gradle Central Plugin Repository
      * @since 4.4
@@ -97,64 +106,21 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
 
     /**
      * Adds a repository which looks in Gradle Central Plugin Repository for dependencies.
+     * <p>
+     * The return type of this method may be safely cast to {@link org.gradle.api.artifacts.repositories.UrlArtifactRepository}.
      *
      * @param action a configuration action
      * @return the added resolver
      * @since 5.4
      */
+    @HiddenInDefinition
     ArtifactRepository gradlePluginPortal(Action<? super ArtifactRepository> action);
-
-    /**
-     * Adds a repository which looks in Bintray's JCenter repository for dependencies.
-     * <p>
-     * The URL used to access this repository is {@literal "https://jcenter.bintray.com/"}.
-     * The behavior of this repository is otherwise the same as those added by {@link #maven(org.gradle.api.Action)}.
-     * <p>
-     * Examples:
-     * <pre class='autoTestedWithDeprecations'>
-     * repositories {
-     *   jcenter {
-     *     artifactUrls = ["http://www.mycompany.com/artifacts1", "http://www.mycompany.com/artifacts2"]
-     *   }
-     *   jcenter {
-     *     name = "nonDefaultName"
-     *     artifactUrls = ["http://www.mycompany.com/artifacts1"]
-     *   }
-     * }
-     * </pre>
-     *
-     * @param action a configuration action
-     * @return the added repository
-     * @deprecated JFrog announced JCenter's <a href="https://blog.gradle.org/jcenter-shutdown">sunset</a> in February 2021. Use {@link #mavenCentral()} instead.
-     */
-    @Deprecated
-    MavenArtifactRepository jcenter(Action<? super MavenArtifactRepository> action);
-
-    /**
-     * Adds a repository which looks in Bintray's JCenter repository for dependencies.
-     * <p>
-     * The URL used to access this repository is {@literal "https://jcenter.bintray.com/"}.
-     * The behavior of this repository is otherwise the same as those added by {@link #maven(org.gradle.api.Action)}.
-     * <p>
-     * Examples:
-     * <pre class='autoTestedWithDeprecations'>
-     * repositories {
-     *     jcenter()
-     * }
-     * </pre>
-     *
-     * @return the added resolver
-     * @see #jcenter(Action)
-     * @deprecated JFrog announced JCenter's <a href="https://blog.gradle.org/jcenter-shutdown">sunset</a> in February 2021. Use {@link #mavenCentral()} instead.
-     */
-    @Deprecated
-    MavenArtifactRepository jcenter();
 
     /**
      * Adds a repository which looks in the Maven central repository for dependencies. The URL used to access this repository is
      * {@value org.gradle.api.artifacts.ArtifactRepositoryContainer#MAVEN_CENTRAL_URL}.
      *
-     * <p>The following parameter are accepted as keys for the map:
+     * <p>The following parameter is accepted as a key for the map:
      *
      * <table>
      * <caption>Shows property keys and associated values</caption>
@@ -165,23 +131,15 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      * {@value org.gradle.api.artifacts.ArtifactRepositoryContainer#DEFAULT_MAVEN_CENTRAL_REPO_NAME} is used as the name. A name
      * must be unique amongst a repository group.
      * </td></tr>
-     * <tr><td><code>artifactUrls</code></td>
-     *     <td>A single jar repository or a collection of jar repositories containing additional artifacts not found in the Maven central repository.
-     * But be aware that the POM must exist in Maven central.
-     * The provided values are evaluated as per {@link org.gradle.api.Project#uri(Object)}.</td></tr>
      * </table>
      *
-     * <p>Examples:</p>
-     * <pre class='autoTested'>
-     * repositories {
-     *     mavenCentral artifactUrls: ["http://www.mycompany.com/artifacts1", "http://www.mycompany.com/artifacts2"]
-     *     mavenCentral name: "nonDefaultName", artifactUrls: ["http://www.mycompany.com/artifacts1"]
-     * }
-     * </pre>
-     *
-     * @param args A list of urls of repositories to look for artifacts only.
+     * @param args Configuration map for the Maven Central repository.
      * @return the added repository
+     * @deprecated This method is scheduled to be removed in Gradle 10. Use {@link #mavenCentral(Action)} instead.
+     * @since 0.7
      */
+    @Deprecated
+    @HiddenInDefinition
     MavenArtifactRepository mavenCentral(Map<String, ?> args);
 
     /**
@@ -197,7 +155,8 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      * </pre>
      *
      * @return the added resolver
-     * @see #mavenCentral(java.util.Map)
+     * @see #mavenCentral(Action)
+     * @since 0.7
      */
     @Adding
     MavenArtifactRepository mavenCentral();
@@ -218,6 +177,7 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      * @return the added resolver
      * @since 5.3
      */
+    @HiddenInDefinition
     MavenArtifactRepository mavenCentral(Action<? super MavenArtifactRepository> action);
 
     /**
@@ -241,7 +201,9 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      * </ol>
      *
      * @return the added resolver
+     * @since 0.9.1
      */
+    @HiddenInDefinition
     MavenArtifactRepository mavenLocal();
 
     /**
@@ -268,6 +230,7 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      * @return the added resolver
      * @since 5.3
      */
+    @HiddenInDefinition
     MavenArtifactRepository mavenLocal(Action<? super MavenArtifactRepository> action);
 
     /**
@@ -304,6 +267,7 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      * @return the added resolver
      * @since 5.3
      */
+    @HiddenInDefinition
     MavenArtifactRepository google(Action<? super MavenArtifactRepository> action);
 
     /**
@@ -311,15 +275,21 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      *
      * @param closure The closure to use to configure the repository.
      * @return The added repository.
+     * @since 1.0
      */
-    MavenArtifactRepository maven(@DelegatesTo(MavenArtifactRepository.class) Closure closure);
+    @HiddenInDefinition
+    MavenArtifactRepository maven(@DelegatesTo(MavenArtifactRepository.class)
+                                  @ClosureParams(value = SimpleType.class, options = "org.gradle.api.artifacts.repositories.MavenArtifactRepository")
+                                  Closure closure);
 
     /**
      * Adds and configures a Maven repository.
      *
      * @param action The action to use to configure the repository.
      * @return The added repository.
+     * @since 1.0
      */
+    @Adding
     MavenArtifactRepository maven(Action<? super MavenArtifactRepository> action);
 
     /**
@@ -327,7 +297,9 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      *
      * @param closure The closure to use to configure the repository.
      * @return The added repository.
+     * @since 1.0
      */
+    @HiddenInDefinition
     IvyArtifactRepository ivy(@DelegatesTo(IvyArtifactRepository.class) Closure closure);
 
     /**
@@ -335,7 +307,9 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      *
      * @param action The action to use to configure the repository.
      * @return The added repository.
+     * @since 1.0
      */
+    @HiddenInDefinition
     IvyArtifactRepository ivy(Action<? super IvyArtifactRepository> action);
 
     /**
@@ -348,5 +322,6 @@ public interface RepositoryHandler extends ArtifactRepositoryContainer {
      *
      * @since 6.2
      */
+    @HiddenInDefinition
     void exclusiveContent(Action<? super ExclusiveContentRepository> action);
 }

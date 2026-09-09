@@ -24,10 +24,10 @@
                 <td><literal>[:]</literal></td>
                 <td>
                     <itemizedlist>
-                        <listitem><literal>COMPILE</literal> -> <literal>project.configurations.compileClasspath</literal></listitem>
-                        <listitem><literal>RUNTIME</literal> -> <literal>project.configurations.runtimeClasspath - project.configurations.compileClasspath</literal></listitem>
-                        <listitem><literal>TEST</literal> -> <literal>project.configurations.testRuntimeClasspath - project.configurations.runtimeClasspath</literal></listitem>
-                        <listitem><literal>PROVIDED</literal></listitem>
+                        <listitem><literal>COMPILE</literal> -> empty</listitem>
+                        <listitem><literal>RUNTIME</literal> -> plus <literal>project.configurations.runtimeClasspath</literal></listitem>
+                        <listitem><literal>TEST</literal> -> plus <literal>project.configurations.testCompileClasspath</literal> and <literal>project.configurations.testRuntimeClasspath</literal></listitem>
+                        <listitem><literal>PROVIDED</literal> -> plus <literal>project.configurations.compileClasspath</literal></listitem>
                     </itemizedlist>
                 </td>
             </tr>
@@ -52,19 +52,9 @@
                 <td/>
             </tr>
             <tr>
-                <td>testSourceDirs</td>
-                <td><literal>[]</literal></td>
-                <td>project.sourceSets.test.allJava</td>
-            </tr>
-            <tr>
                 <td>resourceDirs</td>
                 <td><literal>[]</literal></td>
                 <td>resource dirs from <literal>project.sourceSets.main.resources</literal></td>
-            </tr>
-            <tr>
-                <td>testResourceDirs</td>
-                <td><literal>[]</literal></td>
-                <td>resource dirs from <literal>project.sourceSets.test.resources</literal></td>
             </tr>
             <tr>
                 <td>testSources</td>

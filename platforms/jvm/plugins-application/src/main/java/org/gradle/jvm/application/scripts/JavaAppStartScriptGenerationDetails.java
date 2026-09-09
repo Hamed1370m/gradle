@@ -16,35 +16,61 @@
 
 package org.gradle.jvm.application.scripts;
 
-import javax.annotation.Nullable;
+import org.gradle.api.Incubating;
+import org.jspecify.annotations.Nullable;
+
 import java.util.List;
 
 /**
  * Details for generating Java-based application start scripts.
+ * @since 2.4
  */
 public interface JavaAppStartScriptGenerationDetails {
 
     /**
      * The display name of the application
+     * @since 2.4
      */
     String getApplicationName();
 
     /**
+     * The Git revision or tag
+     *
+     * @since 9.4.0
+     */
+    @Incubating
+    String getGitRef();
+
+    /**
      * The environment variable to use to provide additional options to the JVM
+     * @since 2.4
      */
     String getOptsEnvironmentVar();
 
     /**
      * The environment variable to use to control exit value (windows only)
+     * @since 2.4
      */
     String getExitEnvironmentVar();
 
+    /**
+     * Returns the main class name.
+     *
+     * @since 2.4
+     */
     String getMainClassName();
 
+    /**
+     * The default JVM options that are always passed to the application.
+     *
+     * @return the default JVM options
+     * @since 2.4
+     */
     List<String> getDefaultJvmOpts();
 
     /**
      * The classpath, relative to the application home directory.
+     * @since 2.4
      */
     List<String> getClasspath();
 
@@ -57,11 +83,13 @@ public interface JavaAppStartScriptGenerationDetails {
 
     /**
      * The path of the script, relative to the application home directory.
+     * @since 2.4
      */
     String getScriptRelPath();
 
     /**
      * This system property to use to pass the script name to the application. May be null.
+     * @since 2.4
      */
     @Nullable
     String getAppNameSystemProperty();

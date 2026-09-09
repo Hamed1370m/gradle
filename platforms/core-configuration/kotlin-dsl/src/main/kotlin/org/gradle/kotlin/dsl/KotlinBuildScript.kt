@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+@file:Suppress("DEPRECATION")
+
 package org.gradle.kotlin.dsl
 
 import org.gradle.api.Project
@@ -32,6 +34,8 @@ import kotlin.script.templates.ScriptTemplateDefinition
  * Legacy base class for Gradle Kotlin DSL standalone [Project] scripts IDE support, aka. build scripts.
  *
  * @see KotlinProjectScriptTemplate
+ *
+ * @since 4.1
  */
 @ScriptTemplateDefinition(
     resolver = KotlinBuildScriptDependenciesResolver::class,
@@ -39,23 +43,22 @@ import kotlin.script.templates.ScriptTemplateDefinition
 )
 @ScriptTemplateAdditionalCompilerArguments(
     [
-        "-language-version", "1.8",
-        "-api-version", "1.8",
-        "-Xjvm-default=all",
+        "-language-version", "2.2",
+        "-api-version", "2.2",
+        "-jvm-default=enable",
         "-Xjsr305=strict",
+        "-Xjspecify-annotations=strict",
         "-Xskip-prerelease-check",
         "-Xallow-unstable-dependencies",
-        "-XXLanguage:+DisableCompatibilityModeForNewInference",
-        "-XXLanguage:-TypeEnhancementImprovementsInStrictMode",
         "-P=plugin:org.jetbrains.kotlin.assignment:annotation=org.gradle.api.SupportsKotlinAssignmentOverloading",
     ]
 )
 @SamWithReceiverAnnotations("org.gradle.api.HasImplicitReceiver")
 @GradleDsl
-@Deprecated("Will be removed in Gradle 9.0")
+@Deprecated("Will be removed in Gradle 10")
 abstract class KotlinBuildScript(
     private val host: KotlinScriptHost<Project>
-) : @Suppress("DEPRECATION") org.gradle.kotlin.dsl.support.delegates.ProjectDelegate() {
+) : org.gradle.kotlin.dsl.support.delegates.ProjectDelegate() {
 
     override val delegate: Project
         get() = host.target
@@ -70,6 +73,8 @@ abstract class KotlinBuildScript(
      * Configures the build script classpath for this project.
      *
      * @see [Project.buildscript]
+     *
+     * @since 4.1
      */
     @Suppress("unused")
     open fun buildscript(block: ScriptHandlerScope.() -> Unit): Unit =
@@ -79,6 +84,8 @@ abstract class KotlinBuildScript(
      * Configures the plugin dependencies for this project.
      *
      * @see [PluginDependenciesSpec]
+     *
+     * @since 4.1
      */
     @Suppress("unused")
     fun plugins(@Suppress("unused_parameter") block: PluginDependenciesSpecScope.() -> Unit): Unit =

@@ -17,6 +17,7 @@
 package org.gradle.language.swift
 
 
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 import org.gradle.nativeplatform.fixtures.ToolChainRequirement
 import org.gradle.nativeplatform.fixtures.app.SwiftApp
@@ -25,10 +26,8 @@ import org.gradle.nativeplatform.fixtures.app.SwiftAppWithLibrary
 import org.gradle.nativeplatform.fixtures.app.SwiftAppWithLibraryAndOptionalFeature
 import org.gradle.nativeplatform.fixtures.app.SwiftAppWithOptionalFeature
 import org.gradle.nativeplatform.fixtures.app.SwiftCompilerDetectingApp
-import spock.lang.Ignore
 
-@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5_OR_OLDER)
-@Ignore("Inconsistent Swift SDK and tooling discovered on our Intel Macs")
+@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC)
 class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest implements SwiftTaskNames {
     @Override
     protected List<String> getTasksToAssembleDevelopmentBinary(String variant) {
@@ -64,6 +63,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         return "application"
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "relinks when an upstream dependency changes in ABI compatible way"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -86,19 +86,20 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds ":app:assemble"
-        result.assertTasksExecuted(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         installation("app/build/install/main/debug").exec().out == app.expectedOutput
 
         when:
         file("greeter/src/main/swift/greeter.swift").replace("Hello,", "Goodbye,")
         then:
         succeeds ":app:assemble"
-        result.assertTasksExecuted(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         result.assertTaskSkipped(":app:compileDebugSwift")
-        result.assertTasksNotSkipped(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksExecuted(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         installation("app/build/install/main/debug").exec().out == app.expectedOutput.replace("Hello", "Goodbye")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "recompiles when an upstream dependency changes in non-ABI compatible way"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -121,7 +122,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds ":app:assemble"
-        result.assertTasksExecuted(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         installation("app/build/install/main/debug").exec().out == app.expectedOutput
 
         when:
@@ -134,8 +135,8 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         file("app/src/main/swift/main.swift").replace("sayHello", "sayAloha")
         then:
         succeeds ":app:assemble"
-        result.assertTasksExecuted(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
-        result.assertTasksNotSkipped(":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksExecuted(":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
         installation("app/build/install/main/debug").exec().out == app.expectedOutput
     }
 
@@ -157,7 +158,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds "assembleRelease"
-        result.assertTasksExecuted(":compileReleaseSwift", ":linkRelease", ":extractSymbolsRelease", ":stripSymbolsRelease", ":installRelease", ":assembleRelease")
+        result.assertTasksScheduled(":compileReleaseSwift", ":linkRelease", ":extractSymbolsRelease", ":stripSymbolsRelease", ":installRelease", ":assembleRelease")
 
         releaseBinary.assertExists()
         releaseBinary.exec().out == app.withFeatureEnabled().expectedOutput
@@ -165,7 +166,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         releaseBinary.assertHasStrippedDebugSymbolsFor(app.sourceFileNames)
 
         succeeds "assembleDebug"
-        result.assertTasksExecuted(":compileDebugSwift", ":linkDebug", ":installDebug", ":assembleDebug")
+        result.assertTasksScheduled(":compileDebugSwift", ":linkDebug", ":installDebug", ":assembleDebug")
 
         file("build/modules/main/release/App.swiftmodule").assertIsFile()
         debugBinary.assertExists()
@@ -191,7 +192,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds "buildDebug"
-        result.assertTasksExecuted(":compileDebugSwift", ":linkDebug", ':buildDebug')
+        result.assertTasksScheduled(":compileDebugSwift", ":linkDebug", ':buildDebug')
         executable("build/exe/main/debug/App").assertExists()
     }
 
@@ -212,7 +213,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds "compileDebug"
-        result.assertTasksExecuted(":compileDebugSwift", ':compileDebug')
+        result.assertTasksScheduled(":compileDebugSwift", ':compileDebug')
         executable("build/exe/main/debug/App").assertDoesNotExist()
         objectFiles(app.main)*.assertExists()
     }
@@ -234,7 +235,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds "install"
-        result.assertTasksExecuted(":compileDebugSwift", ":linkDebug", ':installDebug', ':install')
+        result.assertTasksScheduled(":compileDebugSwift", ":linkDebug", ':installDebug', ':install')
         installation("build/install/main/debug").exec().out == app.expectedOutput
     }
 
@@ -257,7 +258,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
+        result.assertTasksScheduled(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
 
         executable("build/exe/main/debug/App").assertExists()
         installation("build/install/main/debug").exec().out == app.expectedOutput
@@ -281,7 +282,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
+        result.assertTasksScheduled(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
 
         file("build/obj/main/debug").assertIsDir()
         executable("build/exe/main/debug/${app.moduleName}").assertExists()
@@ -313,7 +314,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
+        result.assertTasksScheduled(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
 
         file("build/obj/main/debug").assertIsDir()
         executable("build/exe/main/debug/App").assertExists()
@@ -334,7 +335,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
+        result.assertTasksScheduled(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
 
         !file("build").exists()
         file("output/obj/main/debug").assertIsDir()
@@ -357,7 +358,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
+        result.assertTasksScheduled(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
 
         file("build/obj/main/debug").assertIsDir()
         executable("build/exe/main/debug/TestApp").assertExists()
@@ -384,7 +385,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
+        result.assertTasksScheduled(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
 
         file("build/object-files").assertIsDir()
         file("build/exe/some-app.exe").assertIsFile()
@@ -392,6 +393,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         installation("build/some-app").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "can compile and link against a library"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -414,7 +416,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds ":app:assemble"
-        result.assertTasksExecuted(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":greeter:compileDebugSwift", ":greeter:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
 
         executable("app/build/exe/main/debug/App").assertExists()
         sharedLibrary("greeter/build/lib/main/debug/Greeter").assertExists()
@@ -423,6 +425,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         installation.assertIncludesLibraries("Greeter")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "can compile and link against a library specifying target machines"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -451,7 +454,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds ":app:assemble"
-        result.assertTasksExecuted(tasks(':greeter').withOperatingSystemFamily(currentOsFamilyName).debug.allToLink, tasks(':app').withOperatingSystemFamily(currentOsFamilyName).debug.allToInstall, ":app:assemble")
+        result.assertTasksScheduled(tasks(':greeter').withOperatingSystemFamily(currentOsFamilyName).debug.allToLink, tasks(':app').withOperatingSystemFamily(currentOsFamilyName).debug.allToInstall, ":app:assemble")
 
         executable("app/build/exe/main/debug/${currentOsFamilyName}/App").assertExists()
         sharedLibrary("greeter/build/lib/main/debug/${currentOsFamilyName}/Greeter").assertExists()
@@ -460,6 +463,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         installation.assertIncludesLibraries("Greeter")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "fails when dependency library does not specify the same target machines"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -490,11 +494,12 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         fails ":app:assemble"
 
         and:
-        failure.assertHasCause("Could not resolve project :greeter.")
-        failure.assertHasCause("No matching variant of project :greeter was found. The consumer was configured to find attribute 'org.gradle.native.architecture' with value '${currentHostArchName}', attribute 'org.gradle.native.debuggable' with value 'true', attribute 'org.gradle.native.operatingSystem' with value '${currentHostOperatingSystemName}', attribute 'org.gradle.native.optimized' with value 'false', attribute 'org.gradle.usage' with value 'native-runtime' but:\n" +
+        failure.assertHasCause("Could not resolve project ':greeter'.")
+        failure.assertHasCause("No matching variant of project ':greeter' was found. The consumer was configured to find attribute 'org.gradle.native.architecture' with value '${currentHostArchName}', attribute 'org.gradle.native.debuggable' with value 'true', attribute 'org.gradle.native.operatingSystem' with value '${currentHostOperatingSystemName}', attribute 'org.gradle.native.optimized' with value 'false', attribute 'org.gradle.usage' with value 'native-runtime' but:\n" +
                                "  - No variants exist.")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp/Swift build")
     def "can compile and link against a static library"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -519,7 +524,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds ":app:assemble"
-        result.assertTasksExecuted(":greeter:compileDebugSwift", ":greeter:createDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":greeter:compileDebugSwift", ":greeter:createDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
 
         executable("app/build/exe/main/debug/App").assertExists()
         staticLibrary("greeter/build/lib/main/debug/Greeter").assertExists()
@@ -528,6 +533,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         installation.assertIncludesLibraries()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp/Swift build")
     def "can compile and link against a library with both linkage defined"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -552,7 +558,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds ":app:assemble"
-        result.assertTasksExecuted(":greeter:compileDebugSharedSwift", ":greeter:linkDebugShared", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":greeter:compileDebugSharedSwift", ":greeter:linkDebugShared", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
 
         executable("app/build/exe/main/debug/App").assertExists()
         sharedLibrary("greeter/build/lib/main/debug/shared/Greeter").assertExists()
@@ -561,6 +567,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         installation.assertIncludesLibraries("Greeter")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "can compile and link against library with API dependencies"() {
         createDirs("app", "hello", "log")
         settingsFile << "include 'app', 'hello', 'log'"
@@ -591,7 +598,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(":hello:compileDebugSwift", ":hello:linkDebug", ":log:compileDebugSwift", ":log:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":hello:compileDebugSwift", ":hello:linkDebug", ":log:compileDebugSwift", ":log:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
 
         sharedLibrary("hello/build/lib/main/debug/Hello").assertExists()
         sharedLibrary("log/build/lib/main/debug/Log").assertExists()
@@ -603,7 +610,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         succeeds ":app:assembleRelease"
 
-        result.assertTasksExecuted(":hello:compileReleaseSwift", ":hello:linkRelease", ":hello:stripSymbolsRelease",
+        result.assertTasksScheduled(":hello:compileReleaseSwift", ":hello:linkRelease", ":hello:stripSymbolsRelease",
             ":log:compileReleaseSwift", ":log:linkRelease", ":log:stripSymbolsRelease",
             ":app:compileReleaseSwift", ":app:linkRelease", ":app:extractSymbolsRelease", ":app:stripSymbolsRelease", ":app:installRelease", ":app:assembleRelease")
 
@@ -613,6 +620,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         installation("app/build/install/main/release").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "can compile and link against static library with API dependencies"() {
         createDirs("app", "hello", "log")
         settingsFile << "include 'app', 'hello', 'log'"
@@ -645,7 +653,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(":hello:compileDebugSwift", ":hello:createDebug",
+        result.assertTasksScheduled(":hello:compileDebugSwift", ":hello:createDebug",
             ":log:compileDebugSwift", ":log:createDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
 
@@ -658,7 +666,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         succeeds ":app:assembleRelease"
 
-        result.assertTasksExecuted(":hello:compileReleaseSwift", ":hello:createRelease",
+        result.assertTasksScheduled(":hello:compileReleaseSwift", ":hello:createRelease",
             ":log:compileReleaseSwift", ":log:createRelease",
             ":app:compileReleaseSwift", ":app:linkRelease", ":app:extractSymbolsRelease", ":app:stripSymbolsRelease", ":app:installRelease", ":app:assembleRelease")
 
@@ -668,6 +676,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         installation("app/build/install/main/release").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "can compile and link against static library with API dependencies to shared library"() {
         createDirs("app", "hello", "log")
         settingsFile << "include 'app', 'hello', 'log'"
@@ -700,7 +709,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(":hello:compileDebugSwift", ":hello:createDebug",
+        result.assertTasksScheduled(":hello:compileDebugSwift", ":hello:createDebug",
             ":log:compileDebugSwift", ":log:linkDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
 
@@ -713,7 +722,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         succeeds ":app:assembleRelease"
 
-        result.assertTasksExecuted(":hello:compileReleaseSwift", ":hello:createRelease",
+        result.assertTasksScheduled(":hello:compileReleaseSwift", ":hello:createRelease",
             ":log:compileReleaseSwift", ":log:linkRelease", ":log:stripSymbolsRelease",
             ":app:compileReleaseSwift", ":app:linkRelease", ":app:extractSymbolsRelease", ":app:stripSymbolsRelease", ":app:installRelease", ":app:assembleRelease")
 
@@ -723,6 +732,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         installation("app/build/install/main/release").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "can compile and link against shared library with API dependencies to static library"() {
         createDirs("app", "hello", "log")
         settingsFile << "include 'app', 'hello', 'log'"
@@ -755,7 +765,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         expect:
         succeeds ":app:assemble"
 
-        result.assertTasksExecuted(":hello:compileDebugSwift", ":hello:linkDebug",
+        result.assertTasksScheduled(":hello:compileDebugSwift", ":hello:linkDebug",
             ":log:compileDebugSwift", ":log:createDebug",
             ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
 
@@ -768,7 +778,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         succeeds ":app:assembleRelease"
 
-        result.assertTasksExecuted(":hello:compileReleaseSwift", ":hello:linkRelease", ":hello:stripSymbolsRelease",
+        result.assertTasksScheduled(":hello:compileReleaseSwift", ":hello:linkRelease", ":hello:stripSymbolsRelease",
             ":log:compileReleaseSwift", ":log:createRelease",
             ":app:compileReleaseSwift", ":app:linkRelease", ":app:extractSymbolsRelease", ":app:stripSymbolsRelease", ":app:installRelease", ":app:assembleRelease")
 
@@ -778,6 +788,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         installation("app/build/install/main/release").exec().out == app.expectedOutput
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp/Swift build")
     def "can compile and link against a library with debug and release variants"() {
         createDirs("app", "hello")
         settingsFile << "include 'app', 'hello'"
@@ -808,7 +819,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         expect:
         succeeds ":app:linkRelease"
 
-        result.assertTasksExecuted(":hello:compileReleaseSwift", ":hello:linkRelease", ":hello:stripSymbolsRelease", ":app:compileReleaseSwift", ":app:linkRelease")
+        result.assertTasksScheduled(":hello:compileReleaseSwift", ":hello:linkRelease", ":hello:stripSymbolsRelease", ":app:compileReleaseSwift", ":app:linkRelease")
 
         sharedLibrary("hello/build/lib/main/release/Greeter").assertExists()
         sharedLibrary("hello/build/lib/main/release/Greeter").assertHasDebugSymbolsFor(app.library.sourceFileNames)
@@ -817,7 +828,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         succeeds ":app:linkDebug"
 
-        result.assertTasksExecuted(":hello:compileDebugSwift", ":hello:linkDebug", ":app:compileDebugSwift", ":app:linkDebug")
+        result.assertTasksScheduled(":hello:compileDebugSwift", ":hello:linkDebug", ":app:compileDebugSwift", ":app:linkDebug")
 
         sharedLibrary("hello/build/lib/main/debug/Greeter").assertExists()
         sharedLibrary("hello/build/lib/main/debug/Greeter").assertHasDebugSymbolsFor(app.library.sourceFileNames)
@@ -825,6 +836,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         executable("app/build/exe/main/debug/App").exec().out == app.withFeatureDisabled().expectedOutput
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp/Swift build")
     def "can compile and link against a static library with debug and release variants"() {
         createDirs("app", "hello")
         settingsFile << "include 'app', 'hello'"
@@ -856,7 +868,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         expect:
         succeeds ":app:linkRelease"
 
-        result.assertTasksExecuted(":hello:compileReleaseSwift", ":hello:createRelease", ":app:compileReleaseSwift", ":app:linkRelease")
+        result.assertTasksScheduled(":hello:compileReleaseSwift", ":hello:createRelease", ":app:compileReleaseSwift", ":app:linkRelease")
 
         staticLibrary("hello/build/lib/main/release/Greeter").assertExists()
         executable("app/build/exe/main/release/App").assertHasDebugSymbolsFor(app.application.sourceFileNames + app.library.sourceFileNames)
@@ -864,13 +876,14 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         succeeds ":app:linkDebug"
 
-        result.assertTasksExecuted(":hello:compileDebugSwift", ":hello:createDebug", ":app:compileDebugSwift", ":app:linkDebug")
+        result.assertTasksScheduled(":hello:compileDebugSwift", ":hello:createDebug", ":app:compileDebugSwift", ":app:linkDebug")
 
         staticLibrary("hello/build/lib/main/debug/Greeter").assertExists()
         executable("app/build/exe/main/debug/App").assertHasDebugSymbolsFor(app.application.sourceFileNames + app.library.sourceFileNames)
         executable("app/build/exe/main/debug/App").exec().out == app.withFeatureDisabled().expectedOutput
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Swift uses allprojects/subprojects (software model)")
     def "honors changes to library buildDir"() {
         createDirs("app", "hello", "log")
         settingsFile << "include 'app', 'hello', 'log'"
@@ -901,7 +914,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds ":app:assemble"
-        result.assertTasksExecuted(":hello:compileDebugSwift", ":hello:linkDebug", ":log:compileDebugSwift", ":log:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":hello:compileDebugSwift", ":hello:linkDebug", ":log:compileDebugSwift", ":log:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
 
         !file("log/build").exists()
         sharedLibrary("hello/build/lib/main/debug/Hello").assertExists()
@@ -912,6 +925,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
         sharedLibrary("app/build/install/main/debug/lib/Log").file.assertExists()
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp/Swift build")
     def "multiple components can share the same source directory"() {
         createDirs("app", "hello", "log")
         settingsFile << "include 'app', 'hello', 'log'"
@@ -950,7 +964,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds ":app:assemble"
-        result.assertTasksExecuted(":hello:compileDebugSwift", ":hello:linkDebug", ":log:compileDebugSwift", ":log:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
+        result.assertTasksScheduled(":hello:compileDebugSwift", ":hello:linkDebug", ":log:compileDebugSwift", ":log:linkDebug", ":app:compileDebugSwift", ":app:linkDebug", ":app:installDebug", ":app:assemble")
 
         sharedLibrary("hello/build/lib/main/debug/Hello").assertExists()
         sharedLibrary("log/build/lib/main/debug/Log").assertExists()
@@ -996,7 +1010,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds ":assemble"
-        result.assertTasksExecuted(":hello:compileDebugSwift", ":hello:linkDebug", ":log:compileDebugSwift", ":log:linkDebug", ":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
+        result.assertTasksScheduled(":hello:compileDebugSwift", ":hello:linkDebug", ":log:compileDebugSwift", ":log:linkDebug", ":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
 
         sharedLibrary("hello/build/lib/main/debug/Hello").assertExists()
         sharedLibrary("log/build/lib/main/debug/Log").assertExists()
@@ -1020,7 +1034,7 @@ class SwiftApplicationIntegrationTest extends AbstractSwiftIntegrationTest imple
 
         expect:
         succeeds ":assemble"
-        result.assertTasksExecuted(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
+        result.assertTasksScheduled(":compileDebugSwift", ":linkDebug", ":installDebug", ":assemble")
         installation("build/install/main/debug").exec().out == app.expectedOutput
     }
 }

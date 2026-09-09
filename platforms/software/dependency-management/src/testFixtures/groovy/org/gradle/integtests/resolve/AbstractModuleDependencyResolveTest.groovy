@@ -96,7 +96,7 @@ abstract class AbstractModuleDependencyResolveTest extends AbstractHttpDependenc
         """
             repositories {
                 maven {
-                    url "${mavenHttpRepo.uri}"
+                    url = "${mavenHttpRepo.uri}"
                 }
             }
         """
@@ -106,7 +106,7 @@ abstract class AbstractModuleDependencyResolveTest extends AbstractHttpDependenc
         """
             repositories {
                 ivy {
-                    url "${ivyHttpRepo.uri}"
+                    url = "${ivyHttpRepo.uri}"
                 }
             }
         """
@@ -152,34 +152,37 @@ abstract class AbstractModuleDependencyResolveTest extends AbstractHttpDependenc
         false
     }
 
-    boolean isJavaEcosystem() {
+    boolean isJvmEcosystem() {
         true
     }
 
     def setup() {
-        resolve = new ResolveTestFixture(buildFile, testConfiguration)
-        resolve.expectDefaultConfiguration(usesJavaLibraryVariants() ? "runtime" : "default")
-        settingsFile << "rootProject.name = '$rootProjectName'"
-        def repoBlock = repositoryDeclaration
-        if (declareRepositoriesInSettings) {
-            settingsFile << """
-                dependencyResolutionManagement {
-                    $repoBlock
-                }
-            """
-            repoBlock = ''
-        }
-        resolve.prepare()
-        buildFile << """
-            $repoBlock
+        resolve = new ResolveTestFixture(testDirectory)
+        settingsFile << """
+            rootProject.name = '$rootProjectName'
 
+            if (${isJvmEcosystem()}) {
+                gradle.lifecycle.beforeProject { project ->
+                    project.pluginManager.apply('org.gradle.jvm-ecosystem')
+                }
+            }
+
+            if (${declareRepositoriesInSettings}) {
+                dependencyResolutionManagement {
+                    ${repositoryDeclaration}
+                }
+            }
+        """
+
+        buildFile << """
+            if (${!declareRepositoriesInSettings}) {
+                ${repositoryDeclaration}
+            }
             configurations {
                 $testConfiguration
             }
+            ${resolve.configureProject(testConfiguration)}
         """
-        if (isJavaEcosystem()) {
-            resolve.addJavaEcosystem()
-        }
     }
 
     void repository(@DelegatesTo(RemoteRepositorySpec) Closure<Void> spec) {

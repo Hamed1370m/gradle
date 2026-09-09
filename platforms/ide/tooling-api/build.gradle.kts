@@ -2,82 +2,81 @@ plugins {
     id("gradlebuild.distribution.api-java")
     id("gradlebuild.publish-public-libraries")
     id("gradlebuild.shaded-jar")
+    id("gradlebuild.cross-version-tests")
 }
 
 description = "Gradle Tooling API - the programmatic API to invoke Gradle"
 
-gradlebuildJava.usedInToolingApi()
-
-tasks.named<Jar>("sourcesJar") {
-    // duplicate package-info.java because of split packages
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-shadedJar {
-    shadedConfiguration.exclude(mapOf("group" to "org.slf4j", "module" to "slf4j-api"))
-    keepPackages = listOf("org.gradle.tooling")
-    unshadedPackages = listOf("org.gradle", "org.slf4j", "sun.misc")
-    ignoredPackages = setOf("org.gradle.tooling.provider.model")
-}
-
-errorprone {
-    disabledChecks.addAll(
-        "EqualsUnsafeCast", // 1 occurrences
-        "FutureReturnValueIgnored", // 1 occurrences
-        "LockNotBeforeTry", // 1 occurrences
-        "ThreadLocalUsage", // 2 occurrences
-    )
-}
-
 dependencies {
-    shadedImplementation(libs.slf4jApi)
+    api(projects.baseServices)
+    api(projects.buildOperations)
+    api(projects.classloaders)
+    api(projects.concurrent)
+    api(projects.enterpriseLogging)
+    api(projects.messaging)
+    api(projects.stdlibJavaExtensions)
+    api(projects.time)
+    api(projects.wrapperShared)
 
-    runtimeOnly(projects.coreApi)
-    implementation(projects.core)
-    implementation(projects.buildProcessServices)
+    api(libs.jspecify)
+
+    implementation(projects.buildDiscoveryImpl)
+    implementation(projects.functional)
+    implementation(projects.logging)
     implementation(projects.serviceProvider)
     implementation(projects.serviceRegistryBuilder)
 
     implementation(libs.guava)
+    implementation(libs.jsr305)
 
-    api(libs.jsr305)
-    api(projects.baseServices)
-    api(projects.buildOperations)
-    api(projects.concurrent)
-    api(projects.enterpriseLogging)
-    api(projects.stdlibJavaExtensions)
-    api(projects.logging)
-    api(projects.messaging)
-    api(projects.time)
-    api(projects.wrapperShared)
+    shadedImplementation(libs.slf4jApi) {
+        version {
+            // Re-declare as `require` here so the published Tooling API module metadata uses `requires` instead of `strictly`,
+            // leaving consumers free to upgrade to newer backwards-compatible slf4j-api versions.
+            require(libs.versions.slf4j.get())
+        }
+    }
 
-    testFixturesImplementation(projects.coreApi)
-    testFixturesImplementation(projects.core)
-    testFixturesImplementation(projects.logging)
-    testFixturesImplementation(projects.modelCore)
+    testImplementation(projects.internalDistributionTesting)
+
     testFixturesImplementation(projects.baseServices)
     testFixturesImplementation(projects.baseServicesGroovy)
+    testFixturesImplementation(projects.core)
+    testFixturesImplementation(projects.coreApi)
+    testFixturesImplementation(projects.internalDistributionTesting)
     testFixturesImplementation(projects.internalTesting)
-    testFixturesImplementation(projects.internalIntegTesting)
+    testFixturesImplementation(projects.logging)
+    testFixturesImplementation(projects.modelCore)
+    testFixturesImplementation(testFixtures(projects.buildProcessServices))
     testFixturesImplementation(libs.commonsIo)
     testFixturesImplementation(libs.slf4jApi)
 
+    testFixturesRuntimeOnly(testLibs.spockJUnit4) {
+        because("Required for @org.junit.Rule, used in ToolingApiSpecification")
+    }
+
     integTestImplementation(projects.jvmServices)
     integTestImplementation(projects.persistentCache)
+    integTestImplementation(projects.kotlinDslToolingModels)
+    integTestImplementation(testFixtures(projects.buildProcessServices))
+    integTestImplementation(testFixtures(projects.launcher))
+    integTestImplementation(testFixtures(projects.toolchainsJvmShared))
 
     crossVersionTestImplementation(projects.jvmServices)
+    crossVersionTestImplementation(projects.internalIntegTesting)
+    crossVersionTestImplementation(projects.internalTesting)
+    crossVersionTestImplementation(testFixtures(projects.buildProcessServices))
     crossVersionTestImplementation(testFixtures(projects.problemsApi))
-    crossVersionTestImplementation(libs.jettyWebApp)
     crossVersionTestImplementation(libs.commonsIo)
-    crossVersionTestRuntimeOnly(libs.cglib) {
+    crossVersionTestRuntimeOnly(testLibs.cglib) {
         because("BuildFinishedCrossVersionSpec classpath inference requires cglib enhancer")
     }
 
+    testImplementation(projects.daemonMessaging)
+
     testImplementation(testFixtures(projects.core))
     testImplementation(testFixtures(projects.logging))
-    testImplementation(testFixtures(projects.dependencyManagement))
-    testImplementation(testFixtures(projects.ide))
-    testImplementation(testFixtures(projects.workers))
+    testImplementation(testFixtures(projects.time))
 
     integTestNormalizedDistribution(projects.distributionsFull) {
         because("Used by ToolingApiRemoteIntegrationTest")
@@ -92,29 +91,50 @@ dependencies {
     crossVersionTestLocalRepository(project(path)) {
         because("ToolingApiVersionSpecification uses the Tooling API Jar")
     }
+
+    // Javadoc-only: downstream modules whose types are referenced by {@link ...} in this module's docs.
+    javadocReferences(projects.coreApi)
+    javadocReferences(projects.startParameter) // for org.gradle.StartParameter
+}
+
+gradleModule {
+    computedRuntimes {
+        // Auto-generated by `:checkTargetRuntimes --fix`
+        client = true
+        daemon = true
+        worker = true
+    }
+}
+
+jvmCompile {
+    compilations {
+        named("main") {
+            // JSpecify annotations on static inner type return types
+            usesJdkInternals = true
+        }
+    }
+}
+
+tasks.named<Jar>("sourcesJar") {
+    // duplicate package-info.java because of split packages
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+shadedJar {
+    shadedConfiguration.exclude(mapOf("group" to "org.slf4j", "module" to "slf4j-api"))
+    keepPackages = listOf("org.gradle.tooling")
+    unshadedPackages = listOf("org.gradle", "org.slf4j", "sun.misc")
+    ignoredPackages = setOf("org.gradle.tooling.provider.model")
 }
 
 strictCompile {
     ignoreRawTypes() // raw types used in public API
 }
 
-packageCycles {
-    excludePatterns.add("org/gradle/tooling/**")
-}
-
-tasks.named("toolingApiShadedJar") {
-    // TODO: Remove this workaround once issue is fixed for configuration cache
-    // We don't add tasks that complete at configuration time
-    // to the resulting work graph, and then prune projects that have no tasks in the graph.
-    // This happens to java-api-extractor, since it's built with rest of build-logic.
-    // Could be related to https://github.com/gradle/gradle/issues/24273
-    dependsOn(gradle.includedBuild("build-logic").task(":java-api-extractor:assemble"))
-}
-
-integTest.usesJavadocCodeSnippets = true
 testFilesCleanup.reportOnly = true
 
 apply(from = "buildship.gradle")
-tasks.isolatedProjectsIntegTest {
-    enabled = false
-}
+
+
+// AutoTestedSamplesToolingApiTest includes customized test logic, so automatic auto testing samples generation is not needed (and would fail) in this project
+integTest.generateDefaultAutoTestedSamplesTest = false

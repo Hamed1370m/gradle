@@ -17,16 +17,23 @@
 package org.gradle.api.tasks
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.AvailableJavaHomes
+import org.gradle.integtests.fixtures.jvm.JavaToolchainFixture
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.process.internal.util.LongCommandLineDetectionUtil
+import org.gradle.test.fixtures.Flaky
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.InstalledJdkTestPreconditions
 
 import static org.gradle.util.Matchers.containsText
 
-class JavaExecWithLongCommandLineIntegrationTest extends AbstractIntegrationSpec {
+class JavaExecWithLongCommandLineIntegrationTest extends AbstractIntegrationSpec implements JavaToolchainFixture {
     def veryLongFileNames = getLongCommandLine()
 
     def setup() {
+        executer.requireIsolatedDaemons()
+        executer.requireOwnGradleUserHomeDir("It generates {GRADLE_USER_HOME}/.tmp/gradle-javaexec-classpathXXXX.jar (https://github.com/gradle/gradle-private/issues/4587)")
+
         file("src/main/java/Driver.java") << """
             package driver;
 
@@ -43,20 +50,6 @@ class JavaExecWithLongCommandLineIntegrationTest extends AbstractIntegrationSpec
                 classpath = sourceSets.main.runtimeClasspath
                 classpath extraClasspath
                 mainClass = "driver.Driver"
-            }
-
-            task runWithJavaExec {
-                dependsOn sourceSets.main.runtimeClasspath
-                doLast {
-                    project.javaexec {
-                        if (run.executable) {
-                            executable run.executable
-                        }
-                        classpath = run.classpath
-                        mainClass = run.mainClass
-                        args run.args
-                    }
-                }
             }
 
             tasks.register("runWithExecOperations") {
@@ -80,7 +73,7 @@ class JavaExecWithLongCommandLineIntegrationTest extends AbstractIntegrationSpec
         """
     }
 
-    @UnsupportedWithConfigurationCache(iterationMatchers = ".* project.javaexec")
+    @Flaky(because = "https://github.com/gradle/gradle-private/issues/5122")
     def "still fail when classpath doesn't shorten the command line enough with #method"() {
         def veryLongCommandLineArgs = getLongCommandLine(getMaxArgs() * 16)
         buildFile << """
@@ -90,12 +83,6 @@ class JavaExecWithLongCommandLineIntegrationTest extends AbstractIntegrationSpec
         """
 
         when:
-        if (method == 'project.javaexec') {
-            executer.expectDocumentedDeprecationWarning("The Project.javaexec(Closure) method has been deprecated. " +
-                "This is scheduled to be removed in Gradle 9.0. " +
-                "Use ExecOperations.javaexec(Action) or ProviderFactory.javaexec(Action) instead. " +
-                "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_project_exec")
-        }
         fails taskName
 
         then:
@@ -104,24 +91,16 @@ class JavaExecWithLongCommandLineIntegrationTest extends AbstractIntegrationSpec
         where:
         method                    | taskName
         'JavaExec task'           | 'run'
-        'project.javaexec'        | 'runWithJavaExec'
         'ExecOperations.javaexec' | 'runWithExecOperations'
     }
 
-    @UnsupportedWithConfigurationCache(iterationMatchers = ".* project.javaexec")
     def "does not suggest long command line failures when execution fails with #method"() {
         buildFile << """
             extraClasspath.from('${veryLongFileNames.join("','")}')
-            run.executable 'does-not-exist'
+            run.executable = 'does-not-exist'
         """
 
         when:
-        if (method == 'project.javaexec') {
-            executer.expectDocumentedDeprecationWarning("The Project.javaexec(Closure) method has been deprecated. " +
-                "This is scheduled to be removed in Gradle 9.0. " +
-                "Use ExecOperations.javaexec(Action) or ProviderFactory.javaexec(Action) instead. " +
-                "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_project_exec")
-        }
         fails taskName
 
         then:
@@ -130,26 +109,18 @@ class JavaExecWithLongCommandLineIntegrationTest extends AbstractIntegrationSpec
 
         where:
         method                    | taskName
-        'project.javaexec'        | 'runWithJavaExec'
         'ExecOperations.javaexec' | 'runWithExecOperations'
         // The test does not work with the JavaExec task because the task resolves the executable prior to starting the process.
         // At the same time, all the cases test the same functionality of the ExecHandle implementation.
         // 'JavaExec task'           | 'run'
     }
 
-    @UnsupportedWithConfigurationCache(iterationMatchers = ".* project.javaexec")
     def "does not suggest long command line failures when execution fails for short command line with #method"() {
         buildFile << """
-            run.executable 'does-not-exist'
+            run.executable = 'does-not-exist'
         """
 
         when:
-        if (method == 'project.javaexec') {
-            executer.expectDocumentedDeprecationWarning("The Project.javaexec(Closure) method has been deprecated. " +
-                "This is scheduled to be removed in Gradle 9.0. " +
-                "Use ExecOperations.javaexec(Action) or ProviderFactory.javaexec(Action) instead. " +
-                "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_project_exec")
-        }
         fails taskName
 
         then:
@@ -158,14 +129,12 @@ class JavaExecWithLongCommandLineIntegrationTest extends AbstractIntegrationSpec
 
         where:
         method                    | taskName
-        'project.javaexec'        | 'runWithJavaExec'
         'ExecOperations.javaexec' | 'runWithExecOperations'
         // The test does not work with the JavaExec task because the task resolves the executable prior to starting the process.
         // At the same time, all the cases test the same functionality of the ExecHandle implementation.
         // 'JavaExec task'           | 'run'
     }
 
-    @UnsupportedWithConfigurationCache(iterationMatchers = ".* project.javaexec")
     def "succeeds with long classpath with #method"() {
         buildFile << """
             extraClasspath.from('${veryLongFileNames.join("','")}')
@@ -177,12 +146,6 @@ class JavaExecWithLongCommandLineIntegrationTest extends AbstractIntegrationSpec
         """
 
         when:
-        if (method == 'project.javaexec') {
-            executer.expectDocumentedDeprecationWarning("The Project.javaexec(Closure) method has been deprecated. " +
-                "This is scheduled to be removed in Gradle 9.0. " +
-                "Use ExecOperations.javaexec(Action) or ProviderFactory.javaexec(Action) instead. " +
-                "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_project_exec")
-        }
         succeeds taskName, "-i"
 
         then:
@@ -192,8 +155,71 @@ class JavaExecWithLongCommandLineIntegrationTest extends AbstractIntegrationSpec
         where:
         method                    | taskName
         'JavaExec task'           | 'run'
-        'project.javaexec'        | 'runWithJavaExec'
         'ExecOperations.javaexec' | 'runWithExecOperations'
+    }
+
+    @Requires(InstalledJdkTestPreconditions.Java8HomeAvailable)
+    def "succeeds with long command line using Java 8 toolchain"() {
+        def jdk8 = AvailableJavaHomes.getJdk8()
+        buildFile << """
+            extraClasspath.from('${veryLongFileNames.join("','")}')
+
+            run {
+                javaLauncher = javaToolchains.launcherFor {
+                    languageVersion = JavaLanguageVersion.of(8)
+                }
+            }
+
+            compileJava {
+                javaCompiler = javaToolchains.compilerFor {
+                    languageVersion = JavaLanguageVersion.of(8)
+                }
+            }
+        """
+
+        // Artificially lower the length of the command-line we try to shorten
+        file("gradle.properties") << """
+            systemProp.org.gradle.internal.cmdline.max.length=1000
+        """
+
+        when:
+        withInstallations(jdk8).succeeds "run", "-i"
+
+        then:
+        executedAndNotSkipped(":run")
+        outputContains("Shortening Java classpath")
+    }
+
+    def "succeeds with long command line using Java 17 toolchain"() {
+        def jdk17 = AvailableJavaHomes.getJdk17()
+        buildFile << """
+            extraClasspath.from('${veryLongFileNames.join("','")}')
+
+            run {
+                javaLauncher = javaToolchains.launcherFor {
+                    languageVersion = JavaLanguageVersion.of(17)
+                }
+                args "--module", "does-not-exist"
+            }
+
+            compileJava {
+                javaCompiler = javaToolchains.compilerFor {
+                    languageVersion = JavaLanguageVersion.of(17)
+                }
+            }
+        """
+
+        // Artificially lower the length of the command-line we try to shorten
+        file("gradle.properties") << """
+            systemProp.org.gradle.internal.cmdline.max.length=1000
+        """
+
+        when:
+        withInstallations(jdk17).succeeds "run", "-i"
+
+        then:
+        executedAndNotSkipped(":run")
+        outputContains("Command line too long - creating argsfile(s)")
     }
 
     private void assertOutputContainsShorteningMessage() {

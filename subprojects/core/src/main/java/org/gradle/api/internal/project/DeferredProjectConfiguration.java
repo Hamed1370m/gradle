@@ -17,11 +17,15 @@
 package org.gradle.api.internal.project;
 
 import org.gradle.api.Project;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
+import org.jspecify.annotations.Nullable;
 
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.LinkedList;
 import java.util.List;
 
+@ServiceScope(Scope.Project.class)
 @NotThreadSafe
 public class DeferredProjectConfiguration {
 
@@ -31,6 +35,7 @@ public class DeferredProjectConfiguration {
     private final List<Runnable> configuration = new LinkedList<>();
     private boolean fired;
 
+    @Nullable
     private Throwable firedSentinel;
 
     public DeferredProjectConfiguration(Project project) {

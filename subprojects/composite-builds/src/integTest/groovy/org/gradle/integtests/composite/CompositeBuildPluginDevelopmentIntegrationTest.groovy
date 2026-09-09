@@ -17,8 +17,11 @@
 package org.gradle.integtests.composite
 
 
+import org.gradle.api.problems.LineInFileLocation
+import org.gradle.api.problems.Severity
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.build.BuildTestFile
-import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext
 import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
 import spock.lang.Issue
 
@@ -35,7 +38,7 @@ class CompositeBuildPluginDevelopmentIntegrationTest extends AbstractCompositeBu
         pluginDependencyA = singleProjectBuild("pluginDependencyA") {
             buildFile << """
                 apply plugin: 'java-library'
-                version "2.0"
+                version = "2.0"
             """
         }
 
@@ -103,12 +106,14 @@ class CompositeBuildPluginDevelopmentIntegrationTest extends AbstractCompositeBu
         fails(buildA, "taskFromPluginBuild")
 
         then:
-        failure.assertHasDescription("Could not compile build file '$buildA.buildFile.canonicalPath'.")
+        failureDescriptionContains("Could not compile build file '$buildA.buildFile.canonicalPath'.")
 
         and:
         verifyAll(receivedProblem) {
+            severity == Severity.ERROR
             fqid == 'compilation:groovy-dsl:compilation-failed'
             contextualLabel == "Could not compile build file '${buildA.buildFile.absolutePath}'."
+            oneLocation(LineInFileLocation).path == buildA.buildFile.absolutePath
         }
     }
 
@@ -169,7 +174,7 @@ class CompositeBuildPluginDevelopmentIntegrationTest extends AbstractCompositeBu
         def buildB = singleProjectBuild("buildB") {
             buildFile << """
                 apply plugin: 'java'
-                version "2.0"
+                version = "2.0"
             """
         }
         buildA.settingsFile.text = """
@@ -198,13 +203,13 @@ class CompositeBuildPluginDevelopmentIntegrationTest extends AbstractCompositeBu
         executed ":pluginBuild:jar", ":pluginDependencyA:jar", ":buildB:jar", ":jar"
     }
 
-    @IntegrationTestTimeout(value = 30, onlyIf = { GradleContextualExecuter.embedded })
+    @IntegrationTestTimeout(value = 30, onlyIf = { IntegrationTestBuildContext.embedded })
     def "can co-develop plugin and multiple consumers as included builds with transitive plugin library dependency using library included build and 'apply plugin'"() {
         given:
         def buildB = singleProjectBuild("buildB") {
             buildFile << """
                 apply plugin: 'java'
-                version "2.0"
+                version = "2.0"
             """
         }
         applyPlugin(buildA, false)
@@ -231,7 +236,7 @@ class CompositeBuildPluginDevelopmentIntegrationTest extends AbstractCompositeBu
             buildscript {
                 repositories {
                     repositories {
-                        maven { url "${mavenRepo.uri}" }
+                        maven { url = "${mavenRepo.uri}" }
                     }
                 }
                 dependencies {
@@ -260,7 +265,7 @@ class CompositeBuildPluginDevelopmentIntegrationTest extends AbstractCompositeBu
             buildscript {
                 repositories {
                     repositories {
-                        maven { url "${mavenRepo.uri}" }
+                        maven { url = "${mavenRepo.uri}" }
                     }
                 }
                 dependencies {
@@ -360,6 +365,7 @@ class CompositeBuildPluginDevelopmentIntegrationTest extends AbstractCompositeBu
         executed ":pluginDependencyA:jar"
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
     def "can use an included build that provides both a buildscript dependency and a compile dependency"() {
         given:
         def buildB = multiProjectBuild("buildB", ['b1', 'b2']) {
@@ -396,7 +402,7 @@ class CompositeBuildPluginDevelopmentIntegrationTest extends AbstractCompositeBu
             buildscript {
                 repositories {
                     repositories {
-                        maven { url "${mavenRepo.uri}" }
+                        maven { url = "${mavenRepo.uri}" }
                     }
                 }
             }
@@ -419,7 +425,7 @@ class CompositeBuildPluginDevelopmentIntegrationTest extends AbstractCompositeBu
             publishing {
                 repositories {
                     maven {
-                        url '${mavenRepo.uri}'
+                        url = "${mavenRepo.uri}"
                     }
                 }
             }
@@ -433,7 +439,7 @@ class CompositeBuildPluginDevelopmentIntegrationTest extends AbstractCompositeBu
             publishing {
                 repositories {
                     maven {
-                        url '${mavenRepo.uri}'
+                        url = "${mavenRepo.uri}"
                     }
                 }
             }
@@ -447,7 +453,7 @@ class CompositeBuildPluginDevelopmentIntegrationTest extends AbstractCompositeBu
         def pluginDependencyB = singleProjectBuild("pluginDependencyB") {
             buildFile << """
                 apply plugin: 'java'
-                version "2.0"
+                version = "2.0"
             """
         }
 
@@ -673,8 +679,9 @@ plugins {
 dependencies {
     implementation project(':a')
 }
-task resolve {
+tasks.register("resolve") {
     def compileClasspath = configurations.compileClasspath
+    inputs.files(compileClasspath)
     doLast {
         compileClasspath.files
     }
@@ -687,8 +694,9 @@ plugins {
 dependencies {
     implementation project(':b')
 }
-task resolve {
+tasks.register("resolve") {
     def compileClasspath = configurations.compileClasspath
+    inputs.files(compileClasspath)
     doLast {
         compileClasspath.files
     }
@@ -707,6 +715,7 @@ task resolve {
     }
 
     @Issue("https://github.com/gradle/gradle/issues/15068")
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "can develop plugin whose build requires dependency resolution using configure-on-demand"() {
         given:
         buildA = multiProjectBuild("cod", ["consumer"]) {
@@ -791,7 +800,7 @@ task resolve {
             pluginManagement {
                 $resolutionStrategy
                 repositories {
-                    maven { url '${mavenRepo.uri}' }
+                    maven { url = '${mavenRepo.uri}' }
                 }
             }
         """ + build.settingsFile.text

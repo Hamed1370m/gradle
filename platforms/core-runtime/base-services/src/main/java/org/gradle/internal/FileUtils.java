@@ -17,9 +17,8 @@
 package org.gradle.internal;
 
 import com.google.common.collect.Lists;
+import org.apache.commons.io.FileSystem;
 import org.apache.commons.io.FilenameUtils;
-import org.gradle.api.GradleException;
-import org.gradle.api.UncheckedIOException;
 
 import java.io.File;
 import java.io.IOException;
@@ -31,8 +30,6 @@ import java.util.List;
 import java.util.Locale;
 
 public class FileUtils {
-    public static final int WINDOWS_PATH_LIMIT = 260;
-
     private static final Comparator<File> FILE_SEGMENT_COMPARATOR = new Comparator<File>() {
         @Override
         public int compare(File left, File right) {
@@ -64,34 +61,23 @@ public class FileUtils {
     };
 
     /**
-     * Converts a string into a string that is safe to use as a file name. The result will only include ascii characters and numbers, and the "-","_", #, $ and "." characters.
+     * The character used to replace illegal characters in file names.
      */
+    private static final char ILLEGAL_CHAR_REPLACEMENT = '-';
+
+    /**
+     * Left for backwards compatibility with <a href="https://github.com/cashapp/paparazzi/issues/2182">Paparazzi</a>
+     */
+    @Deprecated
     public static String toSafeFileName(String name) {
-        int size = name.length();
-        StringBuilder rc = new StringBuilder(size * 2);
-        for (int i = 0; i < size; i++) {
-            char c = name.charAt(i);
-            boolean valid = c >= 'a' && c <= 'z';
-            valid = valid || (c >= 'A' && c <= 'Z');
-            valid = valid || (c >= '0' && c <= '9');
-            valid = valid || (c == '_') || (c == '-') || (c == '.') || (c == '$');
-            if (valid) {
-                rc.append(c);
-            } else {
-                // Encode the character using hex notation
-                rc.append('#');
-                rc.append(Integer.toHexString(c));
-            }
-        }
-        return rc.toString();
-    }
+        // Use Windows filesystem rules for cross-platform compatibility
+        String result = FileSystem.WINDOWS.toLegalFileName(name, ILLEGAL_CHAR_REPLACEMENT);
 
-    public static File assertInWindowsPathLengthLimitation(File file) {
-        if (file.getAbsolutePath().length() > WINDOWS_PATH_LIMIT) {
-            throw new GradleException(String.format("Cannot create file. '%s' exceeds windows path limitation of %d character.", file.getAbsolutePath(), WINDOWS_PATH_LIMIT));
-
-        }
-        return file;
+        // Replace additional characters that may cause issues in web/HTML contexts
+        return result.replace(' ', ILLEGAL_CHAR_REPLACEMENT)
+            .replace('\t', ILLEGAL_CHAR_REPLACEMENT)
+            .replace('\n', ILLEGAL_CHAR_REPLACEMENT)
+            .replace('\r', ILLEGAL_CHAR_REPLACEMENT);
     }
 
     /**
@@ -99,7 +85,7 @@ public class FileUtils {
      * <p>
      * This method does not access the file system.
      * It is agnostic to whether a given file object represents a regular file, directory or does not exist.
-     * That is, the term “file” is used in the java.io.File sense, not the regular file sense.
+     * That is, the term "file" is used in the java.io.File sense, not the regular file sense.
      *
      * @param files the site of files to find the encompassing roots of
      * @return the encompassing roots
@@ -178,22 +164,10 @@ public class FileUtils {
         if (filePath.toLowerCase(Locale.ROOT).endsWith(extension)) {
             return filePath;
         }
-        return removeExtension(filePath) + extension;
-    }
-
-    /**
-     * Removes the extension (if any) from the file path.  If the file path has no extension, then it returns the same string.
-     *
-     * @return the file path without an extension
-     */
-    public static String removeExtension(String filePath) {
-        int fileNameStart = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
-        int extensionPos = filePath.lastIndexOf('.');
-
-        if (extensionPos > fileNameStart) {
-            return filePath.substring(0, extensionPos);
-        }
-        return filePath;
+        int lastFileSeparator = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+        int lastDot = filePath.lastIndexOf('.');
+        String base = lastDot > lastFileSeparator ? filePath.substring(0, lastDot) : filePath;
+        return base + extension;
     }
 
     /**
@@ -203,7 +177,7 @@ public class FileUtils {
         try {
             return src.getCanonicalFile();
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     }
 
@@ -224,6 +198,25 @@ public class FileUtils {
             parent = root.getParentFile();
         }
         return root;
+    }
+
+    /**
+     * Adds suffix to the filename, preserving the extension
+     *
+     * @param filename original file name, e.g. name.zip
+     * @param suffix suffix to add, e.g. "-new"
+     * @return new file name, e.g. name-new.zip
+     */
+    public static String addSuffixToName(String filename, String suffix) {
+        int dotIndex = filename.indexOf('.');
+
+        if (dotIndex > 0) {
+            String name = filename.substring(0, dotIndex);
+            String extension = filename.substring(dotIndex);
+            return name + suffix + extension;
+        } else {
+            return filename + suffix;
+        }
     }
 
 }

@@ -32,6 +32,7 @@ import java.util.Map;
  * Configuration options for the Checkstyle plugin.
  *
  * @see CheckstylePlugin
+ * @since 1.0
  */
 public abstract class CheckstyleExtension extends CodeQualityExtension {
 
@@ -42,17 +43,21 @@ public abstract class CheckstyleExtension extends CodeQualityExtension {
     private int maxErrors;
     private int maxWarnings = Integer.MAX_VALUE;
     private boolean showViolations = true;
-    private final DirectoryProperty configDirectory;
-    private final Property<Boolean> enableExternalDtdLoad;
 
+    /**
+     * Creates a new {@code CheckstyleExtension}.
+     *
+     * @since 2.2
+     */
+    @SuppressWarnings("this-escape")
     public CheckstyleExtension(Project project) {
         this.project = project;
-        this.configDirectory = project.getObjects().directoryProperty();
-        this.enableExternalDtdLoad = project.getObjects().property(Boolean.class).convention(false);
+        getEnableExternalDtdLoad().convention(false);
     }
 
     /**
      * The Checkstyle configuration file to use.
+     * @since 1.0
      */
     @ToBeReplacedByLazyProperty
     public File getConfigFile() {
@@ -61,6 +66,7 @@ public abstract class CheckstyleExtension extends CodeQualityExtension {
 
     /**
      * The Checkstyle configuration file to use.
+     * @since 1.0
      */
     public void setConfigFile(File configFile) {
         setConfig(project.getResources().getText().fromFile(configFile));
@@ -87,6 +93,7 @@ public abstract class CheckstyleExtension extends CodeQualityExtension {
 
     /**
      * The properties available for use in the configuration file. These are substituted into the configuration file.
+     * @since 1.0
      */
     @ToBeReplacedByLazyProperty
     public Map<String, Object> getConfigProperties() {
@@ -95,6 +102,7 @@ public abstract class CheckstyleExtension extends CodeQualityExtension {
 
     /**
      * The properties available for use in the configuration file. These are substituted into the configuration file.
+     * @since 1.0
      */
     public void setConfigProperties(Map<String, Object> configProperties) {
         this.configProperties = configProperties;
@@ -109,9 +117,7 @@ public abstract class CheckstyleExtension extends CodeQualityExtension {
      * @return path to other Checkstyle configuration files
      * @since 4.7
      */
-    public DirectoryProperty getConfigDirectory() {
-        return configDirectory;
-    }
+    public abstract DirectoryProperty getConfigDirectory();
 
     /**
      * The maximum number of errors that are tolerated before breaking the build
@@ -165,6 +171,7 @@ public abstract class CheckstyleExtension extends CodeQualityExtension {
      * Whether rule violations are to be displayed on the console. Defaults to <code>true</code>.
      *
      * Example: showViolations = false
+     * @since 1.4
      */
     @ToBeReplacedByLazyProperty
     public boolean isShowViolations() {
@@ -175,6 +182,7 @@ public abstract class CheckstyleExtension extends CodeQualityExtension {
      * Whether rule violations are to be displayed on the console. Defaults to <code>true</code>.
      *
      * Example: showViolations = false
+     * @since 1.4
      */
     public void setShowViolations(boolean showViolations) {
         this.showViolations = showViolations;
@@ -192,7 +200,5 @@ public abstract class CheckstyleExtension extends CodeQualityExtension {
     @Incubating
     @Optional
     @Input
-    public Property<Boolean> getEnableExternalDtdLoad() {
-        return enableExternalDtdLoad;
-    }
+    public abstract Property<Boolean> getEnableExternalDtdLoad();
 }

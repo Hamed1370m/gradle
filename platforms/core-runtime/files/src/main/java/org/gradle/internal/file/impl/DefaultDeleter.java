@@ -17,13 +17,14 @@ package org.gradle.internal.file.impl;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.gradle.internal.file.Deleter;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -68,7 +69,7 @@ public class DefaultDeleter implements Deleter {
 
     @Override
     public boolean deleteRecursively(File root, boolean followSymlinks) throws IOException {
-        if (root.exists()) {
+        if (Files.exists(root.toPath(), LinkOption.NOFOLLOW_LINKS)) {
             return deleteRecursively(root, followSymlinks
                 ? Handling.FOLLOW_SYMLINKED_DIRECTORIES
                 : Handling.DO_NOT_FOLLOW_SYMLINKS);

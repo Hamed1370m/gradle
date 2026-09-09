@@ -18,18 +18,24 @@ package org.gradle.integtests.resolve.locking
 
 import org.gradle.api.artifacts.dsl.LockMode
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
+import org.gradle.util.internal.ToBeImplemented
 
 abstract class AbstractLockingIntegrationTest extends AbstractDependencyResolutionTest {
     def lockfileFixture = new LockfileFixture(testDirectory: testDirectory)
-    ResolveTestFixture resolve
+    ResolveTestFixture resolve = new ResolveTestFixture(testDirectory)
 
     def setup() {
-        settingsFile << "rootProject.name = 'depLock'"
-        resolve = new ResolveTestFixture(buildFile, "lockedConf")
-        resolve.prepare()
-        resolve.addDefaultVariantDerivationStrategy()
+        settingsFile << """
+            rootProject.name = 'depLock'
+        """
+        buildFile << """
+            plugins {
+                id("jvm-ecosystem")
+            }
+            ${resolve.configureProject("lockedConf")}
+        """
     }
 
     abstract LockMode lockMode()
@@ -39,41 +45,39 @@ abstract class AbstractLockingIntegrationTest extends AbstractDependencyResoluti
         mavenRepo.module('org', 'foo', '1.1').publish()
 
         buildFile << """
-dependencyLocking {
-    lockAllConfigurations()
-    lockMode = LockMode.${lockMode()}
-}
+            dependencyLocking {
+                lockAllConfigurations()
+                lockMode = LockMode.${lockMode()}
+            }
 
-repositories {
-    maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
-    }
-}
-configurations {
-    lockedConf
-}
+            repositories {
+                maven {
+                    name = 'repo'
+                    url = "${mavenRepo.uri}"
+                }
+            }
+            configurations {
+                lockedConf
+            }
 
-dependencies {
-    lockedConf 'org:foo:1.+'
-}
-"""
+            dependencies {
+                lockedConf 'org:foo:1.+'
+            }
+        """
 
         lockfileFixture.createLockfile('lockedConf',['org:foo:1.0'], unique)
 
         def constraintVersion = lockMode() == LockMode.LENIENT ? "1.0" : "{strictly 1.0}"
-        def extraReason = lockMode() == LockMode.LENIENT ? " (update/lenient mode)" : ""
 
         when:
         succeeds 'checkDeps'
 
         then:
-        resolve.expectDefaultConfiguration('runtime')
         resolve.expectGraph {
             root(":", ":depLock:") {
                 edge("org:foo:1.+", "org:foo:1.0")
                 constraint("org:foo:$constraintVersion", "org:foo:1.0") {
-                    byConstraint("dependency was locked to version '1.0'$extraReason")
+                    byConstraint("Dependency version enforced by Dependency Locking")
                 }
             }
         }
@@ -88,8 +92,8 @@ dependencies {
         buildFile << """
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -116,8 +120,8 @@ dependencies {
         buildFile << """
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 
@@ -154,8 +158,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -175,42 +179,46 @@ dependencies {
         lockfileFixture.verifyLockfile('lockedConf', ['org:foo:1.0', 'org:bar:1.0'])
     }
 
-    @ToBeFixedForConfigurationCache(because = "Does actually write the lock file when CC is enabled (which is fine, because all dependency resolution has completed successfully by the time the task fails)")
+    @ToBeImplemented("https://github.com/gradle/gradle/issues/36733")
     def 'does not write lock file when task execution fails'() {
         mavenRepo.module('org', 'bar', '1.1').publish()
 
         buildFile << """
-dependencyLocking {
-    lockAllConfigurations()
-}
-
-repositories {
-    maven {
-        url '${mavenRepo.uri}'
-    }
-}
-configurations {
-    conf
-}
-
-dependencies {
-    conf 'org:bar:1.+'
-}
-
-task copyDeps(type: Copy) {
-    from configurations.conf
-    into "\$buildDir/output"
-    doLast {
-        throw new RuntimeException("Build failed")
-    }
-}
-"""
+            dependencyLocking {
+                lockAllConfigurations()
+            }
+            
+            repositories {
+                maven {
+                    url = "${mavenRepo.uri}"
+                }
+            }
+            configurations {
+                conf
+            }
+            
+            dependencies {
+                conf 'org:bar:1.+'
+            }
+            
+            task copyDeps(type: Copy) {
+                from configurations.conf
+                into "\$buildDir/output"
+                doLast {
+                    throw new RuntimeException("Build failed")
+                }
+            }
+        """
 
         when:
         fails 'copyDeps', '--write-locks'
 
         then:
-        lockfileFixture.expectLockStateMissing('conf')
+        if (GradleContextualExecuter.isConfigCache()) {
+            lockfileFixture.verifyLockfile('conf', ['org:bar:1.1']) // TODO: should NOT write lock files, see https://github.com/gradle/gradle/issues/36733
+        } else {
+            lockfileFixture.expectLockStateMissing('conf')
+        }
     }
 
     def 'does not write lock file when dependency resolution fails'() {
@@ -223,7 +231,7 @@ dependencyLocking {
 
 repositories {
     maven {
-        url '${mavenRepo.uri}'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -265,7 +273,7 @@ dependencyLocking {
 
 repositories {
     maven {
-        url '${mavenRepo.uri}'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -310,7 +318,7 @@ dependencyLocking {
 
 repositories {
     maven {
-        url '${mavenRepo.uri}'
+        url = "${mavenRepo.uri}"
     }
 }
 
@@ -364,8 +372,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -404,8 +412,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -444,8 +452,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -477,8 +485,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -513,8 +521,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -553,8 +561,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -593,8 +601,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -637,8 +645,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -671,8 +679,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -695,8 +703,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -761,8 +769,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {
@@ -804,8 +812,8 @@ dependencyLocking {
 
 repositories {
     maven {
-        name 'repo'
-        url '${mavenRepo.uri}'
+        name = 'repo'
+        url = "${mavenRepo.uri}"
     }
 }
 configurations {

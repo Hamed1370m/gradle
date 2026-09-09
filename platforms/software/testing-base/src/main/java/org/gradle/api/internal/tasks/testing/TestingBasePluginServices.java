@@ -16,15 +16,46 @@
 
 package org.gradle.api.internal.tasks.testing;
 
-import org.gradle.api.internal.tasks.testing.operations.TestExecutionBuildOperationBuildSessionScopeServices;
+import org.gradle.api.internal.tasks.testing.operations.TestListenerBuildOperationAdapter;
+import org.gradle.api.internal.tasks.testing.results.AggregateTestEventReporter;
+import org.gradle.api.tasks.testing.TestEventReporterFactory;
 import org.gradle.internal.service.ServiceRegistration;
+import org.gradle.internal.service.ServiceRegistrationProvider;
 import org.gradle.internal.service.scopes.AbstractGradleModuleServices;
+import org.jspecify.annotations.NullMarked;
 
+@NullMarked
 public class TestingBasePluginServices extends AbstractGradleModuleServices {
-
     @Override
     public void registerBuildSessionServices(ServiceRegistration registration) {
-        registration.addProvider(new TestExecutionBuildOperationBuildSessionScopeServices());
+        registration.addProvider(new TestingBuildSessionScopeServices());
     }
 
+    @Override
+    public void registerBuildTreeServices(ServiceRegistration registration) {
+        registration.addProvider(new TestingBuildTreeScopeServices());
+    }
+
+    @Override
+    public void registerBuildServices(ServiceRegistration registration) {
+        registration.addProvider(new TestingBuildScopeServices());
+    }
+
+    public static class TestingBuildSessionScopeServices implements ServiceRegistrationProvider {
+        void configure(ServiceRegistration serviceRegistration) {
+            serviceRegistration.add(TestListenerBuildOperationAdapter.class);
+        }
+    }
+
+    public static class TestingBuildTreeScopeServices implements ServiceRegistrationProvider {
+        void configure(ServiceRegistration serviceRegistration) {
+            serviceRegistration.add(AggregateTestEventReporter.class);
+        }
+    }
+
+    public static class TestingBuildScopeServices implements ServiceRegistrationProvider {
+        void configure(ServiceRegistration serviceRegistration) {
+            serviceRegistration.add(TestEventReporterFactory.class, DefaultTestEventReporterFactory.class);
+        }
+    }
 }

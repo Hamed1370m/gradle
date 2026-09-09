@@ -17,7 +17,6 @@ package org.gradle.api
 
 import org.gradle.api.plugins.AppliedPlugin
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.plugin.PluginBuilder
 import spock.lang.Issue
 
@@ -66,19 +65,42 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
         detectedBy << JAVA_PLUGIN_IDS + JAVA_PLUGIN_IDS.reverse()
     }
 
-    @ToBeFixedForConfigurationCache(because = "Gradle.buildFinished")
     def "unqualified ids from classpath are detectable"() {
         def pluginBuilder = new PluginBuilder(testDirectory)
         pluginBuilder.addPlugin("")
-        pluginBuilder.addRuleSource("test-rule-source")
         pluginBuilder.publishTo(executer, file("plugin.jar"))
 
         buildFile << """
+            import org.gradle.api.services.BuildServiceParameters
+
+            // wrapping loader into a service to ensure it is closed after the build and it's CC-compatible
+            public abstract class LoaderService implements BuildService<LoaderService.Params>, AutoCloseable {
+                interface Params extends BuildServiceParameters {
+                    RegularFileProperty getPluginJar()
+                }
+
+                private final URLClassLoader loader;
+
+                public LoaderService() throws URISyntaxException {
+                    loader = new URLClassLoader([getParameters().getPluginJar().get().asFile.toURL()] as URL[], getClass().getClassLoader());
+                }
+
+                public URLClassLoader getLoader() {
+                    return loader;
+                }
+
+                @Override
+                public void close() {
+                    loader.close();
+                }
+            }
+
             def operations = []
 
-            def loader = new URLClassLoader([file("plugin.jar").toURL()] as URL[], getClass().classLoader)
-            def pluginClass = loader.loadClass("${pluginBuilder.packageName}.TestPlugin")
-            def ruleSourceClass = loader.loadClass("${pluginBuilder.packageName}.TestRuleSource")
+            def loaderService = gradle.sharedServices.registerIfAbsent("loader", LoaderService){
+                getParameters().pluginJar.set(file("plugin.jar"))
+            }.get()
+            def pluginClass = loaderService.getLoader().loadClass("${pluginBuilder.packageName}.TestPlugin")
 
             plugins.withType(pluginClass) {
                 operations << 'withType'
@@ -88,20 +110,11 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
                 operations << 'withId'
             }
 
-            pluginManager.withPlugin("test-rule-source") {
-                // assert we are using our closure decoration and not closure coercion
-                assert delegate instanceof $AppliedPlugin.name
-                operations << 'withPlugin'
-            }
-
             operations << "applying"
             apply plugin: pluginClass
-            apply type: ruleSourceClass
             operations << "applied"
 
-            task verify { doLast { assert operations == ['applying', 'withType', 'withId', 'withPlugin', 'applied'] } }
-
-            gradle.buildFinished { loader.close() }
+            task verify { doLast { assert operations == ['applying', 'withType', 'withId', 'applied'] } }
         """
 
         expect:
@@ -116,73 +129,6 @@ class PluginDetectionIntegrationTest extends AbstractIntegrationSpec {
             }
 
             apply plugin: "java"
-        """
-
-        then:
-        succeeds "help"
-    }
-
-    def "plugin manager with id is fired after the plugin is applied for hybrid plugins"() {
-        when:
-        file("buildSrc/src/main/groovy/MyPlugin.groovy") << """
-            import org.gradle.api.Plugin
-            import org.gradle.api.Task
-            import org.gradle.model.*
-
-            class MyPlugin implements Plugin {
-                void apply(project) {
-                  project.tasks.create("imperative-sentinel")
-                }
-
-                static class Rules extends RuleSource {
-                    @Model String thing() {
-                        "foo"
-                    }
-                }
-            }
-        """
-
-        file("buildSrc/src/main/resources/META-INF/gradle-plugins/my.properties") << "implementation-class=MyPlugin"
-
-        buildFile """
-            import org.gradle.model.internal.core.ModelPath
-
-            pluginManager.withPlugin("my") {
-              assert tasks."imperative-sentinel"
-              // note: modelRegistry property is internal on project
-              assert modelRegistry.node(ModelPath.path("thing")) != null
-            }
-
-            pluginManager.apply(MyPlugin)
-        """
-
-        then:
-        succeeds "help"
-    }
-
-    def "plugin manager with id is fired after the plugin is applied for rule plugins"() {
-        when:
-        file("buildSrc/src/main/groovy/MyPlugin.groovy") << """
-            import org.gradle.model.*
-
-            class Rules extends RuleSource {
-                @Model String thing() {
-                    "foo"
-                }
-            }
-        """
-
-        file("buildSrc/src/main/resources/META-INF/gradle-plugins/my.properties") << "implementation-class=Rules"
-
-        buildFile """
-            import org.gradle.model.internal.core.ModelPath
-
-            pluginManager.withPlugin("my") {
-              // note: modelRegistry property is internal on project
-              assert modelRegistry.node(ModelPath.path("thing")) != null
-            }
-
-            pluginManager.apply("my")
         """
 
         then:

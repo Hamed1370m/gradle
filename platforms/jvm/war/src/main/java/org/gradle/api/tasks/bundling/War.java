@@ -18,13 +18,16 @@ package org.gradle.api.tasks.bundling;
 import groovy.lang.Closure;
 import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
+import org.gradle.api.Incubating;
 import org.gradle.api.file.CopySpec;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.internal.file.copy.CopySpecInternal;
 import org.gradle.api.internal.file.copy.DefaultCopySpec;
 import org.gradle.api.internal.file.copy.RenamingCopyAction;
 import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.model.ReplacedBy;
 import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.Internal;
@@ -32,11 +35,12 @@ import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.internal.Transformers;
+import org.gradle.internal.instrumentation.api.annotations.NotToBeReplacedByLazyProperty;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 import org.gradle.util.internal.ConfigureUtil;
 import org.gradle.work.DisableCachingByDefault;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.io.File;
 import java.util.ArrayList;
@@ -47,16 +51,26 @@ import static org.gradle.api.internal.lambdas.SerializableLambdas.spec;
 
 /**
  * Assembles a WAR archive.
+ * @since 0.7
  */
 @DisableCachingByDefault(because = "Not worth caching")
 public abstract class War extends Jar {
+    /**
+     * The war extension.
+     *
+     * @since 0.7
+     */
     public static final String WAR_EXTENSION = "war";
 
-    private File webXml;
     private FileCollection classpath;
     private final DefaultCopySpec webInf;
-    private final DirectoryProperty webAppDirectory;
 
+    /**
+     * Creates a new {@code War}.
+     *
+     * @since 0.8
+     */
+    @SuppressWarnings("this-escape")
     public War() {
         getArchiveExtension().set(WAR_EXTENSION);
         setMetadataCharset("UTF-8");
@@ -74,18 +88,19 @@ public abstract class War extends Jar {
 
         CopySpecInternal renameSpec = webInf.addChild();
         renameSpec.into("");
-        renameSpec.from((Callable<File>) War.this::getWebXml);
+        renameSpec.from((Callable<File>) () -> getWebXmlFile().getAsFile().getOrNull());
         renameSpec.appendCachingSafeCopyAction(new RenamingCopyAction(Transformers.constant("web.xml")));
-
-        webAppDirectory = getObjectFactory().directoryProperty();
     }
 
     @Inject
     @Override
-    public ObjectFactory getObjectFactory() {
-        throw new UnsupportedOperationException();
-    }
+    public abstract ObjectFactory getObjectFactory();
 
+    /**
+     * Returns the web inf.
+     *
+     * @since 0.9
+     */
     @Internal
     @ToBeReplacedByLazyProperty(comment = "This should probably stay eager")
     public CopySpec getWebInf() {
@@ -99,6 +114,7 @@ public abstract class War extends Jar {
      *
      * @param configureClosure The closure to execute
      * @return The newly created {@code CopySpec}.
+     * @since 0.9
      */
     public CopySpec webInf(@SuppressWarnings("rawtypes") @DelegatesTo(CopySpec.class) Closure configureClosure) {
         return ConfigureUtil.configure(configureClosure, getWebInf());
@@ -124,6 +140,7 @@ public abstract class War extends Jar {
      * the {@code WEB-INF/classes} directory.
      *
      * @return The classpath. Returns an empty collection when there is no classpath to include in the WAR.
+     * @since 0.9
      */
     @Nullable
     @Optional
@@ -147,43 +164,58 @@ public abstract class War extends Jar {
      * Sets the classpath to include in the WAR archive.
      *
      * @param classpath The classpath. Must not be null.
+     * @since 0.9
      */
     public void setClasspath(Object classpath) {
-        this.classpath = getProject().files(classpath);
+        this.classpath = getObjectFactory().fileCollection().from(classpath);
     }
 
     /**
      * Adds files to the classpath to include in the WAR archive.
      *
      * @param classpath The files to add. These are evaluated as per {@link org.gradle.api.Project#files(Object...)}
+     * @since 0.9
      */
     @SuppressWarnings("rawtypes")
-    public void classpath(Object... classpath) {
+    public void classpath(@Nullable Object... classpath) {
         FileCollection oldClasspath = getClasspath();
-        this.classpath = getProject().files(oldClasspath != null ? oldClasspath : new ArrayList(), classpath);
+        this.classpath = getObjectFactory().fileCollection().from(oldClasspath != null ? oldClasspath : new ArrayList(), classpath);
     }
 
     /**
      * Returns the {@code web.xml} file to include in the WAR archive. When {@code null}, no {@code web.xml} file is included in the WAR.
      *
-     * @return The {@code web.xml} file.
+     * @return The {@code web.xml} file property.
+     * @since 9.7.0
      */
-    @Nullable
+    @Incubating
     @Optional
     @PathSensitive(PathSensitivity.NONE)
     @InputFile
-    @ToBeReplacedByLazyProperty
+    public abstract RegularFileProperty getWebXmlFile();
+
+    /**
+     * Returns the {@code web.xml} file to include in the WAR archive. When {@code null}, no {@code web.xml} file is included in the WAR.
+     *
+     * @return The {@code web.xml} file.
+     * @since 0.7
+     */
+    @ReplacedBy("webXmlFile")
+    @Nullable
+    @NotToBeReplacedByLazyProperty(because = "Bridge for backward compatibility, use getWebXmlFile() instead", willBeDeprecated = true)
     public File getWebXml() {
-        return webXml;
+        return getWebXmlFile().isPresent() ? getWebXmlFile().get().getAsFile() : null;
     }
 
     /**
      * Sets the {@code web.xml} file to include in the WAR archive. When {@code null}, no {@code web.xml} file is included in the WAR.
      *
      * @param webXml The {@code web.xml} file. Maybe null.
+     * @since 0.7
      */
     public void setWebXml(@Nullable File webXml) {
-        this.webXml = webXml;
+        getWebXmlFile().set(webXml);
+        getWebXmlFile().convention(getObjectFactory().fileProperty().fileValue(webXml));
     }
 
     /**
@@ -197,7 +229,5 @@ public abstract class War extends Jar {
      * @since 7.1
      */
     @Internal
-    public DirectoryProperty getWebAppDirectory() {
-        return webAppDirectory;
-    }
+    public abstract DirectoryProperty getWebAppDirectory();
 }

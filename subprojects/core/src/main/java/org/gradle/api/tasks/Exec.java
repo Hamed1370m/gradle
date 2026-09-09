@@ -18,7 +18,6 @@ package org.gradle.api.tasks;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 import org.gradle.work.DisableCachingByDefault;
 
-import javax.annotation.Nullable;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
@@ -44,9 +43,15 @@ import java.util.List;
  *   }
  * }
  * </pre>
+ * @since 0.9
  */
 @DisableCachingByDefault(because = "Gradle would require more information to cache this task")
 public abstract class Exec extends AbstractExecTask<Exec> {
+    /**
+     * Creates a new {@code Exec}.
+     *
+     * @since 0.9
+     */
     public Exec() {
         super(Exec.class);
     }
@@ -55,7 +60,6 @@ public abstract class Exec extends AbstractExecTask<Exec> {
      * {@inheritDoc}
      */
     @Override
-    @Nullable
     @ToBeReplacedByLazyProperty
     public List<String> getArgs() {
         return super.getArgs();
@@ -73,7 +77,7 @@ public abstract class Exec extends AbstractExecTask<Exec> {
      * {@inheritDoc}
      */
     @Override
-    public Exec setArgs(@Nullable Iterable<?> arguments) {
+    public Exec setArgs(Iterable<?> arguments) {
         return super.setArgs(arguments);
     }
 

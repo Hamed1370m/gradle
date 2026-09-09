@@ -16,14 +16,11 @@
 
 package org.gradle.smoketests
 
-import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
 import spock.lang.Issue
 
 class SpotBugsPluginSmokeTest extends AbstractPluginValidatingSmokeTest {
 
     @Issue('https://plugins.gradle.org/plugin/com.github.spotbugs')
-    @Requires(UnitTestPreconditions.Jdk11OrEarlier)
     def 'spotbugs plugin'() {
         given:
         buildFile << """
@@ -51,7 +48,16 @@ class SpotBugsPluginSmokeTest extends AbstractPluginValidatingSmokeTest {
         """.stripIndent()
 
         when:
-        def result = runner('spotbugsMain').build()
+        // The deprecation warning is expected until https://github.com/spotbugs/spotbugs-gradle-plugin/issues/1773 is fixed
+        def result = runner('spotbugsMain')
+            .expectDeprecationWarning(
+                "The Configuration.setVisible(boolean) method has been deprecated. " +
+                    "This is scheduled to be removed in Gradle 11. " +
+                    "Consult the upgrading guide for further information: " +
+                    "https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecate-visible-property",
+                "https://github.com/spotbugs/spotbugs-gradle-plugin/issues/1773"
+            )
+            .build()
 
         then:
         file('build/reports/spotbugs').isDirectory()
@@ -62,5 +68,15 @@ class SpotBugsPluginSmokeTest extends AbstractPluginValidatingSmokeTest {
         [
             'com.github.spotbugs': Versions.of(TestedVersions.spotbugs)
         ]
+    }
+
+    @Override
+    String getSubprojectExtensionAccess(String testedPluginId, String version) {
+        "spotbugs {}"
+    }
+
+    @Override
+    List<String> getSubprojectExtensionDeprecations(String testedPluginId, String version) {
+        [parentMethodInvocationDeprecation('spotbugs')]
     }
 }

@@ -19,14 +19,35 @@ dependencyResolutionManagement {
         mavenCentral()
         gradlePluginPortal()
     }
+    versionCatalogs {
+        create("buildLibs") {
+            from(files("../gradle/dependency-management/build.versions.toml"))
+            version("errorProne", "stub") // not used in this project
+        }
+    }
 }
 
-plugins {
-    id("com.gradle.develocity").version("3.18.1") // Run `java build-logic-settings/UpdateDevelocityPluginVersion.java <new-version>` to update
-    id("io.github.gradle.gradle-enterprise-conventions-plugin").version("0.10.2")
-    id("org.gradle.toolchains.foojay-resolver-convention").version("0.8.0")
+pluginManagement {
+    repositories {
+        maven {
+            url = uri("https://repo.gradle.org/gradle/enterprise-libs-release-candidates")
+            content {
+                val rcAndMilestonesPattern = "\\d{1,2}?\\.\\d{1,2}?(\\.\\d{1,2}?)?-((rc-\\d{1,2}?)|(milestone-\\d{1,2}?))"
+                // GE plugin marker artifact
+                includeVersionByRegex("com.gradle.develocity", "com.gradle.develocity.gradle.plugin", rcAndMilestonesPattern)
+                // GE plugin jar
+                includeVersionByRegex("com.gradle", "develocity-gradle-plugin", rcAndMilestonesPattern)
+            }
+        }
+
+        gradlePluginPortal()
+    }
 }
 
+include("architecture-docs")
 include("build-environment")
+include("configuration-cache-compatibility")
+include("default-settings-plugins")
+include("version-catalogs")
 
 rootProject.name = "build-logic-settings"

@@ -28,7 +28,12 @@ import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.PublishArtifact;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.CollectionCallbackActionDecorator;
+import org.gradle.api.internal.DocumentationRegistry;
 import org.gradle.api.internal.file.FileCollectionFactory;
+import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.problems.ProblemId;
+import org.gradle.api.problems.Problems;
+import org.gradle.api.problems.internal.GradleCoreProblemGroup;
 import org.gradle.api.publish.Publication;
 import org.gradle.api.publish.PublicationArtifact;
 import org.gradle.api.publish.internal.PublicationInternal;
@@ -38,6 +43,7 @@ import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.bundling.AbstractArchiveTask;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.instrumentation.api.annotations.NotToBeReplacedByLazyProperty;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
 import org.gradle.internal.serialization.Cached;
@@ -68,14 +74,16 @@ import static org.gradle.api.internal.lambdas.SerializableLambdas.spec;
  *
  * <p>The task produces {@link Signature}</p> objects that are publishable artifacts and can be assigned to another configuration. <p> The signature objects are created with defaults and using this
  * tasks signatory and signature type.
+ * @since 1.0
  */
+@SuppressWarnings("this-escape")
 @DisableCachingByDefault(because = "Not made cacheable, yet")
 public abstract class Sign extends DefaultTask implements SignatureSpec {
 
     private SignatureType signatureType;
     private Signatory signatory;
     private boolean required = true;
-    private final Transient<DomainObjectSet<Signature>> signatures = Transient.of(getProject().getObjects().domainObjectSet(Signature.class));
+    private final Transient<DomainObjectSet<Signature>> signatures = Transient.of(getObjectFactory().domainObjectSet(Signature.class));
 
     private final Cached<Collection<Signature.Generator>> generators = Cached.of(this::computeCachedSignatures);
 
@@ -94,14 +102,22 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
         return getSignatures().stream();
     }
 
+    @SuppressWarnings("this-escape")
     @Inject
     public Sign() {
         // If we aren't required and don't have a signatory then we just don't run
         onlyIf("Signing is required, or signatory is set", spec(task -> isRequired() || getSignatory() != null));
     }
 
+    @Inject
+    protected abstract Problems getProblems();
+
+    @Inject
+    protected abstract DocumentationRegistry getDocumentationRegistry();
+
     /**
      * Configures the task to sign the archive produced for each of the given tasks (which must be archive tasks).
+     * @since 1.0
      */
     public void sign(Task... tasks) {
         for (Task task : tasks) {
@@ -115,11 +131,12 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
 
     private void signTask(final AbstractArchiveTask archiveTask) {
         dependsOn(archiveTask);
-        addSignature(new Signature(() -> archiveTask.getArchiveFile().get().getAsFile(), () -> archiveTask.getArchiveClassifier().getOrNull(), this, this));
+        addSignature(new Signature(null, () -> archiveTask.getArchiveFile().get().getAsFile(), () -> archiveTask.getArchiveClassifier().getOrNull(), null, this, this));
     }
 
     /**
      * Configures the task to sign each of the given artifacts
+     * @since 1.0
      */
     public void sign(PublishArtifact... publishArtifacts) {
         for (PublishArtifact publishArtifact : publishArtifacts) {
@@ -129,11 +146,12 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
 
     private void signArtifact(PublishArtifact publishArtifact) {
         dependsOn(publishArtifact);
-        addSignature(new Signature(publishArtifact, this, this));
+        addSignature(new Signature(publishArtifact, publishArtifact::getFile, publishArtifact::getClassifier, publishArtifact::getName, this, this));
     }
 
     /**
      * Configures the task to sign each of the given files
+     * @since 1.0
      */
     public void sign(File... files) {
         addSignatures(null, files);
@@ -141,19 +159,27 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
 
     /**
      * Configures the task to sign each of the given artifacts, using the given classifier as the classifier for the resultant signature publish artifact.
+     * @since 1.0
      */
     public void sign(String classifier, File... files) {
+        DeprecationLogger.deprecateMethod(Sign.class, "sign(String, File...)")
+            .withAdvice("Use sign(File...) instead.")
+            .willBeRemovedInGradle10()
+            .withUpgradeGuideSection(9, "deprecate_sign_classifier")
+            .nagUser();
+
         addSignatures(classifier, files);
     }
 
     private void addSignatures(String classifier, File[] files) {
         for (File file : files) {
-            addSignature(new Signature(file, classifier, this, this));
+            addSignature(new Signature(null, () -> file, () -> classifier, null, this, this));
         }
     }
 
     /**
      * Configures the task to sign every artifact of the given configurations
+     * @since 1.0
      */
     public void sign(Configuration... configurations) {
         for (Configuration configuration : configurations) {
@@ -209,6 +235,7 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
 
     /**
      * Changes the signatory of the signatures.
+     * @since 1.0
      */
     public void signatory(Signatory signatory) {
         this.signatory = signatory;
@@ -216,6 +243,7 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
 
     /**
      * Change whether or not this task should fail if no signatory or signature type are configured at the time of generation.
+     * @since 1.0
      */
     public void required(boolean required) {
         setRequired(required);
@@ -223,11 +251,26 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
 
     /**
      * Generates the signature files.
+     * @since 1.0
      */
     @TaskAction
     public void generate() {
         if (getSignatory() == null) {
-            throw new InvalidUserDataException("Cannot perform signing task \'" + getPath() + "\' because it has no configured signatory");
+            ProblemId problemId = ProblemId.create(
+                "no-configured-signatory",
+                "No configured signatory",
+                GradleCoreProblemGroup.packaging().signing()
+            );
+            throw getProblems().getReporter().throwing(
+                new InvalidUserDataException(),
+                problemId,
+                spec -> spec
+                    .contextualLabel("Cannot perform signing task \'" + getPath() + "\' because it has no configured signatory")
+                    .details("A signatory holds the PGP key used to sign artifacts. "
+                        + "It must be configured in the \'signing {}\' block before signing tasks can run.")
+                    .solution("Configure a signatory in the \'signing {}\' block.")
+                    .documentedAt(getDocumentationRegistry().getDocumentationFor("signing_plugin"))
+            );
         }
 
         for (Signature.Generator signature : sanitizedGenerators().values()) {
@@ -237,6 +280,7 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
 
     /**
      * The signatures generated by this task.
+     * @since 1.0
      */
     @Internal
     public DomainObjectSet<Signature> getSignatures() {
@@ -293,6 +337,7 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
      *
      * @return The signature.
      * @throws IllegalStateException if there is not exactly one signature.
+     * @since 1.0
      */
     @Internal
     @ToBeReplacedByLazyProperty
@@ -317,13 +362,11 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
     }
 
     @Inject
-    protected FileCollectionFactory getFileCollectionFactory() {
-        // Implementation provided by decoration
-        throw new UnsupportedOperationException();
-    }
+    protected abstract FileCollectionFactory getFileCollectionFactory();
 
     /**
      * All of the files that will be signed by this task.
+     * @since 1.0
      */
     @Internal
     @NotToBeReplacedByLazyProperty(because = "Read-only file collection", willBeDeprecated = true)
@@ -334,6 +377,7 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
 
     /**
      * All of the signature files that will be generated by this operation.
+     * @since 1.0
      */
     @Internal
     @NotToBeReplacedByLazyProperty(because = "Read-only file collection", willBeDeprecated = true)
@@ -394,7 +438,9 @@ public abstract class Sign extends DefaultTask implements SignatureSpec {
      * @since 5.1
      */
     @Inject
-    protected CollectionCallbackActionDecorator getCallbackActionDecorator() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract CollectionCallbackActionDecorator getCallbackActionDecorator();
+
+    @Inject
+    protected abstract ObjectFactory getObjectFactory();
+
 }

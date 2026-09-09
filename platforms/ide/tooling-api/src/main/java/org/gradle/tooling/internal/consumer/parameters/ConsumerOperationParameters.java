@@ -25,6 +25,7 @@ import org.gradle.tooling.events.OperationType;
 import org.gradle.tooling.events.ProgressListener;
 import org.gradle.tooling.internal.adapter.ProtocolToModelAdapter;
 import org.gradle.tooling.internal.consumer.CancellationTokenInternal;
+import org.gradle.tooling.internal.consumer.ConnectionConfigurationUtil;
 import org.gradle.tooling.internal.consumer.ConnectionParameters;
 import org.gradle.tooling.internal.gradle.TaskListingLaunchable;
 import org.gradle.tooling.internal.protocol.BuildParameters;
@@ -32,8 +33,8 @@ import org.gradle.tooling.internal.protocol.InternalLaunchable;
 import org.gradle.tooling.internal.protocol.ProgressListenerVersion1;
 import org.gradle.tooling.model.Launchable;
 import org.gradle.tooling.model.Task;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -45,10 +46,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /**
  * This is used via reflection from {@code ProviderOperationParameters}.
  */
+@SuppressWarnings("UnnecessaryLambda")
 public class ConsumerOperationParameters implements BuildParameters {
 
     public static Builder builder() {
@@ -66,7 +70,8 @@ public class ConsumerOperationParameters implements BuildParameters {
         private Boolean colorOutput;
         private InputStream stdin;
         private File javaHome;
-        private List<String> jvmArguments;
+        private List<String> baseJvmArguments = null;
+        private List<String> additionalJvmArguments = null;
         private Map<String, String> envVariables;
         private List<String> arguments;
         private List<String> tasks;
@@ -115,13 +120,15 @@ public class ConsumerOperationParameters implements BuildParameters {
             return this;
         }
 
-        public Builder setJvmArguments(List<String> jvmArguments) {
-            this.jvmArguments = jvmArguments;
+        public Builder setBaseJvmArguments(@Nullable List<String> baseJvmArguments) {
+            if (baseJvmArguments != null) {
+                this.baseJvmArguments = new ArrayList<>(baseJvmArguments);
+            }
             return this;
         }
 
-        public Builder addJvmArguments(List<String> jvmArguments) {
-            this.jvmArguments = concat(this.jvmArguments, jvmArguments);
+        public Builder addJvmArguments(@Nullable List<String> jvmArguments) {
+            this.additionalJvmArguments = concat(this.additionalJvmArguments, jvmArguments);
             return this;
         }
 
@@ -135,7 +142,7 @@ public class ConsumerOperationParameters implements BuildParameters {
             return this;
         }
 
-        private static List<String> concat(List<String> first, List<String> second) {
+        private static List<String> concat(@Nullable List<String> first, @Nullable List<String> second) {
             List<String> result = new ArrayList<String>();
             if (first != null) {
                 result.addAll(first);
@@ -220,8 +227,27 @@ public class ConsumerOperationParameters implements BuildParameters {
                 throw new IllegalStateException("No entry point specified.");
             }
 
-            return new ConsumerOperationParameters(entryPoint, parameters, stdout, stderr, colorOutput, stdin, javaHome, jvmArguments, envVariables, arguments, tasks, launchables, injectedPluginClasspath,
-                legacyProgressListeners, progressListeners, cancellationToken, systemProperties, new FailsafeStreamedValueListener(streamedValueListener));
+            return new ConsumerOperationParameters(
+                entryPoint,
+                parameters,
+                stdout,
+                stderr,
+                colorOutput,
+                stdin,
+                javaHome,
+                baseJvmArguments,
+                additionalJvmArguments,
+                envVariables,
+                arguments,
+                tasks,
+                launchables,
+                injectedPluginClasspath,
+                legacyProgressListeners,
+                progressListeners,
+                cancellationToken,
+                systemProperties,
+                new FailsafeStreamedValueListener(streamedValueListener)
+            );
         }
 
         public void copyFrom(ConsumerOperationParameters operationParameters) {
@@ -231,7 +257,8 @@ public class ConsumerOperationParameters implements BuildParameters {
             legacyProgressListeners.addAll(operationParameters.legacyProgressListeners);
             progressListeners.putAll(operationParameters.progressListeners);
             arguments = operationParameters.arguments;
-            jvmArguments = operationParameters.jvmArguments;
+            baseJvmArguments = operationParameters.baseJvmArguments;
+            additionalJvmArguments = operationParameters.additionalJvmArguments;
             envVariables = operationParameters.envVariables;
             stdout = operationParameters.stdout;
             stderr = operationParameters.stderr;
@@ -240,8 +267,16 @@ public class ConsumerOperationParameters implements BuildParameters {
             javaHome = operationParameters.javaHome;
             injectedPluginClasspath = operationParameters.injectedPluginClasspath;
             systemProperties = operationParameters.systemProperties;
+            entryPoint = operationParameters.entryPointName;
+            parameters = operationParameters.parameters;
+            arguments = operationParameters.arguments;
         }
     }
+
+    private static final Predicate<String> IS_HELP_ARG = s -> "--help".equals(s) || "-h".equals(s) || "-?".equals(s);
+    private static final Predicate<String> IS_VERSION_ARG = s -> "--version".equals(s) || "-v".equals(s);
+    private static final Predicate<String> IS_SHOW_VERSION_ARG = s -> "--show-version".equals(s) || "-V".equals(s);
+    private static final Predicate<String> IS_HELP_OR_VERSION = IS_HELP_ARG.or(IS_VERSION_ARG).or(IS_SHOW_VERSION_ARG);
 
     private final String entryPointName;
     private final ProgressListenerAdapter progressListener;
@@ -256,7 +291,8 @@ public class ConsumerOperationParameters implements BuildParameters {
     private final InputStream stdin;
 
     private final File javaHome;
-    private final List<String> jvmArguments;
+    private final List<String> baseJvmArguments;
+    private final List<String> additionalJvmArguments;
     private final Map<String, String> envVariables;
     private final List<String> arguments;
     private final List<String> tasks;
@@ -270,10 +306,27 @@ public class ConsumerOperationParameters implements BuildParameters {
     private final FailsafeStreamedValueListener streamedValueListener;
 
     private ConsumerOperationParameters(
-        String entryPointName, ConnectionParameters parameters, OutputStream stdout, OutputStream stderr, Boolean colorOutput, InputStream stdin,
-        File javaHome, List<String> jvmArguments, Map<String, String> envVariables, List<String> arguments, List<String> tasks, List<InternalLaunchable> launchables, ClassPath injectedPluginClasspath,
-        List<org.gradle.tooling.ProgressListener> legacyProgressListeners, Map<OperationType, List<ProgressListener>> progressListeners, CancellationToken cancellationToken,
-        Map<String, String> systemProperties, FailsafeStreamedValueListener streamedValueListener
+        String entryPointName,
+        ConnectionParameters parameters,
+        OutputStream stdout,
+        OutputStream stderr,
+        Boolean colorOutput,
+        InputStream stdin,
+        File javaHome,
+        @Nullable
+        List<String> baseJvmArguments,
+        @Nullable
+        List<String> additionalJvmArguments,
+        Map<String, String> envVariables,
+        List<String> arguments,
+        List<String> tasks,
+        List<InternalLaunchable> launchables,
+        ClassPath injectedPluginClasspath,
+        List<org.gradle.tooling.ProgressListener> legacyProgressListeners,
+        Map<OperationType, List<ProgressListener>> progressListeners,
+        CancellationToken cancellationToken,
+        Map<String, String> systemProperties,
+        FailsafeStreamedValueListener streamedValueListener
     ) {
         this.entryPointName = entryPointName;
         this.parameters = parameters;
@@ -282,7 +335,8 @@ public class ConsumerOperationParameters implements BuildParameters {
         this.colorOutput = colorOutput;
         this.stdin = stdin;
         this.javaHome = javaHome;
-        this.jvmArguments = jvmArguments;
+        this.baseJvmArguments = baseJvmArguments;
+        this.additionalJvmArguments = additionalJvmArguments;
         this.envVariables = envVariables;
         this.arguments = arguments;
         this.tasks = tasks;
@@ -310,12 +364,55 @@ public class ConsumerOperationParameters implements BuildParameters {
         }
     }
 
+    public boolean containsHelpArg() {
+        return containsArg(IS_HELP_ARG);
+    }
+
+    public boolean containsVersionArg() {
+        return containsArg(IS_VERSION_ARG);
+    }
+
+    public boolean containsShowVersionArg() {
+        return containsArg(IS_SHOW_VERSION_ARG);
+    }
+
+    public boolean containsHelpOrVersionArgs() {
+        return containsArg(IS_HELP_OR_VERSION);
+    }
+
+    private boolean containsArg(Predicate<String> predicate) {
+        return arguments == null ? false : arguments.stream().filter(predicate).findFirst().isPresent();
+    }
+
+    public ConsumerOperationParameters withoutHelpOrVersionArgs() {
+        ConsumerOperationParameters.Builder builder = ConsumerOperationParameters.builder();
+        builder.copyFrom(this);
+        builder.setArguments(arguments.stream().filter(IS_HELP_OR_VERSION.negate()).collect(Collectors.toList()));
+        return builder.build();
+    }
+
+    public ConsumerOperationParameters withArgs(Function<List<String>, List<String>> updateArgs) {
+        ConsumerOperationParameters.Builder builder = ConsumerOperationParameters.builder();
+        builder.copyFrom(this);
+        builder.setArguments(updateArgs.apply(getArguments()));
+        return builder.build();
+    }
+
+    public ConsumerOperationParameters withNoTasks() {
+        ConsumerOperationParameters.Builder builder = ConsumerOperationParameters.builder();
+        builder.copyFrom(this);
+        builder.setTasks(null);
+        return builder.build();
+    }
+
     public String getEntryPointName() {
         return entryPointName;
     }
 
     /**
-     * @since 1.0-milestone-3
+     * Returns the start time.
+     *
+     * @since 1.0
      */
     public long getStartTime() {
         return startTime;
@@ -326,70 +423,90 @@ public class ConsumerOperationParameters implements BuildParameters {
     }
 
     /**
-     * @since 1.0-milestone-3
+     * Returns the gradle user home dir.
+     *
+     * @since 1.0
      */
     public File getGradleUserHomeDir() {
         return parameters.getGradleUserHomeDir();
     }
 
     /**
-     * @since 1.0-milestone-3
+     * Returns the project dir.
+     *
+     * @since 1.0
      */
     public File getProjectDir() {
         return parameters.getProjectDir();
     }
 
     /**
-     * @since 1.0-milestone-3
+     * Returns whether search upwards is set.
+     *
+     * @since 1.0
      */
     public Boolean isSearchUpwards() {
         return parameters.isSearchUpwards();
     }
 
     /**
-     * @since 1.0-milestone-3
+     * Returns whether embedded is set.
+     *
+     * @since 1.0
      */
     public Boolean isEmbedded() {
         return parameters.isEmbedded();
     }
 
     /**
-     * @since 1.0-milestone-3
+     * Returns the daemon max idle time units.
+     *
+     * @since 1.0
      */
     public TimeUnit getDaemonMaxIdleTimeUnits() {
         return parameters.getDaemonMaxIdleTimeUnits();
     }
 
     /**
-     * @since 1.0-milestone-3
+     * Returns the daemon max idle time value.
+     *
+     * @since 1.0
      */
     public Integer getDaemonMaxIdleTimeValue() {
         return parameters.getDaemonMaxIdleTimeValue();
     }
 
     /**
-     * @since 2.2-rc-1
+     * Returns the daemon base dir.
+     *
+     * @since 2.2
      */
     public File getDaemonBaseDir() {
         return parameters.getDaemonBaseDir();
     }
 
     /**
-     * @since 1.0-milestone-3
+     * Returns the standard output.
+     *
+     * @since 1.0
      */
     public OutputStream getStandardOutput() {
         return stdout;
     }
 
     /**
-     * @since 1.0-milestone-3
+     * Returns the standard error.
+     *
+     * @since 1.0
      */
     public OutputStream getStandardError() {
         return stderr;
     }
 
     /**
-     * @since 2.3-rc-1
+     * Returns whether color output is set.
+     *
+     * @since 2.3
      */
     public Boolean isColorOutput() {
         return colorOutput;
@@ -403,8 +520,43 @@ public class ConsumerOperationParameters implements BuildParameters {
         return javaHome;
     }
 
+    @Nullable
     public List<String> getJvmArguments() {
-        return jvmArguments;
+        // Backport fix for https://github.com/gradle/gradle/issues/31462
+        // Cross-version scenarios
+        // - Old TAPI (8.12 and before) invokes new Gradle (8.13 and after):
+        //     ProviderConnection will catch UnsupportedMethodException when calling getBaseJvmArgs() and will fall back to this method, but with the previous behavior (ie `return jvmArguments`)
+        //     see https://github.com/gradle/gradle/blob/v8.12.0/platforms/ide/tooling-api/src/main/java/org/gradle/tooling/internal/consumer/parameters/ConsumerOperationParameters.java#L406
+        // - New TAPI (8.13 and after) invokes old Gradle (8.12 and before):
+        //     We try to approximate the behavior of the new Gradle by returning the combined list of JVM arguments defined in gradle.properties and in the TAPI client config; see the method body below.
+        //     see https://github.com/gradle/gradle/blob/v8.12.0/platforms/core-runtime/launcher/src/main/java/org/gradle/tooling/internal/provider/ProviderConnection.java#L350
+
+        if (baseJvmArguments == null && additionalJvmArguments == null) {
+            // To keep the old behavior, when no JVM arguments are set, return null.
+            return null;
+        } else {
+            // Otherwise, return the combined list of JVM arguments defined in the gradle.properties file and in the TAPI client config.
+            List<String> arguments = new ArrayList<>();
+            if (baseJvmArguments != null) {
+                arguments.addAll(baseJvmArguments);
+            } else {
+                arguments.addAll(ConnectionConfigurationUtil.determineJvmArguments(parameters));
+            }
+            if (additionalJvmArguments != null) {
+                arguments.addAll(additionalJvmArguments);
+            }
+            return arguments;
+        }
+    }
+
+    @Nullable
+    public List<String> getBaseJvmArguments() {
+        return baseJvmArguments;
+    }
+
+    @Nullable
+    public List<String> getAdditionalJvmArguments() {
+        return additionalJvmArguments;
     }
 
     public Map<String, String> getEnvironmentVariables() {
@@ -420,28 +572,36 @@ public class ConsumerOperationParameters implements BuildParameters {
     }
 
     /**
-     * @since 1.12-rc-1
+     * Returns the launchables.
+     *
+     * @since 1.12
      */
     public List<InternalLaunchable> getLaunchables() {
         return launchables;
     }
 
     /**
-     * @since 2.8-rc-1
+     * Returns the injected plugin classpath.
+     *
+     * @since 2.8
      */
     public List<File> getInjectedPluginClasspath() {
         return injectedPluginClasspath.getAsFiles();
     }
 
     /**
-     * @since 1.0-milestone-3
+     * Returns the progress listener.
+     *
+     * @since 1.0
      */
     public ProgressListenerVersion1 getProgressListener() {
         return progressListener;
     }
 
     /**
-     * @since 2.4-rc-1
+     * Returns the build progress listener.
+     *
+     * @since 2.4
      */
     public FailsafeBuildProgressListenerAdapter getBuildProgressListener() {
         return buildProgressListener;
@@ -452,6 +612,8 @@ public class ConsumerOperationParameters implements BuildParameters {
     }
 
     /**
+     * Returns the system properties.
+     *
      * @since 7.6
      */
     public Map<String, ?> getSystemProperties() {
@@ -463,6 +625,8 @@ public class ConsumerOperationParameters implements BuildParameters {
     }
 
     /**
+     * On streamed value.
+     *
      * @since 8.6
      */
     public void onStreamedValue(Object model) {

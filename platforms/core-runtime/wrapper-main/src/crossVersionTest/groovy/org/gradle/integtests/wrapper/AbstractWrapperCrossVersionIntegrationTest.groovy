@@ -17,24 +17,19 @@
 package org.gradle.integtests.wrapper
 
 import org.gradle.integtests.fixtures.CrossVersionIntegrationSpec
+import org.gradle.integtests.fixtures.daemon.DaemonLogsAnalyzer
 import org.gradle.integtests.fixtures.executer.GradleDistribution
 import org.gradle.integtests.fixtures.executer.GradleExecuter
-import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
-import org.junit.Assume
+import org.gradle.test.preconditions.TestExecutionPreconditions
 
-@Requires(IntegTestPreconditions.NotEmbeddedExecutor)
+@Requires(TestExecutionPreconditions.NotEmbeddedExecutor)
 abstract class AbstractWrapperCrossVersionIntegrationTest extends CrossVersionIntegrationSpec {
     def setup() {
         requireOwnGradleUserHomeDir()
     }
 
     protected GradleExecuter prepareWrapperExecuter(GradleDistribution wrapperVersion, GradleDistribution executionVersion) {
-        Assume.assumeTrue("skipping $wrapperVersion as its wrapper cannot execute version ${executionVersion.version.version}", wrapperVersion.wrapperCanExecute(executionVersion.version))
-
-        println "use wrapper from $wrapperVersion to build using $executionVersion"
-
         buildFile << """
 task wrapper (type: Wrapper, overwrite: true) {
     gradleVersion = '$executionVersion.version.version'
@@ -54,30 +49,29 @@ task hello {
         settingsFile << "rootProject.name = 'wrapper'"
         version(wrapperVersion).withTasks('wrapper').run()
 
-        wrapperExecuter(executionVersion)
+        return wrapperExecuter(executionVersion)
     }
 
     private GradleExecuter wrapperExecuter(GradleDistribution wrapper) {
         def executer = super.version(wrapper)
-
-        if (!wrapper.supportsSpacesInGradleAndJavaOpts) {
-            // Don't use the test-specific location as this contains spaces
-            executer.withGradleUserHomeDir(new IntegrationTestBuildContext().gradleUserHomeDir)
+        executer.beforeExecute {
+            // Use isolated daemons in order to verify that using the installed distro works, and so that the daemons aren't visible to other tests, because
+            // the installed distro is deleted at the end of this test
+            requireIsolatedDaemons()
+            usingExecutable('gradlew')
         }
-
-        /**
-         * We additionally pass the gradle user home as a system property.
-         * Early gradle wrapper versions (< 1.7) don't honor the --gradle-user-home command line option correctly
-         * and leaking gradle dist under test into ~/.gradle/wrapper.
-         */
-        if (!wrapper.wrapperSupportsGradleUserHomeCommandLineOption) {
-            executer.withCommandLineGradleOpts("-Dgradle.user.home=${executer.gradleUserHomeDir}")
-        }
-
-        // Use isolated daemons in order to verify that using the installed distro works, and so that the daemons aren't visible to other tests, because
-        // the installed distro is deleted at the end of this test
-        executer.requireIsolatedDaemons()
-        executer.usingExecutable('gradlew')
         return executer
+    }
+
+    void checkWrapperWorksWith(GradleExecuter executer, GradleDistribution executionVersion) {
+        def result = executer.withTasks('hello').run()
+
+        assert result.output.contains("hello from $executionVersion.version.version")
+        assert result.output.contains("using distribution at ${executer.gradleUserHomeDir.file("wrapper/dists")}")
+        assert result.output.contains("using Gradle user home at $executer.gradleUserHomeDir")
+    }
+
+    void cleanupDaemons(GradleExecuter executer, GradleDistribution executionVersion) {
+        new DaemonLogsAnalyzer(executer.daemonBaseDir, executionVersion.version.version).killAll()
     }
 }

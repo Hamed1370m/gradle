@@ -18,12 +18,14 @@ package org.gradle.api.internal.tasks.testing.processors;
 
 import org.gradle.api.internal.tasks.testing.TestCompleteEvent;
 import org.gradle.api.internal.tasks.testing.TestDescriptorInternal;
+import org.gradle.api.tasks.testing.TestMetadataEvent;
 import org.gradle.api.internal.tasks.testing.TestResultProcessor;
 import org.gradle.api.internal.tasks.testing.TestStartEvent;
 import org.gradle.api.internal.tasks.testing.redirector.StandardOutputRedirector;
 import org.gradle.api.internal.tasks.testing.redirector.TestOutputRedirector;
 import org.gradle.api.tasks.testing.TestFailure;
 import org.gradle.api.tasks.testing.TestOutputEvent;
+import org.gradle.internal.time.Clock;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,8 +40,8 @@ public class CaptureTestOutputTestResultProcessor implements TestResultProcessor
     private Object rootId;
     private Map<Object, Object> parents = new ConcurrentHashMap<Object, Object>();
 
-    public CaptureTestOutputTestResultProcessor(TestResultProcessor processor, StandardOutputRedirector outputRedirector) {
-        this(processor, new TestOutputRedirector(processor, outputRedirector));
+    public CaptureTestOutputTestResultProcessor(Clock clock, TestResultProcessor processor, StandardOutputRedirector outputRedirector) {
+        this(processor, new TestOutputRedirector(clock, processor, outputRedirector));
     }
 
     CaptureTestOutputTestResultProcessor(TestResultProcessor processor, TestOutputRedirector outputRedirector) {
@@ -94,4 +96,10 @@ public class CaptureTestOutputTestResultProcessor implements TestResultProcessor
     public void failure(Object testId, TestFailure result) {
         processor.failure(testId, result);
     }
+
+    @Override
+    public void published(Object testId, TestMetadataEvent keyValueEvent) {
+        processor.published(testId, keyValueEvent);
+    }
+
 }

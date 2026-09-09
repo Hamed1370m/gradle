@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 package org.gradle.api.publish.ivy
+
 import org.gradle.integtests.fixtures.CrossVersionIntegrationSpec
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.ivy.IvyFileRepository
-import org.gradle.util.internal.TextUtil
 
 class IvyPublishCrossVersionIntegrationTest extends CrossVersionIntegrationSpec {
 
@@ -61,14 +61,14 @@ group = 'org.gradle.crossversion'
 version = '1.9'
 
 repositories {
-    ivy { url "${repo.uri}" }
+    ivy { url = "${repo.uri}" }
 }
 dependencies {
     implementation "org.gradle:test-project:1.2"
 }
 publishing {
     repositories {
-        ivy { url "${repo.uri}" }
+        ivy { url = "${repo.uri}" }
     }
     publications {
         ivy(IvyPublication) {
@@ -84,24 +84,12 @@ publishing {
     def consumePublicationWithPreviousVersion() {
         settingsFile.text = "rootProject.name = 'consumer'"
 
-        def repoPath = TextUtil.normaliseFileSeparators(repoDir.absolutePath)
-
         buildFile.text = """
 configurations {
     lib
 }
 repositories {
-    if (${previous.fullySupportsIvyRepository}) {
-        ivy { url "${repo.uri}" }
-    } else {
-        add(Class.forName('org.apache.ivy.plugins.resolver.FileSystemResolver').getConstructor().newInstance()) {
-            name = 'repo'
-            addIvyPattern("${repoPath}/[organisation]/[module]/[revision]/ivy-[revision].xml")
-            addArtifactPattern("${repoPath}/[organisation]/[module]/[revision]/[artifact]-[revision].[ext]")
-            descriptor = 'required'
-            checkmodified = true
-        }
-    }
+    ivy { url = "${repo.uri}" }
 }
 dependencies {
     lib 'org.gradle.crossversion:published:1.9'

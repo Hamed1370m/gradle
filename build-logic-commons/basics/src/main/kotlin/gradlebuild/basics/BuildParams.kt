@@ -16,7 +16,7 @@
 
 package gradlebuild.basics
 
-import gradlebuild.basics.BuildParams.AUTO_DOWNLOAD_ANDROID_STUDIO
+import gradlebuild.basics.BuildParams.AUTO_DOWNLOAD_IDE
 import gradlebuild.basics.BuildParams.BUILD_BRANCH
 import gradlebuild.basics.BuildParams.BUILD_COMMIT_DISTRIBUTION
 import gradlebuild.basics.BuildParams.BUILD_COMMIT_ID
@@ -29,12 +29,16 @@ import gradlebuild.basics.BuildParams.BUILD_RC_NUMBER
 import gradlebuild.basics.BuildParams.BUILD_TIMESTAMP
 import gradlebuild.basics.BuildParams.BUILD_VCS_NUMBER
 import gradlebuild.basics.BuildParams.BUILD_VERSION_QUALIFIER
-import gradlebuild.basics.BuildParams.BUNDLE_GROOVY_4
+import gradlebuild.basics.BuildParams.BUNDLE_GROOVY_MAJOR
 import gradlebuild.basics.BuildParams.CI_ENVIRONMENT_VARIABLE
-import gradlebuild.basics.BuildParams.DEFAULT_PERFORMANCE_BASELINES
+import gradlebuild.basics.BuildParams.DEBUG_DAEMON
+import gradlebuild.basics.BuildParams.DEBUG_LAUNCHER
+import gradlebuild.basics.BuildParams.DEFAULT_RFN_PERFORMANCE_BASELINES
+import gradlebuild.basics.BuildParams.DEFAULT_RFR_PERFORMANCE_BASELINES
 import gradlebuild.basics.BuildParams.ENABLE_CONFIGURATION_CACHE_FOR_DOCS_TESTS
 import gradlebuild.basics.BuildParams.FLAKY_TEST
 import gradlebuild.basics.BuildParams.GRADLE_INSTALL_PATH
+import gradlebuild.basics.BuildParams.IDEA_HOME
 import gradlebuild.basics.BuildParams.INCLUDE_PERFORMANCE_TEST_SCENARIOS
 import gradlebuild.basics.BuildParams.MAX_PARALLEL_FORKS
 import gradlebuild.basics.BuildParams.MAX_TEST_DISTRIBUTION_LOCAL_EXECUTORS
@@ -47,12 +51,13 @@ import gradlebuild.basics.BuildParams.PERFORMANCE_DB_URL
 import gradlebuild.basics.BuildParams.PERFORMANCE_DB_USERNAME
 import gradlebuild.basics.BuildParams.PERFORMANCE_DEPENDENCY_BUILD_IDS
 import gradlebuild.basics.BuildParams.PERFORMANCE_MAX_PROJECTS
+import gradlebuild.basics.BuildParams.PERFORMANCE_STAGE_ENV
 import gradlebuild.basics.BuildParams.PERFORMANCE_TEST_VERBOSE
 import gradlebuild.basics.BuildParams.PREDICTIVE_TEST_SELECTION_ENABLED
+import gradlebuild.basics.BuildParams.PREDICTIVE_TEST_SELECTION_SERVER_URL
 import gradlebuild.basics.BuildParams.RERUN_ALL_TESTS
-import gradlebuild.basics.BuildParams.RETRY_BUILD
-import gradlebuild.basics.BuildParams.RUN_ANDROID_STUDIO_IN_HEADLESS_MODE
 import gradlebuild.basics.BuildParams.RUN_BROKEN_CONFIGURATION_CACHE_DOCS_TESTS
+import gradlebuild.basics.BuildParams.RUN_IDE_IN_HEADLESS_MODE
 import gradlebuild.basics.BuildParams.STUDIO_HOME
 import gradlebuild.basics.BuildParams.TEST_DISTRIBUTION_DOGFOODING_TAG
 import gradlebuild.basics.BuildParams.TEST_DISTRIBUTION_ENABLED
@@ -67,6 +72,7 @@ import gradlebuild.basics.BuildParams.VENDOR_MAPPING
 import org.gradle.api.JavaVersion
 import org.gradle.api.Project
 import org.gradle.api.provider.Provider
+import org.gradle.internal.os.OperatingSystem
 import org.gradle.jvm.toolchain.JvmVendorSpec
 import org.gradle.jvm.toolchain.internal.LocationListInstallationSupplier.JAVA_INSTALLATIONS_PATHS_PROPERTY
 import org.jetbrains.kotlin.util.capitalizeDecapitalize.toUpperCaseAsciiOnly
@@ -91,7 +97,8 @@ object BuildParams {
     const val BUILD_VCS_NUMBER = "BUILD_VCS_NUMBER"
     const val BUILD_VERSION_QUALIFIER = "versionQualifier"
     const val CI_ENVIRONMENT_VARIABLE = "CI"
-    const val DEFAULT_PERFORMANCE_BASELINES = "defaultPerformanceBaselines"
+    const val DEFAULT_RFN_PERFORMANCE_BASELINES = "defaultRfnPerformanceBaselines"
+    const val DEFAULT_RFR_PERFORMANCE_BASELINES = "defaultRfrPerformanceBaselines"
     const val GRADLE_INSTALL_PATH = "gradle_installPath"
 
 
@@ -116,11 +123,12 @@ object BuildParams {
     const val PERFORMANCE_CHANNEL_ENV = "PERFORMANCE_CHANNEL"
     const val PERFORMANCE_DB_URL = "org.gradle.performance.db.url"
     const val PERFORMANCE_DB_USERNAME = "org.gradle.performance.db.username"
-    const val PERFORMANCE_DEPENDENCY_BUILD_IDS = "org.gradle.performance.dependencyBuildIds"
     const val PERFORMANCE_MAX_PROJECTS = "maxProjects"
+    const val PERFORMANCE_STAGE_ENV = "PERFORMANCE_STAGE"
+    const val PERFORMANCE_DEPENDENCY_BUILD_IDS = "org.gradle.performance.dependencyBuildIds"
     const val RERUN_ALL_TESTS = "rerunAllTests"
-    const val RETRY_BUILD = "retryBuild"
     const val PREDICTIVE_TEST_SELECTION_ENABLED = "enablePredictiveTestSelection"
+    const val PREDICTIVE_TEST_SELECTION_SERVER_URL = "predictiveTestSelectionServerUrl"
     const val TEST_DISTRIBUTION_DOGFOODING_TAG = "testDistributionDogfoodingTag"
     const val TEST_DISTRIBUTION_ENABLED = "enableTestDistribution"
     const val TEST_DISTRIBUTION_PARTITION_SIZE = "testDistributionPartitionSizeInSeconds"
@@ -130,10 +138,13 @@ object BuildParams {
     const val TEST_SPLIT_ONLY_TEST_GRADLE_VERSION = "onlyTestGradleVersion"
     const val TEST_JAVA_VENDOR = "testJavaVendor"
     const val TEST_JAVA_VERSION = "testJavaVersion"
-    const val AUTO_DOWNLOAD_ANDROID_STUDIO = "autoDownloadAndroidStudio"
-    const val RUN_ANDROID_STUDIO_IN_HEADLESS_MODE = "runAndroidStudioInHeadlessMode"
+    const val AUTO_DOWNLOAD_IDE = "autoDownloadIde"
+    const val RUN_IDE_IN_HEADLESS_MODE = "runIdeInHeadlessMode"
     const val STUDIO_HOME = "studioHome"
-    const val BUNDLE_GROOVY_4 = "bundleGroovy4"
+    const val IDEA_HOME = "ideaHome"
+    const val BUNDLE_GROOVY_MAJOR = "bundleGroovyMajor"
+    const val DEBUG_DAEMON = "debugDaemon"
+    const val DEBUG_LAUNCHER = "debugLauncher"
 
     /**
      * Run docs tests with the configuration cache enabled.
@@ -171,22 +182,32 @@ fun Project.selectStringProperties(vararg propertyNames: String): Map<String, St
 
 
 /**
- * Creates a [Provider] that returns `true` when this [Provider] has a value
- * and `false` otherwise. The returned [Provider] always has a value.
- * @see Provider.isPresent
+ * Parses a boolean value from the string or provides `false` when the string is absent.
  */
 private
-fun <T> Provider<T>.presence(): Provider<Boolean> =
+fun Provider<String>.asBooleanOrFalse(): Provider<Boolean> =
+    map { it.toBoolean() }.orElse(false)
+
+/**
+ * Creates a [Provider] that returns `true` when this [Provider] has a value
+ * and `false` otherwise. The returned [Provider] always has a value.
+ * @see isPresent
+ */
+private
+fun <T : Any> Provider<T>.presence(): Provider<Boolean> =
     map { true }.orElse(false)
 
 
-fun Project.gradleProperty(propertyName: String) = providers.gradleProperty(propertyName)
+fun Project.gradleProperty(propertyName: String): Provider<String> =
+    providers.gradleProperty(propertyName)
 
 
-fun Project.systemProperty(propertyName: String) = providers.systemProperty(propertyName)
+fun Project.systemProperty(propertyName: String): Provider<String> =
+    providers.systemProperty(propertyName)
 
 
-fun Project.environmentVariable(propertyName: String) = providers.environmentVariable(propertyName)
+fun Project.environmentVariable(propertyName: String): Provider<String> =
+    providers.environmentVariable(propertyName)
 
 
 fun Project.propertyFromAnySource(propertyName: String) = gradleProperty(propertyName)
@@ -240,10 +261,6 @@ val Project.buildMilestoneNumber: Provider<String>
     get() = gradleProperty(BUILD_MILESTONE_NUMBER)
 
 
-val Project.isRetryBuild: Boolean
-    get() = gradleProperty(RETRY_BUILD).isPresent
-
-
 val Project.buildTimestamp: Provider<String>
     get() = gradleProperty(BUILD_TIMESTAMP)
 
@@ -252,8 +269,11 @@ val Project.buildVersionQualifier: Provider<String>
     get() = gradleProperty(BUILD_VERSION_QUALIFIER)
 
 
-val Project.defaultPerformanceBaselines: Provider<String>
-    get() = gradleProperty(DEFAULT_PERFORMANCE_BASELINES)
+val Project.defaultRfnPerformanceBaselines: Provider<String>
+    get() = gradleProperty(DEFAULT_RFN_PERFORMANCE_BASELINES)
+
+val Project.defaultRfrPerformanceBaselines: Provider<String>
+    get() = gradleProperty(DEFAULT_RFR_PERFORMANCE_BASELINES)
 
 
 // null means no limit: use all available executors
@@ -279,16 +299,20 @@ val Project.flakyTestStrategy: FlakyTestStrategy
 val Project.ignoreIncomingBuildReceipt: Provider<Boolean>
     get() = gradleProperty(BUILD_IGNORE_INCOMING_BUILD_RECEIPT).presence()
 
+val Project.performanceBaselines: String?
+    get() = stringPropertyOrNull(PERFORMANCE_BASELINES)
 
 val Project.performanceDependencyBuildIds: Provider<String>
     get() = gradleProperty(PERFORMANCE_DEPENDENCY_BUILD_IDS).orElse("")
 
-
-val Project.performanceBaselines: String?
-    get() = stringPropertyOrNull(PERFORMANCE_BASELINES)
+val Project.performanceStage: Provider<String>
+    get() = environmentVariable(PERFORMANCE_STAGE_ENV)
 
 val Project.performanceChannel: Provider<String>
-    get() = environmentVariable(PERFORMANCE_CHANNEL_ENV)
+    get() = environmentVariable(PERFORMANCE_CHANNEL_ENV).orElse(provider {
+        val channelSuffix = if (OperatingSystem.current().isLinux) "" else "-${OperatingSystem.current().familyName.lowercase()}"
+        "commits$channelSuffix-${buildBranch.get()}"
+    })
 
 val Project.performanceDbPassword: Provider<String>
     get() = environmentVariable(PERFORMANCE_DB_PASSWORD_ENV)
@@ -297,6 +321,15 @@ val Project.performanceDbPassword: Provider<String>
 val Project.performanceTestVerbose: Provider<String>
     get() = gradleProperty(PERFORMANCE_TEST_VERBOSE)
 
+/**
+ * Run with `-PperformanceTest.buildOperationTrace=true` to produce a build operation trace (including Perfetto trace) for tested invocation.
+ *
+ * Producing a trace has significant overhead, so it should only be used for sanity-checking and troubleshooting performance tests.
+ *
+ * For details see `--build-ops-trace` in [Gradle Profiler](https://github.com/gradle/gradle-profiler) documentation.
+ */
+val Project.performanceTestBuildOperationTrace: Provider<Boolean>
+    get() = propertyFromAnySource("performanceTest.buildOperationTrace").asBooleanOrFalse()
 
 val Project.propertiesForPerformanceDb: Map<String, String>
     get() {
@@ -355,19 +388,26 @@ val Project.testSplitOnlyTestGradleVersion: String
     get() = project.stringPropertyOrEmpty(TEST_SPLIT_ONLY_TEST_GRADLE_VERSION)
 
 
+// The Develocity server that serves Predictive Test Selection. Deliberately not derived from
+// DEVELOCITY_SERVER_URL: CI points that at a Develocity Edge, and Edges do not serve PTS.
+val Project.predictiveTestSelectionServerUrl: Provider<String>
+    get() = gradleProperty(PREDICTIVE_TEST_SELECTION_SERVER_URL)
+
+
 val Project.predictiveTestSelectionEnabled: Provider<Boolean>
-    get() = systemProperty(PREDICTIVE_TEST_SELECTION_ENABLED)
-        .map { it.toBoolean() }
-        .orElse(
-            buildBranch.zip(buildRunningOnCi) { branch, ci ->
-                val protectedBranches = listOf("master", "release")
-                ci && !protectedBranches.contains(branch)
-                    && !branch.startsWith("pre-test/")
-                    && !branch.startsWith("gh-readonly-queue/")
+    get() = provider {
+        if (rerunAllTests.orElse(false).get()) {
+            return@provider false
+        } else if (systemProperty(PREDICTIVE_TEST_SELECTION_ENABLED).isPresent) {
+            return@provider systemProperty(PREDICTIVE_TEST_SELECTION_ENABLED).get().toBoolean()
+        } else {
+            val isOnCi = buildRunningOnCi.getOrElse(false)
+            val isMasterReleaseOrMergeQueueBranch = buildBranch.getOrElse("").let { branch ->
+                listOf("master", "release", "gh-readonly-queue/").any { prefix -> branch.startsWith(prefix) }
             }
-        ).zip(project.rerunAllTests) { enabled, rerunAllTests ->
-            enabled && !rerunAllTests
+            return@provider isOnCi && !isMasterReleaseOrMergeQueueBranch
         }
+    }
 
 val Project.testDistributionDogfoodingTag: Provider<String>
     get() = gradleProperty(TEST_DISTRIBUTION_DOGFOODING_TAG)
@@ -388,14 +428,14 @@ val Project.maxTestDistributionPartitionSecond: Long?
 val Project.maxParallelForks: Int
     get() = gradleProperty(MAX_PARALLEL_FORKS).getOrElse("4").toInt()
 
+val Project.autoDownloadIde: Provider<Boolean>
+    get() = propertyFromAnySource(AUTO_DOWNLOAD_IDE).asBooleanOrFalse()
 
-val Project.autoDownloadAndroidStudio: Boolean
-    get() = propertyFromAnySource(AUTO_DOWNLOAD_ANDROID_STUDIO).getOrElse("false").toBoolean()
+val Project.runIdeInHeadlessMode: Provider<Boolean>
+    get() = propertyFromAnySource(RUN_IDE_IN_HEADLESS_MODE).asBooleanOrFalse()
 
-
-val Project.runAndroidStudioInHeadlessMode: Boolean
-    get() = propertyFromAnySource(RUN_ANDROID_STUDIO_IN_HEADLESS_MODE).getOrElse("false").toBoolean()
-
+val Project.ideaHome: Provider<String>
+    get() = propertyFromAnySource(IDEA_HOME)
 
 val Project.androidStudioHome: Provider<String>
     get() = propertyFromAnySource(STUDIO_HOME)
@@ -422,13 +462,28 @@ val Project.isPromotionBuild: Boolean
     get() {
         val taskNames = gradle.startParameter.taskNames
         return taskNames.contains("promotionBuild") ||
-            // :updateReleasedVersionsToLatestNightly and :updateReleasedVersions
             taskNames.any { it.contains("updateReleasedVersions") }
     }
 
 
 /**
- * If `-DbundleGroovy4=true` is specified, create a distribution using Groovy 4 libs.  Otherwise use Groovy 3 classic libs.
+ * Override the version of Groovy bundled by Gradle. Must be greater than or equal to the major version of Groovy used by Gradle.
  */
-val Project.isBundleGroovy4: Boolean
-    get() = systemProperty(BUNDLE_GROOVY_4).orNull.toBoolean()
+val Project.bundleGroovyMajor: Int
+    get() = systemProperty(BUNDLE_GROOVY_MAJOR).orNull?.toInt() ?: 4
+
+
+/**
+ * The lowest JVM version the bundled Groovy can run on. Groovy 4 runs on Java 8, Groovy 5 needs Java 11.
+ *
+ * This is the JVM `groovyc` itself has to run on, which is not the same as the bytecode it emits.
+ */
+val Project.bundleGroovyMinimumJvm: Int
+    get() = if (bundleGroovyMajor >= 5) 11 else 8
+
+
+val Project.daemonDebuggingIsEnabled: Boolean
+    get() = propertyFromAnySource(DEBUG_DAEMON).isPresent
+
+val Project.launcherDebuggingIsEnabled: Boolean
+    get() = propertyFromAnySource(DEBUG_LAUNCHER).isPresent

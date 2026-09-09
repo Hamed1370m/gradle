@@ -18,12 +18,15 @@ package org.gradle.integtests
 
 import org.gradle.integtests.fixtures.CrossVersionIntegrationSpec
 import org.gradle.integtests.fixtures.TargetVersions
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import spock.lang.Issue
 
 @TargetVersions("6.8+")
 class TaskTransitiveSubclassingBinaryCompatibilityCrossVersionSpec extends CrossVersionIntegrationSpec {
 
     @Issue("https://github.com/gradle/gradle/issues/16199")
+    @Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = "explicitly requests a daemon")
     def "can subclass task subclass in plugin"() {
         setup:
         file('plugin/settings.gradle') << """
@@ -56,7 +59,7 @@ class TaskTransitiveSubclassingBinaryCompatibilityCrossVersionSpec extends Cross
                 repositories {
                     maven {
                         name = "localRepo"
-                        setUrl(new File(project.buildDir, 'repo'))
+                        url = layout.buildDirectory.dir('repo')
                     }
                 }
             }
@@ -76,7 +79,7 @@ class TaskTransitiveSubclassingBinaryCompatibilityCrossVersionSpec extends Cross
         file("plugin/src/main/groovy/CustomJavaExec.groovy") << """
             import org.gradle.api.tasks.JavaExec
 
-            class CustomJavaExec extends CustomBaseJavaExec {
+            abstract class CustomJavaExec extends CustomBaseJavaExec {
 
                 @Override
                 JavaExec setArgs(List<String> args) {
@@ -88,7 +91,7 @@ class TaskTransitiveSubclassingBinaryCompatibilityCrossVersionSpec extends Cross
         file("plugin/src/main/groovy/CustomBaseJavaExec.groovy") << """
             import org.gradle.api.tasks.JavaExec
 
-            class CustomBaseJavaExec extends JavaExec {
+            abstract class CustomBaseJavaExec extends JavaExec {
                 // no setArgs overridden here
             }
         """
@@ -96,7 +99,7 @@ class TaskTransitiveSubclassingBinaryCompatibilityCrossVersionSpec extends Cross
             pluginManagement {
                 repositories {
                     maven {
-                        url file('plugin/build/repo')
+                        url = file('plugin/build/repo')
                     }
                 }
             }

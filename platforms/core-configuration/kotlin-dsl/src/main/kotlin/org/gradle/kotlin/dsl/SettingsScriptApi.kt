@@ -23,8 +23,6 @@ import org.gradle.api.file.CopySpec
 import org.gradle.api.file.DeleteSpec
 import org.gradle.api.file.FileTree
 import org.gradle.api.initialization.Settings
-import org.gradle.api.internal.DeprecatedProcessOperations
-import org.gradle.api.internal.ProcessOperations
 import org.gradle.api.internal.file.FileOperations
 import org.gradle.api.logging.Logger
 import org.gradle.api.logging.Logging
@@ -36,9 +34,6 @@ import org.gradle.kotlin.dsl.support.internalError
 import org.gradle.kotlin.dsl.support.serviceOf
 import org.gradle.kotlin.dsl.support.unsafeLazy
 import org.gradle.plugin.management.PluginManagementSpec
-import org.gradle.process.ExecResult
-import org.gradle.process.ExecSpec
-import org.gradle.process.JavaExecSpec
 import java.io.File
 import java.net.URI
 
@@ -46,6 +41,8 @@ import java.net.URI
 /**
  * Standard implementation of the API exposed to all types of [Settings] scripts,
  * precompiled and otherwise.
+ *
+ * @since 4.7
  */
 @Deprecated(
     "Kept for compatibility with precompiled script plugins published with Gradle versions prior to 6.0",
@@ -57,27 +54,24 @@ abstract class SettingsScriptApi(
 
     init {
         @Suppress("DEPRECATION")
-        if (!org.gradle.kotlin.dsl.precompile.PrecompiledSettingsScript::class.java.isAssignableFrom(this::class.java) &&
-            !org.gradle.kotlin.dsl.KotlinSettingsScript::class.java.isAssignableFrom(this::class.java)) {
+        if (!KotlinSettingsScript::class.java.isAssignableFrom(this::class.java)) {
             DeprecationLogger.deprecateType(SettingsScriptApi::class.java)
-                .willBeRemovedInGradle9()
-                .undocumented()
+                .willBeRemovedInGradle10()
+                .withUpgradeGuideSection(8, "kotlin_dsl_precompiled_gradle_lt_6")
                 .nagUser()
         }
     }
 
+    /**
+     * @since 4.7
+     */
     protected
     abstract val fileOperations: FileOperations
 
-    protected
-    abstract val processOperations: ProcessOperations
-
-    private
-    val deprecatedProcessOperations
-        get() = DeprecatedProcessOperations(processOperations)
-
     /**
      * Logger for settings. You can use this in your settings file to write log messages.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     val logger: Logger by unsafeLazy { Logging.getLogger(Settings::class.java) }
@@ -86,12 +80,16 @@ abstract class SettingsScriptApi(
      * The [LoggingManager] which can be used to receive logging and to control the standard output/error capture for
      * this script. By default, `System.out` is redirected to the Gradle logging system at the `QUIET` log level,
      * and `System.err` is redirected at the `ERROR` log level.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     val logging by unsafeLazy { settings.serviceOf<LoggingManager>() }
 
     /**
      * Provides access to resource-specific utility methods, for example factory methods that create various resources.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     val resources: ResourceHandler by unsafeLazy { fileOperations.resources }
@@ -104,6 +102,8 @@ abstract class SettingsScriptApi(
      *
      * @param path The path to convert to a relative path.
      * @return The relative path.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun relativePath(path: Any): String =
@@ -114,6 +114,8 @@ abstract class SettingsScriptApi(
      *
      * Evaluates the provided path object as described for [file],
      * with the exception that any URI scheme is supported, not just `file:` URIs.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun uri(path: Any): URI =
@@ -146,6 +148,8 @@ abstract class SettingsScriptApi(
      *
      * @param path The object to resolve as a `File`.
      * @return The resolved file.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun file(path: Any): File =
@@ -158,6 +162,8 @@ abstract class SettingsScriptApi(
      * @param validation The validation to perform on the file.
      * @return The resolved file.
      * @see file
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun file(path: Any, validation: PathValidation): File =
@@ -205,6 +211,8 @@ abstract class SettingsScriptApi(
      *
      * @param paths The paths to the files. May be empty.
      * @return The file collection.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun files(vararg paths: Any): ConfigurableFileCollection =
@@ -217,6 +225,8 @@ abstract class SettingsScriptApi(
      * @param configuration The block to use to configure the file collection.
      * @return The file collection.
      * @see files
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun files(paths: Any, configuration: ConfigurableFileCollection.() -> Unit): ConfigurableFileCollection =
@@ -233,6 +243,8 @@ abstract class SettingsScriptApi(
      *
      * @param baseDir The base directory of the file tree. Evaluated as per [file].
      * @return The file tree.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun fileTree(baseDir: Any): ConfigurableFileTree =
@@ -245,6 +257,8 @@ abstract class SettingsScriptApi(
      * @param configuration The block to use to configure the file tree.
      * @return The file tree.
      * @see [fileTree]
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun fileTree(baseDir: Any, configuration: ConfigurableFileTree.() -> Unit): ConfigurableFileTree =
@@ -263,6 +277,8 @@ abstract class SettingsScriptApi(
      *
      * @param zipPath The ZIP file. Evaluated as per [file].
      * @return The file tree.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun zipTree(zipPath: Any): FileTree =
@@ -286,6 +302,8 @@ abstract class SettingsScriptApi(
      *
      * @param tarPath The TAR file or an instance of [org.gradle.api.resources.Resource].
      * @return The file tree.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun tarTree(tarPath: Any): FileTree =
@@ -296,6 +314,8 @@ abstract class SettingsScriptApi(
      *
      * @param configuration The block to use to configure the [CopySpec].
      * @return `WorkResult` that can be used to check if the copy did any work.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun copy(configuration: CopySpec.() -> Unit): WorkResult =
@@ -305,6 +325,8 @@ abstract class SettingsScriptApi(
      * Creates a {@link CopySpec} which can later be used to copy files or create an archive.
      *
      * @return The created [CopySpec]
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun copySpec(): CopySpec =
@@ -315,6 +337,8 @@ abstract class SettingsScriptApi(
      *
      * @param configuration The block to use to configure the [CopySpec].
      * @return The configured [CopySpec]
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun copySpec(configuration: CopySpec.() -> Unit): CopySpec =
@@ -326,6 +350,8 @@ abstract class SettingsScriptApi(
      * @param path The path for the directory to be created. Evaluated as per [file].
      * @return The created directory.
      * @throws org.gradle.api.InvalidUserDataException If the path points to an existing file.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun mkdir(path: Any): File =
@@ -338,6 +364,8 @@ abstract class SettingsScriptApi(
      *
      * @param paths Any type of object accepted by [file]
      * @return true if anything got deleted, false otherwise
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun delete(vararg paths: Any): Boolean =
@@ -348,36 +376,12 @@ abstract class SettingsScriptApi(
      *
      * @param configuration The block to use to configure the [DeleteSpec].
      * @return `WorkResult` that can be used to check if delete did any work.
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     fun delete(configuration: DeleteSpec.() -> Unit): WorkResult =
         fileOperations.delete(configuration)
-
-    /**
-     * Executes an external command.
-     *
-     * This method blocks until the process terminates, with its result being returned.
-     *
-     * @param configuration The block to use to configure the [ExecSpec].
-     * @return The result of the execution.
-     */
-    @Suppress("unused")
-    @Deprecated(message = "This method will be removed in Gradle 9.0. Use ExecOperations.exec(Action) or ProviderFactory.exec(Action) instead.")
-    fun exec(configuration: ExecSpec.() -> Unit): ExecResult =
-        deprecatedProcessOperations.exec(configuration)
-
-    /**
-     * Executes an external Java process.
-     *
-     * This method blocks until the process terminates, with its result being returned.
-     *
-     * @param configuration The block to use to configure the [JavaExecSpec].
-     * @return The result of the execution.
-     */
-    @Suppress("unused")
-    @Deprecated(message = "This method will be removed in Gradle 9.0. Use ExecOperations.javaexec(Action) or ProviderFactory.javaexec(Action) instead.")
-    fun javaexec(configuration: JavaExecSpec.() -> Unit): ExecResult =
-        processOperations.javaexec(configuration)
 
     /**
      * Configures the plugin management for the entire build.
@@ -393,6 +397,8 @@ abstract class SettingsScriptApi(
      * Configures the build script classpath for settings.
      *
      * @see [Settings.getBuildscript]
+     *
+     * @since 4.7
      */
     @Suppress("unused")
     open fun buildscript(block: ScriptHandlerScope.() -> Unit): Unit =

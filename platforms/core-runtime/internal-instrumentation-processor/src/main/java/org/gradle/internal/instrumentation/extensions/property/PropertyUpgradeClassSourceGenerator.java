@@ -45,7 +45,11 @@ import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import static org.gradle.internal.instrumentation.api.annotations.ReplacedDeprecation.RemovedIn.GRADLE9;
+import static org.gradle.internal.instrumentation.api.annotations.ReplacedDeprecation.RemovedIn.UNSPECIFIED;
 import static org.gradle.internal.instrumentation.extensions.property.PropertyUpgradeRequestExtra.BridgedMethodInfo.BridgeType.INSTANCE_METHOD_BRIDGE;
+import static org.gradle.internal.instrumentation.processor.codegen.CodeGenUtils.SUPPRESS_DEPRECATIONS;
+import static org.gradle.internal.instrumentation.processor.codegen.CodeGenUtils.SUPPRESS_UNCHECKED_AND_RAWTYPES;
 import static org.gradle.internal.instrumentation.processor.codegen.GradleReferencedType.DEPRECATION_LOGGER;
 import static org.gradle.internal.instrumentation.processor.codegen.GradleReferencedType.FILE_SYSTEM_LOCATION;
 import static org.gradle.internal.instrumentation.processor.codegen.GradleReferencedType.GENERATED_ANNOTATION;
@@ -54,14 +58,15 @@ import static org.gradle.internal.instrumentation.processor.codegen.GradleRefere
 import static org.gradle.internal.instrumentation.processor.codegen.GradleReferencedType.SET_PROPERTY_SET_VIEW;
 import static org.gradle.internal.instrumentation.processor.codegen.TypeUtils.typeName;
 
+import static java.util.Objects.requireNonNull;
+import org.jspecify.annotations.Nullable;
+
 public class PropertyUpgradeClassSourceGenerator extends RequestGroupingInstrumentationClassSourceGenerator {
 
     private static final String SELF_PARAMETER_NAME = "self";
-    private static final AnnotationSpec SUPPRESS_UNCHECKED_AND_RAWTYPES = AnnotationSpec.builder(SuppressWarnings.class)
-        .addMember("value", "$L", "{\"unchecked\", \"rawtypes\"}")
-        .build();
 
     @Override
+    @Nullable
     protected String classNameForRequest(CallInterceptionRequest request) {
         return request.getRequestExtras().getByType(PropertyUpgradeRequestExtra.class)
             .map(PropertyUpgradeRequestExtra::getImplementationClassName)
@@ -82,6 +87,7 @@ public class PropertyUpgradeClassSourceGenerator extends RequestGroupingInstrume
 
         return builder -> builder
             .addAnnotation(GENERATED_ANNOTATION.asClassName())
+            .addAnnotation(SUPPRESS_DEPRECATIONS)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc("Auto generated class. Should not be used directly.")
             .addMethods(methods);
@@ -116,13 +122,14 @@ public class PropertyUpgradeClassSourceGenerator extends RequestGroupingInstrume
             onProcessedRequest.accept(request);
             return spec;
         } catch (Exception e) {
-            onFailure.accept(new HasFailures.FailureInfo(request, e.getMessage()));
+            onFailure.accept(new HasFailures.FailureInfo(request, e.toString()));
             throw e;
         }
     }
 
     private static MethodSpec mapToBridgedMethod(String methodName, PropertyUpgradeRequestExtra implementationExtra, CallableInfo callable) {
-        BridgedMethodInfo bridgedMethodInfo = implementationExtra.getBridgedMethodInfo();
+        // Only called for requests that carry a bridged method (checked by the caller).
+        BridgedMethodInfo bridgedMethodInfo = requireNonNull(implementationExtra.getBridgedMethodInfo());
         ExecutableElement bridgedMethod = bridgedMethodInfo.getBridgedMethod();
         List<TypeVariableName> typeVariables = bridgedMethod.getTypeParameters().stream()
             .map(element -> TypeVariableName.get((TypeVariable) element.asType()))
@@ -145,7 +152,7 @@ public class PropertyUpgradeClassSourceGenerator extends RequestGroupingInstrume
         CodeBlock bridgeCall;
         List<AnnotationSpec> annotationSpecs = Collections.emptyList();
         if (bridgedMethodInfo.getBridgeType() == INSTANCE_METHOD_BRIDGE) {
-            TypeName type = TypeName.get(bridgedMethod.getEnclosingElement().asType());
+            TypeName type = TypeName.get(requireNonNull(bridgedMethod.getEnclosingElement()).asType());
             if (type instanceof ParameterizedTypeName) {
                 // To simplify code generation we remove type parameters from the instance type, e.g.:
                 // if we have AbstractExecTask<T>, method parameter has type `AbstractExecTask` without generics
@@ -158,8 +165,8 @@ public class PropertyUpgradeClassSourceGenerator extends RequestGroupingInstrume
                 : CodeBlock.of("return $L.$N($L)", SELF_PARAMETER_NAME, bridgedMethod.getSimpleName(), passedParameters);
         } else {
             bridgeCall = TypeName.get(bridgedMethod.getReturnType()).equals(TypeName.VOID)
-                ? CodeBlock.of("$T.$N($L)", TypeName.get(bridgedMethod.getEnclosingElement().asType()), bridgedMethod.getSimpleName(), passedParameters)
-                : CodeBlock.of("return $T.$N($L)", TypeName.get(bridgedMethod.getEnclosingElement().asType()), bridgedMethod.getSimpleName(), passedParameters);
+                ? CodeBlock.of("$T.$N($L)", TypeName.get(requireNonNull(bridgedMethod.getEnclosingElement()).asType()), bridgedMethod.getSimpleName(), passedParameters)
+                : CodeBlock.of("return $T.$N($L)", TypeName.get(requireNonNull(bridgedMethod.getEnclosingElement()).asType()), bridgedMethod.getSimpleName(), passedParameters);
         }
         bodyBuilder.addStatement(bridgeCall);
 
@@ -214,34 +221,38 @@ public class PropertyUpgradeClassSourceGenerator extends RequestGroupingInstrume
         String deprecatedPropertyName = requestExtra.getInterceptedPropertyName();
         DeprecationSpec deprecationSpec = requestExtra.getDeprecationSpec();
 
-        CodeBlock.Builder depreactionBuilder = CodeBlock.builder()
-            .add("$T.deprecateProperty($T.class, $S)\n", DEPRECATION_LOGGER.asClassName(), TypeUtils.typeName(callableInfo.getOwner().getType()), deprecatedPropertyName)
-            .add(".withContext($S)\n", "Property was automatically upgraded to the lazy version.");
-
-        if (!newPropertyName.equals(deprecatedPropertyName)) {
-            depreactionBuilder.add(".replaceWith($S)\n", newPropertyName);
-        }
-
+        CodeBlock.Builder deprecationBuilder;
         switch (deprecationSpec.getRemovedIn()) {
             case GRADLE9:
-                depreactionBuilder.add(".willBeRemovedInGradle9()\n");
+                String className = callableInfo.getOwner().getType().getClassName();
+                String simpleClassName = className.substring(className.lastIndexOf(".") + 1);
+                deprecationBuilder = CodeBlock.builder()
+                    .add("$T.deprecate($S)\n", DEPRECATION_LOGGER.asClassName(), String.format("The usage of %s.%s", simpleClassName, deprecatedPropertyName))
+                    .add(".withContext($S)\n", String.format("Property '%s' was removed and this compatibility shim will be removed in Gradle 10. Please use '%s' property instead.", deprecatedPropertyName, newPropertyName))
+                    .add(".willBecomeAnErrorInGradle10()\n");
                 break;
             case UNSPECIFIED:
-                depreactionBuilder.add(".startingWithGradle9($S)\n", "this property is replaced with a lazy version");
+                deprecationBuilder = CodeBlock.builder()
+                    .add("$T.deprecateProperty($T.class, $S)\n", DEPRECATION_LOGGER.asClassName(), TypeUtils.typeName(callableInfo.getOwner().getType()), deprecatedPropertyName)
+                    .add(".withContext($S)\n", "Property was automatically upgraded to the lazy version.");
+                if (!newPropertyName.equals(deprecatedPropertyName)) {
+                    deprecationBuilder.add(".replaceWith($S)\n", newPropertyName);
+                }
+                deprecationBuilder.add(".startingWithGradle10($S)\n", "this property is replaced with a lazy version");
                 break;
             default:
-                throw new UnsupportedOperationException("Only unset or 9 is currently supported for removedIn, but was: " + deprecationSpec.getRemovedIn());
+                throw new UnsupportedOperationException("Only " + UNSPECIFIED + " and " + GRADLE9 + " are currently supported for removedIn, but was: " + deprecationSpec.getRemovedIn());
         }
 
         if (deprecationSpec.getWithUpgradeGuideVersion() != -1) {
-            depreactionBuilder.add(".withUpgradeGuideSection($L, $S)\n", deprecationSpec.getWithUpgradeGuideVersion(), deprecationSpec.getWithUpgradeGuideSection());
+            deprecationBuilder.add(".withUpgradeGuideSection($L, $S)\n", deprecationSpec.getWithUpgradeGuideVersion(), deprecationSpec.getWithUpgradeGuideSection());
         } else if (deprecationSpec.isWithDslReference()) {
-            depreactionBuilder.add(".withDslReference()\n");
+            deprecationBuilder.add(".withDslReference()\n");
         } else {
-            depreactionBuilder.add(".undocumented()\n");
+            deprecationBuilder.add(".undocumented()\n");
         }
 
-        return depreactionBuilder.add(".nagUser()")
+        return deprecationBuilder.add(".nagUser()")
             .build();
     }
 

@@ -17,7 +17,6 @@
 package org.gradle.plugins.ide.eclipse
 
 import org.gradle.integtests.fixtures.TestResources
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.junit.Rule
 import spock.lang.Issue
 
@@ -28,7 +27,6 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
     @Rule
     public final TestResources testResources = new TestResources(testDirectoryProvider)
 
-    @ToBeFixedForConfigurationCache
     def "Source set defined on dependencies"() {
         setup:
         buildFile << """
@@ -45,6 +43,7 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         """
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run 'eclipse'
 
         then:
@@ -54,7 +53,6 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         classpath.lib('junit-4.13.jar').assertHasAttribute('gradle_used_by_scope', 'test')
     }
 
-    @ToBeFixedForConfigurationCache
     def "Source sets defined on source folders"() {
         setup:
         buildFile << """
@@ -65,6 +63,7 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         file('src/test/java').mkdirs()
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run 'eclipse'
 
         then:
@@ -73,7 +72,6 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         classpath.sourceDir('src/test/java').assertHasAttribute('gradle_used_by_scope', 'test')
     }
 
-    @ToBeFixedForConfigurationCache
     def "Source set information is customizable in whenMerged block"() {
         setup:
         buildFile << """
@@ -97,6 +95,7 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         file('src/test/java').mkdirs()
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run 'eclipse'
 
         then:
@@ -106,7 +105,6 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         classpath.lib('guava-18.0.jar').assertHasAttribute('gradle_used_by_scope', 'main,test,integTest')
     }
 
-    @ToBeFixedForConfigurationCache
     def "Source dirs have default output locations"() {
         setup:
         buildFile << """
@@ -128,6 +126,7 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         file('src/int_test/java').mkdirs()
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run 'eclipse'
 
         then:
@@ -139,7 +138,6 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         classpath.sourceDir('src/int_test/java').assertOutputLocation('bin/integTest')
     }
 
-    @ToBeFixedForConfigurationCache
     def "Source folder output location can be customized in whenMerged block"() {
         setup:
         buildFile << """
@@ -155,6 +153,7 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         file('src/main/resources').mkdirs()
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run 'eclipse'
 
         then:
@@ -163,7 +162,6 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         classpath.sourceDir('src/main/resources').assertOutputLocation('out/res')
     }
 
-    @ToBeFixedForConfigurationCache
     def "Overlapping default and source folder output paths are deduplicated"() {
         setup:
         buildFile << """
@@ -189,6 +187,7 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
 
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run 'eclipse'
 
         then:
@@ -198,7 +197,6 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         classpath.sourceDir('src/default_/java').assertOutputLocation('bin/default__')
     }
 
-    @ToBeFixedForConfigurationCache
     def "custom source set defined on dependencies"() {
         setup:
         buildFile << """
@@ -217,6 +215,7 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         """
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run 'eclipse'
 
         then:
@@ -225,7 +224,6 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
     }
 
     @Issue('https://github.com/gradle/gradle/issues/19529')
-    @ToBeFixedForConfigurationCache
     def "Supports multi-value ClasspathEntry attributes"() {
         setup:
         buildFile << """
@@ -250,6 +248,7 @@ class EclipseScopeAttributeIntegrationTest extends AbstractEclipseIntegrationSpe
         """
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject")
         run 'eclipse'
 
         then:

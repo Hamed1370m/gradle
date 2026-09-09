@@ -18,6 +18,7 @@ package org.gradle.api.services;
 
 import org.gradle.api.Action;
 import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
 
 /**
  * A set of parameters that defines a service registration.
@@ -28,11 +29,19 @@ import org.gradle.api.provider.Property;
 public interface BuildServiceSpec<P extends BuildServiceParameters> {
     /**
      * Returns the parameters to will be used to create the service instance.
+     *
+     * <p>When the service declares {@link BuildServiceParameters.None} as its parameters type,
+     * this returns the {@link BuildServiceParameters.None} singleton.</p>
+     * @since 6.1
      */
     P getParameters();
 
     /**
      * Runs the given action to configure the parameters.
+     *
+     * <p>The action is invoked even when the service declares {@link BuildServiceParameters.None} as its
+     * parameters type; in that case it receives the {@link BuildServiceParameters.None} singleton.</p>
+     * @since 6.1
      */
     void parameters(Action<? super P> configureAction);
 
@@ -41,11 +50,12 @@ public interface BuildServiceSpec<P extends BuildServiceParameters> {
      * When this property has no value defined, then any number of tasks may use this service in parallel. This is the default.
      *
      * <p>
-     * IMPORTANT: the build service must be explicitly registered with every using task via {@link org.gradle.api.Task#usesService(Provider) Task#usesService}
-     * for this constraint to be honored.
-     * </p>
+     * IMPORTANT: the build service must be consumed via a {@link ServiceReference} property, or explicitly registered with every using task
+     * via {@link org.gradle.api.Task#usesService(Provider) Task#usesService} for this constraint to be honored.
      *
+     * @see ServiceReference
      * @see org.gradle.api.Task#usesService(Provider)
+     * @since 6.1
      */
     Property<Integer> getMaxParallelUsages();
 }

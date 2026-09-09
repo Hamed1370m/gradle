@@ -22,7 +22,10 @@ import org.gradle.api.internal.tasks.compile.incremental.recomp.PreviousCompilat
 import org.gradle.integtests.fixtures.AvailableJavaHomes
 import org.gradle.integtests.fixtures.CompiledLanguage
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
+import org.gradle.testing.fixture.GroovyCoverage
+import org.gradle.util.internal.GroovyDependencyUtil
 import org.gradle.util.internal.TextUtil
 import spock.lang.Issue
 
@@ -347,7 +350,7 @@ abstract class BaseIncrementalCompilationAfterFailureIntegrationTest extends Abs
 class JavaIncrementalCompilationAfterFailureIntegrationTest extends BaseIncrementalCompilationAfterFailureIntegrationTest {
     CompiledLanguage language = CompiledLanguage.JAVA
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk9OrLater)
     def "incremental compilation after failure works with modules #description"() {
         file("impl/build.gradle") << """
             def layout = project.layout
@@ -438,6 +441,7 @@ class GroovyIncrementalCompilationAfterFailureIntegrationTest extends BaseIncrem
     def "removes all classes for a recompiled source from output to stash dir for Spock tests when super class is changed"() {
         given:
         buildFile.clear()
+        def groovyVersion = GroovyCoverage.CURRENT_STABLE
         buildFile """
             plugins {
                 id 'groovy'
@@ -445,8 +449,8 @@ class GroovyIncrementalCompilationAfterFailureIntegrationTest extends BaseIncrem
             }
             ${mavenCentralRepository()}
             dependencies {
-                testImplementation 'org.codehaus.groovy:groovy:3.0.22'
-                testImplementation 'org.spockframework:spock-core:2.1-groovy-3.0'
+                testImplementation '${GroovyDependencyUtil.groovyModuleDependency("groovy", groovyVersion)}'
+                testImplementation '${GroovyDependencyUtil.spockModuleDependency("spock-core", groovyVersion)}'
             }
             tasks.withType(GroovyCompile) {
                 options.incremental = true

@@ -19,6 +19,7 @@ import gradlebuild.integrationtests.tasks.DistributionTest
 
 plugins {
     id("gradlebuild.internal.java")
+    id("gradlebuild.cross-version-tests")
 }
 
 description = "Internal project testing and collecting information about all the test preconditions."
@@ -41,8 +42,8 @@ dependencies {
     testImplementation(testFixtures(projects.testKit)) {
         because("Test kit preconditions are coming from here")
     }
-    testImplementation(testFixtures(projects.smokeTest)) {
-        because("Smoke test preconditions are coming from here")
+    testImplementation(testFixtures(projects.platformNative)) {
+        because("Native test preconditions are coming from here")
     }
 
     // This is a special dependency, as some of the preconditions might need a distribution.
@@ -54,9 +55,19 @@ dependencies {
     // ========================================================================
     // Other, project-related dependencies
     // ========================================================================
-    testImplementation(libs.junit5JupiterApi) {
+    testImplementation(testLibs.junit5JupiterApi) {
         because("Assume API comes from here")
     }
+
+    integTestDistributionRuntimeOnly(projects.distributionsCore)
+    crossVersionTestDistributionRuntimeOnly(projects.distributionsCore)
+}
+
+configurations.integTestImplementation {
+    extendsFrom(configurations.testImplementation)
+}
+configurations.crossVersionTestImplementation {
+    extendsFrom(configurations.testImplementation)
 }
 
 tasks {
@@ -84,6 +95,8 @@ fun Test.setupPreconditionTesting() {
     // These tests should always run
     outputs.upToDateWhen { false }
 }
-tasks.isolatedProjectsIntegTest {
-    enabled = false
+
+
+errorprone {
+    nullawayEnabled = true
 }

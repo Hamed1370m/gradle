@@ -20,8 +20,7 @@ import okhttp3.HttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.gradle.integtests.fixtures.RepoScriptBlockUtil
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
-import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.versions.KotlinGradlePluginVersions
 import org.gradle.kotlin.dsl.*
 import org.gradle.kotlin.dsl.fixtures.AbstractKotlinIntegrationTest
 import org.gradle.kotlin.dsl.fixtures.DeepThought
@@ -30,14 +29,14 @@ import org.gradle.kotlin.dsl.fixtures.ZeroThought
 import org.gradle.kotlin.dsl.fixtures.clickableUrlFor
 import org.gradle.kotlin.dsl.fixtures.containsMultiLineString
 import org.gradle.kotlin.dsl.support.normaliseLineSeparators
-import org.gradle.kotlin.dsl.tooling.models.KotlinBuildScriptModel
 import org.gradle.test.fixtures.dsl.GradleDsl
 import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.server.http.HttpServer
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
-import org.gradle.test.preconditions.UnitTestPreconditions
-import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry
+import org.gradle.test.preconditions.TestExecutionPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
+import org.gradle.util.internal.VersionNumber
 import org.hamcrest.CoreMatchers.allOf
 import org.hamcrest.CoreMatchers.containsString
 import org.hamcrest.CoreMatchers.equalTo
@@ -45,6 +44,7 @@ import org.hamcrest.MatcherAssert.assertThat
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import spock.lang.Issue
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 
 class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
@@ -177,7 +177,7 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
             class DeepThoughtPlugin : Plugin<Project> {
                 override fun apply(project: Project) {
                     project.run {
-                        task("compute") {
+                        tasks.register("compute") {
                             doLast {
                                 DeepThought().compute { answer ->
                                     println("*" + answer + "*")
@@ -210,13 +210,12 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
 
     @Test
     @Requires(
-        IntegTestPreconditions.NotEmbeddedExecutor::class,
+        TestExecutionPreconditions.NotEmbeddedExecutor::class,
         reason = "Class path isolation, tested here, is not correct in embedded mode"
     )
     fun `can compile against a different (but compatible) version of the Kotlin compiler`() {
-
-        val differentKotlinVersion = "1.6.0"
-        val expectedKotlinCompilerVersionString = "1.6.0"
+        val differentKotlinVersion = KotlinGradlePluginVersions().latestsStable.last { VersionNumber.parse(it) < VersionNumber.parse(embeddedKotlinVersion) }
+        val expectedKotlinCompilerVersionString = differentKotlinVersion
 
         assertNotEquals(embeddedKotlinVersion, differentKotlinVersion)
 
@@ -236,13 +235,13 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
 
             tasks.withType<KotlinCompile> {
                 // can configure the Kotlin compiler
-                kotlinOptions.suppressWarnings = true
+                compilerOptions.suppressWarnings = true
             }
 
             tasks.register("print-kotlin-version") {
                 val kotlinCompilerVersion = KotlinCompilerVersion.VERSION
                 val compileOptions = tasks.filterIsInstance<KotlinCompile>().joinToString(prefix="[", postfix="]") {
-                    it.name + "=" + it.kotlinOptions.suppressWarnings
+                    it.name + "=" + it.compilerOptions.suppressWarnings.get()
                 }
                 doLast {
                     println(kotlinCompilerVersion + compileOptions)
@@ -250,33 +249,6 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
             }
             """
         )
-
-        executer.expectDocumentedDeprecationWarning(
-            "The org.gradle.api.plugins.JavaPluginConvention type has been deprecated. " +
-                "This is scheduled to be removed in Gradle 9.0. " +
-                "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#java_convention_deprecation"
-        )
-        executer.expectDocumentedDeprecationWarning(
-            "The org.gradle.util.WrapUtil type has been deprecated. " +
-                "This is scheduled to be removed in Gradle 9.0. " +
-                "Consult the upgrading guide for further information: " +
-                "https://docs.gradle.org/current/userguide/upgrading_version_7.html#org_gradle_util_reports_deprecations"
-        )
-        executer.expectDocumentedDeprecationWarning(
-            "The org.gradle.api.plugins.Convention type has been deprecated. " +
-                "This is scheduled to be removed in Gradle 9.0. " +
-                "Consult the upgrading guide for further information: " +
-                "https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_access_to_conventions"
-        )
-        if (GradleContextualExecuter.isConfigCache()) {
-            executer.expectDocumentedDeprecationWarning(
-                "The Provider.forUseAtConfigurationTime method has been deprecated. " +
-                    "This is scheduled to be removed in Gradle 9.0. " +
-                    "Simply remove the call. " +
-                    "Consult the upgrading guide for further information: " +
-                    "https://docs.gradle.org/current/userguide/upgrading_version_7.html#for_use_at_configuration_time_deprecation"
-            )
-        }
 
         assertThat(
             build("print-kotlin-version").output,
@@ -337,19 +309,18 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
     }
 
     @Test
-    @ToBeFixedForConfigurationCache(because = "buildFinished")
-    fun `can use Closure only APIs`() {
+    fun `can use Closure APIs`() {
 
         withBuildScript(
             """
-            gradle.buildFinished(closureOf<org.gradle.BuildResult> {
-                println("*" + action + "*") // <- BuildResult.getAction()
+            gradle.taskGraph.whenReady(closureOf<org.gradle.api.execution.TaskExecutionGraph> {
+                println("*" + tasks.isEmpty() + "*") // <- TaskExecutionGraph.getTasks()
             })
             """
         )
 
         assert(
-            build("build").output.contains("*Build*")
+            build("build").output.contains("*false*")
         )
     }
 
@@ -429,7 +400,7 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
 
         assertThat(
             buildFailureOutput("tasks"),
-            containsString("e: ${clickableUrlFor(buildFile)}:3:44: Unresolved reference: fooBarVersion")
+            containsString("e: ${clickableUrlFor(buildFile)}:3:44: Unresolved reference 'fooBarVersion'.")
         )
     }
 
@@ -500,7 +471,7 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
     }
 
     @Test
-    @Requires(UnitTestPreconditions.Jdk8OrEarlier::class)
+    @Requires(JdkVersionTestPreconditions.Jdk8OrEarlier::class)
     fun `build script can use jdk8 extensions`() {
 
         withBuildScript(
@@ -652,7 +623,7 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
                 Script compilation error:
 
                   Line 1: foo
-                          ^ Unresolved reference: foo
+                          ^ Unresolved reference 'foo'.
 
                 1 error
                 """
@@ -668,18 +639,15 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
         assertThat(
             buildFailureOutput().normaliseLineSeparators(),
             containsMultiLineString(
-                """
+            """
                 * What went wrong:
-                Script compilation errors:
+                Script compilation error:
 
                   Line 1: publishing { }
-                          ^ Expression 'publishing' cannot be invoked as a function. The function 'invoke()' is not found
+                          ^ Unresolved reference. None of the following candidates is applicable because of a receiver type mismatch:
+                              val PluginDependenciesSpec.publishing: PluginDependencySpec
 
-                  Line 1: publishing { }
-                          ^ Unresolved reference. None of the following candidates is applicable because of receiver type mismatch:${' '}
-                              public val PluginDependenciesSpec.publishing: PluginDependencySpec defined in org.gradle.kotlin.dsl
-
-                2 errors
+                1 error
                 """
             )
         )
@@ -708,13 +676,13 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
                 containsString(
                     """
                     |  Line 01: println(foo)
-                    |                   ^ Unresolved reference: foo
+                    |                   ^ Unresolved reference 'foo'.
                     |
                     |  Line 06: println("foo").bar.bazar
-                    |                          ^ Unresolved reference: bar
+                    |                          ^ Unresolved reference 'bar'.
                     |
                     |  Line 10: println(cathedral)
-                    |                   ^ Unresolved reference: cathedral
+                    |                   ^ Unresolved reference 'cathedral'.
                     """.trimMargin()
                 )
             )
@@ -734,7 +702,7 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
             "gradle/answer.gradle.kts",
             """
 
-            val answer by extra { "42" }
+            extra["answer"] = "42"
 
             """
         )
@@ -749,7 +717,7 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
             withBuildScript(
                 """
                 apply(from = "$remoteScriptUrl")
-                val answer: String by extra
+                val answer = extra["answer"] as String
                 println("*" + answer + "*")
                 """
             )
@@ -786,7 +754,7 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
             "gradle/answer.gradle.kts",
             """
 
-            val answer by extra { "42" }
+            extra["answer"] = "42"
 
             """
         )
@@ -799,7 +767,7 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
 
             apply(from = project.buildscript.classLoader.getResource("common.gradle.kts").toURI())
 
-            val answer: String by extra
+            val answer = extra["answer"] as String
             println("*" + answer + "*")
             """
         )
@@ -850,6 +818,7 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
         )
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Kotlin DSL cross-project configuration")
     @Test
     fun `can cross configure buildscript`() {
 
@@ -958,13 +927,13 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
             import org.gradle.api.*
             import org.gradle.kotlin.dsl.*
 
-            class Book(val name: String)
+            abstract class Book(val name: String)
 
             class MyPlugin : Plugin<Project> {
                 override fun apply(project: Project): Unit = project.run {
                     extensions.add(typeOf<MutableMap<String, String>>(), "mapOfString", mutableMapOf("foo" to "bar"))
                     extensions.add(typeOf<MutableMap<String, Int>>(), "mapOfInt", mutableMapOf("deep" to 42))
-                    extensions.add(typeOf<NamedDomainObjectContainer<Book>>(), "books", container(Book::class))
+                    extensions.add(typeOf<NamedDomainObjectContainer<Book>>(), "books", project.objects.domainObjectContainer(Book::class))
                 }
             }
             """
@@ -998,6 +967,7 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
         build("help")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Kotlin DSL cross-project configuration")
     @Test
     fun `can use kotlin java8 inline-only methods`() {
 
@@ -1052,13 +1022,36 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
                 @TaskAction fun run() = println("it works!")
             }
 
-            task<SimpleTask>("build")
+            tasks.register<SimpleTask>("build")
             """
         )
 
         assertThat(
             build("-q", "build").output,
             containsString("it works!")
+        )
+    }
+
+    @Test
+    fun `can use project layout`() {
+        withProjectRoot(newDir("project")) {
+            withBuildScript(
+                """
+                println("Settings dir: " + layout.settingsDirectory)
+                println("Project dir: " + layout.projectDirectory)
+                """
+            )
+        }
+
+        withSettings("""include("project")""")
+
+        val output = build("-q", "build").output
+        assertThat(
+            output,
+            allOf(
+                containsString("Settings dir: $testDirectory"),
+                containsString("Project dir: ${testDirectory.file("project")}")
+            )
         )
     }
 
@@ -1150,42 +1143,6 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
     }
 
     @Test
-    @ToBeFixedForConfigurationCache(because = "No builders are available to build a model of type 'org.gradle.kotlin.dsl.tooling.models.KotlinBuildScriptModel'")
-    fun `can query KotlinBuildScriptModel`() {
-
-        // This test breaks encapsulation a bit in the interest of ensuring Gradle Kotlin DSL use
-        // of internal APIs is not broken by refactorings on the Gradle side
-        withBuildScript(
-            """
-            import ${KotlinBuildScriptModel::class.qualifiedName}
-            import ${ToolingModelBuilderRegistry::class.qualifiedName}
-
-            abstract class DumpModelTask : DefaultTask() {
-                @get:Inject
-                abstract val builderRegistry: ToolingModelBuilderRegistry
-
-                @TaskAction
-                fun action() {
-                    val modelName = KotlinBuildScriptModel::class.qualifiedName
-                    val builder = builderRegistry.getBuilder(modelName)
-                    val model = builder.buildAll(modelName, project) as KotlinBuildScriptModel
-                    if (model.classPath.any { it.name.startsWith("gradle-kotlin-dsl") }) {
-                        println("gradle-kotlin-dsl!")
-                    }
-                }
-            }
-
-            tasks.register<DumpModelTask>("dumpKotlinBuildScriptModelClassPath")
-            """
-        )
-
-        assertThat(
-            build("-q", "dumpKotlinBuildScriptModelClassPath").output,
-            containsString("gradle-kotlin-dsl!")
-        )
-    }
-
-    @Test
     fun `can use Kotlin lambda as path notation`() {
 
         withBuildScript(
@@ -1242,7 +1199,7 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
                 }
             }
 
-            task<PrintInputToFile>("writeInputToFile") {
+            tasks.register<PrintInputToFile>("writeInputToFile") {
                 inputSource = providers.gradleProperty("inputString")
                 outputFile = project.layout.buildDirectory.file("output.txt")
             }
@@ -1251,11 +1208,11 @@ class GradleKotlinDslIntegrationTest : AbstractKotlinIntegrationTest() {
 
         val taskName = ":writeInputToFile"
 
-        build(taskName, "-PinputString=string1").assertTasksExecutedAndNotSkipped(taskName)
+        build(taskName, "-PinputString=string1").assertTasksExecuted(taskName)
 
         build(taskName, "-PinputString=string1").assertTasksSkipped(taskName)
 
-        build(taskName, "-PinputString=string2").assertTasksExecutedAndNotSkipped(taskName)
+        build(taskName, "-PinputString=string2").assertTasksExecuted(taskName)
     }
 
     @Test

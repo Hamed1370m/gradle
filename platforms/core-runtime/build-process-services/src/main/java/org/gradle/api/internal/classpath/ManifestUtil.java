@@ -16,8 +16,9 @@
 
 package org.gradle.api.internal.classpath;
 
-import org.gradle.api.UncheckedIOException;
+import org.gradle.internal.UncheckedException;
 import org.gradle.util.internal.CollectionUtils;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
@@ -58,7 +59,7 @@ public class ManifestUtil {
                 uri = jarFile.toURI().resolve(uri);
                 manifestClasspath.add(uri);
             } catch (URISyntaxException e) {
-                throw new UncheckedIOException(e);
+                throw UncheckedException.throwAsUncheckedException(e);
             }
         }
         return manifestClasspath;
@@ -76,14 +77,14 @@ public class ManifestUtil {
             }
             return classpathEntry.split(" ");
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     }
 
     /*
      * The manifest if this is a jar file and has a manifest, null otherwise.
      */
-    private static Manifest findManifest(File possibleJarFile) throws IOException {
+    private static @Nullable Manifest findManifest(File possibleJarFile) throws IOException {
         if (!possibleJarFile.exists() || !possibleJarFile.isFile()) {
             return null;
         }

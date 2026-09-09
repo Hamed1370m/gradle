@@ -41,6 +41,18 @@ interface BeanStateReaderLookup {
 }
 
 
+data class SpecialEncoders(
+    val stringEncoder: StringEncoder = InlineStringEncoder,
+    val sharedObjectEncoder: SharedObjectEncoder = InlineSharedObjectEncoder
+)
+
+
+data class SpecialDecoders(
+    val stringDecoder: StringDecoder = InlineStringDecoder,
+    val sharedObjectDecoder: SharedObjectDecoder = InlineSharedObjectDecoder
+)
+
+
 class DefaultWriteContext(
     name: String? = null,
 
@@ -52,6 +64,8 @@ class DefaultWriteContext(
     private
     val beanStateWriterLookup: BeanStateWriterLookup,
 
+    override val isIntegrityCheckEnabled: Boolean,
+
     override val logger: Logger,
 
     override val tracer: Tracer?,
@@ -61,11 +75,13 @@ class DefaultWriteContext(
     private
     val classEncoder: ClassEncoder,
 
-    val stringEncoder: StringEncoder = InlineStringEncoder,
-
-    val sharedObjectEncoder: SharedObjectEncoder = InlineSharedObjectEncoder
+    specialEncoders: SpecialEncoders = SpecialEncoders()
 
 ) : AbstractIsolateContext<WriteIsolate>(codec, problemsListener, name), CloseableWriteContext, Encoder by encoder {
+
+    val stringEncoder = specialEncoders.stringEncoder
+
+    val sharedObjectEncoder = specialEncoders.sharedObjectEncoder
 
     override val sharedIdentities = WriteIdentities()
 
@@ -117,10 +133,6 @@ class DefaultWriteContext(
 }
 
 
-@JvmInline
-value class ClassLoaderRole(val local: Boolean)
-
-
 interface ClassEncoder {
     fun WriteContext.encodeClass(type: Class<*>)
 
@@ -131,15 +143,28 @@ interface ClassEncoder {
 }
 
 
+object NullClassEncoder : ClassEncoder {
+    override fun WriteContext.encodeClass(type: Class<*>) {
+        error("$type cannot be encoded in this context.")
+    }
+}
+
+
+object NullClassDecoder : ClassDecoder {
+    override fun ReadContext.decodeClass(): Class<*> =
+        error("Cannot decode class in this context.")
+}
+
+
 interface ClassDecoder {
-    fun Decoder.decodeClass(): Class<*>
+    fun ReadContext.decodeClass(): Class<*>
 
     /**
      * Decodes a [ClassLoader] previously encoded via [ClassEncoder.encodeClassLoader].
      *
      * @return the previously encoded [ClassLoader] or `null` when [ClassEncoder.encodeClassLoader] returns `false`
      */
-    fun Decoder.decodeClassLoader(): ClassLoader? = null
+    fun ReadContext.decodeClassLoader(): ClassLoader? = null
 }
 
 
@@ -180,17 +205,17 @@ object InlineStringDecoder : StringDecoder {
 
 //TODO-RC consider making the implementations auto-closeable
 interface SharedObjectEncoder : AutoCloseable {
-    suspend fun <T: Any> write(writeContext: WriteContext, value: T, encode: suspend WriteContext.(T) -> Unit)
+    suspend fun <T : Any> write(writeContext: WriteContext, value: T, encode: suspend WriteContext.(T) -> Unit)
 }
 
 
 interface SharedObjectDecoder : AutoCloseable {
-    suspend fun <T: Any> read(readContext: ReadContext, decode: suspend ReadContext.() -> T): T
+    suspend fun <T : Any> read(readContext: ReadContext, decode: suspend ReadContext.() -> T): T
 }
 
 
 object InlineSharedObjectDecoder : SharedObjectDecoder {
-    override suspend fun <T: Any> read(readContext: ReadContext, decode: suspend ReadContext.() -> T): T =
+    override suspend fun <T : Any> read(readContext: ReadContext, decode: suspend ReadContext.() -> T): T =
         readContext.decode()
 
     override fun close() = Unit
@@ -216,6 +241,8 @@ class DefaultReadContext(
     private
     val beanStateReaderLookup: BeanStateReaderLookup,
 
+    override val isIntegrityCheckEnabled: Boolean,
+
     override val logger: Logger,
 
     problemsListener: ProblemsListener,
@@ -223,13 +250,14 @@ class DefaultReadContext(
     private
     val classDecoder: ClassDecoder,
 
-    val stringDecoder: StringDecoder = InlineStringDecoder,
-
-    val sharedObjectDecoder: SharedObjectDecoder = InlineSharedObjectDecoder
-
+    specialDecoders: SpecialDecoders = SpecialDecoders()
 ) : AbstractIsolateContext<ReadIsolate>(codec, problemsListener, name), CloseableReadContext, Decoder by decoder {
 
     override val sharedIdentities = ReadIdentities()
+
+    val stringDecoder = specialDecoders.stringDecoder
+
+    val sharedObjectDecoder = specialDecoders.sharedObjectDecoder
 
     private
     var singletonProperty: Any? = null
@@ -335,10 +363,10 @@ abstract class AbstractIsolateContext<T>(
     fun getCodec() = currentCodec
 
     private
-    val contexts = ArrayList<Pair<T?, Codec<Any?>>>()
+    val contexts = mutableListOf<Pair<T?, Codec<Any?>>>()
 
     override fun push(codec: Codec<Any?>) {
-        contexts.add(0, Pair(currentIsolate, currentCodec))
+        contexts.add(Pair(currentIsolate, currentCodec))
         currentCodec = codec
     }
 
@@ -352,12 +380,16 @@ abstract class AbstractIsolateContext<T>(
     }
 
     override fun pop() {
-        val previousValues = contexts.removeAt(0)
+        val previousValues = contexts.removeLast()
         currentIsolate = previousValues.first
         currentCodec = previousValues.second
     }
 
+    override val problemsListener: ProblemsListener
+        get() = currentProblemsListener
+
     override fun onProblem(problem: PropertyProblem) {
+        // TODO:isolated where does this violation belong? Should it be interrupting?
         currentProblemsListener.onProblem(problem)
     }
 

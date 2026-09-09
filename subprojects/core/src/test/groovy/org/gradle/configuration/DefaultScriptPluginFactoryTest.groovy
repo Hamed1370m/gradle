@@ -33,15 +33,15 @@ import org.gradle.groovy.scripts.ScriptRunner
 import org.gradle.groovy.scripts.ScriptSource
 import org.gradle.groovy.scripts.internal.BuildScriptData
 import org.gradle.groovy.scripts.internal.NoDataCompileOperation
-import org.gradle.internal.Factory
 import org.gradle.internal.classloader.ClasspathHasher
 import org.gradle.internal.classpath.ClassPath
 import org.gradle.internal.hash.TestHashCodes
+import org.gradle.internal.logging.LoggingManagerFactory
 import org.gradle.internal.logging.LoggingManagerInternal
 import org.gradle.internal.service.DefaultServiceRegistry
 import org.gradle.internal.service.ServiceRegistry
+import org.gradle.plugin.management.internal.PluginHandler
 import org.gradle.plugin.management.internal.PluginRequests
-import org.gradle.plugin.management.internal.autoapply.AutoAppliedPluginHandler
 import org.gradle.plugin.use.internal.PluginRequestApplicator
 import spock.lang.Specification
 
@@ -58,18 +58,18 @@ class DefaultScriptPluginFactoryTest extends Specification {
     def pluginRequestApplicator = Mock(PluginRequestApplicator)
     def scriptHandler = Mock(ScriptHandlerInternal)
     def classPathScriptRunner = Mock(ScriptRunner)
-    def loggingManagerFactory = Mock(Factory) as Factory<LoggingManagerInternal>
+    def loggingManagerFactory = Mock(LoggingManagerFactory)
     def loggingManager = Mock(LoggingManagerInternal)
     def documentationRegistry = Mock(DocumentationRegistry)
     def classpathHasher = Mock(ClasspathHasher)
-    def autoAppliedPluginHandler = Mock(AutoAppliedPluginHandler)
+    def pluginHandler = Mock(PluginHandler)
     def compileOperationsFactory = new DefaultCompileOperationFactory(documentationRegistry)
 
     def factory = new DefaultScriptPluginFactory(
         new DefaultServiceRegistry(),
         scriptCompilerFactory,
         loggingManagerFactory,
-        autoAppliedPluginHandler,
+        pluginHandler,
         pluginRequestApplicator,
         compileOperationsFactory
     )
@@ -95,7 +95,7 @@ class DefaultScriptPluginFactoryTest extends Specification {
         configurer.apply(target)
 
         then:
-        1 * loggingManagerFactory.create() >> loggingManager
+        1 * loggingManagerFactory.createLoggingManager() >> loggingManager
         1 * scriptCompilerFactory.createCompiler(scriptSource) >> scriptCompiler
         1 * scriptCompiler.compile(DefaultScript, target, baseScope, _ as NoDataCompileOperation, _) >> classPathScriptRunner
         1 * classPathScriptRunner.run(target, _ as ServiceRegistry)
@@ -117,7 +117,7 @@ class DefaultScriptPluginFactoryTest extends Specification {
         configurer.apply(target)
 
         then:
-        1 * loggingManagerFactory.create() >> loggingManager
+        1 * loggingManagerFactory.createLoggingManager() >> loggingManager
         1 * scriptCompilerFactory.createCompiler(scriptSource) >> scriptCompiler
         1 * scriptCompiler.compile(ProjectScript, target, baseScope, _ as NoDataCompileOperation, _) >> classPathScriptRunner
         1 * classPathScriptRunner.run(target, _ as ServiceRegistry)
@@ -143,7 +143,7 @@ class DefaultScriptPluginFactoryTest extends Specification {
         configurer.apply(target)
 
         then:
-        1 * loggingManagerFactory.create() >> loggingManager
+        1 * loggingManagerFactory.createLoggingManager() >> loggingManager
         1 * scriptCompilerFactory.createCompiler(scriptSource) >> scriptCompiler
         1 * scriptCompiler.compile(ProjectScript, target, baseScope, _ as NoDataCompileOperation, _) >> classPathScriptRunner
         1 * classPathScriptRunner.run(target, _ as ServiceRegistry)
@@ -168,7 +168,7 @@ class DefaultScriptPluginFactoryTest extends Specification {
         configurer.apply(target)
 
         then:
-        1 * loggingManagerFactory.create() >> loggingManager
+        1 * loggingManagerFactory.createLoggingManager() >> loggingManager
         1 * scriptCompilerFactory.createCompiler(scriptSource) >> scriptCompiler
         1 * scriptCompiler.compile(ProjectScript, target, baseScope, _ as NoDataCompileOperation, _) >> classPathScriptRunner
         1 * classPathScriptRunner.run(target, _ as ServiceRegistry)
@@ -193,7 +193,7 @@ class DefaultScriptPluginFactoryTest extends Specification {
         configurer.apply(target)
 
         then:
-        1 * loggingManagerFactory.create() >> loggingManager
+        1 * loggingManagerFactory.createLoggingManager() >> loggingManager
         1 * scriptCompilerFactory.createCompiler(scriptSource) >> scriptCompiler
         1 * scriptCompiler.compile(ProjectScript, target, baseScope, _ as NoDataCompileOperation, _) >> classPathScriptRunner
         1 * classPathScriptRunner.run(target, _ as ServiceRegistry)
@@ -217,7 +217,7 @@ class DefaultScriptPluginFactoryTest extends Specification {
         configurer.apply(target)
 
         then:
-        1 * loggingManagerFactory.create() >> loggingManager
+        1 * loggingManagerFactory.createLoggingManager() >> loggingManager
         1 * scriptCompilerFactory.createCompiler(scriptSource) >> scriptCompiler
         1 * scriptCompiler.compile(ProjectScript, target, baseScope, _ as NoDataCompileOperation, _) >> classPathScriptRunner
         1 * classPathScriptRunner.run(target, _ as ServiceRegistry)
@@ -239,7 +239,7 @@ class DefaultScriptPluginFactoryTest extends Specification {
         configurer.apply(target)
 
         then:
-        1 * loggingManagerFactory.create() >> loggingManager
+        1 * loggingManagerFactory.createLoggingManager() >> loggingManager
         1 * scriptCompilerFactory.createCompiler(scriptSource) >> scriptCompiler
         1 * scriptCompiler.compile(DefaultScript, target, baseScope, _ as NoDataCompileOperation, _) >> classPathScriptRunner
         1 * classPathScriptRunner.run(target, _ as ServiceRegistry)

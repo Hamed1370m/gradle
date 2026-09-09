@@ -21,39 +21,44 @@ import org.gradle.integtests.fixtures.RepoScriptBlockUtil
 import org.gradle.util.internal.VersionNumber
 
 class TestNGCoverage {
-    final static String NEWEST = '7.5'
+    final static String NEWEST = '7.10.2'
 
     private static final String FIXED_ILLEGAL_ACCESS = '5.14.6' // Oldest version to support JDK 16+ without explicit --add-opens
 
     private static final String BROKEN_ICLASS_LISTENER = '6.9.10' // Introduces initial, buggy IClassListener
-    private static final String FIXED_ICLASS_LISTENER = '6.9.13.3' // Introduces fixed IClassListener
 
-    private static final String FIRST_PRESERVE_ORDER_SUPPORT = '5.14.5' // First version to support preserve-order
+    /**
+     * This is the minimum version that works correctly with the new Generic test reporting infrastructure.
+     * Earlier versions will not properly create TestDescriptors for classes containing tests, leading to
+     * incorrect test reporting.  Other versions are kept for reference, but nothing earlier than this should
+     * be tested in multi-version tests.
+     */
+    static final String FIXED_ICLASS_LISTENER = '6.9.13.3' // Introduces fixed IClassListener
+
     private static final String BEFORE_BROKEN_PRESERVE_ORDER = '6.1.1' // Latest version before introduction of cbeust/testng#639 bug
     private static final String FIXED_BROKEN_PRESERVE_ORDER = '6.9.4'  // Fixes cbeust/testng#639 for preserve-order
 
-    private static final Set<String> VERSIONS = [
+    private static final String LAST_BEFORE_NEW_EXECUTOR_API = '7.5' // Last version with setExecutorFactoryClass(String)
+
+    private static final String FIRST_REQUIRING_JDK_11 = '7.6' // TestNG 7.6.0 dropped Java 8 support and requires JDK 11+
+
+    public static final Set<String> ALL_VERSIONS = [
         '5.12.1', // Newest version without TestNG#setConfigFailurePolicy method (Added in 5.13)
         FIXED_ILLEGAL_ACCESS,
         BEFORE_BROKEN_PRESERVE_ORDER,
         FIXED_BROKEN_PRESERVE_ORDER,
         BROKEN_ICLASS_LISTENER,
         FIXED_ICLASS_LISTENER,
+        LAST_BEFORE_NEW_EXECUTOR_API,
         NEWEST
-    ]
+      ]
 
-    static final Set<String> SUPPORTED_BY_JDK = testNgVersionsSupportedByJdk(VERSIONS, JavaVersion.current())
-    static final Set<String> SUPPORTS_PRESERVE_ORDER = SUPPORTED_BY_JDK.findAll {
-        VersionNumber version = VersionNumber.parse(it)
-        version >= VersionNumber.parse(FIRST_PRESERVE_ORDER_SUPPORT)
-            && !(version > VersionNumber.parse(BEFORE_BROKEN_PRESERVE_ORDER) && version < VersionNumber.parse(FIXED_BROKEN_PRESERVE_ORDER))
-    }
-    static final Set<String> SUPPORTS_GROUP_BY_INSTANCES = SUPPORTED_BY_JDK.findAll { VersionNumber.parse(it) >= VersionNumber.parse('6.1') }
+    static final Set<String> SUPPORTED_BY_JDK = testNgVersionsSupportedByJdk(ALL_VERSIONS, JavaVersion.current())
     static final Set<String> SUPPORTS_ICLASS_LISTENER = SUPPORTED_BY_JDK.findAll { VersionNumber.parse(it) >= VersionNumber.parse(FIXED_ICLASS_LISTENER) }
     static final Set<String> SUPPORTS_DRY_RUN = SUPPORTED_BY_JDK.findAll { VersionNumber.parse(it) >= VersionNumber.parse('6.14') }
 
-    static boolean providesClassListener(Object version) {
-        VersionNumber.parse(version.toString()) >= VersionNumber.parse(FIXED_ICLASS_LISTENER)
+    static boolean supportsJavaVersion(String testNgVersion, int javaVersion) {
+        return testNgVersionsSupportedByJdk([testNgVersion] as Set,  JavaVersion.toVersion(javaVersion)).contains(testNgVersion)
     }
 
     private static Set<String> testNgVersionsSupportedByJdk(Set<String> versions, JavaVersion javaVersion) {
@@ -62,6 +67,9 @@ class TestNGCoverage {
         } else if (javaVersion < JavaVersion.VERSION_1_7) {
             // 6.8.21 was the last version to compile to JDK 5 bytecode. Afterwards (6.9.4) TestNG compiled to JDK 7 bytecode.
             return versions.findAll { VersionNumber.parse(it) <= VersionNumber.parse('6.8.21')}
+        } else if (javaVersion < JavaVersion.VERSION_11) {
+            // TestNG 7.6.0 and later require JDK 11+, so they cannot run on Java 8/9/10.
+            return versions.findAll { VersionNumber.parse(it) < VersionNumber.parse(FIRST_REQUIRING_JDK_11) }
         } else {
             return versions
         }

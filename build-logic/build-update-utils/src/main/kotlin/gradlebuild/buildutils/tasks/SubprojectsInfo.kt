@@ -40,6 +40,9 @@ abstract class SubprojectsInfo : DefaultTask() {
     private
     val testingFolder = project.layout.projectDirectory.dir("testing")
 
+    private
+    val packingFolder = project.layout.projectDirectory.dir("packaging")
+
     @get:Internal
     protected
     val subprojectsJson = project.layout.projectDirectory.file(".teamcity/subprojects.json")
@@ -53,7 +56,11 @@ abstract class SubprojectsInfo : DefaultTask() {
 
     private
     fun generateSubprojectsDirectories(): List<File> {
-        val subprojectRoots = platformsFolder.asFile.listFiles(File::isDirectory).plus(subprojectsFolder.asFile).plus(testingFolder.asFile)
+        val subprojectRoots = platformsFolder.asFile.listFiles(File::isDirectory)
+            .plus(subprojectsFolder.asFile)
+            .plus(testingFolder.asFile)
+            .plus(packingFolder.asFile)
+
         return subprojectRoots.map { it.listFiles(File::isDirectory).asList() }.flatten()
     }
 
@@ -74,12 +81,15 @@ abstract class SubprojectsInfo : DefaultTask() {
         return GradleSubproject(
             subprojectDir.name,
             rootPath.relativize(subprojectDir.toPath()).invariantSeparatorsPathString,
-            subprojectDir.hasDescendantDir("src/test"),
-            subprojectDir.hasDescendantDir("src/integTest"),
-            subprojectDir.hasDescendantDir("src/crossVersionTest")
+            subprojectDir.hasDescendantDirWithFiles("src/test"),
+            subprojectDir.hasDescendantDirWithFiles("src/integTest"),
+            subprojectDir.hasDescendantDirWithFiles("src/crossVersionTest")
         )
     }
 
     private
-    fun File.hasDescendantDir(descendant: String) = resolve(descendant).isDirectory
+    fun File.hasDescendantDirWithFiles(descendant: String): Boolean {
+        val dir = resolve(descendant)
+        return dir.isDirectory && dir.walk().any { it.isFile }
+    }
 }

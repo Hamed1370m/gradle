@@ -21,9 +21,6 @@ import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.Compone
 import org.gradle.api.internal.artifacts.repositories.metadata.IvyMutableModuleMetadataFactory
 import org.gradle.api.internal.artifacts.repositories.metadata.MavenMutableModuleMetadataFactory
 import org.gradle.api.internal.attributes.AttributeDescriberRegistry
-import org.gradle.api.internal.attributes.AttributeDesugaring
-import org.gradle.api.problems.internal.DefaultProblems
-import org.gradle.api.problems.internal.NoOpProblemEmitter
 import org.gradle.internal.component.external.model.ModuleComponentGraphResolveStateFactory
 import org.gradle.internal.component.external.model.PreferJavaRuntimeVariant
 import org.gradle.internal.component.model.ComponentIdGenerator
@@ -34,10 +31,9 @@ import org.gradle.util.TestUtil
 
 class DependencyManagementTestUtil {
     private static final ComponentIdGenerator ID_GENERATOR = new ComponentIdGenerator()
-    private static final AttributeDesugaring ATTRIBUTE_DESUGARING = new AttributeDesugaring(AttributeTestUtil.attributesFactory())
 
     static ModuleComponentGraphResolveStateFactory modelGraphResolveFactory() {
-        return new ModuleComponentGraphResolveStateFactory(ID_GENERATOR, ATTRIBUTE_DESUGARING)
+        return new ModuleComponentGraphResolveStateFactory(ID_GENERATOR)
     }
 
     static MavenMutableModuleMetadataFactory mavenMetadataFactory() {
@@ -67,7 +63,7 @@ class DependencyManagementTestUtil {
 
         return new ResolutionFailureHandler(
             TestUtil.instantiatorFactory().inject(services),
-            new DefaultProblems([new NoOpProblemEmitter()]),
+            TestUtil.problemsService(),
             new TransformedVariantConverter()
         )
     }

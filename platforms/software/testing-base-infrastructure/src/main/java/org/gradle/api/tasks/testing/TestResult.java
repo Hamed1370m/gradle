@@ -17,25 +17,39 @@
 package org.gradle.api.tasks.testing;
 
 import org.gradle.api.Incubating;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 /**
  * Describes a test result.
+ * @since 0.9
  */
 public interface TestResult {
     /**
      * The final status of a test.
+     * @since 0.9
      */
-    public enum ResultType {
-        SUCCESS, FAILURE, SKIPPED
+    enum ResultType {
+        /**
+         * @since 0.9
+         */
+        SUCCESS,
+        /**
+         * @since 0.9
+         */
+        FAILURE,
+        /**
+         * @since 0.9
+         */
+        SKIPPED
     }
 
     /**
      * Returns the type of result.  Generally one wants it to be SUCCESS!
      *
      * @return The result type.
+     * @since 0.9
      */
     ResultType getResultType();
 
@@ -44,6 +58,7 @@ public interface TestResult {
      * exception (JUnit), so in those cases this method will never return null.
      *
      * @return The exception, if any, logged for this test.  If none, a null is returned.
+     * @since 0.9
      */
     @Nullable
     Throwable getException();
@@ -63,13 +78,26 @@ public interface TestResult {
      * without an exception (JUnit), so in those cases this method will never return an empty list.
      *
      * @return The exceptions, if any, logged for this test. If none, an empty list is returned.
+     * @since 0.9
      */
     List<Throwable> getExceptions();
+
+    /**
+     * If the test failed with assumption violation, this will contain the failure.
+     *
+     * @return the failure, if any, logged for this test. If none, null is returned.
+     *
+     * @since 8.14
+     */
+    @Incubating
+    @Nullable
+    TestFailure getAssumptionFailure();
 
     /**
      * Returns the time when this test started execution.
      *
      * @return The start time, in milliseconds since the epoch.
+     * @since 0.9
      */
     long getStartTime();
 
@@ -77,6 +105,7 @@ public interface TestResult {
      * Returns the time when this test completed execution.
      *
      * @return The end t ime, in milliseconds since the epoch.
+     * @since 0.9
      */
     long getEndTime();
 
@@ -85,6 +114,7 @@ public interface TestResult {
      * atomic test.
      *
      * @return The number of tests, possibly 0
+     * @since 0.9
      */
     long getTestCount();
 
@@ -92,6 +122,7 @@ public interface TestResult {
      * Returns the number of successful atomic tests executed for this test.
      *
      * @return The number of tests, possibly 0
+     * @since 0.9
      */
     long getSuccessfulTestCount();
 
@@ -99,6 +130,7 @@ public interface TestResult {
      * Returns the number of failed atomic tests executed for this test.
      *
      * @return The number of tests, possibly 0
+     * @since 0.9
      */
     long getFailedTestCount();
 
@@ -106,6 +138,7 @@ public interface TestResult {
      * Returns the number of skipped atomic tests executed for this test.
      *
      * @return The number of tests, possibly 0
+     * @since 0.9
      */
     long getSkippedTestCount();
 }

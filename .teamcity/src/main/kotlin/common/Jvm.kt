@@ -23,33 +23,59 @@ interface Jvm {
 
 data class DefaultJvm(
     override val version: JvmVersion,
-    override val vendor: JvmVendor
+    override val vendor: JvmVendor,
 ) : Jvm
 
 object BuildToolBuildJvm : Jvm {
     override val version: JvmVersion
-        get() = JvmVersion.java17
+        get() = JvmVersion.JAVA_25
     override val vendor: JvmVendor
-        get() = JvmVendor.openjdk
+        get() = JvmVendor.OPENJDK
 }
 
 object OpenJdk8 : Jvm {
     override val version: JvmVersion
-        get() = JvmVersion.java8
+        get() = JvmVersion.JAVA_8
     override val vendor: JvmVendor
-        get() = JvmVendor.openjdk
+        get() = JvmVendor.OPENJDK
 }
 
 object OpenJdk11 : Jvm {
     override val version: JvmVersion
-        get() = JvmVersion.java11
+        get() = JvmVersion.JAVA_11
     override val vendor: JvmVendor
-        get() = JvmVendor.openjdk
+        get() = JvmVendor.OPENJDK
 }
 
 object OpenJdk17 : Jvm {
     override val version: JvmVersion
-        get() = JvmVersion.java17
+        get() = JvmVersion.JAVA_17
     override val vendor: JvmVendor
-        get() = JvmVendor.openjdk
+        get() = JvmVendor.OPENJDK
 }
+
+object OpenJdk21 : Jvm {
+    override val version: JvmVersion
+        get() = JvmVersion.JAVA_21
+    override val vendor: JvmVendor
+        get() = JvmVendor.OPENJDK
+}
+
+object OpenJdk25 : Jvm {
+    override val version: JvmVersion
+        get() = JvmVersion.JAVA_25
+    override val vendor: JvmVendor
+        get() = JvmVendor.OPENJDK
+}
+
+/**
+ * Java binary of the JVM the TeamCity agent itself is running on.
+ *
+ * Resolves on every agent without needing the JDK provisioner plugin —
+ * unlike javaHome(BuildToolBuildJvm, …), whose %linux.javaXX.openjdk.64bit%
+ * parameter is only populated by the provisioner.
+ *
+ * Use this for single-file source-launched .java helpers (`java foo.java`)
+ * whose JVM choice should be decoupled from BuildToolBuildJvm.
+ */
+const val AGENT_JAVA_BINARY = "%teamcity.agent.jvm.java.home%/bin/java"

@@ -56,6 +56,7 @@ class PropertyUpgradeCodeGenTest extends InstrumentationCodeGenTest {
             import org.gradle.test.Task;
 
             @Generated
+            @SuppressWarnings("deprecation")
             public final class Task_Adapter {
                 public static int access_get_getMaxErrors(Task self) {
                     ${getDefaultPropertyUpgradeDeprecation("Task", "maxErrors")}
@@ -119,6 +120,7 @@ class PropertyUpgradeCodeGenTest extends InstrumentationCodeGenTest {
             import org.gradle.test.Task;
 
             @Generated
+            @SuppressWarnings("deprecation")
             public final class Task_Adapter {
                 public static boolean access_get_isIncremental(Task self) {
                     ${getDefaultPropertyUpgradeDeprecation("Task", "incremental")}
@@ -132,6 +134,20 @@ class PropertyUpgradeCodeGenTest extends InstrumentationCodeGenTest {
                 }
             }
         """
+        // Just make sure that the groovy interceptors are generated
+        def groovyInterceptorClass = source """
+            package $GENERATED_CLASSES_PACKAGE_NAME;
+
+            @Generated
+            public class InterceptorDeclaration_PropertyUpgradesGroovyInterceptors_TestProject {
+                @Generated
+                public static class IsIncrementalCallInterceptor extends AbstractCallInterceptor implements SignatureAwareCallInterceptor, FilterableCallInterceptor, FilterableBytecodeInterceptor.BytecodeUpgradeInterceptor, PropertyAwareCallInterceptor {
+                    public IsIncrementalCallInterceptor() {
+                        super(InterceptScope.readsOfPropertiesNamed("incremental"), InterceptScope.methodsNamed("isIncremental"));
+                    }
+                }
+            }
+        """
         assertThat(compilation).succeededWithoutWarnings()
         assertThat(compilation)
             .generatedSourceFile(fqName(generatedClass))
@@ -139,6 +155,9 @@ class PropertyUpgradeCodeGenTest extends InstrumentationCodeGenTest {
         assertThat(compilation)
             .generatedSourceFile(fqName(adapterClass))
             .containsElementsIn(adapterClass)
+        assertThat(compilation)
+            .generatedSourceFile(fqName(groovyInterceptorClass))
+            .containsElementsIn(groovyInterceptorClass)
     }
 
     def "should auto generate adapter for upgraded property with type #upgradedType"() {
@@ -169,6 +188,7 @@ class PropertyUpgradeCodeGenTest extends InstrumentationCodeGenTest {
             import org.gradle.test.Task;
 
             @Generated
+            @SuppressWarnings("deprecation")
             public final class Task_Adapter {
                 ${hasSuppressWarnings ? '@SuppressWarnings({"unchecked", "rawtypes"})' : ''}
                 public static $originalType access_get_${getterPrefix}Property(Task self) {
@@ -233,6 +253,7 @@ class PropertyUpgradeCodeGenTest extends InstrumentationCodeGenTest {
             import org.gradle.test.Task;
 
             @Generated
+            @SuppressWarnings("deprecation")
             public final class Task_Adapter {
                 ${hasSuppressWarnings ? '@SuppressWarnings({"unchecked", "rawtypes"})' : ''}
                 public static $originalType access_get_${getterPrefix}Property(Task self) {
@@ -363,6 +384,7 @@ class PropertyUpgradeCodeGenTest extends InstrumentationCodeGenTest {
             public abstract class Task {
                 @ReplacesEagerProperty(replacedAccessors = {
                     @ReplacedAccessor(value = AccessorType.GETTER, name = "getDestinationDir"),
+                    @ReplacedAccessor(value = AccessorType.GETTER, name = "addDestinationDir"),
                     @ReplacedAccessor(value = AccessorType.SETTER, name = "setDestinationDir"),
                     @ReplacedAccessor(value = AccessorType.SETTER, name = "destinationDir", originalType = File.class)
                 })
@@ -387,6 +409,10 @@ class PropertyUpgradeCodeGenTest extends InstrumentationCodeGenTest {
                             mv._INVOKESTATIC(TASK__ADAPTER_TYPE, "access_get_getDestinationDir", "(Lorg/gradle/test/Task;)Ljava/io/File;");
                             return true;
                         }
+                        if (name.equals("addDestinationDir") && descriptor.equals("()Ljava/io/File;") && (opcode == Opcodes.INVOKEVIRTUAL || opcode == Opcodes.INVOKEINTERFACE)) {
+                            mv._INVOKESTATIC(TASK__ADAPTER_TYPE, "access_get_addDestinationDir", "(Lorg/gradle/test/Task;)Ljava/io/File;");
+                            return true;
+                        }
                         if (name.equals("setDestinationDir") && descriptor.equals("(Ljava/io/File;)V") && (opcode == Opcodes.INVOKEVIRTUAL || opcode == Opcodes.INVOKEINTERFACE)) {
                             mv._INVOKESTATIC(TASK__ADAPTER_TYPE, "access_set_setDestinationDir", "(Lorg/gradle/test/Task;Ljava/io/File;)V");
                             return true;
@@ -400,9 +426,106 @@ class PropertyUpgradeCodeGenTest extends InstrumentationCodeGenTest {
                 }
             }
         """
+        // Just make sure that the groovy interceptors are generated
+        def groovyInterceptorClass = source """
+            package $GENERATED_CLASSES_PACKAGE_NAME;
+            @Generated
+            public class InterceptorDeclaration_PropertyUpgradesGroovyInterceptors_TestProject {
+                @Generated
+                public static class GetDestinationDirCallInterceptor extends AbstractCallInterceptor implements SignatureAwareCallInterceptor, FilterableCallInterceptor, FilterableBytecodeInterceptor.BytecodeUpgradeInterceptor, PropertyAwareCallInterceptor {
+                    public GetDestinationDirCallInterceptor() {
+                        super(InterceptScope.readsOfPropertiesNamed("destinationDir"), InterceptScope.methodsNamed("getDestinationDir"));
+                    }
+                }
+                @Generated
+                public static class SetDestinationDirCallInterceptor extends AbstractCallInterceptor implements SignatureAwareCallInterceptor, FilterableCallInterceptor, FilterableBytecodeInterceptor.BytecodeUpgradeInterceptor, PropertyAwareCallInterceptor {
+                    public SetDestinationDirCallInterceptor() {
+                        super(InterceptScope.writesOfPropertiesNamed("destinationDir"), InterceptScope.methodsNamed("setDestinationDir"));
+                    }
+                }
+                @Generated
+                public static class DestinationDirCallInterceptor extends AbstractCallInterceptor implements SignatureAwareCallInterceptor, FilterableCallInterceptor, FilterableBytecodeInterceptor.BytecodeUpgradeInterceptor {
+                    public DestinationDirCallInterceptor() {
+                        super(InterceptScope.methodsNamed("destinationDir"));
+                    }
+                }
+                @Generated
+                public static class AddDestinationDirCallInterceptor extends AbstractCallInterceptor implements SignatureAwareCallInterceptor, FilterableCallInterceptor, FilterableBytecodeInterceptor.BytecodeUpgradeInterceptor {
+                    public AddDestinationDirCallInterceptor() {
+                        super(InterceptScope.methodsNamed("addDestinationDir"));
+                    }
+                }
+            }
+        """
         assertThat(compilation).succeededWithoutWarnings()
         assertThat(compilation)
             .generatedSourceFile(fqName(generatedClass))
             .containsElementsIn(generatedClass)
+        assertThat(compilation)
+            .generatedSourceFile(fqName(groovyInterceptorClass))
+            .containsElementsIn(groovyInterceptorClass)
+    }
+
+    def "should generate correct deprecation for removedIn = GRADLE9"() {
+        given:
+        def givenSource = source"""
+            package org.gradle.test;
+
+            import org.gradle.api.provider.*;
+            import org.gradle.api.file.*;
+            import org.gradle.internal.instrumentation.api.annotations.*;
+            import org.gradle.internal.instrumentation.api.annotations.ReplacedAccessor.AccessorType;
+            import java.io.File;
+
+            public abstract class Task {
+                @ReplacesEagerProperty(
+                    replacedAccessors = {
+                        @ReplacedAccessor(value = AccessorType.GETTER, name = "getDestinationDir"),
+                        @ReplacedAccessor(value = AccessorType.SETTER, name = "setDestinationDir")
+                    },
+                    deprecation = @ReplacedDeprecation(removedIn = ReplacedDeprecation.RemovedIn.GRADLE9)
+                )
+                public abstract DirectoryProperty getDestinationDirectory();
+            }
+        """
+
+        when:
+        Compilation compilation = compile(givenSource)
+
+        then:
+        def generatedInterceptor = source """
+            package $GENERATED_CLASSES_PACKAGE_NAME;
+
+            import java.io.File;
+            import org.gradle.api.Generated;
+            import org.gradle.internal.deprecation.DeprecationLogger;
+            import org.gradle.test.Task;
+
+            @Generated
+            @SuppressWarnings("deprecation")
+            public final class Task_Adapter {
+                public static File access_get_getDestinationDir(Task self) {
+                    DeprecationLogger.deprecate("The usage of Task.destinationDir")
+                            .withContext("Property 'destinationDir' was removed and this compatibility shim will be removed in Gradle 10. Please use 'destinationDirectory' property instead.")
+                            .willBecomeAnErrorInGradle10()
+                            .undocumented()
+                            .nagUser();
+                    return self.getDestinationDirectory().getAsFile().getOrNull();
+                }
+
+                public static void access_set_setDestinationDir(Task self, File arg0) {
+                    DeprecationLogger.deprecate("The usage of Task.destinationDir")
+                            .withContext("Property 'destinationDir' was removed and this compatibility shim will be removed in Gradle 10. Please use 'destinationDirectory' property instead.")
+                            .willBecomeAnErrorInGradle10()
+                            .undocumented()
+                            .nagUser();
+                    self.getDestinationDirectory().fileValue(arg0);
+                }
+            }
+        """
+        assertThat(compilation).succeededWithoutWarnings()
+        assertThat(compilation)
+            .generatedSourceFile(fqName(generatedInterceptor))
+            .containsElementsIn(generatedInterceptor)
     }
 }

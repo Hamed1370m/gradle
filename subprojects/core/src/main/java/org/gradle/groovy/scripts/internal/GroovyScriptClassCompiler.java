@@ -25,7 +25,6 @@ import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.groovy.scripts.ScriptSource;
 import org.gradle.groovy.scripts.internal.GroovyScriptClassCompiler.GroovyScriptCompilationAndInstrumentation.GroovyScriptCompilationOutput;
 import org.gradle.internal.Pair;
-import org.gradle.model.internal.asm.AsmConstants;
 import org.gradle.internal.classpath.CachedClasspathTransformer;
 import org.gradle.internal.classpath.ClassData;
 import org.gradle.internal.classpath.ClassPath;
@@ -36,6 +35,8 @@ import org.gradle.internal.classpath.transforms.ClasspathElementTransformFactory
 import org.gradle.internal.classpath.types.GradleCoreInstrumentationTypeRegistry;
 import org.gradle.internal.execution.ExecutionEngine;
 import org.gradle.internal.execution.InputFingerprinter;
+import org.gradle.internal.execution.InputVisitor;
+import org.gradle.internal.execution.OutputVisitor;
 import org.gradle.internal.execution.UnitOfWork;
 import org.gradle.internal.execution.caching.CachingDisabledReason;
 import org.gradle.internal.execution.history.OverlappingOutputs;
@@ -47,7 +48,11 @@ import org.gradle.internal.hash.Hasher;
 import org.gradle.internal.hash.Hashing;
 import org.gradle.internal.instrumentation.reporting.PropertyUpgradeReportConfig;
 import org.gradle.internal.scripts.BuildScriptCompilationAndInstrumentation;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.model.dsl.internal.transform.RuleVisitor;
+import org.gradle.model.internal.asm.AsmConstants;
+import org.jspecify.annotations.Nullable;
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -58,7 +63,6 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
-import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.io.File;
 import java.net.URI;
@@ -69,6 +73,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * A {@link ScriptClassCompiler} which compiles scripts to a cache directory, and loads them from there.
  */
+@ServiceScope(Scope.Build.class)
 public class GroovyScriptClassCompiler implements ScriptClassCompiler, Closeable {
     private static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
     private static final String CLASSPATH_PROPERTY_NAME = "classpath";
@@ -266,8 +271,8 @@ public class GroovyScriptClassCompiler implements ScriptClassCompiler, Closeable
         }
 
         @Override
-        public void visitIdentityInputs(InputVisitor visitor) {
-            super.visitIdentityInputs(visitor);
+        public void visitImmutableInputs(InputVisitor visitor) {
+            super.visitImmutableInputs(visitor);
             visitor.visitInputProperty(TEMPLATE_ID_PROPERTY_NAME, () -> templateId);
             visitor.visitInputProperty(SOURCE_HASH_PROPERTY_NAME, () -> sourceHashCode);
             visitor.visitInputProperty(CLASSPATH_PROPERTY_NAME, () -> classLoaderHierarchyHasher.getClassLoaderHash(classLoader));
@@ -277,7 +282,7 @@ public class GroovyScriptClassCompiler implements ScriptClassCompiler, Closeable
         public void visitOutputs(File workspace, OutputVisitor visitor) {
             super.visitOutputs(workspace, visitor);
             File metadataDir = metadataDir(workspace);
-            OutputFileValueSupplier metadataDirValue = OutputFileValueSupplier.fromStatic(metadataDir, fileCollectionFactory.fixed(metadataDir));
+            OutputVisitor.OutputFileValueSupplier metadataDirValue = OutputVisitor.OutputFileValueSupplier.fromStatic(metadataDir, fileCollectionFactory.fixed(metadataDir));
             visitor.visitOutputProperty("metadataDir", TreeType.DIRECTORY, metadataDirValue);
         }
 

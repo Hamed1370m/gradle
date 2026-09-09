@@ -15,27 +15,27 @@
  */
 package org.gradle.api.tasks.bundling
 
-import org.apache.commons.lang.RandomStringUtils
+import org.apache.commons.lang3.RandomStringUtils
 import org.gradle.api.internal.DocumentationRegistry
 import org.gradle.api.tasks.Copy
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
-import org.gradle.integtests.fixtures.archives.TestReproducibleArchives
+import org.gradle.integtests.fixtures.archives.TestFileSystemSensitiveArchives
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.archive.ArchiveTestFixture
 import org.gradle.test.fixtures.archive.TarTestFixture
 import org.gradle.test.fixtures.archive.ZipTestFixture
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.FileSystemTestPreconditions
+
 import org.gradle.util.internal.Resources
 import org.hamcrest.CoreMatchers
 import org.junit.Rule
 import spock.lang.Issue
 
-import static org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache.Skip.INVESTIGATE
 import static org.hamcrest.CoreMatchers.equalTo
 
-@TestReproducibleArchives
+@TestFileSystemSensitiveArchives
 class ArchiveIntegrationTest extends AbstractIntegrationSpec {
     @Rule
     public final Resources resources = new Resources(temporaryFolder)
@@ -66,7 +66,7 @@ class ArchiveIntegrationTest extends AbstractIntegrationSpec {
         run 'copy'
 
         then:
-        result.assertTaskExecuted(":copy")
+        result.assertTaskScheduled(":copy")
         file('dest').assertHasDescendants('subdir1/file1.txt', 'subdir2/file2.txt')
 
         when:
@@ -89,7 +89,7 @@ class ArchiveIntegrationTest extends AbstractIntegrationSpec {
         run 'copy'
 
         then:
-        result.assertTasksExecutedAndNotSkipped(":copy")
+        result.assertTasksExecuted(":copy")
         // Copy (intentionally) leaves stuff behind
         file('dest').assertHasDescendants('subdir1/file1.txt', 'subdir2/file2.txt', 'file3.txt')
 
@@ -140,7 +140,7 @@ class ArchiveIntegrationTest extends AbstractIntegrationSpec {
         run 'copy'
 
         then:
-        result.assertTaskExecuted(":copy")
+        result.assertTaskScheduled(":copy")
         file('dest').assertHasDescendants('subdir1/file1.txt', 'subdir2/file2.txt')
 
         when:
@@ -163,7 +163,7 @@ class ArchiveIntegrationTest extends AbstractIntegrationSpec {
         run 'copy'
 
         then:
-        result.assertTasksExecutedAndNotSkipped(":copy")
+        result.assertTasksExecuted(":copy")
         // Copy (intentionally) leaves stuff behind
         file('dest').assertHasDescendants('subdir1/file1.txt', 'subdir2/file2.txt', 'file3.txt')
 
@@ -321,7 +321,7 @@ class ArchiveIntegrationTest extends AbstractIntegrationSpec {
         run 'myTar'
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
+    @ToBeFixedForConfigurationCache(issue = "https://github.com/gradle/gradle/issues/31858")
     def "can choose compression method for tarTree"() {
         given:
         TestFile tar = file('tar-contents')
@@ -362,7 +362,7 @@ class ArchiveIntegrationTest extends AbstractIntegrationSpec {
         def failure = runAndFail('copy')
 
         then:
-        failure.assertHasDescription("Execution failed for task ':copy'.")
+        failure.assertHasDescription("Execution failed for task ':copy' (registered in build file 'build.gradle').")
         failure.assertThatCause(CoreMatchers.startsWith("Cannot expand ZIP"))
 
         where:
@@ -385,7 +385,7 @@ class ArchiveIntegrationTest extends AbstractIntegrationSpec {
         def failure = runAndFail('copy')
 
         then:
-        failure.assertHasDescription("Execution failed for task ':copy'.")
+        failure.assertHasDescription("Execution failed for task ':copy' (registered in build file 'build.gradle').")
         failure.assertThatCause(CoreMatchers.startsWith("Unable to expand TAR"))
 
         where:
@@ -432,7 +432,7 @@ class ArchiveIntegrationTest extends AbstractIntegrationSpec {
         file('build/test.zip').assertDoesNotExist()
     }
 
-    @Requires(UnitTestPreconditions.Symlinks)
+    @Requires(FileSystemTestPreconditions.Symlinks)
     def "does not create empty #type array on exception"() {
         given:
         def output = "test.${type.toLowerCase()}"

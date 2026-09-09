@@ -34,42 +34,73 @@ import static org.hamcrest.MatcherAssert.assertThat
 
 abstract class DistributionIntegrationSpec extends AbstractIntegrationSpec {
 
-    protected static final THIRD_PARTY_LIB_COUNT = 137
+    protected static final NATIVE_PLATFORM_BINARIES = 16
+    protected static final THIRD_PARTY_LIB_COUNT = 115
 
     @Shared
     String baseVersion = GradleVersion.current().baseVersion.version
 
+    /**
+     * The version recorded in the metadata of a Gradle jar - the manifest's
+     * {@code Implementation-Version} and the Maven {@code pom.properties}. This is the full
+     * Gradle version, so permanently published milestones and RCs stay identifiable, except that
+     * the per-build timestamp of nightly/snapshot builds is replaced with "SNAPSHOT" to keep the
+     * jars reproducible. Jar file names use {@link #baseVersion} instead.
+     */
+    @Shared
+    String jarMetadataVersion = GradleVersion.current().snapshot
+        ? GradleVersion.current().version.replaceFirst(/\d{14}([-+]\d{4})?/, "SNAPSHOT")
+        : GradleVersion.current().version
+
     def coreLibsModules = [
+        "ant",
+        "ant-api",
         "base-asm",
+        "base-diagnostics",
         "base-services",
         "base-services-groovy",
         "build-cache",
         "build-cache-base",
+        "build-cache-core",
         "build-cache-local",
         "build-cache-packaging",
         "build-cache-spi",
-        "build-events",
+        "build-configuration",
+        "build-discovery",
+        "build-discovery-impl",
+        "build-discovery-reporting",
+        "build-init-specs",
+        "build-init-specs-api",
         "build-operations",
         "build-operations-trace",
         "build-option",
         "build-process-services",
         "build-state",
+        "classloaders",
+        "classpath",
         "cli",
         "client-services",
+        "collections",
         "concurrent",
         "configuration-problems-base",
         "core",
         "core-api",
+        "core-flow-services-api",
+        "core-kotlin-extensions",
+        "credentials",
+        "credentials-api",
+        "daemon-logging",
         "daemon-main",
+        "daemon-messaging",
         "daemon-protocol",
         "daemon-server",
         "daemon-services",
         "declarative-dsl-api",
         "declarative-dsl-core",
         "declarative-dsl-evaluator",
-        "declarative-dsl-internal-utils",
         "declarative-dsl-provider",
         "declarative-dsl-tooling-models",
+        "domain-object-collections",
         "enterprise-logging",
         "enterprise-operations",
         "enterprise-workers",
@@ -82,7 +113,9 @@ abstract class DistributionIntegrationSpec extends AbstractIntegrationSpec {
         "functional",
         "gradle-cli",
         "gradle-cli-main",
+        "groovy-loader",
         "hashing",
+        "hashing-services",
         "input-tracking",
         "installation-beacon",
         "instrumentation-agent-services",
@@ -97,34 +130,64 @@ abstract class DistributionIntegrationSpec extends AbstractIntegrationSpec {
         "messaging",
         "model-core",
         "model-groovy",
+        "model-reflect",
         "native",
+        "normalization",
+        "normalization-api",
         "normalization-java",
         "persistent-cache",
         "problems",
         "problems-api",
+        "problems-rendering",
+        "problems-reporting",
         "process-memory-services",
         "process-services",
+        "process-services-api",
+        "process-services-base",
+        "project-features",
+        "project-features-api",
+        "report-rendering",
+        "request-handler-worker",
         "resources",
+        "resources-http",
         "runtime-api-info",
+        "scoped-persistent-cache",
         "serialization",
         "service-lookup",
         "service-provider",
         "service-registry-builder",
         "service-registry-impl",
         "snapshots",
+        "start-parameter",
         "stdlib-java-extensions",
         "stdlib-kotlin-extensions",
         "time",
         "toolchains-jvm-shared",
         "tooling-api",
         "tooling-api-provider",
+        "versioned-cache",
         "worker-main",
+        "worker-process-services",
+        "worker-shared",
         "wrapper-shared",
+    ]
+
+    def forbiddenLibraries = [
+        // Testing libraries are provided by the user during runtime
+        // and should not be included as part of the distribution.
+        "junit",
+        "hamcrest",
+        "ant-junit",
+        "testng",
+        "bsh",
+        "junit-platform-launcher",
+        "junit-platform-engine",
+        "junit-platform-commons",
     ]
 
     abstract String getDistributionLabel()
 
-    abstract int getMaxDistributionSizeBytes()
+    abstract int getDistributionSizeMiB()
 
     /**
      * Change this whenever you add or remove subprojects for distribution core modules (lib/).
@@ -137,13 +200,20 @@ abstract class DistributionIntegrationSpec extends AbstractIntegrationSpec {
      * Change this whenever you add or remove subprojects for distribution-packaged plugins (lib/plugins).
      */
     int getPackagedPluginsJarCount() {
-        82
+        98
     }
 
     /**
      * Change this whenever you add or remove subprojects for distribution java agents (lib/agents).
      */
     int getAgentJarsCount() {
+        1
+    }
+
+    /**
+     * Change this whenever you add or remove subprojects for distribution API jars (lib/api).
+     */
+    int getApiJarsCount() {
         1
     }
 
@@ -155,14 +225,19 @@ abstract class DistributionIntegrationSpec extends AbstractIntegrationSpec {
     }
 
     int getLibJarsCount() {
-        coreLibJarsCount + packagedPluginsJarCount + agentJarsCount + thirdPartyLibJarsCount
+        coreLibJarsCount + packagedPluginsJarCount + agentJarsCount + apiJarsCount + thirdPartyLibJarsCount + NATIVE_PLATFORM_BINARIES
     }
 
-    def "distribution size should not exceed a certain number"() {
+    def "distribution size should not change too much"() {
         expect:
-        def size = getZip().size()
+        def actualKB = (int) Math.ceil((double) getZip().size() / 1024)
+        def expectedKB = getDistributionSizeMiB() * 1024
 
-        assert size <= getMaxDistributionSizeBytes() : "Distribution content needs to be verified. If the increase is expected, raise the size by ${Math.ceil((size - getMaxDistributionSizeBytes()) / 1024 / 1024)}"
+        int margin = buildContext.version.isSnapshot() ? 1024 : 4096 // Allow 1 MiB margin for current dev, 4 MiB for more stable releases (promotion builds)
+        def message = "content needs to be verified. Current size: ${(int) (actualKB / 1024)} MiB (${actualKB} KiB). Expected size: ${getDistributionSizeMiB()} ± ${margin / 1024} MiB."
+
+        assert actualKB <= expectedKB + margin: "Distribution is unexpectedly larger, $message"
+        assert actualKB >= expectedKB - margin: "Distribution is unexpectedly smaller, $message"
     }
 
     def "no duplicate jar entries in distribution"() {
@@ -177,12 +252,30 @@ abstract class DistributionIntegrationSpec extends AbstractIntegrationSpec {
         dupesWithCount.isEmpty()
     }
 
-    def "all files under lib directory are jars"() {
+    def "all files under lib directory are jars and properties files"() {
+        given:
+        def entries = libZipEntries
+
         when:
-        def nonJarLibEntries = libZipEntries.findAll { !it.name.endsWith(".jar") }
+        def unexpectedEntries = entries.findAll { !it.name.endsWith(".jar") && !it.name.endsWith(".properties") }
+        def jarNames = entries.collect { it.name }.findAll { it.endsWith(".jar") }
+        def propertiesNames = entries.collect { it.name }.findAll { it.endsWith(".properties") }
+
+        and:
+        def jarsWithoutProperties = new HashSet<>(jarNames)
+        for (String propertiesFile : propertiesNames) {
+            String moduleName = propertiesFile - ".properties"
+            String jarName = jarNames.findAll { it.startsWith(moduleName) }.min { it.size() }
+            if (jarName != null) {
+                // Some properties files don't have a corresponding jar, like those representing
+                // platforms/BOMs, or those representing parent components of KMP multi-platform components.
+                jarsWithoutProperties.remove(jarName)
+            }
+        }
 
         then:
-        nonJarLibEntries.isEmpty()
+        unexpectedEntries.isEmpty()
+        jarsWithoutProperties.isEmpty()
     }
 
     def "no additional jars are added to the distribution"() {
@@ -194,7 +287,27 @@ abstract class DistributionIntegrationSpec extends AbstractIntegrationSpec {
         //but should be good enough. If this test fails for you and you did not intend to add new jars to the distribution
         //then there is something to be fixed. If you intentionally added new jars to the distribution and this is now failing please
         //accept my sincere apologies that you have to manually bump the numbers here.
-        jarLibEntries.size() == libJarsCount
+        assert jarLibEntries.size() == libJarsCount, """
+            Expected ${libJarsCount} jars in lib directory but found ${jarLibEntries.size()}.
+            Please review the jar entries and update the expectation in the getPackagedPluginsJarCount() method.
+            Jar entries found:
+            ${jarLibEntries.collect { it.name }}
+        """
+    }
+
+    def "does not contain forbidden libs"() {
+        when:
+        def jarLibEntries = libZipEntries.findAll { it.name.endsWith(".jar") }
+
+        then:
+        def forbiddenLibs = jarLibEntries.findAll { entry ->
+            def name = entry.name.substring(entry.name.lastIndexOf('/') + 1)
+            forbiddenLibraries.any { name.startsWith(it) }
+        }
+        assert forbiddenLibs.isEmpty() : """
+            Found forbidden libraries in the distribution:
+            ${forbiddenLibs.collect { it.name }}
+        """
     }
 
     protected List<? extends ZipEntry> getLibZipEntries() {
@@ -255,6 +368,7 @@ abstract class DistributionIntegrationSpec extends AbstractIntegrationSpec {
                 && !it.name.startsWith("gradle-api-metadata")
                 && !it.name.startsWith("gradle-kotlin-dsl")
                 && !it.name.startsWith("gradle-fileevents")
+                && it.name.endsWith(".jar")
         }
 
         def prefixedCoreLibNames = coreLibsModules.collect { "gradle-$it" }
@@ -274,7 +388,7 @@ abstract class DistributionIntegrationSpec extends AbstractIntegrationSpec {
 
         def toolingApiJar = contentsDir.file("lib/gradle-tooling-api-${baseVersion}.jar")
         toolingApiJar.assertIsFile()
-        assert toolingApiJar.length() < 500 * 1024 // tooling api jar is the small plain tooling api jar version and not the fat jar.
+        assert toolingApiJar.length() < 610 * 1024 // tooling api jar is the small plain tooling api jar version and not the fat jar.
 
         // Kotlin DSL
         assertIsGradleJar(contentsDir.file("lib/gradle-kotlin-dsl-${baseVersion}.jar"))
@@ -302,9 +416,14 @@ abstract class DistributionIntegrationSpec extends AbstractIntegrationSpec {
         assertIsGradleJar(contentsDir.file("lib/plugins/gradle-language-java-${baseVersion}.jar"))
         assertIsGradleJar(contentsDir.file("lib/plugins/gradle-language-groovy-${baseVersion}.jar"))
         assertIsGradleJar(contentsDir.file("lib/plugins/gradle-enterprise-${baseVersion}.jar"))
+        assertIsGradleJar(contentsDir.file("lib/plugins/gradle-ant-impl-${baseVersion}.jar"))
+        assertIsGradleJar(contentsDir.file("lib/plugins/gradle-ant-worker-${baseVersion}.jar"))
 
         // Agents
         assertIsGradleJar(contentsDir.file("lib/agents/gradle-instrumentation-agent-${baseVersion}.jar"))
+
+        // Public API
+        assertIsGradleJar(contentsDir.file("lib/api/gradle-public-api-legacy-${baseVersion}.jar"))
 
         // Docs
         contentsDir.file('README').assertIsFile()
@@ -328,17 +447,30 @@ abstract class DistributionIntegrationSpec extends AbstractIntegrationSpec {
         contentsDir.file('docs/userguide/userguide.html').assertContents(containsString("Gradle User Manual</h1>"))
         contentsDir.file('docs/userguide/userguide_single.html').assertIsFile()
         contentsDir.file('docs/userguide/userguide_single.html').assertContents(containsString("<h1>Gradle User Manual: Version ${version}</h1>"))
-        contentsDir.file('docs/userguide/userguide.pdf').assertIsFile()
 
         // DSL reference
         contentsDir.file('docs/dsl/index.html').assertIsFile()
         contentsDir.file('docs/dsl/index.html').assertContents(containsString("<title>Gradle DSL Version ${version}</title>"))
     }
 
+    /**
+     * The Maven groupId a distribution jar declares, in both its manifest and its pom.properties.
+     * Almost every jar is built by a project under {@code org.gradle}. The public API ABI jar is
+     * the exception: {@code :distributions-full} takes it from {@code :public-api}, which uses
+     * {@code org.gradle.experimental} - the group naming the capability that dependency requests.
+     */
+    protected static String expectedGroupFor(String artifactId) {
+        artifactId == 'gradle-public-api-legacy' ? 'org.gradle.experimental' : 'org.gradle'
+    }
+
     protected void assertIsGradleJar(TestFile jar) {
         jar.assertIsFile()
-        assertThat(jar.name, jar.manifest.mainAttributes.getValue('Implementation-Version'), equalTo(baseVersion))
+        def artifactId = jar.name - "-${baseVersion}.jar"
+        assertThat(jar.name, jar.manifest.mainAttributes.getValue('Implementation-Version'), equalTo(jarMetadataVersion))
         assertThat(jar.name, jar.manifest.mainAttributes.getValue('Implementation-Title'), equalTo('Gradle'))
+        // Vendor evidence, so scanners reading only the manifest can identify the artifact.
+        assertThat(jar.name, jar.manifest.mainAttributes.getValue('Implementation-Vendor'), equalTo('Gradle, Inc.'))
+        assertThat(jar.name, jar.manifest.mainAttributes.getValue('Implementation-Vendor-Id'), equalTo(expectedGroupFor(artifactId)))
     }
 
     private static void assertIsGradleApiMetadataJar(TestFile jar) {

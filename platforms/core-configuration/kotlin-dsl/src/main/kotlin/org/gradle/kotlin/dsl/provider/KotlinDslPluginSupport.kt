@@ -22,10 +22,10 @@ object KotlinDslPluginSupport {
     val kotlinCompilerArgs: List<String>
         get() = listOf(
             "-java-parameters",
-            "-Xjvm-default=all",
+            "-jvm-default=enable",
             "-Xjsr305=strict",
+            "-Xjspecify-annotations=strict",
             "-Xsam-conversions=class",
-            "-XXLanguage:+DisableCompatibilityModeForNewInference",
-            "-XXLanguage:-TypeEnhancementImprovementsInStrictMode",
+            "-Xuse-fir-lt=false",
         )
 }

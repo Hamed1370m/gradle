@@ -15,7 +15,7 @@
  */
 package org.gradle.internal.nativeintegration.services
 
-
+import net.rubygrapefruit.platform.ProcessLauncher
 import net.rubygrapefruit.platform.SystemInfo
 import net.rubygrapefruit.platform.WindowsRegistry
 import org.gradle.api.internal.file.temp.TemporaryFileProvider
@@ -29,7 +29,8 @@ import org.gradle.internal.nativeintegration.filesystem.FileSystem
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.internal.service.ServiceRegistry
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.gradle.util.UsesNativeServices
 import spock.lang.Specification
 
@@ -78,12 +79,17 @@ class NativeServicesTest extends Specification {
         services.get(SystemInfo) != null
     }
 
+    def "makes a ProcessLauncher available"() {
+        expect:
+        services.get(ProcessLauncher) != null
+    }
+
     def "makes a TemporaryFileProvider available"() {
         expect:
         services.get(TemporaryFileProvider) != null
     }
 
-    @Requires(UnitTestPreconditions.NotWindows)
+    @Requires(OsTestPreconditions.NotWindows)
     def "try using a WindowsRegistry on a non-Windows OS"() {
         def service = services.get(WindowsRegistry)
         when:

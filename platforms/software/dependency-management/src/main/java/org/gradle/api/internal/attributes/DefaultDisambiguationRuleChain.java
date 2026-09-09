@@ -23,6 +23,7 @@ import org.gradle.api.ActionConfiguration;
 import org.gradle.api.attributes.AttributeDisambiguationRule;
 import org.gradle.api.attributes.DisambiguationRuleChain;
 import org.gradle.api.attributes.MultipleCandidatesDetails;
+import org.gradle.internal.action.ConfigurableRule;
 import org.gradle.internal.action.DefaultConfigurableRule;
 import org.gradle.internal.action.DefaultConfigurableRules;
 import org.gradle.internal.action.InstantiatingAction;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Set;
 
 public class DefaultDisambiguationRuleChain<T> implements DisambiguationRuleChain<T> {
+
     private final List<Action<? super MultipleCandidatesDetails<T>>> rules = new ArrayList<>();
     private final Instantiator instantiator;
     private final IsolatableFactory isolatableFactory;
@@ -46,15 +48,15 @@ public class DefaultDisambiguationRuleChain<T> implements DisambiguationRuleChai
     }
 
     @Override
-    public void add(final Class<? extends AttributeDisambiguationRule<T>> rule, Action<? super ActionConfiguration> configureAction) {
-        this.rules.add(new InstantiatingAction<>(DefaultConfigurableRules.of(DefaultConfigurableRule.of(rule, configureAction, isolatableFactory)),
-            instantiator, new ExceptionHandler<>(rule)));
+    public void add(final Class<? extends AttributeDisambiguationRule<T>> ruleClass, Action<? super ActionConfiguration> configureAction) {
+        ConfigurableRule<MultipleCandidatesDetails<T>> rule = DefaultConfigurableRule.of(ruleClass, configureAction, isolatableFactory);
+        rules.add(createAction(rule, instantiator));
     }
 
     @Override
-    public void add(final Class<? extends AttributeDisambiguationRule<T>> rule) {
-        this.rules.add(new InstantiatingAction<>(DefaultConfigurableRules.of(DefaultConfigurableRule.of(rule)),
-            instantiator, new ExceptionHandler<>(rule)));
+    public void add(final Class<? extends AttributeDisambiguationRule<T>> ruleClass) {
+        ConfigurableRule<MultipleCandidatesDetails<T>> rule = DefaultConfigurableRule.of(ruleClass);
+        rules.add(createAction(rule, instantiator));
     }
 
     @Override
@@ -73,12 +75,71 @@ public class DefaultDisambiguationRuleChain<T> implements DisambiguationRuleChai
         return rules;
     }
 
+    public static <T> Action<MultipleCandidatesDetails<T>> createAction(
+        ConfigurableRule<MultipleCandidatesDetails<T>> rule,
+        Instantiator instantiator
+    ) {
+        Class<?> ruleClass = rule.getRuleClass();
+        Action<MultipleCandidatesDetails<T>> delegate =
+            new InstantiatingAction<>(DefaultConfigurableRules.of(rule), instantiator, new ExceptionHandler<>(ruleClass));
+        return new ValidatingAction<>(ruleClass, delegate);
+    }
+
+    /**
+     * Wraps an {@link InstantiatingAction} with a per-class fail-fast check that the rule's
+     * declared type parameter is a supported attribute value type. Implemented as a named
+     * inner class rather than a lambda so it can be serialized by the configuration cache
+     * (lambda-synthesized classes aren't visible to the CC classloader hierarchy).
+     */
+    private static class ValidatingAction<T> implements Action<MultipleCandidatesDetails<T>> {
+        private final Class<?> ruleClass;
+        private final Action<MultipleCandidatesDetails<T>> delegate;
+
+        /**
+         * Throttles the reflective type-parameter validation, which would otherwise run on every
+         * attribute match. Kept as per-instance state (rather than a static across all rules) so it
+         * neither leaks the rule's plugin classloader for the life of the daemon nor suppresses the
+         * deprecation on builds after the first. Transient so a config-cache restore re-validates
+         * rather than inheriting a stale "already validated" flag.
+         */
+        private transient volatile boolean validated;
+
+        ValidatingAction(Class<?> ruleClass, Action<MultipleCandidatesDetails<T>> delegate) {
+            this.ruleClass = ruleClass;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void execute(MultipleCandidatesDetails<T> details) {
+            if (!validated) {
+                validated = true;
+                AttributeTypeValidator.validateRuleTypeParameter(ruleClass, AttributeDisambiguationRule.class);
+            }
+            delegate.execute(details);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            return delegate.equals(((ValidatingAction<?>) o).delegate);
+        }
+
+        @Override
+        public int hashCode() {
+            return delegate.hashCode();
+        }
+    }
+
     private static class ExceptionHandler<T> implements InstantiatingAction.ExceptionHandler<MultipleCandidatesDetails<T>> {
 
-        private final Class<? extends AttributeDisambiguationRule<T>> rule;
+        private final Class<?> rule;
 
-        private ExceptionHandler(Class<? extends AttributeDisambiguationRule<T>> rule) {
-
+        private ExceptionHandler(Class<?> rule) {
             this.rule = rule;
         }
 
@@ -90,4 +151,5 @@ public class DefaultDisambiguationRuleChain<T> implements DisambiguationRuleChai
         }
 
     }
+
 }

@@ -15,7 +15,6 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.selectors;
 
-import org.gradle.api.artifacts.ClientModule;
 import org.gradle.api.artifacts.VersionConstraint;
 import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.internal.artifacts.ResolvedVersionConstraint;
@@ -25,6 +24,8 @@ import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.DefaultV
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionParser;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionSelector;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionSelectorScheme;
+import org.gradle.api.internal.attributes.ImmutableAttributes;
+import org.gradle.internal.component.model.DefaultComponentOverrideMetadata;
 import org.gradle.internal.component.model.IvyArtifactName;
 import org.gradle.internal.resolve.resolver.DependencyToComponentIdResolver;
 import org.gradle.internal.resolve.result.BuildableComponentIdResolveResult;
@@ -55,7 +56,7 @@ public class TestModuleSelectorState implements ResolvableSelectorState {
     }
 
     @Override
-    public ComponentSelector getSelector() {
+    public ComponentSelector getComponentSelector() {
         return new TestComponentSelector();
     }
 
@@ -86,12 +87,12 @@ public class TestModuleSelectorState implements ResolvableSelectorState {
         }
 
         BuildableComponentIdResolveResult result = new DefaultBuildableComponentIdResolveResult();
-        resolver.resolve(null, acceptor, rejector, result);
+        resolver.resolve(null, DefaultComponentOverrideMetadata.EMPTY, acceptor, rejector, result, ImmutableAttributes.EMPTY);
         return result;
     }
 
     @Override
-    public void markResolved() {
+    public void markSelectionCompleted() {
     }
 
     @Override
@@ -116,11 +117,6 @@ public class TestModuleSelectorState implements ResolvableSelectorState {
 
     @Override
     public IvyArtifactName getFirstDependencyArtifact() {
-        return null;
-    }
-
-    @Override
-    public ClientModule getClientModule() {
         return null;
     }
 

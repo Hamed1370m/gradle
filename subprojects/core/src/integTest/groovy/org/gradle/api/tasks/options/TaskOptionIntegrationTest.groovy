@@ -16,17 +16,21 @@
 
 package org.gradle.api.tasks.options
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.polyglot.PolyglotDslTest
+import org.gradle.integtests.fixtures.polyglot.SkipDsl
+import org.gradle.test.fixtures.dsl.GradleDsl
 import spock.lang.Issue
 
-import static org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache.Skip.INVESTIGATE
-
+@PolyglotDslTest
+@SkipDsl(dsl = GradleDsl.DECLARATIVE, because = "Declarative DSL cannot declare task types")
 class TaskOptionIntegrationTest extends AbstractOptionIntegrationSpec {
 
     def "can evaluate option value of type #optionType when #description for Java task on command line"() {
         given:
         file('buildSrc/src/main/java/SampleTask.java') << taskWithSingleOption(optionType)
-        buildFile << sampleTask()
+        buildFile() << sampleTask()
 
         when:
         run(['sample'] + options as String[])
@@ -69,10 +73,10 @@ class TaskOptionIntegrationTest extends AbstractOptionIntegrationSpec {
         'List<TestEnum>' | []                                   | 'null'              | 'not provided'
     }
 
-    def "can evaluate option value of type #optionType when #description for Groovy task on command line"() {
+    def "can evaluate option value of type #optionType when #description for task in build script on command line"() {
         given:
-        buildFile << groovyTaskWithSingleOption(optionType)
-        buildFile << sampleTask()
+        buildFile() << buildScriptTaskWithSingleOption(optionType)
+        buildFile() << sampleTask()
 
         when:
         run(['sample'] + options as String[])
@@ -118,7 +122,7 @@ class TaskOptionIntegrationTest extends AbstractOptionIntegrationSpec {
     def "can set boolean option using no-args method when #description for Java task on command line"() {
         given:
         file('buildSrc/src/main/java/SampleTask.java') << taskWithFlagMethod()
-        buildFile << sampleTask()
+        buildFile() << sampleTask()
 
         when:
         run(['sample'] + options as String[])
@@ -135,7 +139,7 @@ class TaskOptionIntegrationTest extends AbstractOptionIntegrationSpec {
     def "can render option with help for Java task"() {
         given:
         file('buildSrc/src/main/java/SampleTask.java') << taskWithSingleOption('String')
-        buildFile << sampleTask()
+        buildFile() << sampleTask()
 
         when:
         succeeds('help', '--task', 'sample')
@@ -146,10 +150,10 @@ Options
      --myProp     Configures command line option 'myProp'.""")
     }
 
-    def "can render option with help for Groovy task"() {
+    def "can render option with help for task in build script"() {
         given:
-        buildFile << groovyTaskWithSingleOption('String')
-        buildFile << sampleTask()
+        buildFile() << buildScriptTaskWithSingleOption('String')
+        buildFile() << sampleTask()
 
         when:
         succeeds('help', '--task', 'sample')
@@ -163,7 +167,7 @@ Options
     def "can render option with help for Java task with property"() {
         given:
         file('buildSrc/src/main/java/SampleTask.java') << taskWithSinglePropertyOption('Property', 'String')
-        buildFile << sampleTask()
+        buildFile() << sampleTask()
 
         when:
         succeeds('help', '--task', 'sample')
@@ -174,10 +178,10 @@ Options
      --myProp     Configures command line option 'myProp'.""")
     }
 
-    def "can render option with help for Groovy task with property"() {
+    def "can render option with help for task in build script with property"() {
         given:
-        buildFile << groovyTaskWithSinglePropertyOption('Property', 'String')
-        buildFile << sampleTask()
+        buildFile() << buildScriptTaskWithSinglePropertyOption('Property', 'String')
+        buildFile() << sampleTask()
 
         when:
         succeeds('help', '--task', 'sample')
@@ -191,7 +195,7 @@ Options
     def "can render ordered option with help for Java task"() {
         given:
         file('buildSrc/src/main/java/SampleTask.java') << taskWithMultipleOptions()
-        buildFile << sampleTask()
+        buildFile() << sampleTask()
 
         when:
         succeeds('help', '--task', 'sample')
@@ -208,12 +212,20 @@ Options
      --prop3     Configures command line option 'prop3'.""")
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
+    @UnsupportedWithConfigurationCache(because = "Cross-task configuration at execution time")
     def "can override option with configure task"() {
         given:
         file('buildSrc/src/main/java/SampleTask.java') << taskWithSingleOption("String")
-        buildFile << sampleTask()
-        buildFile << """
+        buildFile() << sampleTask()
+        buildFile() << (currentDsl() == GradleDsl.KOTLIN ? """
+            val sample = tasks.named<SampleTask>("sample")
+            val configureTask = tasks.register("configureTask") {
+                doLast {
+                    sample.get().setMyProp("fromConfigureTask")
+                }
+            }
+            sample.configure { dependsOn(configureTask) }
+        """ : """
             task configureTask {
                 doLast {
                     sample.myProp = "fromConfigureTask"
@@ -221,7 +233,7 @@ Options
             }
 
             sample.dependsOn(configureTask)
-        """
+        """)
 
         when:
         succeeds('sample', "--myProp=fromCommandLine")
@@ -233,7 +245,7 @@ Options
     def "set value of property of type #propertyType of type #optionType when #description for Java task"() {
         given:
         file('buildSrc/src/main/java/SampleTask.java') << taskWithSinglePropertyOption(propertyType, optionType)
-        buildFile << sampleTask()
+        buildFile() << sampleTask()
 
         when:
         run(['sample'] + options as String[])
@@ -281,10 +293,10 @@ Options
         'SetProperty'  | 'TestEnum' | []                                   | '[]'                | 'not provided'
     }
 
-    def "set value of property of type #propertyType of type #optionType when #description for Groovy task"() {
+    def "set value of property of type #propertyType of type #optionType when #description for task in build script"() {
         given:
-        buildFile << groovyTaskWithSinglePropertyOption(propertyType, optionType)
-        buildFile << sampleTask()
+        buildFile() << buildScriptTaskWithSinglePropertyOption(propertyType, optionType)
+        buildFile() << sampleTask()
 
         when:
         run(['sample'] + options as String[])
@@ -335,7 +347,7 @@ Options
     def "set value of property of type #propertyType when #description for Java task"() {
         given:
         file('buildSrc/src/main/java/SampleTask.java') << taskWithUnparameterizedPropertyOption(propertyType, methodName)
-        buildFile << sampleTask()
+        buildFile() << sampleTask()
 
         when:
         run(['sample'] + options as String[])
@@ -352,10 +364,10 @@ Options
         'DirectoryProperty'   | []                    | 'null'      | 'directoryProperty' | 'not provided'
     }
 
-    def "set value of property of type #propertyType when #description for Groovy task"() {
+    def "set value of property of type #propertyType when #description for task in build script"() {
         given:
-        buildFile << groovyTaskWithUnparameterizedPropertyOption(propertyType, methodName)
-        buildFile << sampleTask()
+        buildFile() << buildScriptTaskWithUnparameterizedPropertyOption(propertyType, methodName)
+        buildFile() << sampleTask()
 
         when:
         run(['sample'] + options as String[])
@@ -372,8 +384,10 @@ Options
         'DirectoryProperty'   | []                    | 'null'      | 'directoryProperty' | 'not provided'
     }
 
-    static String sampleTask() {
-        """
+    String sampleTask() {
+        currentDsl() == GradleDsl.KOTLIN ? """
+            tasks.register<SampleTask>("sample")
+        """ : """
             task sample(type: SampleTask)
         """
     }
@@ -381,157 +395,59 @@ Options
     @Issue("https://github.com/gradle/gradle/issues/18496")
     def "considers options from interfaces"() {
         given:
-        buildFile << '''
-            interface MyInterface {
-              @Option(
-                option = 'serial',
-                description = 'Target the device with given serial'
-              )
-              @Optional
-              @Input
-              Property<String> getSerial()
-            }
-
-            abstract class MyTask extends DefaultTask implements MyInterface{
-              @TaskAction
-              void action() {
-                println "Serial: ${serial.getOrElse('-')}"
-              }
-            }
-
-            tasks.register("myTask", MyTask.class)
-        '''
+        buildFile() << optionInterface('MyInterface', 'serial', 'Target the device with given serial')
+        buildFile() << taskImplementing('MyInterface')
 
         when:
         succeeds('myTask', '--serial=1234')
 
         then:
-        result.assertTaskExecuted(':myTask').assertOutputContains('Serial: 1234')
+        result.assertTaskScheduled(':myTask').assertOutputContains('Serial: 1234')
     }
 
     @Issue("https://github.com/gradle/gradle/issues/18496")
     def "options from interfaces with same method defined twice should use last defined value"() {
         given:
-        buildFile << '''
-            interface MyInterface {
-              @Option(
-                option = 'serial',
-                description = 'Target the device with given serial'
-              )
-              @Optional
-              @Input
-              Property<String> getSerial()
-            }
-
-            interface MyInterface1 {
-              @Option(
-                option = 'serialNumber',
-                description = 'Target the device with given serial'
-              )
-              @Optional
-              @Input
-              Property<String> getSerial()
-            }
-
-            abstract class MyTask extends DefaultTask implements MyInterface, MyInterface1{
-              @TaskAction
-              void action() {
-                println "Serial: ${serial.getOrElse('-')}"
-              }
-            }
-
-            tasks.register("myTask", MyTask.class)
-        '''
+        buildFile() << optionInterface('MyInterface', 'serial', 'Target the device with given serial')
+        buildFile() << optionInterface('MyInterface1', 'serialNumber', 'Target the device with given serial')
+        buildFile() << taskImplementing('MyInterface, MyInterface1')
 
         when:
         succeeds('myTask', '--serial=1234', '--serialNumber=4321')
 
         then:
-        result.assertTaskExecuted(':myTask').assertOutputContains('Serial: 4321')
+        result.assertTaskScheduled(':myTask').assertOutputContains('Serial: 4321')
     }
 
     def "options from interfaces with same method defined in class should use overridden value"() {
         given:
-        buildFile << '''
-            interface MyInterface {
-              @Option(
-                option = 'serial',
-                description = 'Target the device with given serial'
-              )
-              @Optional
-              @Input
-              Property<String> getSerial()
-            }
-
-            abstract class MyTask extends DefaultTask implements MyInterface {
-              @Option(
-                option = 'serialNumber',
-                description = 'Target the device with given serial'
-              )
-              @Optional
-              @Input
-              abstract Property<String> getSerial()
-
-              @TaskAction
-              void action() {
-                println "Serial: ${serial.getOrElse('-')}"
-              }
-            }
-
-            tasks.register("myTask", MyTask.class)
-        '''
+        buildFile() << optionInterface('MyInterface', 'serial', 'Target the device with given serial')
+        buildFile() << taskImplementing('MyInterface', 'serialNumber', 'Target the device with given serial')
 
         when:
         succeeds('myTask', '--serial=1234', '--serialNumber=4321')
 
         then:
-        result.assertTaskExecuted(':myTask').assertOutputContains('Serial: 4321')
+        result.assertTaskScheduled(':myTask').assertOutputContains('Serial: 4321')
 
         when:
         succeeds('myTask', '--serialNumber=4321', '--serial=1234')
 
         then:
-        result.assertTaskExecuted(':myTask').assertOutputContains('Serial: 4321')
+        result.assertTaskScheduled(':myTask').assertOutputContains('Serial: 4321')
     }
 
     def "options from interfaces with same method defined twice with same name should work"() {
         given:
-        buildFile << '''
-            interface MyInterface {
-              @Option(
-                option = 'serial',
-                description = 'Target the device with given serial (this is the first)'
-              )
-              @Optional
-              @Input
-              Property<String> getSerial()
-            }
-
-            interface MyInterface1 {
-              @Option(
-                option = 'serial',
-                description = 'Target the device with given serial (this is the second)'
-              )
-              @Optional
-              @Input
-              Property<String> getSerial()
-            }
-
-            abstract class MyTask extends DefaultTask implements MyInterface, MyInterface1{
-              @TaskAction
-              void action() {
-                println "Serial: ${serial.getOrElse('-')}"
-              }
-            }
-
-            tasks.register("myTask", MyTask.class)
-        '''
+        buildFile() << optionInterface('MyInterface', 'serial', 'Target the device with given serial (this is the first)')
+        buildFile() << optionInterface('MyInterface1', 'serial', 'Target the device with given serial (this is the second)')
+        buildFile() << taskImplementing('MyInterface, MyInterface1')
 
         when:
         succeeds('myTask', '--serial=1234')
 
         then:
-        result.assertTaskExecuted(':myTask').assertOutputContains('Serial: 1234')
+        result.assertTaskScheduled(':myTask').assertOutputContains('Serial: 1234')
 
         when:
         succeeds('help', '--task', 'myTask')
@@ -544,39 +460,70 @@ Options
     @Issue("https://github.com/gradle/gradle/issues/19868")
     def "options from interfaces with same method defined in class with same name should work"() {
         given:
-        buildFile << '''
-            interface MyInterface {
-              @Option(
-                option = 'serial',
-                description = 'Target the device with given serial'
-              )
-              @Optional
-              @Input
-              Property<String> getSerial()
-            }
-
-            abstract class MyTask extends DefaultTask implements MyInterface {
-              @Option(
-                option = 'serial',
-                description = 'Target the device with given serial'
-              )
-              @Optional
-              @Input
-              abstract Property<String> getSerial()
-
-              @TaskAction
-              void action() {
-                println "Serial: ${serial.getOrElse('-')}"
-              }
-            }
-
-            tasks.register("myTask", MyTask.class)
-        '''
+        buildFile() << optionInterface('MyInterface', 'serial', 'Target the device with given serial')
+        buildFile() << taskImplementing('MyInterface', 'serial', 'Target the device with given serial')
 
         when:
         succeeds('myTask', '--serial=1234')
 
         then:
-        result.assertTaskExecuted(':myTask').assertOutputContains('Serial: 1234')
+        result.assertTaskScheduled(':myTask').assertOutputContains('Serial: 1234')
+    }
+
+    private String optionInterface(String name, String option, String description) {
+        currentDsl() == GradleDsl.KOTLIN ? """
+            interface $name {
+                @get:Option("$option", "$description")
+                @get:Optional
+                @get:Input
+                val serial: Property<String>
+            }
+        """ : """
+            interface $name {
+                @Option(option = '$option', description = '$description')
+                @Optional
+                @Input
+                Property<String> getSerial()
+            }
+        """
+    }
+
+    private String taskImplementing(String interfaces, String overridingOption = null, String overridingDescription = null) {
+        if (currentDsl() == GradleDsl.KOTLIN) {
+            String override = overridingOption == null ? '' : """
+                @get:Option("$overridingOption", "$overridingDescription")
+                @get:Optional
+                @get:Input
+                abstract override val serial: Property<String>
+            """
+            return """
+                abstract class MyTask : DefaultTask(), $interfaces {
+                    $override
+                    @TaskAction
+                    fun action() {
+                        println("Serial: " + serial.getOrElse("-"))
+                    }
+                }
+
+                tasks.register<MyTask>("myTask")
+            """
+        }
+        String override = overridingOption == null ? '' : """
+            @Option(option = '$overridingOption', description = '$overridingDescription')
+            @Optional
+            @Input
+            abstract Property<String> getSerial()
+        """
+        """
+            abstract class MyTask extends DefaultTask implements $interfaces {
+                $override
+                @TaskAction
+                void action() {
+                    println "Serial: \${serial.getOrElse('-')}"
+                }
+            }
+
+            tasks.register("myTask", MyTask.class)
+        """
     }
 }

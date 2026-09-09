@@ -16,14 +16,14 @@
 
 package org.gradle.plugin.devel.impldeps
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.cache.internal.GeneratedGradleJarCache
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import spock.lang.Issue
 
 import java.util.zip.ZipFile
 
-@Requires(IntegTestPreconditions.NotEmbeddedExecutor) // Gradle API and TestKit JARs are not generated when running embedded
+@Requires(TestExecutionPreconditions.NotEmbeddedExecutor) // Gradle API and TestKit JARs are not generated when running embedded
 class ResolvedGeneratedJarsIntegrationTest extends BaseGradleImplDepsTestCodeIntegrationTest {
 
     def setup() {
@@ -36,7 +36,7 @@ class ResolvedGeneratedJarsIntegrationTest extends BaseGradleImplDepsTestCodeInt
         productionCode()
 
         def version = distribution.version.version
-        def generatedJarsDirectory = "user-home/caches/$version/generated-gradle-jars"
+        def generatedJarsDirectory = "user-home/caches/$version/$GeneratedGradleJarCache.CACHE_KEY"
 
         when:
         succeeds("help")
@@ -52,25 +52,25 @@ class ResolvedGeneratedJarsIntegrationTest extends BaseGradleImplDepsTestCodeInt
 
     }
 
-    @ToBeFixedForConfigurationCache(because = "testkit jar generated eagerly")
     def "gradle testkit jar is generated only when requested"() {
         setup:
         testCode()
 
         def version = distribution.version.version
-        def generatedJarsDirectory = "user-home/caches/$version/generated-gradle-jars"
+        def generatedJarsDirectory = "user-home/caches/$version/$GeneratedGradleJarCache.CACHE_KEY"
+        def testKitJar = file("$generatedJarsDirectory/gradle-test-kit-${version}.jar")
 
         when:
         succeeds("classes")
 
         then:
-        file(generatedJarsDirectory).assertIsEmptyDir()
+        testKitJar.assertDoesNotExist()
 
         when:
         succeeds("testClasses")
 
         then:
-        file("$generatedJarsDirectory/gradle-test-kit-${version}.jar").assertExists()
+        testKitJar.assertExists()
     }
 
     @Issue(['https://github.com/gradle/gradle/issues/9990', 'https://github.com/gradle/gradle/issues/10038'])
@@ -83,7 +83,7 @@ class ResolvedGeneratedJarsIntegrationTest extends BaseGradleImplDepsTestCodeInt
         def generatedJars = [
             'gradle-api',
             'gradle-test-kit'
-        ].collect { file("user-home/caches/$version/generated-gradle-jars/${it}-${version}.jar" )}
+        ].collect { file("user-home/caches/$version/$GeneratedGradleJarCache.CACHE_KEY/${it}-${version}.jar" )}
 
         when:
         run "classes", "testClasses"

@@ -18,6 +18,7 @@ package org.gradle.api.publish.maven
 
 import org.gradle.integtests.fixtures.publish.maven.AbstractMavenPublishIntegTest
 import org.gradle.test.fixtures.maven.MavenJavaPlatformModule
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 class MavenPublishJavaPlatformIntegTest extends AbstractMavenPublishIntegTest {
     MavenJavaPlatformModule javaPlatform = javaPlatform(mavenRepo.module("org.gradle.test", "publishTest", "1.9"))
@@ -88,9 +89,9 @@ class MavenPublishJavaPlatformIntegTest extends AbstractMavenPublishIntegTest {
         }
     }
 
+    @ToBeFixedForIsolatedProjects(because = "publishing plugin accesses subproject state at config time")
     def "can define a platform with local projects"() {
         given:
-        createDirs("core", "utils")
         settingsFile << """
             include "core"
             include "utils"
@@ -110,7 +111,24 @@ class MavenPublishJavaPlatformIntegTest extends AbstractMavenPublishIntegTest {
                     }
                 }
             }
-""")
+        """)
+
+        ["core", "utils"].each {
+            file("$it/build.gradle") << """
+                plugins {
+                    id("java-library")
+                    id("maven-publish")
+                }
+
+                publishing {
+                    publications {
+                        maven(MavenPublication) {
+                            from(components.java)
+                        }
+                    }
+                }
+            """
+        }
 
         when:
         run "publish"
@@ -133,6 +151,7 @@ class MavenPublishJavaPlatformIntegTest extends AbstractMavenPublishIntegTest {
         }
     }
 
+    @ToBeFixedForIsolatedProjects(because = "publishing plugin accesses subproject state at config time")
     def "can define a platform with local projects with customized artifacts"() {
         given:
         createDirs("core", "utils")
@@ -199,7 +218,7 @@ class MavenPublishJavaPlatformIntegTest extends AbstractMavenPublishIntegTest {
         javaLibrary(mavenRepo.module("org.test", "foo", "1.1")).withModuleMetadata().publish()
 
         createBuildScripts("""
-            repositories { maven { url "${mavenRepo.uri}" } }
+            repositories { maven { url = "${mavenRepo.uri}" } }
             dependencies {
                 constraints {
                     api "org.test:foo:+"
@@ -260,7 +279,7 @@ class MavenPublishJavaPlatformIntegTest extends AbstractMavenPublishIntegTest {
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
             }
 

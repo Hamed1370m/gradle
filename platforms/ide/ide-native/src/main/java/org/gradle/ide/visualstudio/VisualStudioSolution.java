@@ -36,24 +36,24 @@ import org.gradle.plugins.ide.IdeWorkspace;
  *      id 'visual-studio'
  *  }
  *
- *  model {
- *      visualStudio {
- *          solution {
- *              solutionFile.location = "vs/${name}.sln"
- *              solutionFile.withContent { TextProvider content -&gt;
- *                  content.asBuilder().insert(0, "# GENERATED FILE: DO NOT EDIT\n")
- *                  content.text = content.text.replaceAll("HideSolutionNode = FALSE", "HideSolutionNode = TRUE")
- *              }
+ *  visualStudio {
+ *      solution {
+ *          solutionFile.location = "vs/${name}.sln"
+ *          solutionFile.withContent { TextProvider content -&gt;
+ *              content.asBuilder().insert(0, "# GENERATED FILE: DO NOT EDIT\\n")
+ *              content.text = content.text.replaceAll("HideSolutionNode = FALSE", "HideSolutionNode = TRUE")
  *          }
  *      }
  *  }
  * </pre>
+ * @since 1.11
  */
 @Incubating
 @HasInternalProtocol
 public interface VisualStudioSolution extends Named, Buildable, IdeWorkspace {
     /**
      * Configuration for the generated solution file.
+     * @since 1.11
      */
     @Incubating
     TextConfigFile getSolutionFile();

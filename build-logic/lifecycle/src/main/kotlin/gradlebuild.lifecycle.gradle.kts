@@ -15,6 +15,8 @@
  */
 
 import gradlebuild.basics.BuildEnvironment
+import gradlebuild.basics.FlakyTestStrategy
+import gradlebuild.basics.flakyTestStrategy
 import java.time.Duration
 
 // Lifecycle tasks used to fan out the build into multiple builds in a CI pipeline.
@@ -43,7 +45,6 @@ setupTimeoutMonitorOnCI()
 setupGlobalState()
 
 tasks.registerDistributionsPromotionTasks()
-tasks.registerPublishBuildLogicTasks()
 
 tasks.registerEarlyFeedbackRootLifecycleTasks()
 
@@ -60,7 +61,7 @@ fun setupTimeoutMonitorOnCI() {
 }
 
 fun determineTimeoutMillis() = when {
-    isRequestedTask(compileAllBuild) || isRequestedTask(sanityCheck) || isRequestedTask(quickTest) -> Duration.ofMinutes(30).toMillis()
+    isRequestedTask(compileAllBuild) || isRequestedTask(sanityCheck) || isRequestedTask(quickTest) || flakyTestStrategy == FlakyTestStrategy.ONLY -> Duration.ofMinutes(30).toMillis()
     isRequestedTask(smokeTest) -> Duration.ofHours(1).plusMinutes(30).toMillis()
     isRequestedTask(docsTest) -> Duration.ofMinutes(45).toMillis()
     else -> Duration.ofHours(2).plusMinutes(45).toMillis()
@@ -88,20 +89,29 @@ fun TaskContainer.registerEarlyFeedbackRootLifecycleTasks() {
         dependsOn(":base-services:createBuildReceipt")
     }
 
+    register("checkBuildLogic") {
+        description = "Run check on all build logic builds - to be run locally and on CI for early feedback"
+        group = "verification"
+        dependsOn(
+            gradle.includedBuilds.map { it.task(":check") }
+        )
+    }
+
     register(sanityCheck) {
         description = "Run all basic checks (without tests) - to be run locally and on CI for early feedback"
         group = "verification"
         dependsOn(
-            gradle.includedBuild("build-logic-commons").task(":check"),
-            gradle.includedBuild("build-logic").task(":check"),
             ":docs:checkstyleApi",
             ":internal-build-reports:allIncubationReportsZip",
             ":architecture-test:checkBinaryCompatibility",
+            ":architecture-test:checkSinceForNonPublicApi",
             ":docs:javadocAll",
             ":architecture-test:test",
             ":tooling-api:toolingApiShadedJar",
             ":performance:verifyPerformanceScenarioDefinitions",
-            ":checkSubprojectsInfo"
+            ":checkSubprojectsInfo",
+            ":checkTargetRuntimes",
+            ":checkIdeaJdkConfiguration"
         )
     }
 }
@@ -118,20 +128,6 @@ fun TaskContainer.registerDistributionsPromotionTasks() {
         dependsOn(
             ":distributions-full:verifyIsProductionBuildEnvironment", ":distributions-full:buildDists", ":distributions-full:copyDistributionsToRootBuild",
             ":distributions-integ-tests:forkingIntegTest", ":docs:releaseNotes", ":docs:incubationReport", ":docs:checkDeadInternalLinks"
-        )
-    }
-}
-
-/**
- * To publish packages in build-logic we need to do it separately.
- * Promotion build runs `./gradlew promotionBuild`, which depends on this `:publishBuildLogic` task.
- */
-fun TaskContainer.registerPublishBuildLogicTasks() {
-    register("publishBuildLogic") {
-        description = "Publish subprojects in build-logic"
-        group = "build"
-        dependsOn(
-            gradle.includedBuild("build-logic").task(":java-api-extractor:publish")
         )
     }
 }

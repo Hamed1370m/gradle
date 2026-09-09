@@ -17,8 +17,8 @@
 package org.gradle.api.provider;
 
 import org.gradle.api.SupportsKotlinAssignmentOverloading;
-
-import javax.annotation.Nullable;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Represents a property whose value can be set using multiple elements of type {@link T}, such as a collection property.
@@ -29,6 +29,7 @@ import javax.annotation.Nullable;
  * @since 4.5
  */
 @SupportsKotlinAssignmentOverloading
+@HiddenInDefinition
 public interface HasMultipleValues<T> extends HasConfigurableValue, SupportsConvention {
     /**
      * Sets the value of the property to the elements of the given iterable, and replaces any existing value. This property will query the elements of the iterable each time the value of this property is queried.
@@ -37,6 +38,7 @@ public interface HasMultipleValues<T> extends HasConfigurableValue, SupportsConv
      * The convention for this property, if any, will be used to provide the value instead.
      *
      * @param elements The elements, can be null.
+     * @since 4.5
      */
     void set(@Nullable Iterable<? extends T> elements);
 
@@ -44,6 +46,7 @@ public interface HasMultipleValues<T> extends HasConfigurableValue, SupportsConv
      * Sets the property to have the same value of the given provider, and replaces any existing value. This property will track the value of the provider and query its value each time the value of this property is queried. When the provider has no value, this property will also have no value.
      *
      * @param provider Provider of the elements.
+     * @since 4.5
      */
     void set(Provider<? extends Iterable<? extends T>> provider);
 
@@ -81,6 +84,7 @@ public interface HasMultipleValues<T> extends HasConfigurableValue, SupportsConv
      * Adds an element to the property value.
      *
      * @param element The element
+     * @since 4.5
      */
     void add(T element);
 
@@ -91,6 +95,7 @@ public interface HasMultipleValues<T> extends HasConfigurableValue, SupportsConv
      * This property will have no value when the given provider has no value.
      *
      * @param provider The provider of an element
+     * @since 4.5
      */
     void add(Provider<? extends T> provider);
 
@@ -120,6 +125,7 @@ public interface HasMultipleValues<T> extends HasConfigurableValue, SupportsConv
      * This property will have no value when the given provider has no value.
      *
      * @param provider Provider of elements
+     * @since 4.5
      */
     void addAll(Provider<? extends Iterable<? extends T>> provider);
 

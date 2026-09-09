@@ -17,9 +17,9 @@
 package org.gradle.internal.buildtree;
 
 import org.gradle.api.internal.GradleInternal;
-import org.gradle.api.internal.project.ProjectState;
-import org.gradle.internal.build.BuildState;
-import org.gradle.tooling.provider.model.internal.ToolingModelScope;
+import org.gradle.tooling.provider.model.UnknownModelException;
+import org.gradle.tooling.provider.model.internal.ToolingModelBuilderResultInternal;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.function.Supplier;
@@ -30,11 +30,15 @@ public interface BuildTreeModelController {
      */
     GradleInternal getConfiguredModel();
 
-    ToolingModelScope locateBuilderForDefaultTarget(String modelName, boolean param);
-
-    ToolingModelScope locateBuilderForTarget(BuildState target, String modelName, boolean param);
-
-    ToolingModelScope locateBuilderForTarget(ProjectState target, String modelName, boolean param);
+    /**
+     * Creates the model with a given parameter in the target scope.
+     * <p>
+     * The model builder is resolved in the target scope, configuring the scope if necessary.
+     *
+     * @return the created model (null is a valid model)
+     * @throws UnknownModelException when the model builder cannot be found
+     */
+    ToolingModelBuilderResultInternal getModel(BuildTreeModelTarget target, ToolingModelRequestContext modelRequestContext) throws UnknownModelException;
 
     boolean queryModelActionsRunInParallel();
 
@@ -43,5 +47,6 @@ public interface BuildTreeModelController {
      *
      * @see #queryModelActionsRunInParallel()
      */
+    @Nullable
     <T> List<T> runQueryModelActions(List<Supplier<T>> actions);
 }

@@ -46,7 +46,7 @@ import java.util.List;
  *
  * <p>All notifications from a given {@code ProjectConnection} instance are delivered by a single thread at a time. Note, however, that the delivery thread may change over time.</p>
  *
- * @since 1.0-milestone-3
+ * @since 1.0
  */
 public interface ProjectConnection extends Closeable {
     /**
@@ -62,7 +62,7 @@ public interface ProjectConnection extends Closeable {
      * @throws BuildException On some failure executing the Gradle build, in order to build the model.
      * @throws GradleConnectionException On some other failure using the connection.
      * @throws IllegalStateException When this connection has been closed or is closing.
-     * @since 1.0-milestone-3
+     * @since 1.0
      */
     <T> T getModel(Class<T> modelType) throws GradleConnectionException, IllegalStateException;
 
@@ -79,7 +79,7 @@ public interface ProjectConnection extends Closeable {
      * @param handler The handler to pass the result to.
      * @param <T> The model type.
      * @throws IllegalStateException When this connection has been closed or is closing.
-     * @since 1.0-milestone-3
+     * @since 1.0
      */
     <T> void getModel(Class<T> modelType, ResultHandler<? super T> handler) throws IllegalStateException;
 
@@ -89,14 +89,14 @@ public interface ProjectConnection extends Closeable {
      * <p>Requires Gradle 1.0-milestone-8 or later.</p>
      *
      * @return The launcher.
-     * @since 1.0-milestone-3
+     * @since 1.0
      */
     BuildLauncher newBuild();
 
     /**
      * Creates a test launcher which can be used to execute tests.
      *
-     * <p>Requires Gradle 3.0 or later.</p>
+     * <p>Requires Gradle 4.0 or later.</p>
      *
      * @return The launcher.
      * @since 2.6
@@ -112,6 +112,7 @@ public interface ProjectConnection extends Closeable {
      * <ul>
      *     <li>{@link org.gradle.tooling.model.gradle.GradleBuild}</li>
      *     <li>{@link org.gradle.tooling.model.build.BuildEnvironment}</li>
+     *     <li>{@link org.gradle.tooling.model.build.Help}</li>
      *     <li>{@link org.gradle.tooling.model.GradleProject}</li>
      *     <li>{@link org.gradle.tooling.model.gradle.BuildInvocations}</li>
      *     <li>{@link org.gradle.tooling.model.gradle.ProjectPublications}</li>
@@ -128,7 +129,7 @@ public interface ProjectConnection extends Closeable {
      * @param modelType The model type
      * @param <T> The model type.
      * @return The builder.
-     * @since 1.0-milestone-3
+     * @since 1.0
      */
     <T> ModelBuilder<T> model(Class<T> modelType);
 
@@ -193,7 +194,7 @@ public interface ProjectConnection extends Closeable {
 
     /**
      * Closes this connection. Blocks until any pending operations are complete. Once this method has returned, no more notifications will be delivered by any threads.
-     * @since 1.0-milestone-3
+     * @since 1.0
      */
     @Override
     void close();

@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 the original author or authors.
+ * Copyright 2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,21 +19,17 @@ package org.gradle.api.tasks.testing;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
-import org.gradle.api.file.FileCollection;
-import org.gradle.api.internal.tasks.testing.junit.result.AggregateTestResultsProvider;
-import org.gradle.api.internal.tasks.testing.junit.result.BinaryResultBackedTestResultsProvider;
-import org.gradle.api.internal.tasks.testing.junit.result.TestResultsProvider;
-import org.gradle.api.internal.tasks.testing.report.DefaultTestReport;
+import org.gradle.api.internal.tasks.testing.report.generic.GenericHtmlTestReportGenerator;
+import org.gradle.api.internal.tasks.testing.report.generic.MetadataRendererRegistry;
 import org.gradle.api.model.ObjectFactory;
-import org.gradle.api.model.ReplacedBy;
 import org.gradle.api.tasks.IgnoreEmptyDirectories;
 import org.gradle.api.tasks.InputFiles;
+import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.SkipWhenEmpty;
 import org.gradle.api.tasks.TaskAction;
-import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.instrumentation.api.annotations.ReplacedAccessor;
 import org.gradle.internal.instrumentation.api.annotations.ReplacedDeprecation;
 import org.gradle.internal.instrumentation.api.annotations.ReplacedDeprecation.RemovedIn;
@@ -44,65 +40,46 @@ import org.gradle.work.DisableCachingByDefault;
 
 import javax.inject.Inject;
 import java.io.File;
-import java.util.LinkedList;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
-import static org.gradle.internal.concurrent.CompositeStoppable.stoppable;
 import static org.gradle.internal.instrumentation.api.annotations.ReplacedAccessor.AccessorType.GETTER;
 import static org.gradle.internal.instrumentation.api.annotations.ReplacedAccessor.AccessorType.SETTER;
-import static org.gradle.internal.instrumentation.api.annotations.ReplacesEagerProperty.BinaryCompatibility.ACCESSORS_KEPT;
-import static org.gradle.util.internal.CollectionUtils.collect;
 
 /**
  * Generates an HTML test report from the results of one or more {@link Test} tasks.
+ * @since 1.4
  */
 @DisableCachingByDefault(because = "Not made cacheable, yet")
 public abstract class TestReport extends DefaultTask {
-    private final DirectoryProperty destinationDir = getObjectFactory().directoryProperty();
-    private final ConfigurableFileCollection resultDirs = getObjectFactory().fileCollection();
 
     @Inject
-    protected BuildOperationRunner getBuildOperationRunner() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract ObjectFactory getObjectFactory();
 
+    // Method kept for binary compatibility remove in Gradle 10
+    @SuppressWarnings("unused")
     @Inject
-    protected BuildOperationExecutor getBuildOperationExecutor() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Inject
-    protected ObjectFactory getObjectFactory() {
-        throw new UnsupportedOperationException();
-    }
-
-    /**
-     * Returns the directory to write the HTML report to.
-     *
-     * <strong>This method is {@code @Deprecated}, please use {@link #getDestinationDirectory()} instead.</strong>
-     */
-    @ReplacedBy("destinationDirectory")
     @Deprecated
-    public File getDestinationDir() {
-        DeprecationLogger.deprecateProperty(TestReport.class, "destinationDir").replaceWith("destinationDirectory")
-                .willBeRemovedInGradle9()
-                .withDslReference()
-                .nagUser();
-        return getDestinationDirectory().get().getAsFile();
-    }
+    protected abstract BuildOperationRunner getBuildOperationRunner();
 
-    /**
-     * Sets the directory to write the HTML report to.
-     *
-     * <strong>This method is {@code @Deprecated}, please use {@link #getTestResults()} instead to access the new collection property.</strong>
-     */
+    // Method kept for binary compatibility remove in Gradle 10
+    @SuppressWarnings("unused")
+    @Inject
     @Deprecated
-    public void setDestinationDir(File destinationDir) {
-        DeprecationLogger.deprecateProperty(TestReport.class, "destinationDir").replaceWith("destinationDirectory")
-                .willBeRemovedInGradle9()
-                .withDslReference()
-                .nagUser();
-        getDestinationDirectory().set(destinationDir);
+    protected abstract BuildOperationExecutor getBuildOperationExecutor();
+
+    // Method kept for binary compatibility remove in Gradle 10
+    /**
+     * Returns the metadata renderer registry.
+     *
+     * @since 8.13
+     */
+    @SuppressWarnings("unused")
+    @Deprecated
+    @Internal
+    protected MetadataRendererRegistry getMetadataRendererRegistry() {
+        return new MetadataRendererRegistry();
     }
 
     /**
@@ -116,12 +93,9 @@ public abstract class TestReport extends DefaultTask {
             @ReplacedAccessor(value = GETTER, name = "getDestinationDir"),
             @ReplacedAccessor(value = SETTER, name = "setDestinationDir")
         },
-        binaryCompatibility = ACCESSORS_KEPT,
-        deprecation = @ReplacedDeprecation(removedIn = RemovedIn.GRADLE9, withDslReference = true)
+        deprecation = @ReplacedDeprecation(removedIn = RemovedIn.GRADLE9)
     )
-    public DirectoryProperty getDestinationDirectory() {
-        return this.destinationDir;
-    }
+    public abstract DirectoryProperty getDestinationDirectory();
 
     /**
      * Returns the set of binary test results to include in the report.
@@ -132,86 +106,24 @@ public abstract class TestReport extends DefaultTask {
     @SkipWhenEmpty
     @IgnoreEmptyDirectories
     @PathSensitive(PathSensitivity.NONE)
-    public ConfigurableFileCollection getTestResults() {
-        return resultDirs;
-    }
-
-    private void addTo(Object result, ConfigurableFileCollection dirs) {
-        if (result instanceof Test) {
-            Test test = (Test) result;
-            dirs.from(test.getBinaryResultsDirectory());
-        } else if (result instanceof Iterable<?>) {
-            Iterable<?> iterable = (Iterable<?>) result;
-            for (Object nested : iterable) {
-                addTo(nested, dirs);
-            }
-        } else {
-            dirs.from(result);
-        }
-    }
-
-    /**
-     * Adds some results to include in the report.
-     *
-     * <p>This method accepts any parameter of the given types:
-     *
-     * <ul>
-     *
-     * <li>A {@link Test} task instance. The results from the test task are included in the report. The test task is automatically added
-     * as a dependency of this task.</li>
-     *
-     * <li>Anything that can be converted to a set of {@link File} instances as per {@link org.gradle.api.Project#files(Object...)}. These must
-     * point to the binary test results directory generated by a {@link Test} task instance.</li>
-     *
-     * <li>An {@link Iterable}. The contents of the iterable are converted recursively.</li>
-     *
-     * </ul>
-     *
-     * <strong>This method is {@code @Deprecated} - use {@link #getTestResults()} and invoke {@link ConfigurableFileCollection#from(Object...)} instead,
-     * passing references to {@link AbstractTestTask#getBinaryResultsDirectory()} as arguments.</strong>
-     *
-     * @param results The result objects.
-     */
-    @Deprecated
-    public void reportOn(Object... results) {
-        DeprecationLogger.deprecateMethod(TestReport.class, "reportOn(Object...)").replaceWith("testResults")
-                .withAdvice("invoke getTestResults().from(Object...) instead, passing references to Test#getBinaryResultsDirectory() as arguments.")
-                .willBeRemovedInGradle9()
-                .withDslReference(TestReport.class, "testResults")
-                .nagUser();
-        for (Object result : results) {
-            addTo(result, getTestResults());
-        }
-    }
+    public abstract ConfigurableFileCollection getTestResults();
 
     @TaskAction
     void generateReport() {
-        TestResultsProvider resultsProvider = createAggregateProvider();
         try {
-            if (resultsProvider.isHasResults()) {
-                DefaultTestReport testReport = new DefaultTestReport(getBuildOperationRunner(), getBuildOperationExecutor());
-                testReport.generateReport(resultsProvider, getDestinationDirectory().get().getAsFile());
-            } else {
-                getLogger().info("{} - no binary test results found in dirs: {}.", getPath(), getTestResults().getFiles());
-                setDidWork(false);
+            List<Path> resultDirsAsPaths = new ArrayList<>(getTestResults().getFiles().size());
+            for (File resultDir : getTestResults().getFiles()) {
+                if (!resultDir.exists()) {
+                    continue;
+                }
+                resultDirsAsPaths.add(resultDir.toPath());
             }
-        } finally {
-            stoppable(resultsProvider).stop();
+
+            Path reportsDir = getDestinationDirectory().get().getAsFile().toPath();
+            getObjectFactory().newInstance(GenericHtmlTestReportGenerator.class, reportsDir).generate(resultDirsAsPaths);
+        } catch (Exception e) {
+            throw new RuntimeException("Could not write test report for results in " + getTestResults().getFiles(), e);
         }
     }
 
-    private TestResultsProvider createAggregateProvider() {
-        List<TestResultsProvider> resultsProviders = new LinkedList<TestResultsProvider>();
-        try {
-            FileCollection resultDirs = getTestResults();
-            if (resultDirs.getFiles().size() == 1) {
-                return new BinaryResultBackedTestResultsProvider(resultDirs.getSingleFile());
-            } else {
-                return new AggregateTestResultsProvider(collect(resultDirs, resultsProviders, BinaryResultBackedTestResultsProvider::new));
-            }
-        } catch (RuntimeException e) {
-            stoppable(resultsProviders).stop();
-            throw e;
-        }
-    }
 }

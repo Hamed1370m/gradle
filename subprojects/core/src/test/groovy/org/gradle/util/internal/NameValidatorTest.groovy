@@ -18,25 +18,25 @@ package org.gradle.util.internal
 import org.gradle.api.DefaultTask
 import org.gradle.api.InvalidUserDataException
 import org.gradle.api.internal.CollectionCallbackActionDecorator
-import org.gradle.api.internal.DomainObjectContext
 import org.gradle.api.internal.GradleInternal
+import org.gradle.api.internal.artifacts.ConfigurationResolver
+import org.gradle.api.internal.artifacts.DependencyManagementInstanceIdentity
 import org.gradle.api.internal.artifacts.configurations.DefaultConfigurationContainer
 import org.gradle.api.internal.artifacts.configurations.DefaultConfigurationFactory
-import org.gradle.api.internal.artifacts.configurations.DependencyMetaDataProvider
 import org.gradle.api.internal.artifacts.configurations.ResolutionStrategyFactory
-import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.DefaultRootComponentMetadataBuilder
 import org.gradle.api.internal.artifacts.type.DefaultArtifactTypeContainer
-import org.gradle.api.internal.attributes.AttributesSchemaInternal
 import org.gradle.api.internal.file.TestFiles
 import org.gradle.api.internal.initialization.StandaloneDomainObjectContext
+import org.gradle.api.internal.project.ProjectIdentity
 import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.api.internal.project.taskfactory.TaskFactory
 import org.gradle.api.internal.project.taskfactory.TaskIdentityFactory
 import org.gradle.api.internal.project.taskfactory.TaskInstantiator
 import org.gradle.api.internal.tasks.DefaultSourceSetContainer
+import org.gradle.internal.Describables
+import org.gradle.internal.code.UserCodeApplicationContext
 import org.gradle.internal.id.ConfigurationCacheableIdFactory
 import org.gradle.internal.instantiation.InstantiationScheme
-import org.gradle.nativeplatform.internal.DefaultFlavorContainer
 import org.gradle.util.AttributeTestUtil
 import org.gradle.util.Path
 import org.gradle.util.TestUtil
@@ -49,14 +49,11 @@ class NameValidatorTest extends Specification {
     static forbiddenCharacters = NameValidator.FORBIDDEN_CHARACTERS
     static forbiddenLeadingAndTrailingCharacter = NameValidator.FORBIDDEN_LEADING_AND_TRAILING_CHARACTER
     static invalidNames = forbiddenCharacters.collect { "a${it}b" } + ["${forbiddenLeadingAndTrailingCharacter}ab", "ab${forbiddenLeadingAndTrailingCharacter}", '']
-    @Shared
-    def rootComponentMetaDataBuilderFactory = Stub(DefaultRootComponentMetadataBuilder.Factory)
 
     @Shared
     def domainObjectContainersWithValidation = [
         ["artifact types", new DefaultArtifactTypeContainer(TestUtil.instantiatorFactory().decorateLenient(), AttributeTestUtil.attributesFactory(), CollectionCallbackActionDecorator.NOOP)],
-        ["configurations", new DefaultConfigurationContainer(TestUtil.instantiatorFactory().decorateLenient(), CollectionCallbackActionDecorator.NOOP, Mock(DependencyMetaDataProvider), StandaloneDomainObjectContext.ANONYMOUS, Mock(AttributesSchemaInternal), rootComponentMetaDataBuilderFactory, Mock(DefaultConfigurationFactory), Mock(ResolutionStrategyFactory))],
-        ["flavors", new DefaultFlavorContainer(TestUtil.instantiatorFactory().decorateLenient(), CollectionCallbackActionDecorator.NOOP)],
+        ["configurations", new DefaultConfigurationContainer(TestUtil.instantiatorFactory().decorateLenient(), CollectionCallbackActionDecorator.NOOP, StandaloneDomainObjectContext.ANONYMOUS, new DependencyManagementInstanceIdentity(Describables.of("unknown")), Mock(DefaultConfigurationFactory), Mock(ResolutionStrategyFactory), TestUtil.problemsService(), Mock(ConfigurationResolver.Factory), AttributeTestUtil.mutableSchema())],
         ["source sets", new DefaultSourceSetContainer(TestFiles.resolver(), TestFiles.taskDependencyFactory(), null, TestUtil.instantiatorFactory().decorateLenient(), TestUtil.objectFactory(), CollectionCallbackActionDecorator.NOOP)]
     ]
 
@@ -67,13 +64,15 @@ class NameValidatorTest extends Specification {
     def "tasks are not allowed to be named '#name'"() {
         when:
         def project = Mock(ProjectInternal) {
-            projectPath(_) >> Path.path(":foo:bar")
-            identityPath(_) >> Path.path("build:foo:bar")
+            getProjectIdentity() >> ProjectIdentity.forSubproject(
+                Path.path(":build"),
+                Path.path(":foo:bar")
+            )
             getGradle() >> Mock(GradleInternal) {
                 getIdentityPath() >> Path.path(":build:foo:bar")
             }
         }
-        new TaskInstantiator(new TaskIdentityFactory(new ConfigurationCacheableIdFactory()), new TaskFactory(project, Mock(InstantiationScheme)), project).create(name, DefaultTask)
+        new TaskInstantiator(new TaskIdentityFactory(new ConfigurationCacheableIdFactory()), new TaskFactory(project, Mock(InstantiationScheme)), project, Mock(UserCodeApplicationContext)).create(name, DefaultTask)
 
         then:
         def exception = thrown(InvalidUserDataException)
@@ -105,12 +104,6 @@ class NameValidatorTest extends Specification {
         then:
         def exception = thrown(InvalidUserDataException)
         assertForbidden(name, exception.getMessage())
-    }
-
-    private DomainObjectContext domainObjectContext() {
-        def mock = Mock(DomainObjectContext)
-        mock.projectPath(_) >> Mock(Path)
-        mock
     }
 
     void assertForbidden(name, message) {

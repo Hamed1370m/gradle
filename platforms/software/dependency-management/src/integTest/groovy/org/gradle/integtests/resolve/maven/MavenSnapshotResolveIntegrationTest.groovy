@@ -17,7 +17,7 @@ package org.gradle.integtests.resolve.maven
 
 import org.gradle.integtests.fixtures.GradleMetadataResolveRunner
 import org.gradle.integtests.fixtures.RequiredFeature
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.resolve.AbstractModuleDependencyResolveTest
 import org.gradle.test.fixtures.maven.MavenModule
 import org.gradle.test.fixtures.maven.MavenRepository
@@ -57,7 +57,6 @@ dependencies {
         run 'checkDeps'
 
         then:
-        resolve.expectDefaultConfiguration("runtime")
         resolve.expectGraph {
             root(":", ":test:") {
                 snapshot("org:unique:1.0-SNAPSHOT", uniqueVersionModule.uniqueSnapshotVersion)
@@ -72,7 +71,7 @@ dependencies {
         given:
         buildFile << """
 repositories {
-    maven { url "${repo2.uri}" }
+    maven { url = "${repo2.uri}" }
 }
 
 dependencies {
@@ -132,7 +131,7 @@ task retrieve(type: Sync) {
 repositories.clear() // Do not use default repo
 repositories {
     maven {
-        url "${repo1.uri}"
+        url = "${repo1.uri}"
         artifactUrls "${repo2.uri}"
     }
 }
@@ -166,6 +165,7 @@ task retrieve(type: Sync) {
         repo2ProjectB.artifact.expectGet()
 
         and: "We resolve dependencies"
+        executer.expectDocumentedDeprecationWarning("The MavenArtifactRepository.artifactUrls(Object...) method has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_maven_artifact_urls")
         runRetrieveTask()
 
         then: "Snapshots are downloaded"
@@ -175,6 +175,10 @@ task retrieve(type: Sync) {
 
         when: "We resolve with snapshots cached: no server requests"
         server.resetExpectations()
+        if (!GradleContextualExecuter.configCache) {
+            // With CC, the configuration is reused and the build script is not re-evaluated, so the deprecation does not re-fire
+            executer.expectDocumentedDeprecationWarning("The MavenArtifactRepository.artifactUrls(Object...) method has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_maven_artifact_urls")
+        }
         def result = run('retrieve')
 
         then: "Everything is up to date"
@@ -386,7 +390,6 @@ task retrieve(type: Sync) {
     }
 
     @Issue("gradle/gradle#3019")
-    @ToBeFixedForConfigurationCache
     def "should honour changing module cache expiry for subsequent snapshot resolutions in the same build"() {
         given:
         buildFile << """
@@ -402,13 +405,16 @@ dependencies {
 }
 
 task resolveStaleThenFresh {
+    def fs = services.get(FileSystemOperations)
+    def stale = configurations.stale
+    def fresh = configurations.fresh
     doFirst {
-        project.sync {
-            from configurations.stale
+        fs.sync {
+            from stale
             into 'stale'
         }
-        project.sync {
-            from configurations.fresh
+        fs.sync {
+            from fresh
             into 'fresh'
         }
     }
@@ -493,38 +499,45 @@ task retrieve(type: Sync) {
         def module = publishModule("org.gradle.integtests.resolve", "testproject", "1.0-SNAPSHOT")
 
         and:
-        createDirs("a", "b")
         settingsFile << """
-include 'a', 'b'
-"""
+            include 'a', 'b'
+            dependencyResolutionManagement {
+                repositories {
+                    maven { url = "${mavenHttpRepo.uri}" }
+                }
+            }
+        """
+        def common = """
+            configurations { compile }
+
+            configurations.all {
+                resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+            }
+
+            dependencies {
+                compile "org.gradle.integtests.resolve:testproject:1.0-SNAPSHOT"
+            }
+
+            task retrieve(type: Sync) {
+                into 'build'
+                from configurations.compile
+            }
+        """
+
         buildFile << """
-subprojects {
-    repositories {
-        maven { url "${mavenHttpRepo.uri}" }
-    }
+            $common
 
-    configurations { compile }
-}
+            //imposing an artificial order so that the parallel build retrieves sequentially, GRADLE-2788
+            tasks.retrieve.dependsOn ":a:retrieve"
+        """
 
-allprojects {
-    configurations.all {
-        resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-    }
+        file("a/build.gradle") << """
+            $common
+            tasks.retrieve.dependsOn ":b:retrieve"
+        """
 
-    dependencies {
-        compile "org.gradle.integtests.resolve:testproject:1.0-SNAPSHOT"
-    }
+        file("b/build.gradle") << common
 
-    task retrieve(type: Sync) {
-        into 'build'
-        from configurations.compile
-    }
-}
-
-//imposing an artificial order so that the parallel build retrieves sequentially, GRADLE-2788
-retrieve.dependsOn ":a:retrieve"
-tasks.getByPath(":a:retrieve").dependsOn ":b:retrieve"
-"""
         when: "Module is requested once"
         expectModuleServed(module)
 
@@ -545,7 +558,7 @@ tasks.getByPath(":a:retrieve").dependsOn ":b:retrieve"
             }
 
             dependencies {
-                compile group: "group", name: "projectA", version: "1.1-SNAPSHOT"
+                compile("group:projectA:1.1-SNAPSHOT")
             }
 
             task retrieve(type: Copy) {
@@ -556,7 +569,7 @@ tasks.getByPath(":a:retrieve").dependsOn ":b:retrieve"
 
         and:
         def module = publishModule(mavenHttpRepo, "group", "projectA", "1.1-SNAPSHOT", false)
-        // Set the last modified to something that's not going to be anything “else”.
+        // Set the last modified to something that's not going to be anything "else".
         // There are lots of dates floating around in a resolution and we want to make
         // sure we use this.
         module.artifactFile.setLastModified(2000)
@@ -806,7 +819,8 @@ task retrieve(type: Sync) {
         and:
         failure.assertHasCause('Could not resolve group:projectA:1.0-SNAPSHOT.')
         failure.assertHasCause("Unable to load Maven meta-data from ${metaData.uri}.")
-        failure.assertHasCause("Could not GET '${metaData.uri}'. Received status code 500 from server")
+        failure.assertHasCause("Could not GET '${metaData.uri}'.")
+        failure.assertHasCause("Received status code 500 from server")
 
         when:
         server.resetExpectations()
@@ -866,7 +880,7 @@ task retrieve(type: Sync) {
 repositories.clear() // Not using default repo
 repositories {
     maven {
-        url "${fileRepo.uri}"
+        url = "${fileRepo.uri}"
     }
 }
 
@@ -1030,7 +1044,7 @@ Required by:
 repositories.clear()
 repositories {
     maven {
-      url "${mavenHttpRepo.uri}"
+      url = "${mavenHttpRepo.uri}"
       metadataSources {
           ${metadataSources.code}
       }
@@ -1076,7 +1090,6 @@ class CheckIsChangingRule implements ComponentMetadataRule {
         run 'checkDeps'
 
         then:
-        resolve.expectDefaultConfiguration("runtime")
         resolve.expectGraph {
             root(":", ":test:") {
                 snapshot("org.gradle.integtests.resolve:unique:1.0-SNAPSHOT", uniqueVersionModule.uniqueSnapshotVersion)

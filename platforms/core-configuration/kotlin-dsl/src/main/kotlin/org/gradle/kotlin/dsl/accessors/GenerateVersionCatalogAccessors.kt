@@ -16,7 +16,6 @@
 
 package org.gradle.kotlin.dsl.accessors
 
-import kotlinx.metadata.jvm.JvmMethodSignature
 import org.gradle.api.Project
 import org.gradle.api.internal.catalog.ExternalModuleDependencyFactory
 import org.gradle.api.internal.file.FileCollectionFactory
@@ -24,8 +23,10 @@ import org.gradle.api.internal.initialization.ClassLoaderScope
 import org.gradle.api.plugins.ExtensionsSchema
 import org.gradle.api.reflect.TypeOf
 import org.gradle.initialization.DependenciesAccessors.IN_PLUGINS_BLOCK_FACTORIES_SUFFIX
+import org.gradle.internal.execution.ExecutionContext
 import org.gradle.internal.execution.InputFingerprinter
-import org.gradle.internal.execution.UnitOfWork
+import org.gradle.internal.execution.WorkOutput
+import org.gradle.internal.execution.caching.CachingDisabledReason
 import org.gradle.internal.hash.HashCode
 import org.gradle.kotlin.dsl.*
 import org.gradle.kotlin.dsl.cache.KotlinDslWorkspaceProvider
@@ -56,6 +57,8 @@ import org.gradle.kotlin.dsl.support.useToRun
 import org.jetbrains.org.objectweb.asm.ClassWriter
 import java.io.BufferedWriter
 import java.io.File
+import java.util.Optional
+import kotlin.metadata.jvm.JvmMethodSignature
 import kotlin.reflect.KClass
 
 
@@ -68,16 +71,21 @@ class GenerateVersionCatalogAccessors(
     fileCollectionFactory: FileCollectionFactory,
     inputFingerprinter: InputFingerprinter,
     workspaceProvider: KotlinDslWorkspaceProvider,
+    cachingDisabledReason: CachingDisabledReason?,
 ) : AbstractStage1BlockAccessorsUnitOfWork(
-    rootProject, buildSrcClassLoaderScope, classLoaderHash, fileCollectionFactory, inputFingerprinter, workspaceProvider
+    rootProject, buildSrcClassLoaderScope, classLoaderHash, fileCollectionFactory, inputFingerprinter, workspaceProvider, cachingDisabledReason
 ) {
 
     override fun getDisplayName(): String = "Kotlin DSL version catalog plugin accessors for classpath '$classLoaderHash'"
 
+    override fun getBuildOperationWorkType(): Optional<String> {
+        return Optional.of("GENERATE_VERSION_CATALOG_ACCESSORS")
+    }
+
     override val identitySuffix: String = "VC"
 
-    override fun execute(executionRequest: UnitOfWork.ExecutionRequest): UnitOfWork.WorkOutput {
-        val workspace = executionRequest.workspace
+    override fun execute(executionContext: ExecutionContext): WorkOutput {
+        val workspace = executionContext.workspace
         kotlinScriptClassPathProviderOf(rootProject).run {
             withAsynchronousIO(rootProject) {
                 buildVersionCatalogAccessorsFor(
@@ -87,8 +95,8 @@ class GenerateVersionCatalogAccessors(
                 )
             }
         }
-        return object : UnitOfWork.WorkOutput {
-            override fun getDidWork() = UnitOfWork.WorkResult.DID_WORK
+        return object : WorkOutput {
+            override fun getDidWork() = WorkOutput.WorkResult.DID_WORK
 
             override fun getOutput(workspace: File) = loadAlreadyProducedOutput(workspace)
         }

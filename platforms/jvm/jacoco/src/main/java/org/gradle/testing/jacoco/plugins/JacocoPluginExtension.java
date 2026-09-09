@@ -39,8 +39,8 @@ import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyPro
 import org.gradle.internal.jacoco.JacocoAgentJar;
 import org.gradle.process.CommandLineArgumentProvider;
 import org.gradle.process.JavaForkOptions;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.io.File;
 import java.util.Collections;
@@ -49,9 +49,15 @@ import static org.gradle.api.internal.lambdas.SerializableLambdas.spec;
 
 /**
  * Extension including common properties and methods for Jacoco.
+ * @since 1.6
  */
 public abstract class JacocoPluginExtension {
 
+    /**
+     * The task extension name.
+     *
+     * @since 2.14
+     */
     public static final String TASK_EXTENSION_NAME = "jacoco";
 
     private static final Logger LOGGER = Logging.getLogger(JacocoPluginExtension.class);
@@ -63,7 +69,6 @@ public abstract class JacocoPluginExtension {
     private final JacocoAgentJar agent;
 
     private String toolVersion;
-    private final DirectoryProperty reportsDirectory;
 
     /**
      * Creates a Jacoco plugin extension.
@@ -78,17 +83,22 @@ public abstract class JacocoPluginExtension {
         this.objects = project.getObjects();
         this.layout = project.getLayout();
         this.fs = ((ProjectInternal) project).getServices().get(FileSystemOperations.class);
-        reportsDirectory = project.getObjects().directoryProperty();
     }
 
     /**
      * Version of Jacoco JARs to use.
+     * @since 1.6
      */
     @ToBeReplacedByLazyProperty
     public String getToolVersion() {
         return toolVersion;
     }
 
+    /**
+     * Sets the tool version.
+     *
+     * @since 1.6
+     */
     public void setToolVersion(String toolVersion) {
         this.toolVersion = toolVersion;
     }
@@ -98,9 +108,7 @@ public abstract class JacocoPluginExtension {
      *
      * @since 6.8
      */
-    public DirectoryProperty getReportsDirectory() {
-        return reportsDirectory;
-    }
+    public abstract DirectoryProperty getReportsDirectory();
 
     /**
      * Applies Jacoco to the given task.
@@ -109,6 +117,7 @@ public abstract class JacocoPluginExtension {
      *
      * @param task the task to apply Jacoco to.
      * @see JacocoPluginExtension#TASK_EXTENSION_NAME
+     * @since 2.14
      */
     public <T extends Task & JavaForkOptions> void applyTo(final T task) {
         final String taskName = task.getName();
@@ -171,6 +180,7 @@ public abstract class JacocoPluginExtension {
         @Nullable
         @Optional
         @Nested
+        @SuppressWarnings("unused") // public API
         public JacocoTaskExtension getJacoco() {
             return jacoco.isEnabled() ? jacoco : null;
         }
@@ -191,6 +201,7 @@ public abstract class JacocoPluginExtension {
      * Applies Jacoco to all of the given tasks.
      *
      * @param tasks the tasks to apply Jacoco to
+     * @since 1.6
      */
     @SuppressWarnings("unchecked")
     public <T extends Task & JavaForkOptions> void applyTo(TaskCollection<T> tasks) {

@@ -28,10 +28,12 @@ import org.gradle.api.initialization.IncludedBuild
 import org.gradle.api.initialization.Settings
 import org.gradle.api.invocation.Gradle
 import org.gradle.api.invocation.GradleLifecycle
+import org.gradle.api.services.GradleService
 import org.gradle.api.plugins.ExtensionContainer
 import org.gradle.api.plugins.ObjectConfigurationAction
 import org.gradle.api.plugins.PluginContainer
 import org.gradle.api.plugins.PluginManager
+import org.gradle.api.provider.ProviderFactory
 import org.gradle.internal.deprecation.DeprecationLogger
 import java.io.File
 
@@ -39,21 +41,24 @@ import java.io.File
 /**
  * Facilitates the implementation of the [Gradle] interface by delegation via subclassing.
  */
-@Deprecated("Will be removed in Gradle 9.0")
+@Deprecated("Will be removed in Gradle 10")
 abstract class GradleDelegate : Gradle {
 
     init {
         @Suppress("DEPRECATION")
         if (!org.gradle.kotlin.dsl.InitScriptApi::class.java.isAssignableFrom(this::class.java)) {
             DeprecationLogger.deprecateType(GradleDelegate::class.java)
-                .willBeRemovedInGradle9()
-                .undocumented()
+                .willBeRemovedInGradle10()
+                .withUpgradeGuideSection(8, "kotlin_dsl_precompiled_gradle_lt_6")
                 .nagUser()
         }
     }
 
     internal
     abstract val delegate: Gradle
+
+    override fun getBuildPath(): String =
+        delegate.buildPath
 
     override fun getGradleVersion(): String =
         delegate.gradleVersion
@@ -127,12 +132,14 @@ abstract class GradleDelegate : Gradle {
     override fun projectsEvaluated(action: Action<in Gradle>) =
         delegate.projectsEvaluated(action)
 
-    @Suppress("DEPRECATION")
+    @Deprecated("This method is not supported when configuration caching is enabled.")
     override fun buildFinished(closure: Closure<Any>) =
+        @Suppress("DEPRECATION")
         delegate.buildFinished(closure)
 
-    @Suppress("DEPRECATION")
+    @Deprecated("This method is not supported when configuration caching is enabled.")
     override fun buildFinished(action: Action<in BuildResult>) =
+        @Suppress("DEPRECATION")
         delegate.buildFinished(action)
 
     override fun addBuildListener(buildListener: BuildListener) =
@@ -144,9 +151,9 @@ abstract class GradleDelegate : Gradle {
     override fun removeListener(listener: Any) =
         delegate.removeListener(listener)
 
-    @Suppress("DEPRECATION")
-    @Deprecated("Will be removed in Gradle 9. Logging customization through listeners is no longer supported.")
+    @Deprecated("Will be removed in Gradle 10. Logging customization through listeners is no longer supported.")
     override fun useLogger(logger: Any) =
+        @Suppress("DEPRECATION")
         delegate.useLogger(logger)
 
     override fun getGradle(): Gradle =
@@ -177,4 +184,10 @@ abstract class GradleDelegate : Gradle {
 
     override fun getExtensions(): ExtensionContainer =
         delegate.extensions
+
+    override fun getProviders(): ProviderFactory =
+        delegate.providers
+
+    override fun <T : GradleService> service(serviceType: Class<T>): T =
+        delegate.service(serviceType)
 }

@@ -16,7 +16,7 @@
 
 package org.gradle.kotlin.dsl.support
 
-import org.gradle.initialization.GradlePropertiesController
+import org.gradle.api.internal.properties.GradleProperties
 
 /**
  * Read property value for Kotlin DSL options
@@ -24,13 +24,28 @@ import org.gradle.initialization.GradlePropertiesController
  * Kotlin compiler options and other flags for scripts can be set either via a System property or a Gradle property.
  * System properties have precedence, same as in `LayoutToPropertiesConverter`.
  */
-fun getBooleanKotlinDslOption(gradleProperties: GradlePropertiesController, propertyName: String, defaultValue: Boolean, whenUnset: (() -> Unit)? = null): Boolean {
+fun getBooleanKotlinDslOption(gradleProperties: GradleProperties, propertyName: String, defaultValue: Boolean, whenUnset: (() -> Unit)? = null): Boolean {
+    val explicitlySetValue = getNullableBooleanKotlinDslOption(gradleProperties, propertyName)
+    return when {
+        // System properties have precedence, same as in LayoutToPropertiesConverter
+        explicitlySetValue != null -> explicitlySetValue
+        else -> defaultValue.also { whenUnset?.invoke() }
+    }
+}
+
+/**
+ * Read nullable property value for Kotlin DSL options, default to null if not set
+ *
+ * Kotlin compiler options and other flags for scripts can be set either via a System property or a Gradle property.
+ * System properties have precedence, same as in `LayoutToPropertiesConverter`.
+ */
+fun getNullableBooleanKotlinDslOption(gradleProperties: GradleProperties, propertyName: String): Boolean? {
     val systemProp = System.getProperty(propertyName)
-    val gradleProp = gradleProperties.gradleProperties.find(propertyName)
+    val gradleProp = gradleProperties.find(propertyName)
     return when {
         // System properties have precedence, same as in LayoutToPropertiesConverter
         systemProp != null -> systemProp == "true"
         gradleProp != null -> gradleProp == "true"
-        else -> defaultValue.also { whenUnset?.invoke() }
+        else -> null
     }
 }

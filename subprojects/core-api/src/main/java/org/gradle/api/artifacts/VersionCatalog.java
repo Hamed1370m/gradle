@@ -16,9 +16,9 @@
 package org.gradle.api.artifacts;
 
 import org.gradle.api.Named;
-import org.gradle.api.NonNullApi;
 import org.gradle.api.provider.Provider;
 import org.gradle.plugin.use.PluginDependency;
+import org.jspecify.annotations.NullMarked;
 
 import java.util.List;
 import java.util.Optional;
@@ -31,7 +31,7 @@ import java.util.Optional;
  *
  * @since 7.0
  */
-@NonNullApi
+@NullMarked
 public interface VersionCatalog extends Named {
 
     /**
@@ -50,6 +50,7 @@ public interface VersionCatalog extends Named {
      * Note: Bundle will be automatically normalized: '-', '_' and '.' will be replaced with '.'
      * </p>
      * @param alias the alias of the bundle
+     * @since 7.0
      */
     Optional<Provider<ExternalModuleDependencyBundle>> findBundle(String alias);
 
@@ -59,6 +60,7 @@ public interface VersionCatalog extends Named {
      * Note: Alias will be automatically normalized: '-', '_' and '.' will be replaced with '.'
      * </p>
      * @param alias the alias of the version
+     * @since 7.0
      */
     Optional<VersionConstraint> findVersion(String alias);
 

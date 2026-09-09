@@ -17,11 +17,13 @@
 package org.gradle.vcs.internal
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
 import org.gradle.vcs.fixtures.GitHttpRepository
 import org.junit.Rule
 
+@ToBeFixedForIsolatedProjects(because = "allprojects in included build")
 class RemoteSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
     @Rule
     BlockingHttpServer httpServer = new BlockingHttpServer()
@@ -41,9 +43,10 @@ class RemoteSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
                     configurations {
                         compile
                     }
+                    def compileFiles = configurations.compile
                     tasks.register('resolve') {
-                        inputs.files configurations.compile
-                        doLast { configurations.compile.each { } }
+                        inputs.files compileFiles
+                        doLast { compileFiles.each { } }
                     }
                 }
             }
@@ -130,7 +133,6 @@ class RemoteSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
         repoC.commit('initial version')
     }
 
-    @ToBeFixedForConfigurationCache
     def "git version lookup and checkout is performed once per version selector per build invocation"() {
         repoA.file("build.gradle") << """
             dependencies {
@@ -172,19 +174,22 @@ class RemoteSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         succeeds('resolve')
-        result.assertTasksExecuted(':resolve', ':a:resolve', ':b:resolve', ':testA:jar', ':testB:jar', ':testC:jar')
+        result.assertTasksScheduled(':resolve', ':a:resolve', ':b:resolve', ':testA:jar', ':testB:jar', ':testC:jar')
 
         when:
-        repoA.expectListVersions()
-        repoB.expectListVersions()
-        repoC.expectListVersions()
+        // The selectors are static, so a second invocation under the configuration cache reuses the
+        // cached graph and performs no git lookups; only a non-CC invocation lists versions again.
+        if (!GradleContextualExecuter.configCache) {
+            repoA.expectListVersions()
+            repoB.expectListVersions()
+            repoC.expectListVersions()
+        }
 
         then:
         succeeds('resolve')
-        result.assertTasksExecuted(':resolve', ':a:resolve', ':b:resolve', ':testA:jar', ':testB:jar', ':testC:jar')
+        result.assertTasksScheduled(':resolve', ':a:resolve', ':b:resolve', ':testA:jar', ':testB:jar', ':testC:jar')
     }
 
-    @ToBeFixedForConfigurationCache
     def "git version lookup and checkout is performed once per branch selector per build invocation"() {
         repoA.file("build.gradle") << """
             dependencies {
@@ -242,7 +247,7 @@ class RemoteSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         succeeds('resolve')
-        result.assertTasksExecuted(':resolve', ':a:resolve', ':b:resolve', ':testA:jar', ':testB:jar', ':testC:jar')
+        result.assertTasksScheduled(':resolve', ':a:resolve', ':b:resolve', ':testA:jar', ':testB:jar', ':testC:jar')
 
         when:
         repoA.expectListVersions()
@@ -251,6 +256,6 @@ class RemoteSourceDependencyIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         succeeds('resolve')
-        result.assertTasksExecuted(':resolve', ':a:resolve', ':b:resolve', ':testA:jar', ':testB:jar', ':testC:jar')
+        result.assertTasksScheduled(':resolve', ':a:resolve', ':b:resolve', ':testA:jar', ':testB:jar', ':testC:jar')
     }
 }

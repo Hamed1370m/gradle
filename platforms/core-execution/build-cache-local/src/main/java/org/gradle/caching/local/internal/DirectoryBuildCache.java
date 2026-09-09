@@ -18,20 +18,18 @@ package org.gradle.caching.local.internal;
 
 import com.google.common.io.Closer;
 import org.apache.commons.io.FileUtils;
-import org.gradle.api.NonNullApi;
 import org.gradle.cache.PersistentCache;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.file.FileAccessTracker;
 import org.gradle.internal.hash.HashCode;
 import org.gradle.internal.io.IoConsumer;
+import org.jspecify.annotations.NullMarked;
 
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
@@ -41,7 +39,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 
-@NonNullApi
+@NullMarked
 public class DirectoryBuildCache implements BuildCacheTempFileStore, Closeable, LocalBuildCache {
 
     private final PersistentCache persistentCache;
@@ -58,7 +56,7 @@ public class DirectoryBuildCache implements BuildCacheTempFileStore, Closeable, 
             try {
                 return Files.createTempFile(persistentCache.getBaseDir().toPath(), prefix, suffix).toFile();
             } catch (IOException e) {
-                throw new UncheckedIOException(e);
+                throw UncheckedException.throwAsUncheckedException(e);
             }
         });
         this.fileAccessTracker = fileAccessTracker;
@@ -79,7 +77,7 @@ public class DirectoryBuildCache implements BuildCacheTempFileStore, Closeable, 
                     closer.close();
                 }
             } catch (IOException ex) {
-                throw new UncheckedIOException(ex);
+                throw UncheckedException.throwAsUncheckedException(ex);
             }
         });
         return loaded.get();
@@ -122,17 +120,10 @@ public class DirectoryBuildCache implements BuildCacheTempFileStore, Closeable, 
     }
 
     @Override
-    public void store(HashCode key, IoConsumer<OutputStream> result) {
+    public void store(HashCode key, InputStream entry) {
         tempFileStore.withTempFile(key, file -> {
             try {
-                Closer closer = Closer.create();
-                try {
-                    result.accept(closer.register(new FileOutputStream(file)));
-                } catch (Exception e) {
-                    throw closer.rethrow(e);
-                } finally {
-                    closer.close();
-                }
+                FileUtils.copyInputStreamToFile(entry, file);
             } catch (IOException ex) {
                 throw UncheckedException.throwAsUncheckedException(ex);
             }

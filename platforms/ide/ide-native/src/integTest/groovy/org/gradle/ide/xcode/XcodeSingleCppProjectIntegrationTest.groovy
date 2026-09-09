@@ -23,7 +23,8 @@ import org.gradle.nativeplatform.MachineArchitecture
 import org.gradle.nativeplatform.fixtures.app.CppApp
 import org.gradle.nativeplatform.fixtures.app.CppLib
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.TestEnvironmentPreconditions
+
 
 import static org.gradle.ide.xcode.internal.XcodeUtils.toSpaceSeparatedList
 
@@ -210,7 +211,7 @@ class XcodeSingleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpec 
         project.products.children[0].path == sharedLib("build/lib/main/debug/x86-64/app").absolutePath
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     def "returns meaningful errors from xcode when C++ executable product doesn't have test configured"() {
         useXcodebuildTool()
 
@@ -253,7 +254,7 @@ class XcodeSingleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpec 
         resultRunner.error.contains("Scheme App is not currently configured for the test action.")
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     def "returns meaningful errors from xcode when C++ library doesn't have test configured"() {
         useXcodebuildTool()
 
@@ -296,7 +297,7 @@ class XcodeSingleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpec 
         resultRunner.error.contains("Scheme App is not currently configured for the test action.")
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     def "can build C++ executable from Xcode"() {
         useXcodebuildTool()
         def app = new CppApp()
@@ -320,7 +321,6 @@ class XcodeSingleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpec 
 
         then:
         resultDebug.assertTasksExecuted(':compileDebugCpp', ':linkDebug', ':installDebug', ':_xcode___App_Debug')
-        resultDebug.assertTasksNotSkipped(':compileDebugCpp', ':linkDebug', ':installDebug', ':_xcode___App_Debug')
         debugBinary.exec().out == app.expectedOutput
         fixture(debugBinary).assertHasDebugSymbolsFor(app.sourceFileNamesWithoutHeaders)
 
@@ -334,7 +334,6 @@ class XcodeSingleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpec 
 
         then:
         resultRelease.assertTasksExecuted(':compileReleaseCpp', ':linkRelease', ':stripSymbolsRelease', ':installRelease', ':_xcode___App_Release')
-        resultRelease.assertTasksNotSkipped(':compileReleaseCpp', ':linkRelease', ':stripSymbolsRelease', ':installRelease', ':_xcode___App_Release')
         releaseBinary.exec().out == app.expectedOutput
         fixture(releaseBinary).assertHasDebugSymbolsFor(app.sourceFileNamesWithoutHeaders)
     }
@@ -365,7 +364,6 @@ class XcodeSingleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpec 
 
         then:
         resultDebug.assertTasksExecuted(':compileDebugX86-64Cpp', ':linkDebugX86-64', ':installDebugX86-64', ':_xcode___App_DebugX86-64')
-        resultDebug.assertTasksNotSkipped(':compileDebugX86-64Cpp', ':linkDebugX86-64', ':installDebugX86-64', ':_xcode___App_DebugX86-64')
         debugBinary.exec().out == app.expectedOutput
         fixture(debugBinary).assertHasDebugSymbolsFor(app.sourceFileNamesWithoutHeaders)
 
@@ -379,12 +377,11 @@ class XcodeSingleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpec 
 
         then:
         resultRelease.assertTasksExecuted(':compileReleaseX86-64Cpp', ':linkReleaseX86-64', ':stripSymbolsReleaseX86-64', ':installReleaseX86-64', ':_xcode___App_ReleaseX86-64')
-        resultRelease.assertTasksNotSkipped(':compileReleaseX86-64Cpp', ':linkReleaseX86-64', ':stripSymbolsReleaseX86-64', ':installReleaseX86-64', ':_xcode___App_ReleaseX86-64')
         releaseBinary.exec().out == app.expectedOutput
         fixture(releaseBinary).assertHasDebugSymbolsFor(app.sourceFileNamesWithoutHeaders)
     }
 
-    @Requires(UnitTestPreconditions.HasXCode)
+    @Requires(TestEnvironmentPreconditions.HasXCode)
     def "can build C++ library from Xcode"() {
         useXcodebuildTool()
         def lib = new CppLib()
@@ -408,7 +405,6 @@ apply plugin: 'cpp-library'
 
         then:
         resultDebug.assertTasksExecuted(':compileDebugCpp', ':linkDebug', ':_xcode___App_Debug')
-        resultDebug.assertTasksNotSkipped(':compileDebugCpp', ':linkDebug', ':_xcode___App_Debug')
         debugBinary.assertExists()
         fixture(debugBinary).assertHasDebugSymbolsFor(lib.sourceFileNamesWithoutHeaders)
 
@@ -422,7 +418,6 @@ apply plugin: 'cpp-library'
 
         then:
         resultRelease.assertTasksExecuted(':compileReleaseCpp', ':linkRelease', ':stripSymbolsRelease', ':_xcode___App_Release')
-        resultRelease.assertTasksNotSkipped(':compileReleaseCpp', ':linkRelease', ':stripSymbolsRelease', ':_xcode___App_Release')
         releaseBinary.assertExists()
         fixture(releaseBinary).assertHasDebugSymbolsFor(lib.sourceFileNamesWithoutHeaders)
     }
@@ -453,7 +448,6 @@ apply plugin: 'cpp-library'
 
         then:
         resultDebug.assertTasksExecuted(':compileDebugX86-64Cpp', ':linkDebugX86-64', ':_xcode___App_DebugX86-64')
-        resultDebug.assertTasksNotSkipped(':compileDebugX86-64Cpp', ':linkDebugX86-64', ':_xcode___App_DebugX86-64')
         debugBinary.assertExists()
         fixture(debugBinary).assertHasDebugSymbolsFor(lib.sourceFileNamesWithoutHeaders)
 
@@ -467,7 +461,6 @@ apply plugin: 'cpp-library'
 
         then:
         resultRelease.assertTasksExecuted(':compileReleaseX86-64Cpp', ':linkReleaseX86-64', ':stripSymbolsReleaseX86-64', ':_xcode___App_ReleaseX86-64')
-        resultRelease.assertTasksNotSkipped(':compileReleaseX86-64Cpp', ':linkReleaseX86-64', ':stripSymbolsReleaseX86-64', ':_xcode___App_ReleaseX86-64')
         releaseBinary.assertExists()
         fixture(releaseBinary).assertHasDebugSymbolsFor(lib.sourceFileNamesWithoutHeaders)
     }

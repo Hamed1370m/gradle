@@ -16,26 +16,36 @@
 
 package org.gradle.api.internal.tasks.testing;
 
-import org.gradle.api.NonNullApi;
+import org.gradle.api.internal.tasks.testing.source.DefaultNoSource;
+import org.gradle.api.tasks.testing.source.TestSource;
 import org.gradle.internal.scan.UsedByScanPlugin;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 @UsedByScanPlugin("test-distribution")
-@NonNullApi
+@NullMarked
 public class DefaultTestDescriptor extends AbstractTestDescriptor {
     private final String displayName;
+    @Nullable
     private final String className;
     private final String classDisplayName;
 
     @UsedByScanPlugin("test-distribution")
-    public DefaultTestDescriptor(Object id, String className, String name) {
-        this(id, className, name, null, name);
+    public DefaultTestDescriptor(Object id, @Nullable String className, String name) {
+        this(id, className, name, DefaultNoSource.getInstance());
+    }
+
+    public DefaultTestDescriptor(Object id, @Nullable String className, String name, TestSource source) {
+        this(id, className, name, null, name, source);
     }
 
     @UsedByScanPlugin("test-distribution")
-    public DefaultTestDescriptor(Object id, String className, String name, @Nullable String classDisplayName, String displayName) {
-        super(id, name);
+    public DefaultTestDescriptor(Object id, @Nullable String className, String name, @Nullable String classDisplayName, String displayName) {
+        this(id, className, name, classDisplayName, displayName, DefaultNoSource.getInstance());
+    }
+
+    public DefaultTestDescriptor(Object id, @Nullable String className, String name, @Nullable String classDisplayName, String displayName, TestSource source) {
+        super(id, name, source);
         this.className = className;
         this.classDisplayName = classDisplayName == null ? className : classDisplayName;
         this.displayName = displayName;
@@ -43,7 +53,7 @@ public class DefaultTestDescriptor extends AbstractTestDescriptor {
 
     @Override
     public String toString() {
-        return "Test " + getName() + "(" + className + ")";
+        return "Test " + getName() + ((className == null || className.isEmpty()) ? "" : ("(" + className + ")"));
     }
 
     @Override
@@ -51,6 +61,7 @@ public class DefaultTestDescriptor extends AbstractTestDescriptor {
         return false;
     }
 
+    @Nullable
     @Override
     public String getClassName() {
         return className;

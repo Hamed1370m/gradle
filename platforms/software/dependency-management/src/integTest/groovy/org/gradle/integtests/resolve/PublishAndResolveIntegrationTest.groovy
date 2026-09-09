@@ -17,34 +17,36 @@
 package org.gradle.integtests.resolve
 
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.ivy.IvyFileRepository
 import org.gradle.util.internal.TextUtil
 
 class PublishAndResolveIntegrationTest extends AbstractDependencyResolutionTest {
     def setup() {
-        settingsFile << "rootProject.name = 'root'"
-        buildFile << """
-            allprojects {
-                apply plugin: 'java'
-                apply plugin: 'ivy-publish'
-
-                group = 'org.gradle.test'
-                version = '1.9'
-
+        settingsFile << """
+            rootProject.name = 'root'
+            dependencyResolutionManagement {
                 repositories {
                     ivy {
-                        url '${ivyRepo.uri}'
+                        url = "${ivyRepo.uri}"
                     }
                 }
             }
         """
     }
 
-    @ToBeFixedForConfigurationCache
+    @ToBeFixedForConfigurationCache(because = "Configuration cache can't serialize result of Publish task to be created at task execution time as input to Copy task")
     def "can resolve static dependency published by a dependent task in the same project"() {
         given:
         buildFile << """
+            plugins {
+                id("java-library")
+                id("ivy-publish")
+            }
+
+            group = 'org.gradle.test'
+            version = '1.9'
+
             ${taskWhichPublishes('api', '1.1')}
             ${taskWhichResolves('api', '1.1')}
         """
@@ -54,19 +56,35 @@ class PublishAndResolveIntegrationTest extends AbstractDependencyResolutionTest 
         versionIsCopiedAndExists("api", "1.1")
     }
 
-    @ToBeFixedForConfigurationCache
+    @ToBeFixedForConfigurationCache(because = "Configuration cache can't serialize result of Publish task to be created at task execution time as input to Copy task")
     def "can resolve static dependency published by a dependent task in another project in the same build"() {
-        createDirs("child")
         settingsFile << """
             include ':child'
         """
 
         given:
         buildFile << """
-            ${taskWhichPublishes('api', '1.1')}
-            project(':child') {
-                ${taskWhichResolves('api', '1.1')}
+            plugins {
+                id("java-library")
+                id("ivy-publish")
             }
+
+            group = 'org.gradle.test'
+            version = '1.9'
+
+            ${taskWhichPublishes('api', '1.1')}
+        """
+
+        file('child/build.gradle') << """
+            plugins {
+                id("java-library")
+                id("ivy-publish")
+            }
+
+            group = 'org.gradle.test'
+            version = '1.9'
+
+            ${taskWhichResolves('api', '1.1')}
         """
 
         expect:
@@ -74,12 +92,20 @@ class PublishAndResolveIntegrationTest extends AbstractDependencyResolutionTest 
         versionIsCopiedAndExists("api", "1.1", "child/")
     }
 
-    @ToBeFixedForConfigurationCache
+    @ToBeFixedForConfigurationCache(because = "Configuration cache can't serialize result of Publish task to be created at task execution time as input to Copy task")
     def "can resolve dynamic dependency published by a dependent task"() {
         ivyRepo.module('org.gradle.test', 'api', '1.0').publish()
 
         given:
         buildFile << """
+            plugins {
+                id("java-library")
+                id("ivy-publish")
+            }
+
+            group = 'org.gradle.test'
+            version = '1.9'
+
             ${taskWhichPublishes('api', '1.1')}
             ${taskWhichResolves('api', '1.+')}
         """
@@ -89,19 +115,27 @@ class PublishAndResolveIntegrationTest extends AbstractDependencyResolutionTest 
         versionIsCopiedAndExists("api", "1.1")
     }
 
-    @ToBeFixedForConfigurationCache
+    @ToBeFixedForConfigurationCache(because = "Configuration cache can't serialize result of Publish task to be created at task execution time as input to Copy task")
     def "can resolve dependency published by a custom publishing task"() {
         def tmpRepo = new IvyFileRepository(file("tmp-repo"))
         tmpRepo.module('org.gradle.test', 'api', '1.1').publish()
 
         given:
         buildFile << """
+            plugins {
+                id("java-library")
+                id("ivy-publish")
+            }
+
+            group = 'org.gradle.test'
+            version = '1.9'
+
             task customPublish(type: Copy) {
                 from "${safePath(tmpRepo.moduleDir('org.gradle.test', 'api'), '1.1')}"
                 into "${safePath(ivyRepo.moduleDir('org.gradle.test', 'api'), '1.1')}"
             }
             ${taskWhichResolves('api', '1.1')}
-            ${resolveTask}.dependsOn customPublish
+            tasks.${resolveTask}.dependsOn tasks.customPublish
         """
 
         expect:
@@ -126,15 +160,15 @@ class PublishAndResolveIntegrationTest extends AbstractDependencyResolutionTest 
             publishing {
                 repositories {
                     ivy {
-                        url '${ivyRepo.uri}'
+                        url = "${ivyRepo.uri}"
                     }
                 }
                 publications {
                     jar(IvyPublication) {
                         from components.java
-                        organisation group
-                        module '${lib}'
-                        revision '${version}'
+                        organisation = group
+                        module = '${lib}'
+                        revision = '${version}'
                     }
                 }
             }
@@ -152,10 +186,8 @@ class PublishAndResolveIntegrationTest extends AbstractDependencyResolutionTest 
             }
 
             task ${resolveTask}(type: Copy) {
-                dependsOn ":publish"
-                from {
-                    configurations.testartifacts
-                }
+                from rootProject.tasks.named("publish")
+                from configurations.testartifacts
                 into "\${buildDir}/copies"
                 eachFile { println it.file.path - rootDir.path }
             }

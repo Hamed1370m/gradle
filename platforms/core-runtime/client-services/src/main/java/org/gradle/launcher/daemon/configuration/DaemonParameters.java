@@ -17,30 +17,27 @@ package org.gradle.launcher.daemon.configuration;
 
 import com.google.common.collect.ImmutableList;
 import org.gradle.api.internal.file.FileCollectionFactory;
-import org.gradle.internal.buildconfiguration.DaemonJvmPropertiesDefaults;
-import org.gradle.internal.jvm.inspection.JvmVendor;
+import org.gradle.internal.buildconfiguration.tasks.DaemonJvmPropertiesAccessor;
 import org.gradle.internal.nativeintegration.services.NativeServices.NativeServicesMode;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JvmImplementation;
 import org.gradle.jvm.toolchain.JvmVendorSpec;
-import org.gradle.jvm.toolchain.internal.DefaultJavaLanguageVersion;
-import org.gradle.jvm.toolchain.internal.DefaultJvmVendorSpec;
 import org.gradle.jvm.toolchain.internal.DefaultToolchainConfiguration;
 import org.gradle.jvm.toolchain.internal.ToolchainConfiguration;
-import org.gradle.launcher.configuration.BuildLayoutResult;
 import org.gradle.launcher.daemon.context.DaemonRequestContext;
+import org.gradle.launcher.daemon.startup.DaemonPriority;
 import org.gradle.launcher.daemon.toolchain.DaemonJvmCriteria;
+import org.gradle.launcher.daemon.toolchain.ToolchainDownloadUrlProvider;
 import org.gradle.process.internal.JvmOptions;
 import org.gradle.util.internal.GUtil;
 
-import javax.annotation.Nullable;
 import java.io.File;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+
+import static org.gradle.launcher.daemon.logging.DaemonLogConstants.DAEMON_LOG_DIR;
 
 public class DaemonParameters {
     static final int DEFAULT_IDLE_TIMEOUT = 3 * 60 * 60 * 1000;
@@ -48,38 +45,39 @@ public class DaemonParameters {
 
     public static final List<String> DEFAULT_JVM_ARGS = ImmutableList.of("-Xmx512m", "-Xms256m", "-XX:MaxMetaspaceSize=384m", "-XX:+HeapDumpOnOutOfMemoryError");
 
-    private final ToolchainConfiguration toolchainConfiguration = new DefaultToolchainConfiguration();
-
+    private final ToolchainConfiguration toolchainConfiguration;
     private final File gradleUserHomeDir;
+    private final JvmOptions jvmOptions;
+    private final Map<String, String> envVariables;
 
     private File baseDir;
     private int idleTimeout = DEFAULT_IDLE_TIMEOUT;
 
     private int periodicCheckInterval = DEFAULT_PERIODIC_CHECK_INTERVAL_MILLIS;
-    private final JvmOptions jvmOptions;
     private boolean applyInstrumentationAgent = true;
     private NativeServicesMode nativeServicesMode = NativeServicesMode.ENABLED;
-    private Map<String, String> envVariables;
     private boolean enabled = true;
     private boolean foreground;
     private boolean stop;
     private boolean status;
     private DaemonPriority priority = DaemonPriority.NORMAL;
     private DaemonJvmCriteria requestedJvmCriteria = new DaemonJvmCriteria.LauncherJvm();
+    private ToolchainDownloadUrlProvider toolchainDownloadUrlProvider;
 
-    public DaemonParameters(BuildLayoutResult layout, FileCollectionFactory fileCollectionFactory) {
-        this(layout, fileCollectionFactory, Collections.<String, String>emptyMap());
+    public DaemonParameters(File gradleUserHomeDir, FileCollectionFactory fileCollectionFactory) {
+        this(gradleUserHomeDir, fileCollectionFactory, Collections.emptyMap(), new HashMap<>(System.getenv()));
     }
 
-    public DaemonParameters(BuildLayoutResult layout, FileCollectionFactory fileCollectionFactory, Map<String, String> extraSystemProperties) {
-        jvmOptions = new JvmOptions(fileCollectionFactory);
+    public DaemonParameters(File gradleUserHomeDir, FileCollectionFactory fileCollectionFactory, Map<String, String> extraSystemProperties, Map<String, String> environmentVariables) {
+        this.jvmOptions = new JvmOptions(fileCollectionFactory);
         if (!extraSystemProperties.isEmpty()) {
             jvmOptions.systemProperties(extraSystemProperties);
         }
         jvmOptions.jvmArgs(DEFAULT_JVM_ARGS);
-        baseDir = new File(layout.getGradleUserHomeDir(), "daemon");
-        gradleUserHomeDir = layout.getGradleUserHomeDir();
-        envVariables = new HashMap<>(System.getenv());
+        this.gradleUserHomeDir = gradleUserHomeDir;
+        this.baseDir = new File(gradleUserHomeDir, DAEMON_LOG_DIR);
+        this.envVariables = environmentVariables;
+        toolchainConfiguration = new DefaultToolchainConfiguration(this.envVariables);
     }
 
     public DaemonRequestContext toRequestContext() {
@@ -130,46 +128,24 @@ public class DaemonParameters {
         this.requestedJvmCriteria = requestedJvmCriteria;
     }
 
-    public void setRequestedJvmCriteriaFromMap(@Nullable Map<String, String> buildProperties) {
-        String requestedVersion = buildProperties.get(DaemonJvmPropertiesDefaults.TOOLCHAIN_VERSION_PROPERTY);
+    public void setRequestedJvmCriteriaFromMap(Map<String, String> daemonJvmProperties) {
+        DaemonJvmPropertiesAccessor daemonJvmAccessor = new DaemonJvmPropertiesAccessor(daemonJvmProperties);
+        JavaLanguageVersion requestedVersion = daemonJvmAccessor.getVersion();
         if (requestedVersion != null) {
-            JavaLanguageVersion javaVersion;
-            try {
-                javaVersion = DefaultJavaLanguageVersion.fromFullVersion(requestedVersion);
-            } catch (Exception e) {
-                // TODO: This should be pushed somewhere else so we consistently report this message in the right context.
-                throw new IllegalArgumentException(String.format("Value '%s' given for %s is an invalid Java version", requestedVersion, DaemonJvmPropertiesDefaults.TOOLCHAIN_VERSION_PROPERTY));
-            }
-
-            final JvmVendorSpec javaVendor;
-            String requestedVendor = buildProperties.get(DaemonJvmPropertiesDefaults.TOOLCHAIN_VENDOR_PROPERTY);
-
-            if (requestedVendor != null) {
-                Optional<JvmVendor.KnownJvmVendor> knownVendor =
-                    Arrays.stream(JvmVendor.KnownJvmVendor.values()).filter(e -> e.name().equals(requestedVendor)).findFirst();
-
-                if (knownVendor.isPresent() && knownVendor.get()!=JvmVendor.KnownJvmVendor.UNKNOWN) {
-                    javaVendor = DefaultJvmVendorSpec.of(knownVendor.get());
-                } else {
-                    javaVendor = DefaultJvmVendorSpec.matching(requestedVendor);
-                }
-            } else {
-                // match any vendor
-                javaVendor = DefaultJvmVendorSpec.any();
-            }
-
-            this.requestedJvmCriteria = new DaemonJvmCriteria.Spec(javaVersion, javaVendor, JvmImplementation.VENDOR_SPECIFIC);
+            JvmVendorSpec requestedJavaVendor = daemonJvmAccessor.getVendor();
+            this.requestedJvmCriteria = new DaemonJvmCriteria.Spec(requestedVersion, requestedJavaVendor, JvmImplementation.VENDOR_SPECIFIC, daemonJvmAccessor.getNativeImageCapable());
+            this.toolchainDownloadUrlProvider = new ToolchainDownloadUrlProvider(daemonJvmAccessor.getToolchainDownloadUrls());
         }
     }
 
     public Map<String, String> getSystemProperties() {
-        Map<String, String> systemProperties = new HashMap<String, String>();
+        Map<String, String> systemProperties = new HashMap<>();
         GUtil.addToMap(systemProperties, jvmOptions.getMutableSystemProperties());
         return systemProperties;
     }
 
     public Map<String, String> getEffectiveSystemProperties() {
-        Map<String, String> systemProperties = new HashMap<String, String>();
+        Map<String, String> systemProperties = new HashMap<>();
         GUtil.addToMap(systemProperties, System.getProperties());
         GUtil.addToMap(systemProperties, jvmOptions.getMutableSystemProperties());
         GUtil.addToMap(systemProperties, jvmOptions.getImmutableSystemProperties());
@@ -177,18 +153,18 @@ public class DaemonParameters {
     }
 
     public Map<String, String> getMutableAndImmutableSystemProperties() {
-        Map<String, String> systemProperties = new HashMap<String, String>();
+        Map<String, String> systemProperties = new HashMap<>();
         GUtil.addToMap(systemProperties, jvmOptions.getMutableSystemProperties());
         GUtil.addToMap(systemProperties, jvmOptions.getImmutableSystemProperties());
         return systemProperties;
     }
 
-    public void setJvmArgs(Iterable<String> jvmArgs) {
-        jvmOptions.setAllJvmArgs(jvmArgs);
+    public void addJvmArgs(Iterable<String> jvmArgs) {
+        jvmOptions.jvmArgs(jvmArgs);
     }
 
-    public void setEnvironmentVariables(Map<String, String> envVariables) {
-        this.envVariables = envVariables == null ? new HashMap<String, String>(System.getenv()) : envVariables;
+    public void setJvmArgs(Iterable<String> jvmArgs) {
+        jvmOptions.setAllJvmArgs(jvmArgs);
     }
 
     public void setDebug(boolean debug) {
@@ -196,19 +172,19 @@ public class DaemonParameters {
     }
 
     public void setDebugPort(int debug) {
-        jvmOptions.getDebugOptions().getPort().set(debug);
+        jvmOptions.getDebugSpec().setPort(debug);
     }
 
     public void setDebugHost(String host) {
-        jvmOptions.getDebugOptions().getHost().set(host);
+        jvmOptions.getDebugSpec().setHost(host);
     }
 
     public void setDebugSuspend(boolean suspend) {
-        jvmOptions.getDebugOptions().getSuspend().set(suspend);
+        jvmOptions.getDebugSpec().setSuspend(suspend);
     }
 
     public void setDebugServer(boolean server) {
-        jvmOptions.getDebugOptions().getServer().set(server);
+        jvmOptions.getDebugSpec().setServer(server);
     }
 
     public DaemonParameters setBaseDir(File baseDir) {
@@ -268,6 +244,10 @@ public class DaemonParameters {
 
     public ToolchainConfiguration getToolchainConfiguration() {
         return toolchainConfiguration;
+    }
+
+    public ToolchainDownloadUrlProvider getToolchainDownloadUrlProvider() {
+        return toolchainDownloadUrlProvider;
     }
 
     public DaemonPriority getPriority() {

@@ -20,8 +20,6 @@ import org.gradle.internal.os.OperatingSystem
 import org.gradle.language.swift.plugins.SwiftApplicationPlugin
 import org.gradle.language.swift.plugins.SwiftLibraryPlugin
 import org.gradle.language.swift.tasks.SwiftCompile
-import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
-import org.gradle.nativeplatform.fixtures.ToolChainRequirement
 import org.gradle.nativeplatform.tasks.InstallExecutable
 import org.gradle.nativeplatform.tasks.LinkExecutable
 import org.gradle.nativeplatform.tasks.LinkMachOBundle
@@ -32,13 +30,13 @@ import org.gradle.nativeplatform.test.xctest.tasks.InstallXCTestBundle
 import org.gradle.nativeplatform.test.xctest.tasks.XCTest
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.gradle.testfixtures.ProjectBuilder
 import org.gradle.util.UsesNativeServices
 import org.junit.Rule
 import spock.lang.Specification
 
-@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5_OR_OLDER)
 @UsesNativeServices
 class XCTestConventionPluginTest extends Specification {
     @Rule
@@ -90,7 +88,7 @@ class XCTestConventionPluginTest extends Specification {
         project.xctest.testedComponent.orNull == project.application
     }
 
-    @Requires(UnitTestPreconditions.MacOs)
+    @Requires(OsTestPreconditions.MacOs)
     def "registers a test bundle for the test suite on macOS"() {
         when:
         project.pluginManager.apply(XCTestConventionPlugin)
@@ -110,7 +108,7 @@ class XCTestConventionPluginTest extends Specification {
         project.xctest.testBinary.get() == binaries.first()
     }
 
-    @Requires(UnitTestPreconditions.NotMacOs)
+    @Requires(OsTestPreconditions.NotMacOs)
     def "registers a test executable for the test suite"() {
         when:
         project.pluginManager.apply(XCTestConventionPlugin)
@@ -130,7 +128,7 @@ class XCTestConventionPluginTest extends Specification {
         project.xctest.testBinary.get() == binaries.first()
     }
 
-    @Requires(UnitTestPreconditions.MacOs)
+    @Requires(OsTestPreconditions.MacOs)
     def "adds compile, link and install tasks on macOS"() {
         given:
         def src = projectDir.file("src/test/swift/test.swift").createFile()
@@ -162,7 +160,7 @@ class XCTestConventionPluginTest extends Specification {
         test.workingDirectory.get().asFile == projectDir.file("build/install/test")
     }
 
-    @Requires(UnitTestPreconditions.NotMacOs)
+    @Requires(OsTestPreconditions.NotMacOs)
     def "adds compile, link and install tasks"() {
         given:
         def src = projectDir.file("src/test/swift/test.swift").createFile()

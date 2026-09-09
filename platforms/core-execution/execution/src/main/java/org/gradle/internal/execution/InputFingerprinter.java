@@ -18,20 +18,24 @@ package org.gradle.internal.execution;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedMap;
-import org.gradle.internal.execution.UnitOfWork.InputVisitor;
+import org.gradle.api.internal.file.FileCollectionStructureVisitor;
 import org.gradle.internal.fingerprint.CurrentFileCollectionFingerprint;
 import org.gradle.internal.fingerprint.FileCollectionFingerprint;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.internal.snapshot.ValueSnapshot;
 
 import java.util.function.Consumer;
 
+@ServiceScope(Scope.BuildSession.class)
 public interface InputFingerprinter {
     Result fingerprintInputProperties(
         ImmutableSortedMap<String, ValueSnapshot> previousValueSnapshots,
         ImmutableSortedMap<String, ? extends FileCollectionFingerprint> previousFingerprints,
         ImmutableSortedMap<String, ValueSnapshot> knownCurrentValueSnapshots,
         ImmutableSortedMap<String, CurrentFileCollectionFingerprint> knownCurrentFingerprints,
-        Consumer<InputVisitor> inputs
+        Consumer<InputVisitor> inputs,
+        FileCollectionStructureVisitor validatingVisitor
     ) throws InputFingerprintingException, InputFileFingerprintingException;
 
     interface Result {

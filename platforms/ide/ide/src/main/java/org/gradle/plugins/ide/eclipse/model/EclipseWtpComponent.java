@@ -25,6 +25,7 @@ import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.internal.project.ProjectStateRegistry;
 import org.gradle.plugins.ide.api.XmlFileContentMerger;
+import org.gradle.plugins.ide.internal.IdeDeprecations;
 import org.gradle.plugins.ide.eclipse.model.internal.FileReferenceFactory;
 import org.gradle.plugins.ide.eclipse.model.internal.WtpComponentFactory;
 import org.gradle.plugins.ide.internal.IdeArtifactRegistry;
@@ -103,7 +104,7 @@ import static org.gradle.util.internal.ConfigureUtil.configure;
  * <p>
  * Examples of advanced configuration:
  *
- * <pre class='autoTested'>
+ * <pre class='autoTestedWithDeprecations'>
  * plugins {
  *     id 'war'
  *     id 'eclipse-wtp'
@@ -136,6 +137,7 @@ import static org.gradle.util.internal.ConfigureUtil.configure;
  *   }
  * }
  * </pre>
+ * @since 1.0
  */
 public abstract class EclipseWtpComponent {
 
@@ -160,13 +162,25 @@ public abstract class EclipseWtpComponent {
         this.file = file;
     }
 
+    /**
+     * Returns the project.
+     *
+     * @since 1.0
+     */
     public Project getProject() {
         return project;
     }
 
+    // The getter does not nag: Groovy's dynamic dispatch probes the `file` property for any
+    // unresolved `file(...)` call inside a `component { }` block (e.g. `sourceDirs += file(...)`),
+    // which would produce false-positive warnings. The file(Closure)/file(Action) hooks nag instead.
     /**
      * See {@link #file(Action) }
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
      */
+    @Deprecated
     public XmlFileContentMerger getFile() {
         return file;
     }
@@ -178,8 +192,13 @@ public abstract class EclipseWtpComponent {
      * The object passed to whenMerged{} and beforeMerged{} closures is of type {@link WtpComponent}
      * <p>
      * For example see docs for {@link EclipseWtpComponent}
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
      */
+    @Deprecated
     public void file(@DelegatesTo(XmlFileContentMerger.class) Closure closure) {
+        IdeDeprecations.nagDeprecatedProperty(EclipseWtpComponent.class, "file");
         configure(closure, file);
     }
 
@@ -190,8 +209,11 @@ public abstract class EclipseWtpComponent {
      * For example see docs for {@link EclipseWtpComponent}
      *
      * @since 3.5
+     * @deprecated Will be removed in Gradle 10.
      */
+    @Deprecated
     public void file(Action<? super XmlFileContentMerger> action) {
+        IdeDeprecations.nagDeprecatedProperty(EclipseWtpComponent.class, "file");
         action.execute(file);
     }
 
@@ -202,11 +224,17 @@ public abstract class EclipseWtpComponent {
      * <p>
      * Only source dirs that exist will be added to the wtp component file.
      * Non-existing resource directory declarations lead to errors when project is imported into Eclipse.
+     * @since 1.0
      */
     public Set<File> getSourceDirs() {
         return sourceDirs;
     }
 
+    /**
+     * Sets the source dirs.
+     *
+     * @since 1.0
+     */
     public void setSourceDirs(Set<File> sourceDirs) {
         this.sourceDirs = sourceDirs;
     }
@@ -215,11 +243,17 @@ public abstract class EclipseWtpComponent {
      * The configurations whose files are to be marked to be deployed with a deploy path of '/'.
      * <p>
      * For examples see docs for {@link EclipseWtp}
+     * @since 1.0
      */
     public Set<Configuration> getRootConfigurations() {
         return rootConfigurations;
     }
 
+    /**
+     * Sets the root configurations.
+     *
+     * @since 1.0
+     */
     public void setRootConfigurations(Set<Configuration> rootConfigurations) {
         this.rootConfigurations = rootConfigurations;
     }
@@ -228,17 +262,24 @@ public abstract class EclipseWtpComponent {
      * The configurations whose files are to be marked to be deployed with a deploy path of {@link #getLibDeployPath()}.
      * <p>
      * For examples see docs for {@link EclipseWtp}
+     * @since 1.0
      */
     public Set<Configuration> getLibConfigurations() {
         return libConfigurations;
     }
 
+    /**
+     * Sets the lib configurations.
+     *
+     * @since 1.0
+     */
     public void setLibConfigurations(Set<Configuration> libConfigurations) {
         this.libConfigurations = libConfigurations;
     }
 
     /**
      * Synonym for {@link #getLibConfigurations()}.
+     * @since 1.0
      */
     public Set<Configuration> getPlusConfigurations() {
         return getLibConfigurations();
@@ -246,6 +287,7 @@ public abstract class EclipseWtpComponent {
 
     /**
      * Synonym for {@link #setLibConfigurations(Set)}.
+     * @since 1.0
      */
     public void setPlusConfigurations(Set<Configuration> plusConfigurations) {
         setLibConfigurations(plusConfigurations);
@@ -255,11 +297,17 @@ public abstract class EclipseWtpComponent {
      * The configurations whose files are to be excluded from wtp deployment.
      * <p>
      * For examples see docs for {@link EclipseWtp}
+     * @since 1.0
      */
     public Set<Configuration> getMinusConfigurations() {
         return minusConfigurations;
     }
 
+    /**
+     * Sets the minus configurations.
+     *
+     * @since 1.0
+     */
     public void setMinusConfigurations(Set<Configuration> minusConfigurations) {
         this.minusConfigurations = minusConfigurations;
     }
@@ -268,11 +316,17 @@ public abstract class EclipseWtpComponent {
      * The deploy name to be used.
      * <p>
      * For examples see docs for {@link EclipseWtp}
+     * @since 1.0
      */
     public String getDeployName() {
         return deployName;
     }
 
+    /**
+     * Sets the deploy name.
+     *
+     * @since 1.0
+     */
     public void setDeployName(String deployName) {
         this.deployName = deployName;
     }
@@ -286,11 +340,17 @@ public abstract class EclipseWtpComponent {
      * will be added to the wtp component file.
      * The reason is that non-existing resource directory declarations
      * lead to errors when project is imported into Eclipse.
+     * @since 1.0
      */
     public List<WbResource> getResources() {
         return resources;
     }
 
+    /**
+     * Sets the resources.
+     *
+     * @since 1.0
+     */
     public void setResources(List<WbResource> resources) {
         this.resources = resources;
     }
@@ -301,6 +361,7 @@ public abstract class EclipseWtpComponent {
      * For examples see docs for {@link EclipseWtp}
      *
      * @param args A map that must contain a deployPath and sourcePath key with corresponding values.
+     * @since 1.0
      */
     public void resource(Map<String, String> args) {
         resources = Lists.newArrayList(Iterables.concat(getResources(), Collections.singleton(new WbResource(args.get("deployPath"), args.get("sourcePath")))));
@@ -310,11 +371,17 @@ public abstract class EclipseWtpComponent {
      * Additional property elements.
      * <p>
      * For examples see docs for {@link EclipseWtp}
+     * @since 1.0
      */
     public List<WbProperty> getProperties() {
         return properties;
     }
 
+    /**
+     * Sets the properties.
+     *
+     * @since 1.0
+     */
     public void setProperties(List<WbProperty> properties) {
         this.properties = properties;
     }
@@ -325,6 +392,7 @@ public abstract class EclipseWtpComponent {
      * For examples see docs for {@link EclipseWtp}
      *
      * @param args A map that must contain a 'name' and 'value' key with corresponding values.
+     * @since 1.0
      */
     public void property(Map<String, String> args) {
         properties = Lists.newArrayList(Iterables.concat(getProperties(), Collections.singleton(new WbProperty(args.get("name"), args.get("value")))));
@@ -334,11 +402,17 @@ public abstract class EclipseWtpComponent {
      * The context path for the web application
      * <p>
      * For examples see docs for {@link EclipseWtp}
+     * @since 1.0
      */
     public String getContextPath() {
         return contextPath;
     }
 
+    /**
+     * Sets the context path.
+     *
+     * @since 1.0
+     */
     public void setContextPath(String contextPath) {
         this.contextPath = contextPath;
     }
@@ -347,11 +421,17 @@ public abstract class EclipseWtpComponent {
      * The deploy path for classes.
      * <p>
      * For examples see docs for {@link EclipseWtp}
+     * @since 1.0
      */
     public String getClassesDeployPath() {
         return classesDeployPath;
     }
 
+    /**
+     * Sets the classes deploy path.
+     *
+     * @since 1.0
+     */
     public void setClassesDeployPath(String classesDeployPath) {
         this.classesDeployPath = classesDeployPath;
     }
@@ -360,11 +440,17 @@ public abstract class EclipseWtpComponent {
      * The deploy path for libraries.
      * <p>
      * For examples see docs for {@link EclipseWtp}
+     * @since 1.0
      */
     public String getLibDeployPath() {
         return libDeployPath;
     }
 
+    /**
+     * Sets the lib deploy path.
+     *
+     * @since 1.0
+     */
     public void setLibDeployPath(String libDeployPath) {
         this.libDeployPath = libDeployPath;
     }
@@ -373,15 +459,26 @@ public abstract class EclipseWtpComponent {
      * The variables to be used for replacing absolute path in dependent-module elements.
      * <p>
      * For examples see docs for {@link EclipseModel}
+     * @since 1.0
      */
     public Map<String, File> getPathVariables() {
         return pathVariables;
     }
 
+    /**
+     * Sets the path variables.
+     *
+     * @since 1.0
+     */
     public void setPathVariables(Map<String, File> pathVariables) {
         this.pathVariables = pathVariables;
     }
 
+    /**
+     * Returns the file reference factory.
+     *
+     * @since 1.0
+     */
     public FileReferenceFactory getFileReferenceFactory() {
         FileReferenceFactory referenceFactory = new FileReferenceFactory();
         for (Map.Entry<String, File> pathVariable : pathVariables.entrySet()) {
@@ -390,6 +487,13 @@ public abstract class EclipseWtpComponent {
         return referenceFactory;
     }
 
+    /**
+     * Merges the existing component file content with the configuration from this model.
+     *
+     * @deprecated Will be removed in Gradle 10.
+     * @since 1.0
+     */
+    @Deprecated
     @SuppressWarnings("unchecked")
     public void mergeXmlComponent(WtpComponent xmlComponent) {
         file.getBeforeMerged().execute(xmlComponent);

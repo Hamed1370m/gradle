@@ -16,17 +16,21 @@
 
 package org.gradle.caching.http.internal
 
+import org.gradle.test.fixtures.server.http.HttpRequest
+import org.gradle.test.fixtures.server.http.HttpResponse
+
 import org.apache.http.HttpHeaders
 import org.apache.http.HttpStatus
-import org.gradle.api.UncheckedIOException
 import org.gradle.api.internal.DocumentationRegistry
 import org.gradle.caching.BuildCacheEntryWriter
 import org.gradle.caching.BuildCacheException
 import org.gradle.caching.BuildCacheServiceFactory
 import org.gradle.caching.http.HttpBuildCache
-import org.gradle.caching.internal.TestBuildCacheKey
+import org.gradle.caching.internal.SimpleBuildCacheKey
+import org.gradle.internal.hash.TestHashCodes
+import org.gradle.internal.resource.transport.http.ApacheCommonsHttpClientFactory
 import org.gradle.internal.resource.transport.http.DefaultSslContextFactory
-import org.gradle.internal.resource.transport.http.HttpClientHelper
+import org.gradle.internal.resource.transport.http.HttpClientFactory
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.test.fixtures.server.http.AuthScheme
 import org.gradle.test.fixtures.server.http.HttpResourceInteraction
@@ -35,8 +39,6 @@ import org.gradle.util.TestUtil
 import org.junit.Rule
 import spock.lang.Specification
 
-import javax.servlet.http.HttpServletRequest
-import javax.servlet.http.HttpServletResponse
 
 class HttpBuildCacheServiceTest extends Specification {
     public static final List<Integer> FATAL_HTTP_ERROR_CODES = [
@@ -56,9 +58,9 @@ class HttpBuildCacheServiceTest extends Specification {
     TestNameTestDirectoryProvider tempDir = new TestNameTestDirectoryProvider(getClass())
 
     BuildCacheServiceFactory.Describer buildCacheDescriber
-    HttpClientHelper.Factory httpClientHelperFactory = HttpClientHelper.Factory.createFactory(new DocumentationRegistry())
+    HttpClientFactory httpClientFactory = new ApacheCommonsHttpClientFactory(new DocumentationRegistry())
 
-    def key = new TestBuildCacheKey(0x01234567abcdef)
+    def key = new SimpleBuildCacheKey(TestHashCodes.hashCodeFrom(0x01234567abcdef))
     def objectFactory = TestUtil.objectFactory()
     private config = TestUtil.newInstance(HttpBuildCache.class)
 
@@ -67,7 +69,7 @@ class HttpBuildCacheServiceTest extends Specification {
     HttpBuildCacheService getCache() {
         if (cacheRef == null) {
             buildCacheDescriber = new NoopBuildCacheDescriber()
-            cacheRef = new DefaultHttpBuildCacheServiceFactory(objectFactory, new DefaultSslContextFactory(), { it.addHeader("X-Gradle-Version", "3.0") }, httpClientHelperFactory)
+            cacheRef = new DefaultHttpBuildCacheServiceFactory(objectFactory, new DefaultSslContextFactory(), { it.accept("X-Gradle-Version", "3.0") }, httpClientFactory)
                 .createBuildCacheService(this.config, buildCacheDescriber) as HttpBuildCacheService
         }
         cacheRef
@@ -84,9 +86,13 @@ class HttpBuildCacheServiceTest extends Specification {
         server.expectPut("/cache/${key.hashCode}", destFile, HttpStatus.SC_OK, null, content.length)
 
         when:
-        cache.store(key, writer(content))
+        def writer = writer(content)
+        cache.store(key, writer)
+
         then:
         destFile.bytes == content
+        writer.writeCount == 0
+        writer.readCount == 1
     }
 
     def "storing to cache can follow non method preserving redirects"() {
@@ -100,7 +106,8 @@ class HttpBuildCacheServiceTest extends Specification {
 
         then:
         noExceptionThrown()
-        writer.writeCount == 1
+        writer.writeCount == 0
+        writer.readCount == 1
     }
 
     def "storing to cache can follow method preserving redirects"() {
@@ -114,7 +121,8 @@ class HttpBuildCacheServiceTest extends Specification {
         cache.store(key, writer)
         then:
         destFile.bytes == content
-        writer.writeCount == 2
+        writer.writeCount == 0
+        writer.readCount == 2
     }
 
     def "can load artifact from cache"() {
@@ -171,7 +179,7 @@ class HttpBuildCacheServiceTest extends Specification {
         then:
         BuildCacheException exception = thrown()
 
-        exception.message == "Loading entry from '${server.uri}/cache/${key.hashCode}' response status ${httpCode}: broken"
+        exception.message.startsWith("Loading entry from '${server.uri}/cache/${key.hashCode}' response status ${httpCode}:")
 
         where:
         httpCode << [HttpStatus.SC_INTERNAL_SERVER_ERROR, HttpStatus.SC_SERVICE_UNAVAILABLE]
@@ -188,7 +196,7 @@ class HttpBuildCacheServiceTest extends Specification {
         then:
         UncheckedIOException exception = thrown()
 
-        exception.message == "Loading entry from '${server.uri}/cache/${key.hashCode}' response status ${httpCode}: broken"
+        exception.message.startsWith("Loading entry from '${server.uri}/cache/${key.hashCode}' response status ${httpCode}:")
 
         where:
         httpCode << FATAL_HTTP_ERROR_CODES
@@ -203,7 +211,7 @@ class HttpBuildCacheServiceTest extends Specification {
         then:
         UncheckedIOException exception = thrown()
 
-        exception.message == "Storing entry at '${server.uri}/cache/${key.hashCode}' response status ${httpCode}: broken"
+        exception.message.startsWith("Storing entry at '${server.uri}/cache/${key.hashCode}' response status ${httpCode}:")
 
         where:
         httpCode << FATAL_HTTP_ERROR_CODES
@@ -218,7 +226,7 @@ class HttpBuildCacheServiceTest extends Specification {
         then:
         BuildCacheException exception = thrown()
 
-        exception.message == "Storing entry at '${server.uri}/cache/${key.hashCode}' response status ${httpCode}: broken"
+        exception.message.startsWith("Storing entry at '${server.uri}/cache/${key.hashCode}' response status ${httpCode}:")
 
         where:
         httpCode << [HttpStatus.SC_INTERNAL_SERVER_ERROR, HttpStatus.SC_SERVICE_UNAVAILABLE]
@@ -227,7 +235,12 @@ class HttpBuildCacheServiceTest extends Specification {
     def "does not transmit body when using expect continue that returns error"() {
         given:
         config.useExpectContinue = true
-        expectError(413, 'PUT')
+        // com.sun.net.httpserver always auto-sends 100 Continue, so use a raw server that can reject
+        // an Expect: 100-continue request with a final status instead (RFC 9110 section 10.1.1).
+        def rawServer = new ExpectContinueHttpServer()
+        rawServer.start()
+        config.url = rawServer.uri.resolve("/cache/")
+        rawServer.expectReject("PUT", "/cache/${key.hashCode}", 413)
         def writer = writer("abc".bytes)
 
         when:
@@ -236,6 +249,10 @@ class HttpBuildCacheServiceTest extends Specification {
         then:
         thrown BuildCacheException
         writer.writeCount == 0
+        writer.readCount == 0
+
+        cleanup:
+        rawServer.stop()
     }
 
     def "does transmit body when using expect continue that continues"() {
@@ -253,31 +270,39 @@ class HttpBuildCacheServiceTest extends Specification {
 
         then:
         destFile.bytes == content
-        writer.writeCount == 1
+        writer.writeCount == 0
+        writer.readCount == 1
     }
 
     def "does not transmit body when using expect continue for redirected request"() {
         given:
         config.useExpectContinue = true
-
-        and:
         def content = "abc".bytes
         def writer = writer(content)
         def destFile = tempDir.file("cached.zip")
-        server.expectPutRedirected("/cache/${key.hashCode}", "/redirected/${key.hashCode}", null, HttpServer.RedirectType.TEMP_307)
-        server.expectPut("/redirected/${key.hashCode}", destFile)
+        // com.sun.net.httpserver always auto-sends 100 Continue, so use a raw server that can redirect
+        // an Expect: 100-continue request with a final status instead (RFC 9110 section 10.1.1).
+        def rawServer = new ExpectContinueHttpServer()
+        rawServer.start()
+        config.url = rawServer.uri.resolve("/cache/")
+        rawServer.expectRedirect("PUT", "/cache/${key.hashCode}", 307, "/redirected/${key.hashCode}")
+        rawServer.expectStore("PUT", "/redirected/${key.hashCode}", destFile)
 
         when:
         cache.store(key, writer)
 
         then:
         destFile.bytes == content
-        writer.writeCount == 1
+        writer.writeCount == 0
+        writer.readCount == 1
+
+        cleanup:
+        rawServer.stop()
     }
 
     def "sends X-Gradle-Version and Content-Type headers on GET"() {
         server.expect("/cache/${key.hashCode}", ["GET"], new HttpServer.ActionSupport("get has appropriate headers") {
-            void handle(HttpServletRequest request, HttpServletResponse response) {
+            void handle(HttpRequest request, HttpResponse response) {
                 request.getHeader("X-Gradle-Version") == "3.0"
 
                 def accept = request.getHeader(HttpHeaders.ACCEPT).split(", ")
@@ -295,7 +320,7 @@ class HttpBuildCacheServiceTest extends Specification {
 
     def "sends X-Gradle-Version and Content-Type headers on PUT"() {
         server.expect("/cache/${key.hashCode}", ["PUT"], new HttpServer.ActionSupport("put has appropriate headers") {
-            void handle(HttpServletRequest request, HttpServletResponse response) {
+            void handle(HttpRequest request, HttpResponse response) {
                 request.getHeader("X-Gradle-Version") == "3.0"
 
                 assert request.getHeader(HttpHeaders.CONTENT_TYPE) == HttpBuildCacheService.BUILD_CACHE_CONTENT_TYPE
@@ -339,9 +364,8 @@ class HttpBuildCacheServiceTest extends Specification {
     private HttpResourceInteraction expectError(int httpCode, String method) {
         server.expect("/cache/${key.hashCode}", false, [method], new HttpServer.ActionSupport("return ${httpCode} broken") {
             @Override
-            void handle(HttpServletRequest request, HttpServletResponse response) {
-                //noinspection GrDeprecatedAPIUsage
-                response.setStatus(httpCode, "broken")
+            void handle(HttpRequest request, HttpResponse response) {
+                response.setStatus(httpCode)
             }
         })
     }
@@ -358,10 +382,18 @@ class HttpBuildCacheServiceTest extends Specification {
 
     static class Writer implements BuildCacheEntryWriter {
         private final byte[] content
+
         private int writeCount = 0
+        private int readCount = 0
 
         Writer(byte[] content) {
             this.content = content
+        }
+
+        @Override
+        InputStream getInputStream() throws IOException {
+            readCount++
+            return new ByteArrayInputStream(content)
         }
 
         @Override

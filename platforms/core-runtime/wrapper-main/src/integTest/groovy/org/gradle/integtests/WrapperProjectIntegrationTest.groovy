@@ -18,14 +18,14 @@ package org.gradle.integtests
 
 
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.hamcrest.CoreMatchers
 import spock.lang.Issue
 
 import static org.hamcrest.CoreMatchers.containsString
 import static org.hamcrest.MatcherAssert.assertThat
 
-@Requires(value = IntegTestPreconditions.NotEmbeddedExecutor, reason = NOT_EMBEDDED_REASON)
+@Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = NOT_EMBEDDED_REASON)
 class WrapperProjectIntegrationTest extends AbstractWrapperIntegrationSpec {
     def setup() {
         file("build.gradle") << """
@@ -46,13 +46,13 @@ class WrapperProjectIntegrationTest extends AbstractWrapperIntegrationSpec {
 
     void "has non-zero exit code on build failure"() {
         given:
-        prepareWrapper()
+        prepareWrapper().run()
 
         when:
         def failure = wrapperExecuter.withTasks('unknown').runWithFailure()
 
         then:
-        failure.assertThatDescription(CoreMatchers.startsWith("Task 'unknown' not found in root project"))
+        failure.assertThatDescription(CoreMatchers.containsString("Task 'unknown' not found in root project"))
     }
 
     @Issue("https://github.com/gradle/gradle/issues/16055")
@@ -62,7 +62,7 @@ class WrapperProjectIntegrationTest extends AbstractWrapperIntegrationSpec {
         projectDir.mkdirs()
         prepareWrapper(distribution.binDistribution.toURI()) {
             it.inDirectory(projectDir)
-        }
+        }.run()
         projectDir.file("build.gradle") << """
             task assertProjectDirHasMeta {
                 def dirName = provider { projectDir.name }
@@ -74,13 +74,13 @@ class WrapperProjectIntegrationTest extends AbstractWrapperIntegrationSpec {
         when:
         def result = wrapperExecuter.inDirectory(projectDir).withTasks('assertProjectDirHasMeta').run()
         then:
-        result.assertTaskExecuted(":assertProjectDirHasMeta")
+        result.assertTaskScheduled(":assertProjectDirHasMeta")
     }
 
     @Issue("https://issues.gradle.org/browse/GRADLE-1871")
     void "can specify project properties containing D"() {
         given:
-        prepareWrapper()
+        prepareWrapper().run()
 
         when:
         def result = wrapperExecuter.withArguments("-PfooD=bar").withTasks('echoProperty').run()

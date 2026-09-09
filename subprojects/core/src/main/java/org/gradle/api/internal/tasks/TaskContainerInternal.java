@@ -18,13 +18,17 @@ package org.gradle.api.internal.tasks;
 import org.gradle.api.Task;
 import org.gradle.api.internal.PolymorphicDomainObjectContainerInternal;
 import org.gradle.api.tasks.TaskContainer;
+import org.gradle.internal.code.UserCodeSource;
 import org.gradle.internal.metaobject.DynamicObject;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.model.internal.core.ModelPath;
 import org.gradle.model.internal.type.ModelType;
 
 import java.util.Collection;
 
-public interface TaskContainerInternal extends TaskContainer, TaskResolver, PolymorphicDomainObjectContainerInternal<Task> {
+@ServiceScope(Scope.Project.class)
+public interface TaskContainerInternal extends TaskContainer, PolymorphicDomainObjectContainerInternal<Task> {
 
     // The path to the project's task container in the model registry
     ModelPath MODEL_PATH = ModelPath.path("tasks");
@@ -64,5 +68,5 @@ public interface TaskContainerInternal extends TaskContainer, TaskResolver, Poly
      *
      * TODO:configuration-cache - review this
      */
-    <T extends Task> T createWithoutConstructor(String name, Class<T> type, long uniqueId);
+    <T extends Task> T createWithoutConstructor(String name, Class<T> type, long uniqueId, UserCodeSource userCodeSource);
 }

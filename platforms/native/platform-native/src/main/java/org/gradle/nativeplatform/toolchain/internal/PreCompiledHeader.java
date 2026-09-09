@@ -29,10 +29,12 @@ import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskDependency;
 import org.gradle.platform.base.internal.ComponentSpecIdentifier;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 
+// TODO: Rewrite this to not rely on ComponentSpec once that's been removed.
+@SuppressWarnings("deprecation")
 public class PreCompiledHeader extends AbstractBuildableComponentSpec {
     FileCollection pchObjects;
     File prefixHeaderFile;

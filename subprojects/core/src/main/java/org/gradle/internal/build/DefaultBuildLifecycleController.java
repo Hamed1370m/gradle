@@ -18,11 +18,9 @@ package org.gradle.internal.build;
 import com.google.common.collect.ImmutableList;
 import org.gradle.BuildListener;
 import org.gradle.BuildResult;
-import org.gradle.api.NonNullApi;
 import org.gradle.api.Task;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.SettingsInternal;
-import org.gradle.api.internal.artifacts.DefaultBuildIdentifier;
 import org.gradle.api.internal.project.HoldsProjectState;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.internal.project.ProjectState;
@@ -36,14 +34,15 @@ import org.gradle.execution.plan.FinalizedExecutionPlan;
 import org.gradle.execution.plan.LocalTaskNode;
 import org.gradle.execution.plan.QueryableExecutionPlan;
 import org.gradle.execution.plan.ScheduledWork;
-import org.gradle.initialization.exception.ExceptionAnalyser;
 import org.gradle.internal.Describables;
 import org.gradle.internal.Pair;
+import org.gradle.internal.exception.ExceptionAnalyser;
 import org.gradle.internal.model.StateTransitionController;
 import org.gradle.internal.model.StateTransitionControllerFactory;
 import org.gradle.util.Path;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
@@ -75,7 +74,7 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
     private final BuildWorkExecutor workExecutor;
     private final BuildToolingModelControllerFactory toolingModelControllerFactory;
     private final BuildModelController modelController;
-    private final StateTransitionController<State> state;
+    private final StateTransitionController<State> buildState;
     private final GradleInternal gradle;
     private boolean hasTasks;
     private boolean hasFiredBeforeModelDiscarded;
@@ -99,7 +98,7 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
         this.workExecutor = workExecutor;
         this.buildModelLifecycleListener = buildModelLifecycleListener;
         this.toolingModelControllerFactory = toolingModelControllerFactory;
-        this.state = controllerFactory.newController(Describables.of("state of", targetBuild().getDisplayName()), State.Configure);
+        this.buildState = controllerFactory.newController(Describables.of("state of", targetBuild().getDisplayName()), State.Configure);
     }
 
     @Override
@@ -109,33 +108,43 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
         // - have the threads use some specific immutable view of the build model state instead of requiring direct access to the build model.
         // - not have a thread blocked around task execution, so that other threads can use the build model.
         // - maybe split the states into one for the build model and one for the task graph.
-        state.assertNotInState(State.Finished);
+        buildState.assertNotInState(State.Finished);
         return gradle;
     }
 
     @Override
     public void loadSettings() {
-        state.notInState(State.Finished, modelController::getLoadedSettings);
+        buildState.notInState(State.Finished, modelController::getLoadedSettings);
     }
 
     @Override
     public <T> T withSettings(Function<? super SettingsInternal, T> action) {
-        return state.notInState(State.Finished, () -> action.apply(modelController.getLoadedSettings()));
+        return buildState.notInState(State.Finished, () -> action.apply(modelController.getLoadedSettings()));
     }
 
     @Override
     public void configureProjects() {
-        state.notInState(State.Finished, modelController::getConfiguredModel);
+        buildState.notInState(State.Finished, modelController::getConfiguredModel);
+    }
+
+    @Override
+    public void configureProjectsIgnoringLaterFailures() {
+        buildState.notInStateIgnoringFailures(State.Finished, () -> {
+            if (!buildState.hasSeenStateIgnoringFailures(State.ReadyToRun)) {
+                modelController.getConfiguredModel();
+            }
+            return Void.class;
+        });
     }
 
     @Override
     public <T> T withProjectsConfigured(Function<? super GradleInternal, T> action) {
-        return state.notInState(State.Finished, () -> action.apply(modelController.getConfiguredModel()));
+        return buildState.notInState(State.Finished, () -> action.apply(modelController.getConfiguredModel()));
     }
 
     @Override
     public void resetModel() {
-        state.restart(State.ReadyToReset, State.Configure, () -> {
+        buildState.restart(State.ReadyToReset, State.Configure, () -> {
             gradle.resetState();
             for (HoldsProjectState service : gradle.getServices().getAll(HoldsProjectState.class)) {
                 service.discardAll();
@@ -145,12 +154,12 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
 
     @Override
     public ExecutionResult<Void> beforeModelReset() {
-        return state.transition(CONFIGURATION_STATES, State.ReadyToReset, failures -> fireBeforeModelDiscarded(false));
+        return buildState.transition(CONFIGURATION_STATES, State.ReadyToReset, failures -> fireBeforeModelDiscarded(false));
     }
 
     @Override
     public ExecutionResult<Void> beforeModelDiscarded(boolean failed) {
-        return state.transition(State.BuildFinishHooks, State.Finished, failures -> fireBeforeModelDiscarded(failed));
+        return buildState.transition(State.BuildFinishHooks, State.Finished, failures -> fireBeforeModelDiscarded(failed));
     }
 
     private ExecutionResult<Void> fireBeforeModelDiscarded(boolean failed) {
@@ -165,12 +174,12 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
     @Override
     public GradleInternal getConfiguredBuild() {
         // Should not ignore other threads. See above.
-        return state.notInStateIgnoreOtherThreads(State.Finished, modelController::getConfiguredModel);
+        return buildState.notInStateIgnoreOtherThreads(State.Finished, modelController::getConfiguredModel);
     }
 
     @Override
     public void prepareToScheduleTasks() {
-        state.maybeTransition(State.Configure, State.TaskSchedule, () -> {
+        buildState.maybeTransition(State.Configure, State.TaskSchedule, () -> {
             hasTasks = true;
             modelController.prepareToScheduleTasks();
         });
@@ -186,7 +195,7 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
     public void populateWorkGraph(BuildWorkPlan plan, Consumer<? super WorkGraphBuilder> action) {
         DefaultBuildWorkPlan workPlan = unpack(plan);
         workPlan.empty = false;
-        state.inState(State.TaskSchedule, () -> workPreparer.populateWorkGraph(gradle, workPlan.plan, dest -> action.accept(new DefaultWorkGraphBuilder(dest))));
+        buildState.inState(State.TaskSchedule, () -> workPreparer.populateWorkGraph(gradle, workPlan.plan, dest -> action.accept(new DefaultWorkGraphBuilder(dest))));
     }
 
     @Override
@@ -195,7 +204,7 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
         if (workPlan.empty) {
             return;
         }
-        state.transition(State.TaskSchedule, State.ReadyToRun, () -> {
+        buildState.transition(State.TaskSchedule, State.ReadyToRun, () -> {
             for (Consumer<LocalTaskNode> handler : workPlan.handlers) {
                 workPlan.plan.onComplete(handler);
             }
@@ -203,7 +212,7 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
         });
     }
 
-    @NonNullApi
+    @NullMarked
     private class EntryTaskSelectorContext implements EntryTaskSelector.Context {
 
         @Override
@@ -286,7 +295,7 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
 
         @Nullable
         private BuildState findBuild(Path buildPath) {
-            return getBuildStateRegistry().findBuild(new DefaultBuildIdentifier(buildPath));
+            return getBuildStateRegistry().findBuild(buildPath);
         }
 
         private BuildStateRegistry getBuildStateRegistry() {
@@ -301,7 +310,7 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
         if (workPlan.empty) {
             return ExecutionResult.succeeded();
         }
-        return state.tryTransition(State.ReadyToRun, State.Configure, () -> {
+        return buildState.tryTransition(State.ReadyToRun, State.Configure, () -> {
             List<BiConsumer<EntryTaskSelector.Context, QueryableExecutionPlan>> finalizations = workPlan.finalizations;
             if (!finalizations.isEmpty()) {
                 EntryTaskSelectorContext context = new EntryTaskSelectorContext();
@@ -323,8 +332,8 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
     }
 
     @Override
-    public <T> T withToolingModels(Function<? super BuildToolingModelController, T> action) {
-        return action.apply(toolingModelControllerFactory.createController(targetBuild(), this));
+    public <T> T withToolingModels(boolean inResilientContext, Function<? super BuildToolingModelController, T> action) {
+        return action.apply(toolingModelControllerFactory.createController(targetBuild(), this, inResilientContext));
     }
 
     private BuildState targetBuild() {
@@ -333,7 +342,7 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
 
     @Override
     public ExecutionResult<Void> finishBuild(@Nullable Throwable failure) {
-        return state.transition(CONFIGURATION_STATES, State.BuildFinishHooks, stageFailures -> {
+        return buildState.transition(CONFIGURATION_STATES, State.BuildFinishHooks, stageFailures -> {
             // Fire the build finished events even if nothing has happened to this build, because quite a lot of internal infrastructure
             // adds listeners and expects to see a build finished event. Infrastructure should not be using the public listener types
             // In addition, they almost all should be using a build tree scoped event instead of a build scoped event
@@ -363,7 +372,7 @@ public class DefaultBuildLifecycleController implements BuildLifecycleController
         private final ExecutionPlan plan;
         private final List<Consumer<LocalTaskNode>> handlers = new ArrayList<>();
         private final List<BiConsumer<EntryTaskSelector.Context, QueryableExecutionPlan>> finalizations = new ArrayList<>();
-        private FinalizedExecutionPlan finalizedPlan;
+        private @Nullable FinalizedExecutionPlan finalizedPlan;
         private boolean empty = true;
 
         public DefaultBuildWorkPlan(DefaultBuildLifecycleController owner, ExecutionPlan plan) {

@@ -24,6 +24,7 @@ package org.gradle.caching;
 public interface BuildCacheKey {
     /**
      * Returns the string representation of the cache key.
+     * @since 3.3
      */
     String getHashCode();
 
@@ -33,14 +34,4 @@ public interface BuildCacheKey {
      * @since 5.4
      */
     byte[] toByteArray();
-
-    /**
-     * Returns the same as {@link #getHashCode()}.
-     *
-     * @deprecated Use {@link #getHashCode()} instead.
-     *
-     * @since 8.7
-     */
-    @Deprecated
-    String getDisplayName();
 }

@@ -18,7 +18,10 @@ package org.gradle.java.compile.incremental
 
 import org.gradle.integtests.fixtures.CompiledLanguage
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
+import org.gradle.test.preconditions.FileSystemTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 import spock.lang.Issue
 
 import java.nio.file.Files
@@ -27,7 +30,7 @@ import java.nio.file.Paths
 class JavaSourceIncrementalCompilationIntegrationTest extends BaseJavaSourceIncrementalCompilationIntegrationTest {
     CompiledLanguage language = CompiledLanguage.JAVA
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk9OrLater)
     def "recompiles when module info changes"() {
         given:
         source("""
@@ -56,7 +59,7 @@ class JavaSourceIncrementalCompilationIntegrationTest extends BaseJavaSourceIncr
         result.assertHasErrorOutput("package java.util.logging is not visible")
     }
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk9OrLater)
     def "recompiles when module info is added"() {
         given:
         source("""
@@ -80,7 +83,10 @@ class JavaSourceIncrementalCompilationIntegrationTest extends BaseJavaSourceIncr
         result.assertHasErrorOutput("package java.util.logging is not visible")
     }
 
-    @Requires(UnitTestPreconditions.Symlinks)
+    @Requires(value = [
+        FileSystemTestPreconditions.Symlinks,
+        TestExecutionPreconditions.NotEmbeddedExecutor,
+    ], reason = "requires a daemon")
     @Issue("https://github.com/gradle/gradle/issues/9202")
     def "source mapping file works with symlinks"() {
         // Daemon cleans up symlinks in VFS
@@ -125,7 +131,7 @@ class JavaSourceIncrementalCompilationIntegrationTest extends BaseJavaSourceIncr
         outputs.recompiledClasses('MyClass', 'Other')
     }
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk9OrLater)
     def "recompiles all when constant used by annotation on module-info is changed"() {
         given:
         source("""

@@ -42,9 +42,6 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
                 doLast { files.files }
             }
         """
-        if (deprecationWarning) {
-            executer.expectDocumentedDeprecationWarning(deprecationWarning)
-        }
 
         when:
         succeeds 'resolve'
@@ -64,16 +61,15 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
         ])
 
         where:
-        repo                   | repoBlock                     | expectedRepo                     | deprecationWarning
-        'maven'                | mavenRepoBlock()              | expectedMavenRepo()              | null
-        'ivy'                  | ivyRepoBlock()                | expectedIvyRepo()                | null
-        'ivy-no-url'           | ivyRepoNoUrlBlock()           | expectedIvyRepoNoUrl()           | null
-        'flat-dir'             | flatDirRepoBlock()            | expectedFlatDirRepo()            | null
-        'local maven'          | mavenLocalRepoBlock()         | expectedMavenLocalRepo()         | null
-        'maven central'        | mavenCentralRepoBlock()       | expectedMavenCentralRepo()       | null
-        'jcenter'              | jcenterRepoBlock()            | expectedJcenterRepo()            | "The RepositoryHandler.jcenter() method has been deprecated. This is scheduled to be removed in Gradle 9.0. JFrog announced JCenter's sunset in February 2021. Use mavenCentral() instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_6.html#jcenter_deprecation"
-        'google'               | googleRepoBlock()             | expectedGoogleRepo()             | null
-        'gradle plugin portal' | gradlePluginPortalRepoBlock() | expectedGradlePluginPortalRepo() | null
+        repo                   | repoBlock                     | expectedRepo
+        'maven'                | mavenRepoBlock()              | expectedMavenRepo()
+        'ivy'                  | ivyRepoBlock()                | expectedIvyRepo()
+        'ivy-no-url'           | ivyRepoNoUrlBlock()           | expectedIvyRepoNoUrl()
+        'flat-dir'             | flatDirRepoBlock()            | expectedFlatDirRepo()
+        'local maven'          | mavenLocalRepoBlock()         | expectedMavenLocalRepo()
+        'maven central'        | mavenCentralRepoBlock()       | expectedMavenCentralRepo()
+        'google'               | googleRepoBlock()             | expectedGoogleRepo()
+        'gradle plugin portal' | gradlePluginPortalRepoBlock() | expectedGradlePluginPortalRepo()
     }
 
     def "repositories used in buildscript blocks are exposed via build operation"() {
@@ -82,7 +78,7 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
         module.pom.expectGetBroken()
         buildFile << """
             buildscript {
-                repositories { maven { url '${mavenHttpRepo.uri}' } }
+                repositories { maven { url = '${mavenHttpRepo.uri}' } }
                 dependencies { classpath 'org:foo:1.0' }
             }
         """
@@ -116,7 +112,7 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
         module.pom.expectGetBroken()
         settingsFile << """
         pluginManagement {
-            repositories { maven { url '${mavenHttpRepo.uri}' } }
+            repositories { maven { url = '${mavenHttpRepo.uri}' } }
         }
         """
         buildFile << """
@@ -183,20 +179,25 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
 
     def "repositories shared across projects are stable"() {
         setup:
-        createDirs("child")
         settingsFile << """
             include 'child'
-        """
-        buildFile << """
-            allprojects {
-                apply plugin: 'java'
-                ${mavenCentralRepoBlock()}
-                task resolve {
-                    def files = configurations.compileClasspath
-                    doLast { files.files }
-                }
+            dependencyResolutionManagement {
+                ${mavenCentralRepository()}
             }
         """
+
+        def common = """
+            plugins {
+                id("java-library")
+            }
+            task resolve {
+                def files = configurations.compileClasspath
+                doLast { files.files }
+            }
+        """
+
+        buildFile << common
+        file("child/build.gradle") << common
 
         when:
         succeeds 'resolve'
@@ -214,12 +215,12 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
             repositories {
                 maven {
                     name = 'custom repo'
-                    url = 'http://foo.com'
-                    artifactUrls 'http://foo.com/artifacts1'
+                    url = 'http://example.com'
+                    artifactUrls 'http://example.com/artifacts1'
                     metadataSources { gradleMetadata(); artifact() }
                     credentials {
-                        username 'user'
-                        password 'pass'
+                        username = 'user'
+                        password = 'pass'
                     }
                     authentication {
                         digest(DigestAuthentication)
@@ -233,6 +234,7 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
         """
 
         when:
+        executer.expectDocumentedDeprecationWarning("The MavenArtifactRepository.artifactUrls(Object...) method has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_maven_artifact_urls")
         succeeds 'resolve'
 
         then:
@@ -243,8 +245,8 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
             name == 'custom repo'
             type == 'MAVEN'
             properties.size() == 5
-            properties.URL == 'http://foo.com'
-            properties.ARTIFACT_URLS == ['http://foo.com/artifacts1']
+            properties.URL == 'http://example.com'
+            properties.ARTIFACT_URLS == ['http://example.com/artifacts1']
             properties.METADATA_SOURCES == ['gradleMetadata', 'artifact']
             properties.AUTHENTICATED == true
             properties.'AUTHENTICATION_SCHEMES' == ['DigestAuthentication']
@@ -281,19 +283,19 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
             repositories {
                 ivy {
                     name = 'custom repo'
-                    url 'http://myCompanyBucket/ivyrepo'
-                    artifactPattern 'http://myCompanyBucket/ivyrepo/[organisation]/[module]/[artifact]-[revision]'
-                    ivyPattern 'http://myCompanyBucket/ivyrepo/[organisation]/[module]/ivy-[revision].xml'
+                    url = 'http://myCompanyBucket/ivyrepo'
+                    artifactPattern('http://myCompanyBucket/ivyrepo/[organisation]/[module]/[artifact]-[revision]')
+                    ivyPattern('http://myCompanyBucket/ivyrepo/[organisation]/[module]/ivy-[revision].xml')
                     patternLayout {
-                        artifact '[module]/[organisation]/[revision]/[artifact]'
-                        artifact '3rd-party/[module]/[organisation]/[revision]/[artifact]'
-                        ivy '[module]/[organisation]/[revision]/ivy.xml'
+                        artifact('[module]/[organisation]/[revision]/[artifact]')
+                        artifact('3rd-party/[module]/[organisation]/[revision]/[artifact]')
+                        ivy('[module]/[organisation]/[revision]/ivy.xml')
                         m2compatible = true
                     }
                     metadataSources { gradleMetadata(); ivyDescriptor(); artifact() }
                     credentials {
-                        username 'user'
-                        password 'pass'
+                        username = 'user'
+                        password = 'pass'
                     }
                     authentication {
                         basic(BasicAuthentication)
@@ -396,7 +398,7 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
         where:
         definition               | success | artifactPattern
         "url = 'http://foo.com'" | true    | false
-        "artifactPattern 'foo'"  | true    | true
+        "artifactPattern('foo')" | true | true
         ''                       | false   | false
     }
 
@@ -432,7 +434,7 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
     }
 
     private static String mavenRepoBlock() {
-        "repositories { maven { url '<<URL>>' } }"
+        "repositories { maven { url = '<<URL>>' } }"
     }
 
     private static Map expectedMavenRepo() {
@@ -468,7 +470,7 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
     }
 
     private static String ivyRepoBlock() {
-        "repositories { ivy { url '<<URL>>' } }"
+        "repositories { ivy { url = '<<URL>>' } }"
     }
 
     private static Map expectedIvyRepo() {
@@ -489,7 +491,7 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
     }
 
     private static String ivyRepoNoUrlBlock() {
-        "repositories { ivy { artifactPattern 'artifactPattern' } }"
+        "repositories { ivy { artifactPattern('artifactPattern') } }"
     }
 
     private static Map expectedIvyRepoNoUrl() {
@@ -557,24 +559,6 @@ class ResolveConfigurationRepositoriesBuildOperationIntegrationTest extends Abst
                 AUTHENTICATION_SCHEMES: [],
                 METADATA_SOURCES: ['mavenPom'],
                 URL: 'https://repo.maven.apache.org/maven2/',
-            ]
-        ]
-    }
-
-    private static String jcenterRepoBlock() {
-        "repositories { jcenter() }"
-    }
-
-    private static Map expectedJcenterRepo() {
-        [
-            name: 'BintrayJCenter',
-            type: 'MAVEN',
-            properties: [
-                ARTIFACT_URLS: [],
-                METADATA_SOURCES: ['mavenPom'],
-                AUTHENTICATED: false,
-                AUTHENTICATION_SCHEMES: [],
-                URL: 'https://jcenter.bintray.com/',
             ]
         ]
     }

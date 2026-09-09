@@ -16,6 +16,10 @@
 
 package org.gradle.internal.resource.transport.http
 
+import org.gradle.test.fixtures.server.http.HttpRequest
+import org.gradle.test.fixtures.server.http.HttpResponse
+
+import com.google.common.collect.ImmutableMap
 import org.gradle.api.internal.DocumentationRegistry
 import org.gradle.api.logging.LogLevel
 import org.gradle.internal.logging.CollectingTestOutputEventListener
@@ -24,8 +28,6 @@ import org.gradle.test.fixtures.server.http.HttpServer
 import org.junit.Rule
 import spock.lang.Specification
 
-import javax.servlet.http.HttpServletRequest
-import javax.servlet.http.HttpServletResponse
 
 class CookieHeaderTest extends Specification {
 
@@ -40,14 +42,15 @@ class CookieHeaderTest extends Specification {
         .withSslContextFactory(sslContextFactory)
         .withRedirectVerifier({})
         .build()
-    HttpClientHelper client = new HttpClientHelper(new DocumentationRegistry(), settings)
+
+    HttpClient client = new ApacheCommonsHttpClientFactory(new DocumentationRegistry()).createClient(settings)
 
     def "cookie header with attributes #attributes can be parsed"() {
         httpServer.start()
         httpServer.expect("/cookie", ['GET'],
             new RespondWithCookieAction("some", attributes))
         when:
-        client.performGet("${httpServer.address}/cookie", false)
+        client.performGet(URI.create("${httpServer.address}/cookie"), ImmutableMap.of())
 
         then:
         listener.events*.message.forEach { assert !it.contains('Invalid cookie header:') }
@@ -74,12 +77,11 @@ class RespondWithCookieAction extends HttpServer.ActionSupport {
     }
 
     @Override
-    void handle(HttpServletRequest request, HttpServletResponse response) {
+    void handle(HttpRequest request, HttpResponse response) {
         response.addHeader("Set-Cookie", "cookie_name=$cookie; $attributes")
         String message = "Cookie sent"
         response.setContentLength(message.bytes.length)
         response.setContentType("text/html")
-        response.setCharacterEncoding("utf8")
         response.outputStream.bytes = message.bytes
     }
 }

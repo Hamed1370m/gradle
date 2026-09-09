@@ -18,32 +18,37 @@ package org.gradle.integtests.samples.java
 
 import groovy.xml.XmlSlurper
 import org.gradle.integtests.fixtures.AbstractSampleIntegrationTest
+import org.gradle.integtests.fixtures.AvailableJavaHomes
 import org.gradle.integtests.fixtures.Sample
 import org.gradle.integtests.fixtures.UsesSample
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.jvm.JavaToolchainFixture
+import org.gradle.internal.jvm.Jvm
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.InstalledJdkTestPreconditions
 import org.junit.Rule
 
-class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
+class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest implements JavaToolchainFixture {
 
     @Rule
     Sample sample = new Sample(testDirectoryProvider)
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
-    @UsesSample("java/basic")
+    @Requires(InstalledJdkTestPreconditions.Java17HomeAvailable)
+    @UsesSample("integration-tests/java/basic")
     def "can execute simple Java tests with #dsl dsl"() {
         given:
-        configureExecuterForToolchains('17')
+        Jvm jdk = AvailableJavaHomes.getJdk17()
+
         TestFile dslDir = sample.dir.file(dsl)
         executer.inDirectory(dslDir)
 
         when:
+        withInstallations(jdk)
         def result = succeeds("test")
 
         then:
-        result.assertTaskExecuted(":test")
+        result.assertTaskScheduled(":test")
 
         and:
         def xmlResults = getTestResultsFileAsXml(dslDir, "org.gradle.PersonTest")
@@ -53,7 +58,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testing/filtering")
+    @UsesSample("integration-tests/testing/filtering")
     def "can execute a subset of tests with filtering with #dsl dsl"() {
         given:
         TestFile dslDir = sample.dir.file(dsl)
@@ -63,7 +68,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         def result = succeeds("test")
 
         then: "the test task is executed"
-        result.assertTaskExecuted(":test")
+        result.assertTaskScheduled(":test")
 
         and: "both tests in SomeIntegTest run and pass"
         def xmlResults = getTestResultsFileAsXml(dslDir, "SomeIntegTest")
@@ -78,7 +83,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("java/customDirs")
+    @UsesSample("integration-tests/java/customDirs")
     def "can change the destination for test results and reports with #dsl dsl"() {
         given:
         TestFile dslDir = sample.dir.file(dsl)
@@ -88,7 +93,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         def result = fails("test")
 
         then: "the test task is executed"
-        result.assertTaskExecuted(":test")
+        result.assertTaskScheduled(":test")
 
         and: "the test results are in the custom directory"
         dslDir.file("build/my-test-results/test").directory
@@ -102,7 +107,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testing/testReport")
+    @UsesSample("integration-tests/testing/testReport")
     def "can create a custom TestReport task with #dsl dsl"() {
         given:
         TestFile dslDir = sample.dir.file(dsl)
@@ -112,8 +117,8 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         def result = succeeds("test", "testReport")
 
         then: "the test task is executed"
-        result.assertTaskExecuted(":core:test")
-        result.assertTaskExecuted(":util:test")
+        result.assertTaskScheduled(":core:test")
+        result.assertTaskScheduled(":util:test")
 
         and: "an aggregate report is created"
         dslDir.file("build/reports/allTests/index.html").assertExists()
@@ -126,7 +131,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testing/junit-categories")
+    @UsesSample("integration-tests/testing/junit-categories")
     def "can filter tests by JUnit category with #dsl dsl"() {
         given:
         TestFile dslDir = sample.dir.file(dsl)
@@ -136,7 +141,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         def result = succeeds("test")
 
         then: "the test task is executed"
-        result.assertTaskExecuted(":test")
+        result.assertTaskScheduled(":test")
 
         and: "only the 'A' tests are run"
         def xmlResults = getTestResultsFileAsXml(dslDir, "org.gradle.junit.CategorizedJUnitTest")
@@ -147,7 +152,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testing/junitplatform-tagging")
+    @UsesSample("integration-tests/testing/junitplatform-tagging")
     def "can filter tests by JUnit Platform tag with #dsl dsl"() {
         given:
         TestFile dslDir = sample.dir.file(dsl)
@@ -157,7 +162,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         def result = succeeds("test")
 
         then: "the test task is executed"
-        result.assertTaskExecuted(":test")
+        result.assertTaskScheduled(":test")
 
         and: "only the fast tests are run"
         def xmlResults = getTestResultsFileAsXml(dslDir, "org.gradle.junitplatform.TagTest")
@@ -168,7 +173,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testing/testng-groups")
+    @UsesSample("integration-tests/testing/testng-groups")
     def "can filter tests by TestNG group with #dsl dsl"() {
         given:
         TestFile dslDir = sample.dir.file(dsl)
@@ -178,11 +183,11 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         def result = succeeds("test")
 
         then: "the test task is executed"
-        result.assertTaskExecuted(":test")
+        result.assertTaskScheduled(":test")
 
         and: "the unit tests are run"
         def xmlResults = getTestResultsFileAsXml(dslDir, "org.gradle.testng.SimpleUnitTest")
-        assertTestsRunCount(xmlResults, 1)
+        xmlResults.@name == "org.gradle.testng.SimpleUnitTest"
 
         and: "the integration tests aren't run"
         getTestResultsFile(dslDir, "org.gradle.testng.SimpleIntegrationTest").assertDoesNotExist()
@@ -191,7 +196,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testing/junitplatform-jupiter")
+    @UsesSample("integration-tests/testing/junitplatform-jupiter")
     def "can run tests using JUnit Jupiter with #dsl dsl"() {
         given:
         TestFile dslDir = sample.dir.file(dsl)
@@ -201,18 +206,17 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         def result = succeeds("test")
 
         then: "the test task is executed"
-        result.assertTaskExecuted(":test")
+        result.assertTaskScheduled(":test")
 
         and: "the tests are run"
         def xmlResults = getTestResultsFileAsXml(dslDir, "org.gradle.junitplatform.JupiterTest")
-        // This expected count includes the skipped test
         assertTestsRunCount(xmlResults, 5)
 
         where:
         dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testing/junitplatform-mix")
+    @UsesSample("integration-tests/testing/junitplatform-mix")
     def "can run older JUnit tests with JUnit Jupiter with #dsl dsl"() {
         given:
         TestFile dslDir = sample.dir.file(dsl)
@@ -222,7 +226,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         def result = succeeds("test")
 
         then: "the test task is executed"
-        result.assertTaskExecuted(":test")
+        result.assertTaskScheduled(":test")
 
         and: "all the tests are run"
         assertTestsRunCount(
@@ -239,7 +243,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testing/junitplatform-engine")
+    @UsesSample("integration-tests/testing/junitplatform-engine")
     def "can run JUnit Platform tests with a subset of engines with #dsl dsl"() {
         given:
         TestFile dslDir = sample.dir.file(dsl)
@@ -249,7 +253,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         def result = succeeds("test")
 
         then: "the test task is executed"
-        result.assertTaskExecuted(":test")
+        result.assertTaskScheduled(":test")
 
         and: "only vintage tests are run"
         getTestResultsFile(dslDir, "org.gradle.junitplatform.JupiterTest").assertDoesNotExist()
@@ -261,7 +265,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testing/testng-preserveorder")
+    @UsesSample("integration-tests/testing/testng-preserveorder")
     def "can use the preserveOrder option with TestNG tests with #dsl dsl"() {
         given:
         TestFile dslDir = sample.dir.file(dsl)
@@ -271,7 +275,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         def result = succeeds("test")
 
         then: "the test task is executed"
-        result.assertTaskExecuted(":test")
+        result.assertTaskScheduled(":test")
 
         // At this point, it seems too difficult to verify the order of the stdout
         // output, which is the only way to verify that the `preserveOrder` property
@@ -288,7 +292,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @UsesSample("testing/testng-groupbyinstances")
+    @UsesSample("integration-tests/testing/testng-groupbyinstances")
     def "can use the groupByInstances option with TestNG tests with #dsl dsl"() {
         given:
         TestFile dslDir = sample.dir.file(dsl)
@@ -298,7 +302,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         def result = succeeds("test")
 
         then: "the test task is executed"
-        result.assertTaskExecuted(":test")
+        result.assertTaskScheduled(":test")
 
         and: "both tests are run"
         def xmlResults = getTestResultsFileAsXml(dslDir, "org.gradle.testng.TestFactory")
@@ -309,15 +313,17 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
-    @UsesSample("java/basic")
+    @Requires(InstalledJdkTestPreconditions.Java17HomeAvailable)
+    @UsesSample("integration-tests/java/basic")
     def "can run simple Java integration tests with #dsl dsl"() {
         given:
-        configureExecuterForToolchains('17')
+        Jvm jdk = AvailableJavaHomes.getJdk17()
+
         TestFile dslDir = sample.dir.file(dsl)
         executer.inDirectory(dslDir)
 
         when:
+        withInstallations(jdk)
         def result = succeeds("test", "integrationTest")
 
         then:
@@ -335,15 +341,17 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
         dsl << ['groovy', 'kotlin']
     }
 
-    @Requires(UnitTestPreconditions.Jdk9OrLater)
-    @UsesSample("java/basic")
+    @Requires(InstalledJdkTestPreconditions.Java17HomeAvailable)
+    @UsesSample("integration-tests/java/basic")
     def "can skip the tests with an `onlyIf` condition with #dsl dsl"() {
         given:
-        configureExecuterForToolchains('17')
+        Jvm jdk = AvailableJavaHomes.getJdk17()
+
         TestFile dslDir = sample.dir.file(dsl)
 
         when: "run first time to populate configuration cache if it is enabled"
         executer.inDirectory(dslDir).withArgument("-PmySkipTests")
+        withInstallations(jdk)
         def result = succeeds("build")
 
         then:
@@ -351,6 +359,7 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
 
         when: "run second time to restore from configuration cache if it is enabled"
         executer.inDirectory(dslDir).withArgument("-PmySkipTests")
+        withInstallations(jdk)
         def secondResult = succeeds("build")
 
         then:
@@ -365,16 +374,16 @@ class SamplesJavaTestingIntegrationTest extends AbstractSampleIntegrationTest {
      * assumes the file path to that file and loads it using Groovy's XmlSlurper
      * which can then be used to extract information from the XML.
      */
-    private static getTestResultsFileAsXml(TestFile sampleDir, String testClassName, String taskName = "test") {
-        return new XmlSlurper().parse(getTestResultsFile(sampleDir, testClassName, taskName))
+    private static getTestResultsFileAsXml(TestFile sampleDir, String testFileName, String taskName = "test") {
+        return new XmlSlurper().parse(getTestResultsFile(sampleDir, testFileName, taskName))
     }
 
     /**
      * Returns the {@code TestFile} instance representing the required JUnit test
      * results file. Assumes the standard test results directory.
      */
-    private static TestFile getTestResultsFile(TestFile sampleDir, String testClassName, String taskName = "test") {
-        return sampleDir.file("build/test-results/$taskName/TEST-${testClassName}.xml")
+    private static TestFile getTestResultsFile(TestFile sampleDir, String testFileName, String taskName = "test") {
+        return sampleDir.file("build/test-results/$taskName/TEST-${testFileName}.xml")
     }
 
     /**

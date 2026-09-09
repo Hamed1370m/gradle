@@ -19,10 +19,12 @@ package org.gradle.integtests.tooling.r25
 
 import org.gradle.integtests.tooling.fixture.ProgressEvents
 import org.gradle.integtests.tooling.fixture.ToolingApiSpecification
+import org.gradle.integtests.tooling.fixture.ToolingApiVersion
 import org.gradle.integtests.tooling.fixture.WithOldConfigurationsSupport
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.gradle.tooling.ListenerFailedException
 import org.gradle.tooling.ProjectConnection
 import org.gradle.tooling.events.OperationType
@@ -358,13 +360,10 @@ class TestProgressCrossVersionSpec extends ToolingApiSpecification implements Wi
         events.tests.tail().every { it.descriptor.parent != null }
     }
 
-    @Requires(UnitTestPreconditions.NotWindows)
+    @Requires(OsTestPreconditions.NotWindows)
     def "test progress event ids are unique across multiple test tasks, even when run in parallel"() {
         given:
-        projectDir.createFile('settings.gradle') << """
-            include ':sub1'
-            include ':sub2'
-        """
+        includeProjects("sub1", "sub2")
         projectDir.createFile('build.gradle')
 
         [projectDir.createDir('sub1'), projectDir.createDir('sub2')].eachWithIndex { TestFile it, def index ->
@@ -428,7 +427,8 @@ class TestProgressCrossVersionSpec extends ToolingApiSpecification implements Wi
         events.tests.findAll { it.descriptor.name =~ 'Gradle Test Executor \\d+' }.toSet().size() == 4       // 2 test processes for each task
     }
 
-    def "top-level test operation has test task as parent if task listener is attached"() {
+    @ToolingApiVersion(">=8.0 <8.12")
+    def "top-level test operation has test task as parent if task listener is attached (Tooling API client <8.12)"() {
         given:
         goodCode()
 
@@ -460,6 +460,46 @@ class TestProgressCrossVersionSpec extends ToolingApiSpecification implements Wi
         withConnection {
             ProjectConnection connection ->
                 connection.newBuild().withArguments('--rerun-tasks').forTasks('test').addProgressListener(events, EnumSet.of(OperationType.GENERIC, OperationType.TEST)).run()
+        }
+
+        then: 'the parent of the root test progress event is containing generic operation'
+        events.tests[0].descriptor.parent == descriptorForParentOfRootTestSuite(events)
+        events.tests.tail().every { it.descriptor.parent instanceof TestOperationDescriptor }
+    }
+
+    @ToolingApiVersion(">=8.12")
+    def "top-level test operation has test task as parent if task listener is attached (Tooling API client >=8.12)"() {
+        given:
+        goodCode()
+
+        when: 'listening to test progress events and task listener is attached'
+        def events = ProgressEvents.create()
+        withConnection {
+            ProjectConnection connection ->
+                connection.newBuild().forTasks('test').addProgressListener(events, EnumSet.of(OperationType.TASK, OperationType.TEST)).run()
+        }
+
+        then: 'the parent of the root test progress event is the test task that triggered the tests'
+        def test = events.operation("Task :test")
+        events.tests[0].descriptor.parent == test.descriptor
+        events.tests.tail().every { it.descriptor.parent instanceof TestOperationDescriptor }
+
+        when: 'listening to test progress events and no task listener is attached'
+        events.clear()
+        withConnection {
+            ProjectConnection connection ->
+                connection.newBuild().withArguments('--rerun-tasks').forTasks('test').addProgressListener(events, EnumSet.of(OperationType.TEST)).run()
+        }
+
+        then: 'the parent of the root test progress event is null'
+        events.tests[0].descriptor.parent == null
+        events.tests.tail().every { it.descriptor.parent instanceof TestOperationDescriptor }
+
+        when: 'listening to test progress events and build operation listener is attached'
+        events.clear()
+        withConnection {
+            ProjectConnection connection ->
+                connection.newBuild().withArguments('--rerun-tasks').forTasks('test').addProgressListener(events, EnumSet.of(OperationType.GENERIC, OperationType.TEST, OperationType.ROOT)).run()
         }
 
         then: 'the parent of the root test progress event is containing generic operation'

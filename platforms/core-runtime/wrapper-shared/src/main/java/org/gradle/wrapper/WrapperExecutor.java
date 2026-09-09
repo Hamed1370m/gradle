@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.gradle.wrapper;
 
 import org.gradle.util.internal.WrapperDistributionUrlConverter;
 
+import org.jspecify.annotations.Nullable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -33,12 +34,19 @@ public class WrapperExecutor {
     public static final String ZIP_STORE_PATH_PROPERTY = "zipStorePath";
     public static final String NETWORK_TIMEOUT_PROPERTY = "networkTimeout";
     public static final String VALIDATE_DISTRIBUTION_URL = "validateDistributionUrl";
+    public static final String RETRIES_PROPERTY = "retries";
+    public static final String RETRY_BACK_OFF_PROPERTY = "retryBackOffMs";
+
     private final Properties properties;
     private final File propertiesFile;
     private final WrapperConfiguration config = new WrapperConfiguration();
 
+    public static File wrapperPropertiesForProjectDirectory(File projectDir) {
+        return new File(projectDir, "gradle/wrapper/gradle-wrapper.properties");
+    }
+
     public static WrapperExecutor forProjectDirectory(File projectDir) {
-        return new WrapperExecutor(new File(projectDir, "gradle/wrapper/gradle-wrapper.properties"), new Properties());
+        return new WrapperExecutor(wrapperPropertiesForProjectDirectory(projectDir), new Properties());
     }
 
     public static WrapperExecutor forWrapperPropertiesFile(File propertiesFile) {
@@ -62,6 +70,8 @@ public class WrapperExecutor {
                 config.setZipPath(getProperty(ZIP_STORE_PATH_PROPERTY, config.getZipPath()));
                 config.setNetworkTimeout(getProperty(NETWORK_TIMEOUT_PROPERTY, config.getNetworkTimeout()));
                 config.setValidateDistributionUrl(getProperty(VALIDATE_DISTRIBUTION_URL, config.getValidateDistributionUrl()));
+                config.setRetries(getProperty(RETRIES_PROPERTY, config.getRetries()));
+                config.setRetryBackOffMs(getProperty(RETRY_BACK_OFF_PROPERTY, config.getRetryBackOffMs()));
             } catch (Exception e) {
                 throw new RuntimeException(String.format("Could not load wrapper properties from '%s'.", propertiesFile), e);
             }
@@ -87,6 +97,7 @@ public class WrapperExecutor {
     /**
      * Returns the distribution which this wrapper will use. Returns null if no wrapper meta-data was found in the specified project directory.
      */
+    @Nullable
     public URI getDistribution() {
         return config.getDistribution();
     }
@@ -119,7 +130,9 @@ public class WrapperExecutor {
         return Boolean.parseBoolean(getProperty(propertyName, String.valueOf(defaultValue)));
     }
 
-    private String getProperty(String propertyName, String defaultValue, boolean required) {
+    // Returns null only in the !required branch; callers passing required=true rely on a non-null result.
+    @SuppressWarnings("NullAway")
+    private String getProperty(String propertyName, @Nullable String defaultValue, boolean required) {
         String value = properties.getProperty(propertyName);
         if (value != null) {
             return value;

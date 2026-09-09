@@ -19,9 +19,9 @@ package org.gradle.internal.cc.impl
 import org.gradle.initialization.StartParameterBuildOptions.ConfigurationCacheMaxProblemsOption
 import org.gradle.initialization.StartParameterBuildOptions.ConfigurationCacheOption
 import org.gradle.initialization.StartParameterBuildOptions.ConfigurationCacheParallelOption
-import org.gradle.integtests.fixtures.DefaultTestExecutionResult
+import org.gradle.initialization.StartParameterBuildOptions.ConfigurationCacheReadOnlyOption
+import org.gradle.integtests.fixtures.problems.ReceivedProblem
 import org.gradle.internal.cc.impl.fixtures.AbstractConfigurationCacheOptInFeatureIntegrationTest
-import org.intellij.lang.annotations.Language
 
 abstract class AbstractConfigurationCacheIntegrationTest extends AbstractConfigurationCacheOptInFeatureIntegrationTest {
 
@@ -33,7 +33,8 @@ abstract class AbstractConfigurationCacheIntegrationTest extends AbstractConfigu
     static final String DISABLE_GRADLE_PROP = "${ConfigurationCacheOption.PROPERTY_NAME}=false"
     static final String DISABLE_SYS_PROP = "-D$DISABLE_GRADLE_PROP"
     // Should be provided if a link to the report is expected even if no errors were found
-    static final String LOG_REPORT_LINK_AS_WARNING = "-Dorg.gradle.configuration-cache.internal.report-link-as-warning=true"
+    static final String LOG_REPORT_LINK_AS_WARNING = "-Dorg.gradle.internal.configuration-cache.report-link-as-warning=true"
+    static final String ENABLE_READ_ONLY_CACHE = "-D${ConfigurationCacheReadOnlyOption.PROPERTY_NAME}=true"
 
     static final String MAX_PROBLEMS_GRADLE_PROP = "${ConfigurationCacheMaxProblemsOption.PROPERTY_NAME}"
     static final String MAX_PROBLEMS_SYS_PROP = "-D$MAX_PROBLEMS_GRADLE_PROP"
@@ -42,33 +43,22 @@ abstract class AbstractConfigurationCacheIntegrationTest extends AbstractConfigu
 
     private static final String[] CLI_OPTIONS = [ENABLE_CLI_OPT, LOG_REPORT_LINK_AS_WARNING, ENABLE_PARALLEL_CACHE, "--no-problems-report"]
 
-    void buildKotlinFile(@Language(value = "kotlin") String script) {
-        buildKotlinFile << script
-    }
-
     void configurationCacheRun(String... tasks) {
         run(*CLI_OPTIONS, *tasks)
     }
 
     void configurationCacheRunLenient(String... tasks) {
         run(WARN_PROBLEMS_CLI_OPT, *CLI_OPTIONS, *tasks)
+        if (isProblemsApiCheckEnabled()) {
+            consumeWarnModeProblem()
+        }
+    }
+
+    protected ReceivedProblem consumeWarnModeProblem() {
+        return findReceivedProblem { it.fqid.endsWith(":configuration-cache-warn-mode") }
     }
 
     void configurationCacheFails(String... tasks) {
         fails(*CLI_OPTIONS, *tasks)
-    }
-
-    protected void assertTestsExecuted(String testClass, String... testNames) {
-        new DefaultTestExecutionResult(testDirectory)
-            .testClass(testClass)
-            .assertTestsExecuted(testNames)
-    }
-
-    protected static String removeVfsLogOutput(String normalizedOutput) {
-        normalizedOutput
-            .replaceAll(/Received \d+ file system events .*\n/, '')
-            .replaceAll(/Spent \d+ ms processing file system events since last build\n/, '')
-            .replaceAll(/Spent \d+ ms registering watches for file system events\n/, '')
-            .replaceAll(/Virtual file system .*\n/, '')
     }
 }

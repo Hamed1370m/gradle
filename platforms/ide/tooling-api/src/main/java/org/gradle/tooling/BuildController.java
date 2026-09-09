@@ -20,8 +20,8 @@ import org.gradle.api.Action;
 import org.gradle.api.Incubating;
 import org.gradle.tooling.model.Model;
 import org.gradle.tooling.model.gradle.GradleBuild;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Collection;
 import java.util.List;
 
@@ -68,6 +68,7 @@ public interface BuildController {
      * @param modelType The model type.
      * @param <T> The model type.
      * @return The model, or null if not present.
+     * @since 1.8
      */
     @Nullable
     <T> T findModel(Class<T> modelType);
@@ -77,6 +78,7 @@ public interface BuildController {
      * This is equivalent to calling {@code #getModel(GradleBuild.class)}.
      *
      * @return The model.
+     * @since 1.8
      */
     GradleBuild getBuildModel();
 
@@ -99,6 +101,7 @@ public interface BuildController {
      * @param <T> The model type.
      * @return The model.
      * @throws UnknownModelException When the target project does not support the requested model.
+     * @since 1.8
      */
     <T> T getModel(Model target, Class<T> modelType) throws UnknownModelException;
 
@@ -110,6 +113,7 @@ public interface BuildController {
      * @param modelType The model type.
      * @param <T> The model type.
      * @return The model, or null if not present.
+     * @since 1.8
      */
     @Nullable
     <T> T findModel(Model target, Class<T> modelType);
@@ -221,8 +225,80 @@ public interface BuildController {
      *
      * <p>The build action will fail if the client application did not register a listener to receive the streamed objects.</p>
      *
-     * @since 8.6
+     * @since 8.11
+     */
+    void send(Object value);
+
+    /**
+     * Fetches a snapshot of the model of the given type for the default project using resilient model fetching.
+     * <p>See {@link #fetch(Model, Class, Class, Action)} for more details about resilient fetching.</p>
+     *
+     * @param modelType The model type.
+     * @param <M> The model type.
+     * @return The fetch result.
+     * @since 9.3.0
      */
     @Incubating
-    void send(Object value);
+    <M> FetchModelResult<M> fetch(Class<M> modelType);
+
+    /**
+     * Fetches a snapshot of the model of the given type for the given element using resilient model fetching.
+     * <p>See {@link #fetch(Model, Class, Class, Action)} for more details about resilient fetching.</p>
+     *
+     * @param target The target element, usually a project.
+     * @param modelType The model type.
+     * @param <M> The model type.
+     * @return The fetch result.
+     * @since 9.3.0
+     */
+    @Incubating
+    <M> FetchModelResult<M> fetch(Model target, Class<M> modelType);
+
+    /**
+     * Fetches a snapshot of the model of the given type using the given parameter using resilient model fetching.
+     * <p>See {@link #fetch(Model, Class, Class, Action)} for more details about resilient fetching.</p>
+     *
+     * @param modelType The model type.
+     * @param <M> The model type.
+     * @param parameterType The parameter type.
+     * @param <P> The parameter type.
+     * @param parameterInitializer Action to configure the parameter
+     * @return The fetch result.
+     * @since 9.3.0
+     */
+    @Incubating
+    <M, P> FetchModelResult<M> fetch(
+        Class<M> modelType,
+        @Nullable Class<P> parameterType,
+        @Nullable Action<? super P> parameterInitializer
+    );
+
+
+    /**
+     * Fetches a snapshot of the model of the given type for the given element using the given parameter with resilient model fetching.
+     *
+     * <p>Unlike {@link #getModel(Model, Class, Class, Action)}, this method uses resilient model fetching which means that if the model
+     * cannot be fetched due to an error, the method will not throw an exception. Instead, it returns a {@link FetchModelResult} that contains
+     * either the successfully fetched model or the failure information.</p>
+     *
+     * <p>This is particularly useful when you want to fetch multiple models and continue processing even if some models fail to load,
+     * or when you need detailed information about why a model fetch failed.</p>
+     *
+     * @param target The target element, usually a project. Pass {@code null} to target the default project.
+     * @param modelType The model type to fetch.
+     * @param parameterType The parameter type used to configure the model fetch. Pass {@code null} if no parameter is needed.
+     * @param parameterInitializer Action to configure the parameter. Pass {@code null} if no parameter initialization is needed.
+     * @param <M> The model type.
+     * @param <P> The parameter type.
+     * @return A {@link FetchModelResult} containing the target, the fetched model (if successful), and any failures that occurred.
+     *         Check {@link FetchModelResult#getFailures()} to determine if the fetch was successful.
+     * @since 9.3.0
+     */
+    @Incubating
+    <M, P> FetchModelResult<M> fetch(
+        @Nullable Model target,
+        Class<M> modelType,
+        @Nullable Class<P> parameterType,
+        @Nullable Action<? super P> parameterInitializer
+    );
 }

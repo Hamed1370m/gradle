@@ -16,14 +16,13 @@
 
 package org.gradle.internal.component.model;
 
-import org.gradle.api.artifacts.capability.CapabilitySelector;
+import com.google.common.collect.ImmutableList;
 import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.internal.attributes.ImmutableAttributes;
 import org.gradle.api.internal.attributes.immutable.ImmutableAttributesSchema;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.List;
-import java.util.Set;
 
 /**
  * A {@link DependencyMetadata} implementation which delegates all method calls to a provided {@code delegate}.
@@ -42,17 +41,22 @@ public abstract class DelegatingDependencyMetadata implements DependencyMetadata
     }
 
     @Override
-    public GraphVariantSelectionResult selectVariants(GraphVariantSelector variantSelector, ImmutableAttributes consumerAttributes, ComponentGraphResolveState targetComponentState, ImmutableAttributesSchema consumerSchema, Set<CapabilitySelector> explicitRequestedCapabilities) {
-        return delegate.selectVariants(variantSelector, consumerAttributes, targetComponentState, consumerSchema, explicitRequestedCapabilities);
+    public @Nullable List<? extends VariantGraphResolveState> overrideVariantSelection(GraphVariantSelector variantSelector, ImmutableAttributes consumerAttributes, ComponentGraphResolveState targetComponentState, ImmutableAttributesSchema consumerSchema) {
+        return delegate.overrideVariantSelection(variantSelector, consumerAttributes, targetComponentState, consumerSchema);
     }
 
     @Override
-    public List<ExcludeMetadata> getExcludes() {
+    public List<? extends VariantGraphResolveState> selectLegacyVariants(GraphVariantSelector variantSelector, ImmutableAttributes consumerAttributes, ComponentGraphResolveState targetComponentState, ImmutableAttributesSchema consumerSchema) {
+        return delegate.selectLegacyVariants(variantSelector, consumerAttributes, targetComponentState, consumerSchema);
+    }
+
+    @Override
+    public ImmutableList<ExcludeMetadata> getExcludes() {
         return delegate.getExcludes();
     }
 
     @Override
-    public List<IvyArtifactName> getArtifacts() {
+    public ImmutableList<IvyArtifactName> getArtifacts() {
         return delegate.getArtifacts();
     }
 
@@ -62,7 +66,7 @@ public abstract class DelegatingDependencyMetadata implements DependencyMetadata
     }
 
     @Override
-    public DependencyMetadata withTargetAndArtifacts(ComponentSelector target, List<IvyArtifactName> artifacts) {
+    public DependencyMetadata withTargetAndArtifacts(ComponentSelector target, ImmutableList<IvyArtifactName> artifacts) {
         return delegate.withTargetAndArtifacts(target, artifacts);
     }
 
@@ -86,9 +90,8 @@ public abstract class DelegatingDependencyMetadata implements DependencyMetadata
         return delegate.isEndorsingStrictVersions();
     }
 
-    @Nullable
     @Override
-    public String getReason() {
+    public @Nullable String getReason() {
         return delegate.getReason();
     }
 

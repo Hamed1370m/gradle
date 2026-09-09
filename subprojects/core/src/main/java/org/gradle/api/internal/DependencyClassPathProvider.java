@@ -17,6 +17,7 @@
 package org.gradle.api.internal;
 
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import org.gradle.api.internal.classpath.Module;
 import org.gradle.api.internal.classpath.ModuleRegistry;
 import org.gradle.api.internal.classpath.PluginModuleRegistry;
@@ -32,7 +33,10 @@ import static org.gradle.api.internal.artifacts.dsl.dependencies.DependencyFacto
 import static org.gradle.api.internal.artifacts.dsl.dependencies.DependencyFactoryInternal.ClassPathNotation.LOCAL_GROOVY;
 
 public class DependencyClassPathProvider implements ClassPathProvider {
-    private static final List<String> MODULES = Arrays.asList(
+    /**
+     * List of Gradle API jar entry points. These modules and their dependencies are available for ProjectBuilder.
+     */
+    private static final List<String> GRADLE_API_ENTRY_POINTS = Arrays.asList(
         "gradle-worker-main",
         "gradle-launcher",
         "gradle-workers",
@@ -40,7 +44,21 @@ public class DependencyClassPathProvider implements ClassPathProvider {
         "gradle-plugin-use",
         "gradle-tooling-api-builders",
         "gradle-configuration-cache",
+        "gradle-isolated-action-services",
         "gradle-unit-test-fixtures"
+    );
+
+    public static final Set<String> GROOVY_MODULES = ImmutableSet.of(
+        "groovy",
+        "groovy-ant",
+        "groovy-astbuilder",
+        "groovy-datetime",
+        "groovy-dateutil",
+        "groovy-groovydoc",
+        "groovy-json",
+        "groovy-nio",
+        "groovy-templates",
+        "groovy-xml"
     );
 
     private final ModuleRegistry moduleRegistry;
@@ -82,13 +100,9 @@ public class DependencyClassPathProvider implements ClassPathProvider {
         // Currently, this leaks additional dependencies that may cause unexpected issues.
         // This method is involved in generating the gradleApi() Jar which is used in a real Gradle run.
         // See: `org.gradle.api.internal.notations.DependencyClassPathNotationConverter`
-        ClassPath classpath = ClassPath.EMPTY;
-        for (String moduleName : MODULES) {
-            classpath = classpath.plus(moduleRegistry.getModule(moduleName).getAllRequiredModulesClasspath());
-        }
-        for (Module pluginModule : pluginModuleRegistry.getApiModules()) {
-            classpath = classpath.plus(pluginModule.getClasspath());
-        }
+        Iterable<Module> apiEntryModules = Iterables.transform(GRADLE_API_ENTRY_POINTS, moduleRegistry::getModule);
+        Iterable<Module> rootModules = Iterables.concat(apiEntryModules, pluginModuleRegistry.getApiModules());
+        ClassPath classpath = moduleRegistry.getRuntimeClasspath(rootModules);
         return classpath.removeIf(f ->
             // Remove dependencies that are not part of the API and cause trouble when they leak.
             // 'kotlin-sam-with-receiver-compiler-plugin' clashes with 'kotlin-sam-with-receiver' causing a 'SamWithReceiverComponentRegistrar is not compatible with this version of compiler' exception
@@ -97,32 +111,19 @@ public class DependencyClassPathProvider implements ClassPathProvider {
     }
 
     private ClassPath gradleTestKit() {
-        return moduleRegistry.getModule("gradle-test-kit").getClasspath();
+        return moduleRegistry.getRuntimeClasspath("gradle-test-kit");
     }
 
     private ClassPath localGroovy() {
-        Set<String> groovyModules = ImmutableSet.of(
-            "groovy-ant",
-            "groovy-astbuilder",
-            "groovy-console",
-            "groovy-datetime",
-            "groovy-dateutil",
-            "groovy-groovydoc",
-            "groovy-json",
-            "groovy-nio",
-            "groovy-sql",
-            "groovy-templates",
-            "groovy-test",
-            "groovy-xml",
-            "javaparser-core");
-        ClassPath groovy = moduleRegistry.getExternalModule("groovy").getClasspath();
-        for (String groovyModule : groovyModules) {
-            groovy = groovy.plus(moduleRegistry.getExternalModule(groovyModule).getClasspath());
+        ClassPath groovy = ClassPath.EMPTY;
+        for (String groovyModule : GROOVY_MODULES) {
+            groovy = groovy.plus(moduleRegistry.getModule(groovyModule).getImplementationClasspath());
         }
+        groovy = groovy.plus(moduleRegistry.getModule("javaparser-core").getImplementationClasspath());
         return groovy;
     }
 
     private ClassPath gradleKotlinDsl() {
-        return moduleRegistry.getModule("gradle-kotlin-dsl").getAllRequiredModulesClasspath();
+        return moduleRegistry.getRuntimeClasspath("gradle-kotlin-dsl");
     }
 }

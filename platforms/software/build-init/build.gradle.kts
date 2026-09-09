@@ -1,43 +1,34 @@
 plugins {
     id("gradlebuild.distribution.api-java")
     id("gradlebuild.update-init-template-versions")
-    id("gradlebuild.instrumented-java-project")
 }
 
 description = """This project contains the Build Init plugin, which is automatically applied to the root project of every build, and provides the init and wrapper tasks.
 
 This project should NOT be used as an implementation dependency anywhere (except when building a Gradle distribution)."""
 
-errorprone {
-    disabledChecks.addAll(
-        "DefaultCharset", // 6 occurrences
-        "GetClassOnEnum", // 1 occurrences
-        "HidingField", // 2 occurrences
-        "ImmutableEnumChecker", // 2 occurrences
-        "InconsistentCapitalization", // 1 occurrences
-        "ReferenceEquality", // 1 occurrences
-        "UnusedMethod", // 1 occurrences
-    )
-}
-
 dependencies {
+    api(libs.guava)
     api(libs.inject)
-    api(libs.jsr305)
+    api(libs.jspecify)
     api(libs.maven3Settings)
 
-    api(projects.stdlibJavaExtensions)
-    api(projects.serviceProvider)
     api(projects.baseServices)
+    api(projects.buildInitSpecs)
     api(projects.core)
     api(projects.coreApi)
+    api(projects.daemonServerWorker)
+    api(projects.daemonServices)
     api(projects.dependencyManagement)
     api(projects.fileCollections)
     api(projects.logging)
     api(projects.platformJvm)
+    api(projects.serviceProvider)
+    api(projects.stdlibJavaExtensions)
     api(projects.jvmServices)
     api(projects.workers)
-    api(projects.daemonServices)
 
+    implementation(projects.buildInitSpecsApi)
     implementation(projects.fileOperations)
     implementation(projects.loggingApi)
     implementation(projects.platformNative)
@@ -46,12 +37,12 @@ dependencies {
     }
     implementation(projects.pluginsJvmTestSuite)
     implementation(projects.serviceLookup)
-    implementation(projects.wrapperMain)
+    implementation(projects.startParameter)
     implementation(projects.wrapperShared)
+    implementation(projects.resources)
 
     implementation(libs.groovy)
     implementation(libs.groovyTemplates)
-    implementation(libs.guava)
     implementation(libs.gson)
     implementation(libs.commonsLang)
     implementation(libs.maven3SettingsBuilder)
@@ -61,32 +52,25 @@ dependencies {
 
     // We need to handle the Maven dependencies specially otherwise it breaks some cross version tests
     // TODO Figure out why and fix it - Move the two deps below to implementation and api and run ProjectTheExtensionCrossVersionSpec
-    compileOnly(libs.eclipseSisuPlexus) {
+    compileOnly(providedLibs.eclipseSisuPlexus) {
         exclude(module = "cdi-api") // To respect the Maven exclusion
     }
-    compileOnly(libs.maven3Compat)
+    compileOnly(providedLibs.maven3Compat)
 
     // 3 dependencies below are recommended as implementation but doing so adds them to the distribution
     // TODO Check why we reference them and if so, why they don't need to be in the distribution
-    compileOnly(libs.maven3Artifact)
-    compileOnly(libs.mavenResolverApi)
-    compileOnly(libs.plexusClassworlds)
+    compileOnly(providedLibs.maven3Artifact)
+    compileOnly(providedLibs.mavenResolverApi)
+    compileOnly(providedLibs.plexusClassworlds)
 
-    compileOnly(libs.maven3Core)
-    compileOnly(libs.maven3PluginApi)
+    compileOnly(providedLibs.maven3Core)
+    compileOnly(providedLibs.maven3PluginApi)
 
     compileOnly(projects.platformBase)
 
-    testRuntimeOnly(libs.maven3Compat)
-    testRuntimeOnly(libs.maven3PluginApi)
-
-    testImplementation(projects.cli)
-    testImplementation(projects.baseServicesGroovy)
-    testImplementation(projects.native)
-    testImplementation(projects.snapshots)
-    testImplementation(projects.processServices)
-    testImplementation(testFixtures(projects.core))
-    testImplementation(testFixtures(projects.platformNative))
+    runtimeOnly(projects.wrapperMain) {
+        because("WrapperGenerator uses the /gradle-wrapper.jar resource")
+    }
 
     testFixturesImplementation(projects.baseServices)
     testFixturesImplementation(projects.platformBase)
@@ -97,19 +81,40 @@ dependencies {
     testFixturesImplementation(projects.testSuitesBase)
     testFixturesImplementation(projects.pluginsJvmTestSuite)
 
-    integTestImplementation(projects.native)
-    integTestImplementation(libs.jetty)
 
-    integTestRuntimeOnly(libs.maven3Compat)
+    testImplementation(projects.baseServicesGroovy)
+    testImplementation(projects.cli)
+    testImplementation(projects.internalIntegTesting)
+    testImplementation(projects.native)
+    testImplementation(projects.snapshots)
+    testImplementation(projects.processServices)
+    testImplementation(projects.wrapperMain)
+    testImplementation(testFixtures(projects.core))
+    testImplementation(testFixtures(projects.platformNative))
+    testImplementation(testFixtures(projects.testingBase))
 
-    testRuntimeOnly(projects.distributionsJvm) {
+    testRuntimeOnly(providedLibs.maven3Compat)
+    testRuntimeOnly(providedLibs.maven3PluginApi)
+
+    testRuntimeOnly(projects.distributionsFull) {
         because("ProjectBuilder tests load services from a Gradle distribution.  Toolchain usage requires JVM distribution.")
     }
+
+    integTestImplementation(projects.native)
+
+    integTestRuntimeOnly(providedLibs.maven3Compat)
+
     integTestDistributionRuntimeOnly(projects.distributionsFull)
 }
 
-packageCycles {
-    excludePatterns.add("org/gradle/api/tasks/wrapper/internal/*")
+gradleModule {
+    requiredRuntimes {
+        daemon = true
+    }
+    computedRuntimes {
+        // Auto-generated by `:checkTargetRuntimes --fix`
+        daemon = true
+    }
 }
 
 integTest.testJvmXmx = "1g"

@@ -35,7 +35,7 @@ import java.util.concurrent.Callable;
 import static org.gradle.internal.serialization.Transient.varOf;
 
 /**
- * Base class for tasks that publish a {@link org.gradle.api.publish.maven.MavenPublication}.
+ * Base class for tasks that publish a {@link MavenPublication}.
  *
  * @since 2.4
  */
@@ -44,12 +44,18 @@ public abstract class AbstractPublishToMaven extends DefaultTask {
 
     private final Transient.Var<MavenPublicationInternal> publication = varOf();
 
+    /**
+     * Creates a new {@code AbstractPublishToMaven}.
+     *
+     * @since 2.4
+     */
+    @SuppressWarnings("this-escape")
     public AbstractPublishToMaven() {
         // Allow the publication to participate in incremental build
         getInputs().files((Callable<FileCollection>) () -> {
-            MavenPublicationInternal publicationInternal = getPublicationInternal();
-            return publicationInternal == null ? null : publicationInternal.getPublishableArtifacts().getFiles();
-        })
+                MavenPublicationInternal publicationInternal = getPublicationInternal();
+                return publicationInternal == null ? null : publicationInternal.getPublishableArtifacts().getFiles();
+            })
             .withPropertyName("publication.publishableFiles")
             .withPathSensitivity(PathSensitivity.NAME_ONLY);
 
@@ -64,6 +70,7 @@ public abstract class AbstractPublishToMaven extends DefaultTask {
      * The publication to be published.
      *
      * @return The publication to be published
+     * @since 2.4
      */
     @Internal
     @ToBeReplacedByLazyProperty
@@ -75,11 +82,17 @@ public abstract class AbstractPublishToMaven extends DefaultTask {
      * Sets the publication to be published.
      *
      * @param publication The publication to be published
+     * @since 2.4
      */
     public void setPublication(MavenPublication publication) {
         this.publication.set(toPublicationInternal(publication));
     }
 
+    /**
+     * Returns the publication internal.
+     *
+     * @since 2.4
+     */
     @Internal
     protected MavenPublicationInternal getPublicationInternal() {
         return toPublicationInternal(getPublication());
@@ -102,12 +115,8 @@ public abstract class AbstractPublishToMaven extends DefaultTask {
     }
 
     @Inject
-    protected MavenPublishers getMavenPublishers() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract MavenPublishers getMavenPublishers();
 
     @Inject
-    protected MavenDuplicatePublicationTracker getDuplicatePublicationTracker() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract MavenDuplicatePublicationTracker getDuplicatePublicationTracker();
 }

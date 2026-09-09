@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Interner;
 import com.google.common.collect.Iterables;
+import org.gradle.internal.UncheckedException;
 import org.gradle.internal.file.FileMetadata;
 import org.gradle.internal.file.FileMetadata.AccessType;
 import org.gradle.internal.file.FileType;
@@ -34,9 +35,10 @@ import org.gradle.internal.snapshot.MissingFileSnapshot;
 import org.gradle.internal.snapshot.RegularFileSnapshot;
 import org.gradle.internal.snapshot.RelativePathTracker;
 import org.gradle.internal.snapshot.SnapshottingFilter;
+import org.jspecify.annotations.Nullable;
 
 import javax.annotation.CheckReturnValue;
-import javax.annotation.Nullable;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -115,7 +117,7 @@ public class DirectorySnapshotter {
      */
     public FileSystemLocationSnapshot snapshot(
         String absolutePath,
-        @Nullable SnapshottingFilter.DirectoryWalkerPredicate predicate,
+        SnapshottingFilter.@Nullable DirectoryWalkerPredicate predicate,
         Map<String, ? extends FileSystemLocationSnapshot> previouslyKnownSnapshots,
         Consumer<FileSystemLocationSnapshot> unfilteredSnapshotRecorder
     ) {
@@ -125,6 +127,11 @@ public class DirectorySnapshotter {
             PathVisitor visitor = new PathVisitor(predicate, hasBeenFiltered, hasher, stringInterner, defaultExcludes, collector, EMPTY_SYMBOLIC_LINK_MAPPING, previouslyKnownSnapshots, unfilteredSnapshotRecorder);
             Files.walkFileTree(rootPath, DONT_FOLLOW_SYMLINKS, Integer.MAX_VALUE, visitor);
             FileSystemLocationSnapshot result = visitor.getResult();
+            if (result == null) {
+                // The root is always visited (PathVisitor.shouldVisitDirectory() never filters it),
+                // so a completed walk of an existing directory always produces a result.
+                throw new IllegalStateException(String.format("Snapshotting '%s' did not produce a result. It must be an existing directory.", absolutePath));
+            }
             if (!hasBeenFiltered.get()) {
                 unfilteredSnapshotRecorder.accept(result);
             }
@@ -256,7 +263,7 @@ public class DirectorySnapshotter {
     private static class PathVisitor extends DirectorySnapshotterStatistics.CollectingFileVisitor {
         private final RelativePathTracker pathTracker = new RelativePathTracker();
         private final FilteredTrackingMerkleDirectorySnapshotBuilder builder;
-        private final SnapshottingFilter.DirectoryWalkerPredicate predicate;
+        private final SnapshottingFilter.@Nullable DirectoryWalkerPredicate predicate;
         private final AtomicBoolean hasBeenFiltered;
         private final FileHasher hasher;
         private final Interner<String> stringInterner;
@@ -268,7 +275,7 @@ public class DirectorySnapshotter {
         private final Consumer<FileSystemLocationSnapshot> unfilteredSnapshotRecorder;
 
         public PathVisitor(
-            @Nullable SnapshottingFilter.DirectoryWalkerPredicate predicate,
+            SnapshottingFilter.@Nullable DirectoryWalkerPredicate predicate,
             AtomicBoolean hasBeenFiltered,
             FileHasher hasher,
             Interner<String> stringInterner,
@@ -369,10 +376,10 @@ public class DirectorySnapshotter {
                             }
                         }
                     } else {
-                        visitResolvedFile(file, targetAttributes, AccessType.VIA_SYMLINK);
+                        visitResolvedFile(file, internedFileName, targetAttributes, AccessType.VIA_SYMLINK);
                     }
                 } else {
-                    visitResolvedFile(file, attrs, AccessType.DIRECT);
+                    visitResolvedFile(file, internedFileName, attrs, AccessType.DIRECT);
                 }
                 return FileVisitResult.CONTINUE;
             } finally {
@@ -410,8 +417,7 @@ public class DirectorySnapshotter {
             return parentDirectories.contains(targetDirString);
         }
 
-        private void visitResolvedFile(Path file, BasicFileAttributes targetAttributes, AccessType accessType) {
-            String internedName = intern(file.getFileName().toString());
+        private void visitResolvedFile(Path file, String internedName, BasicFileAttributes targetAttributes, AccessType accessType) {
             if (shouldVisitFile(file, internedName)) {
                 builder.visitLeafElement(snapshotFile(file, internedName, targetAttributes, accessType));
             }
@@ -447,7 +453,7 @@ public class DirectorySnapshotter {
             if (attrs.isSymbolicLink()) {
                 return new MissingFileSnapshot(internedRemappedAbsoluteFilePath, internedName, accessType);
             } else if (!attrs.isRegularFile()) {
-                throw new UncheckedIOException(new IOException(String.format("Cannot snapshot %s: not a regular file", internedRemappedAbsoluteFilePath)));
+                throw UncheckedException.throwAsUncheckedException(new IOException(String.format("Cannot snapshot %s: not a regular file", internedRemappedAbsoluteFilePath)));
             }
             long lastModified = attrs.lastModifiedTime().toMillis();
             long fileLength = attrs.size();
@@ -470,7 +476,7 @@ public class DirectorySnapshotter {
                 if (isNotFileSystemLoopException(exc)) {
                     boolean isDirectory = Files.isDirectory(file);
                     if (shouldVisit(file, internedFileName, isDirectory)) {
-                        throw new UncheckedIOException(exc);
+                        throw UncheckedException.throwAsUncheckedException(exc);
                     }
                 }
                 return FileVisitResult.CONTINUE;
@@ -512,11 +518,15 @@ public class DirectorySnapshotter {
             return allowed;
         }
 
-        private String getInternedFileName(Path dir) {
-            Path fileName = dir.getFileName();
-            return fileName == null ? "" : intern(fileName.toString());
+        private String getInternedFileName(Path path) {
+            // Path also has getFileName() but it creates additional allocations,
+            // and since this is on a hot path we optimized it
+            String absolutePath = path.toString();
+            int lastSep = absolutePath.lastIndexOf(File.separatorChar);
+            return intern(lastSep < 0 ? absolutePath : absolutePath.substring(lastSep + 1));
         }
 
+        @Nullable
         public FileSystemLocationSnapshot getResult() {
             return builder.getResult();
         }

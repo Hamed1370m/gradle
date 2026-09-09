@@ -20,26 +20,27 @@ import groovy.transform.stc.ClosureParams
 import groovy.transform.stc.FirstParam
 import org.gradle.configuration.ApplyScriptPluginBuildOperationType
 import org.gradle.configuration.project.ConfigureProjectBuildOperationType
-import org.gradle.internal.cc.impl.fixtures.AbstractConfigurationCacheOptInFeatureIntegrationTest
 import org.gradle.integtests.fixtures.BuildOperationsFixture
 import org.gradle.integtests.fixtures.configurationcache.ConfigurationCacheBuildOperationsFixture
 import org.gradle.integtests.fixtures.configurationcache.ConfigurationCacheFixture
 import org.gradle.integtests.fixtures.configurationcache.ConfigurationCacheFixture.HasBuildActions
 import org.gradle.integtests.fixtures.configurationcache.ConfigurationCacheFixture.HasInvalidationReason
+import org.gradle.internal.cc.impl.fixtures.AbstractConfigurationCacheOptInFeatureIntegrationTest
+import org.gradle.internal.cc.impl.isolated.AbstractIsolatedProjectsIntegrationTest.IsolatedProjectsMode
 import org.gradle.internal.operations.trace.BuildOperationRecord
 import org.gradle.tooling.provider.model.internal.QueryToolingModelBuildOperationType
 
 class IsolatedProjectsFixture {
     private final AbstractConfigurationCacheOptInFeatureIntegrationTest spec
-    private final ConfigurationCacheFixture fixture
+    private final ConfigurationCacheFixture configurationCache
     private final BuildOperationsFixture buildOperations
     private final ConfigurationCacheBuildOperationsFixture configurationCacheBuildOperations
 
     IsolatedProjectsFixture(AbstractConfigurationCacheOptInFeatureIntegrationTest spec) {
         this.spec = spec
-        this.fixture = new ConfigurationCacheFixture(spec)
-        this.buildOperations = fixture.buildOperations
-        this.configurationCacheBuildOperations = fixture.configurationCacheBuildOperations
+        this.configurationCache = new ConfigurationCacheFixture(spec)
+        this.buildOperations = configurationCache.buildOperations
+        this.configurationCacheBuildOperations = configurationCache.configurationCacheBuildOperations
     }
 
     /**
@@ -53,7 +54,27 @@ class IsolatedProjectsFixture {
         closure.delegate = details
         closure()
 
-        fixture.assertStateStored(details)
+        configurationCache.assertStateStored(details)
+        configurationCache.assertHasNoProblems()
+
+        assertHasWarningThatIncubatingFeatureUsed()
+        assertProjectsConfigured(details)
+        assertModelsQueried(details)
+    }
+
+    /**
+     * Asserts that the cache entry was written with no problems.
+     *
+     * Also asserts that the expected set of projects is configured, the expected models are queried
+     * and the appropriate console logging, reports and build operations are generated.
+     */
+    void assertModelStored(@DelegatesTo(StoreDetails) Closure closure) {
+        def details = forModels(new StoreDetails())
+        closure.delegate = details
+        closure()
+
+        configurationCache.assertStateStored(details)
+        configurationCache.assertHasNoProblems()
 
         assertHasWarningThatIncubatingFeatureUsed()
         assertProjectsConfigured(details)
@@ -66,12 +87,12 @@ class IsolatedProjectsFixture {
      * Also asserts that the expected set of projects is configured, the expected models are queried
      * and the appropriate console logging, reports and build operations are generated.
      */
-    void assertStateStoredWithProblems(@DelegatesTo(StateStoreWithProblemsDetails) Closure closure) {
-        def details = new StateStoreWithProblemsDetails()
+    void assertModelStoredWithProblems(@DelegatesTo(StateStoreWithProblemsDetails) Closure closure) {
+        def details = forModels(new StateStoreWithProblemsDetails())
         closure.delegate = details
         closure()
 
-        fixture.assertStateStoredWithProblems(details, details)
+        configurationCache.assertStateStoredWithProblems(details, details)
 
         assertHasWarningThatIncubatingFeatureUsed()
         assertProjectsConfigured(details)
@@ -86,10 +107,68 @@ class IsolatedProjectsFixture {
      */
     void assertStateStoredAndDiscarded(@DelegatesTo(StateDiscardedWithProblemsDetails) Closure closure) {
         def details = new StateDiscardedWithProblemsDetails()
+        details.loadsAfterStore = false // in most cases IP-problems are registered before Store, so the entry is discarded before Load
         closure.delegate = details
         closure()
 
-        fixture.assertStateStoredAndDiscarded(details, details)
+        configurationCache.assertStateStoredAndDiscarded(details, details)
+
+        assertHasWarningThatIncubatingFeatureUsed()
+        assertProjectsConfigured(details)
+        assertModelsQueried(details)
+    }
+
+    /**
+     * Asserts an IP-violation outcome for the given {@code mode}.
+     *
+     * <p>{@link IsolatedProjectsMode#DIAGNOSTICS} forwards to {@link #assertStateStoredAndDiscarded}.
+     *
+     * <p>{@link IsolatedProjectsMode#FAIL_FAST} asserts the build failed, the cache was not loaded,
+     * and at least one declared violation surfaced. Parallel configuration means we cannot assert
+     * which projects configured or which violation fired first.
+     */
+    void assertIsolatedProjectsProblems(IsolatedProjectsMode mode, @DelegatesTo(StateDiscardedWithProblemsDetails) Closure closure) {
+        switch (mode) {
+            case IsolatedProjectsMode.DIAGNOSTICS:
+                assertStateStoredAndDiscarded(closure)
+                break
+            case IsolatedProjectsMode.FAIL_FAST:
+                assertFailFastIpViolation(closure)
+                break
+            default:
+                throw new IllegalArgumentException("Unsupported IP mode: $mode")
+        }
+    }
+
+    private void assertFailFastIpViolation(Closure closure) {
+        def details = new StateDiscardedWithProblemsDetails()
+        closure.delegate = details
+        closure.resolveStrategy = Closure.DELEGATE_FIRST
+        closure()
+
+        assert spec.failed: "expected build to fail in fail-fast IP mode"
+        configurationCacheBuildOperations.assertLoadPhaseSkipped()
+
+        // Problem summaries land on stdout or stderr depending on the violation, so search both.
+        def expected = details.normalizedProblemMessages
+        assert !expected.empty: "fail-fast assertion requires at least one expected problem"
+        def output = spec.failure.output + '\n' + spec.failure.error
+        def matched = expected.find { output.contains(it) }
+        assert matched: "expected one of $expected in build output, but found none.\n--- output ---\n$output"
+    }
+
+    /**
+     * Asserts that the cache entry was written but discarded due to some problems.
+     *
+     * Also asserts that the expected set of projects is configured, the expected models are queried
+     * and the appropriate console logging, reports and build operations are generated.
+     */
+    void assertModelStoredAndDiscarded(@DelegatesTo(StateDiscardedWithProblemsDetails) Closure closure) {
+        def details = forModels(new StateDiscardedWithProblemsDetails())
+        closure.delegate = details
+        closure()
+
+        configurationCache.assertStateStoredAndDiscarded(details, details)
 
         assertHasWarningThatIncubatingFeatureUsed()
         assertProjectsConfigured(details)
@@ -102,8 +181,8 @@ class IsolatedProjectsFixture {
      * Also asserts that the expected set of projects is configured, the expected models are queried
      * and the appropriate console logging, reports and build operations are generated.
      */
-    void assertStateRecreated(@DelegatesTo(StoreRecreateDetails) Closure closure) {
-        def details = new StoreRecreateDetails()
+    void assertModelRecreated(@DelegatesTo(StoreRecreateDetails) Closure closure) {
+        def details = forModels(new StoreRecreateDetails())
         closure.delegate = details
         closure()
 
@@ -116,8 +195,8 @@ class IsolatedProjectsFixture {
      * Also asserts that the expected set of projects is configured, the expected models are queried
      * and the appropriate console logging, reports and build operations are generated.
      */
-    void assertStateUpdated(@DelegatesTo(StoreUpdateDetails) Closure closure) {
-        def details = new StoreUpdateDetails()
+    void assertModelUpdated(@DelegatesTo(StoreUpdateDetails) Closure closure) {
+        def details = forModels(new StoreUpdateDetails())
         closure.delegate = details
         closure()
 
@@ -130,8 +209,8 @@ class IsolatedProjectsFixture {
      * Also asserts that the expected set of projects is configured, the expected models are queried
      * and the appropriate console logging, reports and build operations are generated.
      */
-    void assertStateUpdatedWithProblems(@DelegatesTo(StoreUpdatedWithProblemsDetails) Closure closure) {
-        def details = new StoreUpdatedWithProblemsDetails()
+    void assertModelUpdatedWithProblems(@DelegatesTo(StoreUpdatedWithProblemsDetails) Closure closure) {
+        def details = forModels(new StoreUpdatedWithProblemsDetails())
         closure.delegate = details
         closure()
 
@@ -139,7 +218,7 @@ class IsolatedProjectsFixture {
     }
 
     private void doStateStored(HasBuildActions details, HasInvalidationReason invalidationDetails, HasIntermediateDetails intermediateDetails) {
-        fixture.assertStateRecreated(details, invalidationDetails)
+        configurationCache.assertStateRecreated(details, invalidationDetails)
 
         assertHasWarningThatIncubatingFeatureUsed()
         assertProjectsConfigured(intermediateDetails)
@@ -147,7 +226,7 @@ class IsolatedProjectsFixture {
     }
 
     private void doStoreWithProblems(HasBuildActions details, HasInvalidationReason invalidationDetails, HasIntermediateDetails intermediateDetails, ConfigurationCacheFixture.HasProblems problems) {
-        fixture.assertStateRecreatedWithProblems(details, invalidationDetails, problems)
+        configurationCache.assertStateRecreatedWithProblems(details, invalidationDetails, problems)
 
         assertHasWarningThatIncubatingFeatureUsed()
         assertProjectsConfigured(intermediateDetails)
@@ -160,7 +239,23 @@ class IsolatedProjectsFixture {
      * Also asserts that the appropriate console logging, reports and build operations are generated.
      */
     void assertStateLoaded() {
-        fixture.assertStateLoaded(new ConfigurationCacheFixture.LoadDetails())
+        configurationCache.assertStateLoaded(new ConfigurationCacheFixture.LoadDetails())
+
+        assertHasWarningThatIncubatingFeatureUsed()
+        assertNoModelsQueried()
+    }
+
+    /**
+     * Asserts that the cache entry was loaded and no projects are configured.
+     *
+     * Also asserts that the appropriate console logging, reports and build operations are generated.
+     */
+    void assertModelLoaded(@DelegatesTo(ConfigurationCacheFixture.LoadDetails) Closure closure = {}) {
+        def details = forModels(new ConfigurationCacheFixture.LoadDetails())
+        closure.delegate = details
+        closure()
+
+        configurationCache.assertStateLoaded(details)
 
         assertHasWarningThatIncubatingFeatureUsed()
         assertNoModelsQueried()
@@ -171,11 +266,11 @@ class IsolatedProjectsFixture {
     }
 
     private void assertProjectsConfigured(HasIntermediateDetails details) {
-        def configuredProjects = buildOperations.all(ConfigureProjectBuildOperationType)
+        def configuredProjects = buildOperations.typed(ConfigureProjectBuildOperationType)
         assert configuredProjects.collect { fullPath(it) }.toSet() == details.projects
 
         // Scripts - one or more for settings, and one for each project build script
-        def scripts = buildOperations.all(ApplyScriptPluginBuildOperationType)
+        def scripts = buildOperations.typed(ApplyScriptPluginBuildOperationType)
         assert !scripts.empty
         def sortedScripts = scripts.toSorted { it -> it.startTime }
         assert sortedScripts.first().details.targetType == "settings"
@@ -220,7 +315,7 @@ class IsolatedProjectsFixture {
     }
 
     private List<ModelRequest> modelRequests() {
-        buildOperations.all(QueryToolingModelBuildOperationType).collect { new ModelRequest(it) }
+        buildOperations.typed(QueryToolingModelBuildOperationType).collect { new ModelRequest(it) }
     }
 
     private static String fullPath(BuildOperationRecord operationRecord) {
@@ -248,6 +343,13 @@ class IsolatedProjectsFixture {
         return result
     }
 
+    private <T extends HasBuildActions> T forModels(T details) {
+        details.createsModels = true
+        details.runsTasks = false
+        details.loadsAfterStore = false
+        details
+    }
+
     trait HasIntermediateDetails extends HasBuildActions {
         final projects = new HashSet<String>()
         final List<ModelRequestExpectation> models = []
@@ -265,8 +367,6 @@ class IsolatedProjectsFixture {
          * The given number of build scoped models are created.
          */
         void buildModelCreated(int count = 1) {
-            runsTasks = false
-            loadsOnStore = false
             buildModelQueries += count
         }
 
@@ -275,8 +375,6 @@ class IsolatedProjectsFixture {
          */
         void modelsCreated(String... paths) {
             projectsConfigured(paths)
-            runsTasks = false
-            loadsOnStore = false
             models.addAll(paths.collect { new ModelRequestExpectation(it, 1) })
         }
 
@@ -285,8 +383,6 @@ class IsolatedProjectsFixture {
          */
         void modelsCreated(Class<?> modelType, String... paths) {
             projectsConfigured(paths)
-            runsTasks = false
-            loadsOnStore = false
             models.addAll(paths.collect { new ModelRequestExpectation(it, [modelType.name]) })
         }
 
@@ -322,8 +418,6 @@ class IsolatedProjectsFixture {
 
         void modelsCreated(ModelRequestExpectation expectation) {
             projectsConfigured(expectation.path)
-            runsTasks = false
-            loadsOnStore = false
             models.add(expectation)
         }
 

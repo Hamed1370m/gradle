@@ -17,9 +17,11 @@
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact;
 
 import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.internal.artifacts.VariantTransformRegistry;
+import org.gradle.internal.component.model.VariantIdentifier;
 import org.gradle.api.internal.artifacts.transform.ArtifactVariantSelector;
-import org.gradle.api.internal.artifacts.type.ArtifactTypeRegistry;
 import org.gradle.api.internal.attributes.ImmutableAttributes;
+import org.gradle.api.internal.attributes.immutable.artifact.ImmutableArtifactTypeRegistry;
 import org.gradle.api.specs.Spec;
 import org.gradle.internal.component.local.model.LocalFileDependencyMetadata;
 import org.gradle.internal.model.CalculatedValueContainerFactory;
@@ -29,26 +31,35 @@ import org.gradle.internal.model.CalculatedValueContainerFactory;
  */
 public class DefaultLocalFileDependencyBackedArtifactSet extends LocalFileDependencyBackedArtifactSet {
 
+    private final VariantTransformRegistry transformRegistry;
     private final ImmutableAttributes requestAttributes;
 
     public DefaultLocalFileDependencyBackedArtifactSet(
         LocalFileDependencyMetadata dependencyMetadata,
+        VariantIdentifier sourceVariantId,
         Spec<? super ComponentIdentifier> componentFilter,
         ArtifactVariantSelector variantSelector,
-        ArtifactTypeRegistry artifactTypeRegistry,
+        ImmutableArtifactTypeRegistry artifactTypeRegistry,
         CalculatedValueContainerFactory calculatedValueContainerFactory,
+        VariantTransformRegistry transformRegistry,
         ImmutableAttributes requestAttributes,
         boolean allowNoMatchingVariants
     ) {
         super(
             dependencyMetadata,
+            sourceVariantId,
             componentFilter,
             variantSelector,
             artifactTypeRegistry,
             calculatedValueContainerFactory,
             allowNoMatchingVariants
         );
+        this.transformRegistry = transformRegistry;
         this.requestAttributes = requestAttributes;
+    }
+
+    public VariantTransformRegistry getTransformRegistry() {
+        return transformRegistry;
     }
 
     @Override

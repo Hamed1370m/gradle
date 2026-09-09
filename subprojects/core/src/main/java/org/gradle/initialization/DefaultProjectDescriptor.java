@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,53 +16,65 @@
 package org.gradle.initialization;
 
 import com.google.common.base.Objects;
-import org.gradle.api.Project;
 import org.gradle.api.initialization.ProjectDescriptor;
 import org.gradle.api.initialization.Settings;
 import org.gradle.api.internal.DocumentationRegistry;
-import org.gradle.api.internal.project.ProjectIdentifier;
+import org.gradle.api.problems.ProblemReporter;
 import org.gradle.internal.Cast;
 import org.gradle.internal.FileUtils;
 import org.gradle.internal.file.PathToFileResolver;
 import org.gradle.internal.scripts.DefaultScriptFileResolver;
 import org.gradle.internal.scripts.ScriptFileResolver;
+import org.gradle.internal.scripts.ScriptFileUtil;
+import org.gradle.internal.scripts.ScriptResolutionResultReporter;
 import org.gradle.util.Path;
 import org.gradle.util.internal.NameValidator;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-public class DefaultProjectDescriptor implements ProjectDescriptor, ProjectIdentifier {
+public class DefaultProjectDescriptor implements ProjectDescriptorInternal {
     public static final String INVALID_NAME_IN_INCLUDE_HINT = "Set the 'rootProject.name' or adjust the 'include' statement (see "
         + new DocumentationRegistry().getDslRefForProperty(Settings.class, "include(java.lang.String[])") + " for more details).";
-
-    public static final String BUILD_SCRIPT_BASENAME = "build";
 
     private String name;
     private boolean nameExplicitlySet; // project name explicitly specified in the build script (as opposed to derived from the containing folder)
     private final PathToFileResolver fileResolver;
     private final ScriptFileResolver scriptFileResolver;
     private File dir;
+    @Nullable
     private File canonicalDir;
-    private final DefaultProjectDescriptor parent;
-    private final Set<DefaultProjectDescriptor> children = new LinkedHashSet<>();
-    private ProjectDescriptorRegistry projectDescriptorRegistry;
+    @Nullable
+    private final ProjectDescriptorInternal parent;
+    private final Set<ProjectDescriptorInternal> children = new LinkedHashSet<>();
+    private final ProjectDescriptorRegistry projectDescriptorRegistry;
     private Path path;
+    @Nullable
     private String buildFileName;
+    private final ScriptResolutionResultReporter scriptResolutionResultReporter;
 
     public DefaultProjectDescriptor(
-        @Nullable DefaultProjectDescriptor parent, String name, File dir,
-        ProjectDescriptorRegistry projectDescriptorRegistry, PathToFileResolver fileResolver
+        @Nullable ProjectDescriptorInternal parent,
+        String name,
+        File dir,
+        ProjectDescriptorRegistry projectDescriptorRegistry,
+        PathToFileResolver fileResolver,
+        ProblemReporter problemReporter
     ) {
-        this(parent, name, dir, projectDescriptorRegistry, fileResolver, null);
+        this(parent, name, dir, projectDescriptorRegistry, fileResolver, null, problemReporter);
     }
 
+    @SuppressWarnings("this-escape")
     public DefaultProjectDescriptor(
-        @Nullable DefaultProjectDescriptor parent, String name, File dir,
-        ProjectDescriptorRegistry projectDescriptorRegistry, PathToFileResolver fileResolver,
-        @Nullable ScriptFileResolver scriptFileResolver
+        @Nullable ProjectDescriptorInternal parent,
+        String name,
+        File dir,
+        ProjectDescriptorRegistry projectDescriptorRegistry,
+        PathToFileResolver fileResolver,
+        @Nullable ScriptFileResolver scriptFileResolver,
+        ProblemReporter problemReporter
     ) {
         this.parent = parent;
         this.name = name;
@@ -76,8 +88,9 @@ public class DefaultProjectDescriptor implements ProjectDescriptor, ProjectIdent
 
         projectDescriptorRegistry.addProject(this);
         if (parent != null) {
-            parent.getChildren().add(this);
+            parent.children().add(this);
         }
+        this.scriptResolutionResultReporter = new ScriptResolutionResultReporter(problemReporter);
     }
 
     private Path path(String name) {
@@ -88,7 +101,8 @@ public class DefaultProjectDescriptor implements ProjectDescriptor, ProjectIdent
         }
     }
 
-    private Path absolutePath(String path) {
+    @Override
+    public Path absolutePath(String path) {
         return this.path.child(path);
     }
 
@@ -110,6 +124,7 @@ public class DefaultProjectDescriptor implements ProjectDescriptor, ProjectIdent
         this.nameExplicitlySet = true;
     }
 
+    @Override
     public boolean isExplicitName() {
         return nameExplicitlySet;
     }
@@ -129,12 +144,8 @@ public class DefaultProjectDescriptor implements ProjectDescriptor, ProjectIdent
     }
 
     @Override
-    public DefaultProjectDescriptor getParent() {
-        return parent;
-    }
-
-    @Override
-    public ProjectIdentifier getParentIdentifier() {
+    @Nullable
+    public ProjectDescriptorInternal getParent() {
         return parent;
     }
 
@@ -143,7 +154,8 @@ public class DefaultProjectDescriptor implements ProjectDescriptor, ProjectIdent
         return Cast.uncheckedCast(children);
     }
 
-    public Set<? extends DefaultProjectDescriptor> children() {
+    @Override
+    public Set<ProjectDescriptorInternal> children() {
         return children;
     }
 
@@ -152,7 +164,8 @@ public class DefaultProjectDescriptor implements ProjectDescriptor, ProjectIdent
         return path.toString();
     }
 
-    void setPath(Path path) {
+    @Override
+    public void setPath(Path path) {
         this.path = path;
     }
 
@@ -175,19 +188,8 @@ public class DefaultProjectDescriptor implements ProjectDescriptor, ProjectIdent
         if (buildFileName != null) {
             return new File(getProjectDir(), buildFileName);
         }
-        File buildScriptFile = scriptFileResolver.resolveScriptFile(getProjectDir(), BUILD_SCRIPT_BASENAME);
-        if (buildScriptFile != null) {
-            return buildScriptFile;
-        }
-        return new File(getProjectDir(), Project.DEFAULT_BUILD_FILE);
-    }
 
-    public ProjectDescriptorRegistry getProjectDescriptorRegistry() {
-        return projectDescriptorRegistry;
-    }
-
-    public void setProjectDescriptorRegistry(ProjectDescriptorRegistry projectDescriptorRegistry) {
-        this.projectDescriptorRegistry = projectDescriptorRegistry;
+        return ScriptFileUtil.resolveBuildFile(getProjectDir(), scriptFileResolver, scriptResolutionResultReporter::reportResolutionProblemsOf);
     }
 
     @Override
@@ -215,6 +217,7 @@ public class DefaultProjectDescriptor implements ProjectDescriptor, ProjectIdent
         return getPath();
     }
 
+    @Override
     public Path path() {
         return path;
     }

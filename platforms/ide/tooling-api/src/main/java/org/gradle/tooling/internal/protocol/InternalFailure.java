@@ -15,6 +15,8 @@
  */
 package org.gradle.tooling.internal.protocol;
 
+import org.gradle.api.Incubating;
+
 import java.util.List;
 
 /**
@@ -44,5 +46,27 @@ public interface InternalFailure {
      * @return the cause of the failure, can be null
      */
     List<? extends InternalFailure> getCauses();
+
+    /**
+     * The problems that occurred during the operation, if any.
+     *
+     * @return the problems that occurred during the operation, can be null
+     * @since 8.12
+     */
+    @Incubating
+    List<InternalBasicProblemDetailsVersion3> getProblems();
+
+    /**
+     * The description of this failure node alone, without its causes.
+     * <p>
+     * Unlike {@link #getDescription()}, which returns the text of the whole cause subtree, this returns only the
+     * header, own frames, and any suppressed exceptions of this node, without descending into its causes. It allows
+     * walking a failure tree in linear time.
+     *
+     * @return the node-only description
+     * @since 9.7.0
+     */
+    @Incubating
+    String getOwnDescription();
 
 }

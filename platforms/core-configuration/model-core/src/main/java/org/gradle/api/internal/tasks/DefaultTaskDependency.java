@@ -25,10 +25,11 @@ import org.gradle.api.internal.provider.ProviderInternal;
 import org.gradle.api.internal.provider.ValueSupplier;
 import org.gradle.api.tasks.TaskDependency;
 import org.gradle.internal.Cast;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.typeconversion.UnsupportedNotationException;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -55,7 +56,9 @@ import static org.gradle.internal.UncheckedException.uncheckedCall;
  * constructor than to use the {@link #add(Object...)} method, as the former will
  * require less memory to store them.
  */
-public class DefaultTaskDependency extends AbstractTaskDependency {
+public class DefaultTaskDependency implements TaskDependencyInternal {
+
+    private final @Nullable TaskDependencyUsageTracker dependencyUsageTracker;
     private final ImmutableSet<Object> immutableValues;
     private Set<Object> mutableValues;
     private final TaskResolver resolver;
@@ -76,9 +79,18 @@ public class DefaultTaskDependency extends AbstractTaskDependency {
         ImmutableSet<Object> immutableValues,
         @Nullable TaskDependencyUsageTracker taskDependencyUsageTracker
     ) {
-        super(taskDependencyUsageTracker);
+        this.dependencyUsageTracker = taskDependencyUsageTracker;
         this.resolver = resolver;
         this.immutableValues = immutableValues;
+    }
+
+    @Override
+    public Set<? extends Task> getDependencies(@Nullable Task task) {
+        Set<? extends Task> result = TaskDependencyUtil.newTaskResolver().getDependencies(task, this);
+        if (dependencyUsageTracker != null) {
+            dependencyUsageTracker.onTaskDependencyUsage(result);
+        }
+        return result;
     }
 
     @Override
@@ -112,7 +124,18 @@ public class DefaultTaskDependency extends AbstractTaskDependency {
                 ((TaskDependencyContainer) dependency).visitDependencies(context);
             } else if (dependency instanceof Closure) {
                 Closure closure = (Closure) dependency;
-                Object closureResult = closure.call(context.getTask());
+                Object closureResult;
+                try {
+                    closureResult = closure.call(new Object[]{null});
+                } catch (NullPointerException e) {
+                    DeprecationLogger.deprecateAction("Accessing tasks provided to task dependency closures")
+                        .willBecomeAnErrorInGradle10()
+                        .withUpgradeGuideSection(9, "task_in_task_dependency_closure")
+                        .nagUser();
+                    Task task = context.getTask();
+                    closureResult = closure.call(task);
+                }
+
                 if (closureResult != null) {
                     queue.addFirst(closureResult);
                 }
@@ -146,7 +169,8 @@ public class DefaultTaskDependency extends AbstractTaskDependency {
                     queue.addFirst(callableResult);
                 }
             } else if (resolver != null && dependency instanceof CharSequence) {
-                context.add(resolver.resolveTask(dependency.toString()));
+                org.gradle.util.Path taskPath = org.gradle.util.Path.path(dependency.toString());
+                context.add(resolver.resolveTask(taskPath));
             } else if (dependency instanceof VisitBehavior) {
                 ((VisitBehavior) dependency).onVisit.accept(context);
             } else {
@@ -203,7 +227,7 @@ public class DefaultTaskDependency extends AbstractTaskDependency {
     }
 
     static class VisitBehavior {
-        @Nonnull
+        @NonNull
         public final Consumer<? super TaskDependencyResolveContext> onVisit;
 
         public VisitBehavior(Consumer<? super TaskDependencyResolveContext> onVisit) {
@@ -290,4 +314,5 @@ public class DefaultTaskDependency extends AbstractTaskDependency {
             return delegate.hashCode();
         }
     }
+
 }

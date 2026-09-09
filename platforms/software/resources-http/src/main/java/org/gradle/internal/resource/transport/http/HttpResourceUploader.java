@@ -16,8 +16,7 @@
 
 package org.gradle.internal.resource.transport.http;
 
-import org.apache.http.client.methods.HttpPut;
-import org.apache.http.entity.ContentType;
+import com.google.common.collect.ImmutableMap;
 import org.gradle.internal.resource.ExternalResourceName;
 import org.gradle.internal.resource.ReadableContent;
 import org.gradle.internal.resource.transfer.ExternalResourceUploader;
@@ -27,21 +26,19 @@ import java.net.URI;
 
 public class HttpResourceUploader implements ExternalResourceUploader {
 
-    private final HttpClientHelper http;
+    private final HttpClient http;
 
-    public HttpResourceUploader(HttpClientHelper http) {
+    public HttpResourceUploader(HttpClient http) {
         this.http = http;
     }
 
     @Override
     public void upload(ReadableContent resource, ExternalResourceName destination) throws IOException {
-        HttpPut method = new HttpPut(destination.getUri());
-        final RepeatableInputStreamEntity entity = new RepeatableInputStreamEntity(resource, ContentType.APPLICATION_OCTET_STREAM);
-        method.setEntity(entity);
-        try (HttpClientResponse response = http.performHttpRequest(method)) {
-            if (!response.wasSuccessful()) {
+        try (HttpClient.Response response = http.performRawPut(destination.getUri(), ImmutableMap.of(), resource)) {
+            if (!response.isSuccessful()) {
                 URI effectiveUri = response.getEffectiveUri();
-                throw new HttpErrorStatusCodeException(response.getMethod(), effectiveUri.toString(), response.getStatusLine().getStatusCode(), response.getStatusLine().getReasonPhrase());
+                HttpErrorStatusCodeException statusCause = new HttpErrorStatusCodeException(response.getStatusCode(), response.getStatusReason());
+                throw new HttpRequestException(String.format("Could not %s '%s'.", response.getMethod(), effectiveUri), statusCause);
             }
         }
     }

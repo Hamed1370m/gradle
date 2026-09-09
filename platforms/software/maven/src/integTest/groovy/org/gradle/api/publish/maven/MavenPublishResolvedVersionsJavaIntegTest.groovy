@@ -147,10 +147,10 @@ class MavenPublishResolvedVersionsJavaIntegTest extends MavenPublishResolvedVers
         }
         def dependencies = javaLibrary.parsedPom.dependencyManagement.dependencies[0].dependency
         dependencies.size() == 1
-        dependencies[0].with {
-            assert it.groupId.text() == 'org.test'
-            assert it.artifactId.text() == 'bar'
-            assert it.version.text() == '1.1'
+        verifyAll(dependencies[0]) {
+            groupId.text() == 'org.test'
+            artifactId.text() == 'bar'
+            version.text() == '1.1'
         }
         javaLibrary.parsedModuleMetadata.variant("runtimeElements") {
             constraint("org.test:bar:1.1") {
@@ -234,10 +234,10 @@ class MavenPublishResolvedVersionsJavaIntegTest extends MavenPublishResolvedVers
         }
         def dependencies = javaLibrary.parsedPom.dependencyManagement.dependencies[0].dependency
         dependencies.size() == 1
-        dependencies[0].with {
-            assert it.groupId.text() == 'org.test'
-            assert it.artifactId.text() == 'bar'
-            assert it.version.text() == '[1.0, 2.0)'
+        verifyAll(dependencies[0]) {
+            groupId.text() == 'org.test'
+            artifactId.text() == 'bar'
+            version.text() == '[1.0, 2.0)'
         }
         javaLibrary.parsedModuleMetadata.variant("runtimeElements") {
             constraint("org.test:bar:[1.0, 2.0[") {
@@ -315,16 +315,16 @@ class MavenPublishResolvedVersionsJavaIntegTest extends MavenPublishResolvedVers
         }
         def dependencies = javaLibrary.parsedPom.dependencyManagement.dependencies[0].dependency
         dependencies.size() == 2
-        dependencies[0].with {
-            assert it.groupId.text() == 'org.test'
-            assert it.artifactId.text() == 'bar'
-            assert it.version.text() == '1.0'
+        verifyAll(dependencies[0]) {
+            groupId.text() == 'org.test'
+            artifactId.text() == 'bar'
+            version.text() == '1.0'
         }
-        dependencies[1].with {
-            assert it.groupId.text() == 'org.test'
-            assert it.artifactId.text() == 'bar'
-            assert it.version.text() == '1.1'
-            assert it.scope.text() == 'import'
+        verifyAll(dependencies[1]) {
+            groupId.text() == 'org.test'
+            artifactId.text() == 'bar'
+            version.text() == '1.1'
+            scope.text() == 'import'
         }
         javaLibrary.parsedModuleMetadata.variant("runtimeElements") {
             constraint("org.test:bar:1.1") {
@@ -458,17 +458,37 @@ class MavenPublishResolvedVersionsJavaIntegTest extends MavenPublishResolvedVers
         """
         file("a/build.gradle") << """
             plugins {
-                id 'java-library'
+                id("java-library")
+                id("maven-publish")
             }
+
             group = 'com.first'
             version = '1.1'
+
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
         """
         file("b/build.gradle") << """
             plugins {
-                id 'java-library'
+                id("java-library")
+                id("maven-publish")
             }
+
             group = 'com.second'
             version = '1.2'
+
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
         """
 
         when:
@@ -521,10 +541,21 @@ class MavenPublishResolvedVersionsJavaIntegTest extends MavenPublishResolvedVers
         """)
 
         file("lib/build.gradle") << """
-            apply plugin: 'java-library'
+            plugins {
+                id("java-library")
+                id("maven-publish")
+            }
 
             group = 'com.acme'
             version = '1.45'
+
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
         """
 
         when:
@@ -804,13 +835,13 @@ abstract class MavenPublishResolvedVersionsJavaFixture extends AbstractMavenPubl
 
             repositories {
                 // use for resolving
-                maven { url "${mavenRepo.uri}" }
+                maven { url = "${mavenRepo.uri}" }
             }
 
             publishing {
                 repositories {
                     // used for publishing
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
             }
 

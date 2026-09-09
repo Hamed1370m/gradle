@@ -17,7 +17,7 @@
 package org.gradle.integtests.resolve.api
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.fixtures.extensions.FluidDependenciesResolveTest
 
 @FluidDependenciesResolveTest
@@ -88,45 +88,48 @@ class ConfigurationRolesIntegrationTest extends AbstractIntegrationSpec {
         'dependency scope'        | 'canBeResolved = false; canBeConsumed = false'
     }
 
-    @ToBeFixedForConfigurationCache(because = "Uses Configuration API")
     def "cannot resolve a configuration with role #role using #method"() {
         given:
         buildFile << """
-
-        configurations {
-            internal {
-                $role
+            configurations {
+                internal {
+                    $role
+                }
             }
-        }
-        dependencies {
-            internal files('foo.jar')
-        }
-
-        task checkState {
-            doLast {
-                configurations.internal.$method
+            dependencies {
+                internal files('foo.jar')
             }
-        }
 
+            task checkState {
+                def result = provider { configurations.internal.$method }
+                doLast {
+                    println result.get()
+                }
+            }
         """
 
-        when:
-        if (method == 'getResolvedConfiguration()') {
-            if (role == 'canBeResolved = false') {
-                executer.expectDocumentedDeprecationWarning("""Calling configuration method 'getResolvedConfiguration()' is deprecated for configuration 'internal', which has permitted usage(s):
-\tConsumable - this configuration can be selected by another project as a dependency
-\tDeclarable - this configuration can have dependencies added to it
-This method is only meant to be called on configurations which allow the (non-deprecated) usage(s): 'Resolvable'. This behavior has been deprecated. This behavior is scheduled to be removed in Gradle 9.0. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_configuration_usage""")
-            } else {
-                executer.expectDocumentedDeprecationWarning("""Calling configuration method 'getResolvedConfiguration()' is deprecated for configuration 'internal', which has permitted usage(s):
-\tDeclarable - this configuration can have dependencies added to it
-This method is only meant to be called on configurations which allow the (non-deprecated) usage(s): 'Resolvable'. This behavior has been deprecated. This behavior is scheduled to be removed in Gradle 9.0. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_configuration_usage""")
-            }
+        def expectedUsagesMsg
+        if (role == 'canBeResolved = false') {
+            expectedUsagesMsg = """\tConsumable - this configuration can be selected by another project as a dependency
+\tDeclarable - this configuration can have dependencies added to it"""
+        } else {
+            expectedUsagesMsg = "\tDeclarable - this configuration can have dependencies added to it"
         }
+
+        expect:
         fails 'checkState'
 
-        then:
-        failure.assertHasCause("Resolving dependency configuration 'internal' is not allowed as it is defined as 'canBeResolved=false'.\nInstead, a resolvable ('canBeResolved=true') dependency configuration that extends 'internal' should be resolved.")
+        if (!GradleContextualExecuter.isConfigCache()) {
+            failureDescriptionContains("Execution failed for task ':checkState' (registered in build file 'build.gradle').")
+        }
+        if ((method as String) in ['getResolvedConfiguration()']) {
+            failureCauseContains("""Calling configuration method '$method' is not allowed for configuration 'internal', which has permitted usage(s):
+$expectedUsagesMsg
+This method is only meant to be called on configurations which allow the (non-deprecated) usage(s): 'Resolvable'.""")
+        } else {
+            failure.assertHasCause("""Resolving dependency configuration 'internal' is not allowed as it is defined as 'canBeResolved=false'.
+Instead, a resolvable ('canBeResolved=true') dependency configuration that extends 'internal' should be resolved.""")
+        }
 
         where:
         [method, role] << [
@@ -137,10 +140,9 @@ This method is only meant to be called on configurations which allow the (non-de
 
     def "cannot add a dependency on a configuration role #role"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << 'include "a", "b"'
-        buildFile << """
-        project(':a') {
+
+        file("a/build.gradle") << """
             configurations {
                 compile
             }
@@ -152,22 +154,21 @@ This method is only meant to be called on configurations which allow the (non-de
                 def files = configurations.compile
                 doLast { files.files }
             }
-        }
-        project(':b') {
+        """
+
+        file("b/build.gradle") << """
             configurations {
                 internal {
                     $code
                 }
             }
-        }
-
         """
 
         when:
         fails 'a:check'
 
         then:
-        failure.assertHasCause "A dependency was declared on configuration 'internal' of 'project :b' but no variant with that configuration name exists."
+        failure.assertHasCause "A dependency was declared on configuration 'internal' of 'project ':b'' but no variant with that configuration name exists."
 
         where:
         role                    | code
@@ -177,10 +178,9 @@ This method is only meant to be called on configurations which allow the (non-de
 
     def "cannot depend on default configuration if it's not consumable (#role)"() {
         given:
-        createDirs("a", "b")
         file('settings.gradle') << 'include "a", "b"'
-        buildFile << """
-        project(':a') {
+
+        file("a/build.gradle") << """
             configurations {
                 compile
             }
@@ -192,22 +192,21 @@ This method is only meant to be called on configurations which allow the (non-de
                 def files = configurations.compile
                 doLast { files.files }
             }
-        }
-        project(':b') {
+        """
+
+        file("b/build.gradle") << """
             configurations {
                 'default' {
                     $code
                 }
             }
-        }
-
         """
 
         when:
         fails 'a:check'
 
         then:
-        failure.assertHasCause """Unable to find a matching variant of project :b:
+        failure.assertHasCause """Unable to find a matching variant of project ':b':
   - No variants exist."""
 
         where:
@@ -225,7 +224,7 @@ This method is only meant to be called on configurations which allow the (non-de
                         attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category.class, "foo"))
                     }
                 }
-                migratingUnlocked("con", org.gradle.api.internal.artifacts.configurations.ConfigurationRolesForMigration.LEGACY_TO_RESOLVABLE_DEPENDENCY_SCOPE) {
+                migratingLocked("con", org.gradle.api.internal.artifacts.configurations.ConfigurationRolesForMigration.LEGACY_TO_RESOLVABLE_DEPENDENCY_SCOPE) {
                     attributes {
                         attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category.class, "foo"))
                     }
@@ -233,7 +232,7 @@ This method is only meant to be called on configurations which allow the (non-de
             }
 
             dependencies {
-                res project
+                res project()
             }
 
             task resolve {
@@ -245,7 +244,7 @@ This method is only meant to be called on configurations which allow the (non-de
         """
 
         expect:
-        executer.expectDocumentedDeprecationWarning("The con configuration has been deprecated for consumption. This will fail with an error in Gradle 9.0. For more information, please refer to https://docs.gradle.org/current/userguide/declaring_dependencies.html#sec:deprecated-configurations in the Gradle documentation.")
+        executer.expectDocumentedDeprecationWarning("The con configuration has been deprecated for consumption. This will fail with an error in Gradle 10. For more information, please refer to https://docs.gradle.org/current/userguide/declaring_dependencies.html#sec:deprecated-configurations in the Gradle documentation.")
         succeeds("resolve")
     }
 

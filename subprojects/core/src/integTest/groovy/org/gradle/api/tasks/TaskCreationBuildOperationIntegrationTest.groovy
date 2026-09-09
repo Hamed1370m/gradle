@@ -22,9 +22,9 @@ import org.gradle.api.internal.tasks.RegisterTaskBuildOperationType
 import org.gradle.api.specs.Spec
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.BuildOperationsFixture
-import org.gradle.integtests.fixtures.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.build.BuildTestFixture
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.internal.logging.events.LogEvent
 import org.gradle.internal.operations.BuildOperationType
 import org.gradle.internal.operations.trace.BuildOperationRecord
@@ -308,7 +308,7 @@ class TaskCreationBuildOperationIntegrationTest extends AbstractIntegrationSpec 
     }
 
     private <T extends BuildOperationType<?, ?>> BuildOperationRecord verifyTaskDetails(Map<String, ?> expectedDetails, Class<T> type, Spec<? super BuildOperationRecord> spec) {
-        def ops = buildOperations.all(type, spec)
+        def ops = buildOperations.typed(type, spec)
         assert !ops.empty
         if (type == RealizeTaskBuildOperationType && GradleContextualExecuter.configCache) {
             // When using load after store, the task will be realized twice:

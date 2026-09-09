@@ -16,7 +16,10 @@
 
 package org.gradle.testkit.runner;
 
-import javax.annotation.Nullable;
+import org.gradle.api.Incubating;
+import org.jspecify.annotations.Nullable;
+
+import java.io.BufferedReader;
 import java.util.List;
 
 /**
@@ -40,6 +43,20 @@ public interface BuildResult {
     String getOutput();
 
     /**
+     * A new {@link BufferedReader} of the textual output produced during the build.
+     * <p>
+     * This is equivalent to the console output produced when running a build from the command line.
+     * It contains both the standard output, and standard error output, of the build.
+     *
+     * <p>The caller is responsible for ensuring that the returned stream is closed.
+     *
+     * @return a reader of the build output
+     * @since 9.3.0
+     */
+    @Incubating
+    BufferedReader getOutputReader();
+
+    /**
      * The tasks that were part of the build.
      * <p>
      * The order of the tasks corresponds to the order in which the tasks were started.
@@ -50,6 +67,7 @@ public interface BuildResult {
      * This can occur if the build fails early, due to a build script failing to compile for example.
      *
      * @return the build tasks
+     * @since 2.6
      */
     List<BuildTask> getTasks();
 
@@ -61,6 +79,7 @@ public interface BuildResult {
      *
      * @param outcome the desired outcome
      * @return the build tasks with the given outcome
+     * @since 2.6
      */
     List<BuildTask> tasks(TaskOutcome outcome);
 
@@ -72,6 +91,7 @@ public interface BuildResult {
      *
      * @param outcome the desired outcome
      * @return the paths of the build tasks with the given outcome
+     * @since 2.6
      */
     List<String> taskPaths(TaskOutcome outcome);
 
@@ -80,6 +100,7 @@ public interface BuildResult {
      *
      * @param taskPath the path of the target task
      * @return information about the executed task, or {@code null} if the task was not executed
+     * @since 2.6
      */
     @Nullable
     BuildTask task(String taskPath);

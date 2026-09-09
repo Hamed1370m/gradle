@@ -31,7 +31,8 @@ import java.util.concurrent.TimeUnit;
 public class DefaultGradleConnector extends GradleConnector implements ProjectConnectionCloseListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(GradleConnector.class);
 
-    public static final GradleVersion MINIMUM_SUPPORTED_GRADLE_VERSION = GradleVersion.version("3.0");
+    public static final int MINIMAL_CLIENT_MAJOR_VERSION = 4;
+    public static final GradleVersion MINIMUM_SUPPORTED_GRADLE_VERSION = GradleVersion.version(MINIMAL_CLIENT_MAJOR_VERSION + ".0");
     private final ConnectionFactory connectionFactory;
     private final DistributionFactory distributionFactory;
     private Distribution distribution;
@@ -80,6 +81,7 @@ public class DefaultGradleConnector extends GradleConnector implements ProjectCo
             }
             connections.clear();
         }
+        ConnectorServices.connectorDisconnected();
     }
 
     @Override
@@ -97,11 +99,6 @@ public class DefaultGradleConnector extends GradleConnector implements ProjectCo
     @Override
     public GradleConnector useDistribution(URI gradleDistribution) {
         distribution = distributionFactory.getDistribution(gradleDistribution);
-        return this;
-    }
-
-    public GradleConnector useClasspathDistribution() {
-        distribution = distributionFactory.getClasspathDistribution();
         return this;
     }
 
@@ -178,9 +175,5 @@ public class DefaultGradleConnector extends GradleConnector implements ProjectCo
             connections.add((DefaultProjectConnection) connection);
             return connection;
         }
-    }
-
-    ConnectionFactory getConnectionFactory() {
-        return connectionFactory;
     }
 }

@@ -16,6 +16,7 @@
 package org.gradle.nativeplatform.tasks;
 
 import org.gradle.api.DefaultTask;
+import org.gradle.api.Project;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.FileCollection;
@@ -56,35 +57,34 @@ import javax.inject.Inject;
 
 /**
  * Base task for linking a native binary from object files and libraries.
+ * @since 2.2
  */
 @DisableCachingByDefault(because = "Abstract super-class, not to be instantiated directly")
 public abstract class AbstractLinkTask extends DefaultTask implements ObjectFilesToBinary {
-    private final RegularFileProperty linkedFile;
-    private final DirectoryProperty destinationDirectory;
-    private final ListProperty<String> linkerArgs;
     private final ConfigurableFileCollection source;
     private final ConfigurableFileCollection libs;
     private final Property<Boolean> debuggable;
-    private final Property<NativePlatform> targetPlatform;
-    private final Property<NativeToolChain> toolChain;
 
+    /**
+     * Creates a new {@code AbstractLinkTask}.
+     *
+     * @since 2.2
+     */
+    @SuppressWarnings("this-escape")
     public AbstractLinkTask() {
         final ObjectFactory objectFactory = getProject().getObjects();
         this.libs = getProject().files();
         this.source = getProject().files();
-        this.linkedFile = objectFactory.fileProperty();
-        this.destinationDirectory = objectFactory.directoryProperty();
-        destinationDirectory.set(linkedFile.getLocationOnly().map(regularFile -> {
+        getDestinationDirectory().convention(getLinkedFile().getLocationOnly().map(regularFile -> {
             // TODO: Get rid of destinationDirectory entirely and replace it with a
             // collection of link outputs
             DirectoryProperty dirProp = objectFactory.directoryProperty();
             dirProp.set(regularFile.getAsFile().getParentFile());
             return dirProp.get();
         }));
-        this.linkerArgs = getProject().getObjects().listProperty(String.class);
+        // TODO: There is something wrong in the ASM class generator that does not allow us to create
+        // this as a managed property as long as we have isDebuggable.
         this.debuggable = objectFactory.property(Boolean.class).value(false);
-        this.targetPlatform = objectFactory.property(NativePlatform.class);
-        this.toolChain = objectFactory.property(NativeToolChain.class);
     }
 
     /**
@@ -93,9 +93,7 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
      * @since 4.7
      */
     @Internal
-    public Property<NativeToolChain> getToolChain() {
-        return toolChain;
-    }
+    public abstract Property<NativeToolChain> getToolChain();
 
     /**
      * The platform being linked for.
@@ -103,9 +101,7 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
      * @since 4.7
      */
     @Nested
-    public Property<NativePlatform> getTargetPlatform() {
-        return targetPlatform;
-    }
+    public abstract Property<NativePlatform> getTargetPlatform();
 
     /**
      * Include the destination directory as an output, to pick up auxiliary files produced alongside the main output file
@@ -113,9 +109,7 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
      * @since 4.7
      */
     @OutputDirectory
-    public DirectoryProperty getDestinationDirectory() {
-        return destinationDirectory;
-    }
+    public abstract DirectoryProperty getDestinationDirectory();
 
     /**
      * The file where the linked binary will be located.
@@ -123,9 +117,7 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
      * @since 4.7
      */
     @OutputFile
-    public RegularFileProperty getLinkedFile() {
-        return linkedFile;
-    }
+    public abstract RegularFileProperty getLinkedFile();
 
     /**
      * <em>Additional</em> arguments passed to the linker.
@@ -133,18 +125,16 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
      * @since 4.3
      */
     @Input
-    public ListProperty<String> getLinkerArgs() {
-        return linkerArgs;
-    }
+    public abstract ListProperty<String> getLinkerArgs();
 
     /**
      * Create a debuggable binary?
      *
-     * @since 4.7
+     * @since 4.3
      */
     @Internal
     public boolean isDebuggable() {
-        return debuggable.get();
+        return getDebuggable().get();
     }
 
     /**
@@ -159,6 +149,7 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
 
     /**
      * The source object files to be passed to the linker.
+     * @since 2.2
      */
     @InputFiles
     @SkipWhenEmpty
@@ -168,12 +159,18 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
         return source;
     }
 
+    /**
+     * Sets the source.
+     *
+     * @since 2.2
+     */
     public void setSource(FileCollection source) {
         this.source.setFrom(source);
     }
 
     /**
      * The library files to be passed to the linker.
+     * @since 2.2
      */
     @PathSensitive(PathSensitivity.RELATIVE)
     @InputFiles
@@ -181,23 +178,29 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
         return libs;
     }
 
+    /**
+     * Sets the libs.
+     *
+     * @since 2.2
+     */
     public void setLibs(FileCollection libs) {
         this.libs.setFrom(libs);
     }
 
     /**
-     * Adds a set of object files to be linked. The provided source object is evaluated as per {@link org.gradle.api.Project#files(Object...)}.
+     * Adds a set of object files to be linked. The provided source object is evaluated as per {@link Project#files(Object...)}.
      */
     @Override
     public void source(Object source) {
-        this.source.from(source);
+        this.getSource().from(source);
     }
 
     /**
-     * Adds a set of library files to be linked. The provided libs object is evaluated as per {@link org.gradle.api.Project#files(Object...)}.
+     * Adds a set of library files to be linked. The provided libs object is evaluated as per {@link Project#files(Object...)}.
+     * @since 2.2
      */
     public void lib(Object libs) {
-        this.libs.from(libs);
+        this.getLibs().from(libs);
     }
 
     /**
@@ -207,19 +210,20 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
      */
     @Nested
     protected CompilerVersion getCompilerVersion() {
-        return ((VersionAwareCompiler)createCompiler()).getVersion();
+        return ((VersionAwareCompiler) createCompiler()).getVersion();
     }
 
     @Inject
-    protected BuildOperationLoggerFactory getOperationLoggerFactory() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract BuildOperationLoggerFactory getOperationLoggerFactory();
 
     @Inject
-    protected Deleter getDeleter() {
-        throw new UnsupportedOperationException("Decorator takes care of injection");
-    }
+    protected abstract Deleter getDeleter();
 
+    /**
+     * Link.
+     *
+     * @since 2.2
+     */
     @TaskAction
     protected void link() {
         boolean cleanedOutputs = StaleOutputCleaner.cleanOutputs(
@@ -254,13 +258,18 @@ public abstract class AbstractLinkTask extends DefaultTask implements ObjectFile
 
     @SuppressWarnings("unchecked")
     private Compiler<LinkerSpec> createCompiler() {
-        NativePlatformInternal targetPlatform = Cast.cast(NativePlatformInternal.class, this.targetPlatform.get());
+        NativePlatformInternal targetPlatform = Cast.cast(NativePlatformInternal.class, this.getTargetPlatform().get());
         NativeToolChainInternal toolChain = Cast.cast(NativeToolChainInternal.class, getToolChain().get());
         PlatformToolProvider toolProvider = toolChain.select(targetPlatform);
         Class<LinkerSpec> linkerSpecType = (Class<LinkerSpec>) createLinkerSpec().getClass();
         return toolProvider.newCompiler(linkerSpecType);
     }
 
+    /**
+     * Create linker spec.
+     *
+     * @since 2.2
+     */
     protected abstract LinkerSpec createLinkerSpec();
 
 }

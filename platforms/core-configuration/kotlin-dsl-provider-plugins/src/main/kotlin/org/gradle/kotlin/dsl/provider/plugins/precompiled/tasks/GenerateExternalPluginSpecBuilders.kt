@@ -16,18 +16,40 @@
 
 package org.gradle.kotlin.dsl.provider.plugins.precompiled.tasks
 
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
-
+import org.gradle.kotlin.dsl.accessors.pluginEntriesFrom
+import org.gradle.kotlin.dsl.accessors.pluginTreesFrom
 import org.gradle.kotlin.dsl.accessors.writeSourceCodeForPluginSpecBuildersFor
-
+import org.gradle.kotlin.dsl.internal.sharedruntime.codegen.PluginEntryCache
+import org.gradle.kotlin.dsl.provider.PrecompiledScriptsEnvironment.EnvironmentProperties.kotlinDslPluginSpecBuildersImplicitImports
 import java.io.File
+import javax.inject.Inject
 
 
 @CacheableTask
-abstract class GenerateExternalPluginSpecBuilders : ClassPathSensitiveCodeGenerationTask(), SharedAccessorsPackageAware {
+abstract class GenerateExternalPluginSpecBuilders : DefaultTask() {
+
+    @get:Internal
+    abstract val classPathFiles: ConfigurableFileCollection
+
+    @get:Inject
+    internal abstract val pluginEntryCache: PluginEntryCache
+
+    @Suppress("LeakingThis")
+    @get:Input
+    val pluginEntries = classPathFiles.elements.map { elements ->
+        pluginEntriesFrom(elements.map { it.asFile }, pluginEntryCache)
+    }
+
+    @get:OutputDirectory
+    abstract val sourceCodeOutputDir: DirectoryProperty
 
     @get:OutputDirectory
     abstract val metadataOutputDir: DirectoryProperty
@@ -36,18 +58,19 @@ abstract class GenerateExternalPluginSpecBuilders : ClassPathSensitiveCodeGenera
     @Suppress("unused")
     internal
     fun generate() {
-        val packageName = sharedAccessorsPackage
+        val pluginTrees = pluginTreesFrom(pluginEntries.get())
+        val packageName = sharedAccessorsPackageFor(pluginTrees)
         sourceCodeOutputDir.withOutputDirectory { outputDir ->
             val packageDir = createPackageDirIn(outputDir, packageName)
             val outputFile = packageDir.resolve("PluginSpecBuilders.kt")
             writeSourceCodeForPluginSpecBuildersFor(
-                classPath,
+                pluginTrees,
                 outputFile,
                 packageName
             )
         }
         metadataOutputDir.withOutputDirectory { outputDir ->
-            outputDir.resolve("implicit-imports").writeText(
+            outputDir.resolve(kotlinDslPluginSpecBuildersImplicitImports).writeText(
                 "$packageName.*"
             )
         }

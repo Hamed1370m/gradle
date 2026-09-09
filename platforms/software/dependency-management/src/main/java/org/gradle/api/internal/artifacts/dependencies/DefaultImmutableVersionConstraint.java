@@ -19,14 +19,14 @@ import com.google.common.collect.ImmutableList;
 import org.gradle.api.artifacts.VersionConstraint;
 import org.gradle.api.internal.artifacts.ImmutableVersionConstraint;
 import org.gradle.util.internal.GUtil;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.Serializable;
 import java.util.List;
 
 // does not override equals() but hashCode() in order to cache the latter's
 // pre-computed value to improve performance when used in HashMaps
-@SuppressWarnings("checkstyle:EqualsHashCode")
+@SuppressWarnings({"this-escape", "checkstyle:EqualsHashCode"})
 public class DefaultImmutableVersionConstraint extends AbstractVersionConstraint implements ImmutableVersionConstraint, Serializable {
     private static final DefaultImmutableVersionConstraint EMPTY = new DefaultImmutableVersionConstraint("");
     private final String requiredVersion;
@@ -68,6 +68,7 @@ public class DefaultImmutableVersionConstraint extends AbstractVersionConstraint
         this.hashCode = super.hashCode();
     }
 
+    @SuppressWarnings("this-escape")
     public DefaultImmutableVersionConstraint(String requiredVersion) {
         if (requiredVersion == null) {
             throw new IllegalArgumentException("Required version must not be null");
@@ -131,5 +132,9 @@ public class DefaultImmutableVersionConstraint extends AbstractVersionConstraint
 
     public static ImmutableVersionConstraint of() {
         return EMPTY;
+    }
+
+    public static ImmutableVersionConstraint strictly(String version) {
+        return new DefaultImmutableVersionConstraint("", version, version, ImmutableList.of(), null);
     }
 }

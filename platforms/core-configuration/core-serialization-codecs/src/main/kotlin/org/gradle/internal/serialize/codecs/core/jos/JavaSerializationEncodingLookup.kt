@@ -16,13 +16,13 @@
 
 package org.gradle.internal.serialize.codecs.core.jos
 
+import org.gradle.internal.reflection.access.ObjectOpener
 import org.gradle.internal.serialize.graph.codecs.Encoding
 import org.gradle.internal.service.scopes.Scope
 import org.gradle.internal.service.scopes.ServiceScope
 import java.io.ObjectOutputStream
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
-import java.util.concurrent.ConcurrentHashMap
 
 
 /**
@@ -30,23 +30,25 @@ import java.util.concurrent.ConcurrentHashMap
  * Java object serialization support in the configuration cache.
  */
 @ServiceScope(Scope.BuildTree::class)
-class JavaSerializationEncodingLookup {
+class JavaSerializationEncodingLookup(
+    private val objectOpener: ObjectOpener
+) {
     private
-    val encodings = ConcurrentHashMap<Class<*>, EncodingDetails>()
+    val encodings = object : ClassValue<EncodingDetails>() {
+        override fun computeValue(type: Class<*>): EncodingDetails = calculateEncoding(type)
+    }
 
     /**
      * Returns the proper encoding provider for the given type, or null, if not covered by Java Object serialization.
      */
-    fun encodingFor(type: Class<*>): Encoding? {
-        return encodings.computeIfAbsent(type) { t -> calculateEncoding(t) }.encoding
-    }
+    fun encodingFor(type: Class<*>): Encoding? = encodings.get(type).encoding
 
     private
     fun calculateEncoding(type: Class<*>): EncodingDetails {
         val candidates = type.allMethods()
         val encoding = writeReplaceEncodingFor(candidates)
-            ?: readResolveEncodingFor(candidates)
             ?: writeObjectEncodingFor(candidates)
+            ?: readResolveEncodingFor(candidates)
             ?: readObjectEncodingFor(candidates)
         return EncodingDetails(encoding)
     }
@@ -69,22 +71,22 @@ class JavaSerializationEncodingLookup {
 
     private
     fun readObjectEncodingFor(candidates: List<Method>): Encoding? =
-        readObjectMethodHierarchyFrom(candidates)
+        readObjectMethodHierarchyFrom(candidates, objectOpener)
             .takeIf { it.isNotEmpty() }
             ?.let { JavaObjectSerializationCodec.ReadObjectEncoding }
 
     private
     fun writeReplaceMethodFrom(candidates: List<Method>) =
-        candidates.firstAccessibleMatchingMethodOrNull {
+        candidates.firstAccessibleMatchingMethodOrNull(objectOpener) {
             !Modifier.isStatic(modifiers)
                 && parameterCount == 0
-                && returnType == java.lang.Object::class.java
+                && returnType == Any::class.java
                 && name == "writeReplace"
         }
 
     private
     fun writeObjectMethodHierarchyFrom(candidates: List<Method>) = candidates
-        .serializationMethodHierarchy("writeObject", ObjectOutputStream::class.java)
+        .serializationMethodHierarchy("writeObject", ObjectOutputStream::class.java, objectOpener)
 
     private
     fun readResolveMethodFrom(candidates: List<Method>) =

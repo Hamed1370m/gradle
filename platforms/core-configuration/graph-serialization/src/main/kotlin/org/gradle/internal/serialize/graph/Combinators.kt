@@ -16,6 +16,7 @@
 
 package org.gradle.internal.serialize.graph
 
+import org.gradle.internal.deprecation.DeprecationLogger
 import org.gradle.internal.extensions.stdlib.uncheckedCast
 import org.gradle.internal.extensions.stdlib.useToRun
 import org.gradle.internal.serialize.BaseSerializerFactory
@@ -45,11 +46,11 @@ fun <T> codec(
 }
 
 
-inline fun <reified T> IsolateContext.ownerService() =
+inline fun <reified T : Any> IsolateContext.ownerService() =
     ownerService(T::class.java)
 
 
-fun <T> IsolateContext.ownerService(serviceType: Class<T>) =
+fun <T : Any> IsolateContext.ownerService(serviceType: Class<T>) =
     isolate.owner.service(serviceType)
 
 
@@ -184,22 +185,39 @@ suspend fun WriteContext.writeCollection(value: Collection<*>) {
     writeCollection(value) { write(it) }
 }
 
+suspend fun WriteContext.writeCollection(value: Collection<*>, vararg supportedTypes: Class<*>) {
+    warnAboutCustomImplementation(value.javaClass, "collection", supportedTypes)
+    writeCollection(value)
+}
+
 
 suspend fun <T : MutableCollection<Any?>> ReadContext.readCollectionInto(factory: (Int) -> T): T =
     readCollectionInto(factory) { read() }
 
 
 suspend fun WriteContext.writeMap(value: Map<*, *>) {
-    writeSmallInt(value.size)
-    writeMapEntries(value)
+    val size = value.size
+    writeSmallInt(size)
+    val totalWritten = writeMapEntries(value)
+    if (size != totalWritten) {
+        reportCollectionWriteFailure("map", size, totalWritten, value.size)
+    }
+}
+
+suspend fun WriteContext.writeMap(value: Map<*, *>, vararg supportedTypes: Class<*>) {
+    warnAboutCustomImplementation(value.javaClass, "map", supportedTypes)
+    writeMap(value)
 }
 
 
-suspend fun WriteContext.writeMapEntries(value: Map<*, *>) {
+suspend fun WriteContext.writeMapEntries(value: Map<*, *>): Int {
+    var totalWritten = 0
     for (entry in value.entries) {
         write(entry.key)
         write(entry.value)
+        ++totalWritten
     }
+    return totalWritten
 }
 
 
@@ -230,7 +248,7 @@ fun Decoder.readFile(): File =
     BaseSerializerFactory.FILE_SERIALIZER.read(this)
 
 
-fun Encoder.writeStrings(strings: Collection<String>) {
+fun WriteContext.writeStrings(strings: Collection<String>) {
     writeCollection(strings) {
         writeString(it)
     }
@@ -249,10 +267,22 @@ fun Decoder.readStringsSet(): Set<String> =
     }
 
 
-inline fun <T> Encoder.writeCollection(collection: Collection<T>, writeElement: (T) -> Unit) {
-    writeSmallInt(collection.size)
+inline fun <T, C : Encoder> C.writeCollectionUnchecked(collection: Collection<T>, size: Int, writeElement: (T) -> Unit): Int {
+    writeSmallInt(size)
+    var totalWritten = 0
     for (element in collection) {
         writeElement(element)
+        ++totalWritten
+    }
+    return totalWritten
+}
+
+
+inline fun <T> WriteContext.writeCollection(collection: Collection<T>, writeElement: (T) -> Unit) {
+    val size = collection.size
+    val totalWritten = writeCollectionUnchecked(collection, size, writeElement)
+    if (size != totalWritten) {
+        reportCollectionWriteFailure("collection", size, totalWritten, collection.size)
     }
 }
 
@@ -335,3 +365,47 @@ fun WriteContext.encodeUsingJavaSerialization(value: Any) {
 
 fun ReadContext.decodeUsingJavaSerialization(): Any? =
     ObjectInputStream(inputStream).readObject()
+
+
+fun WriteContext.reportCollectionWriteFailure(collectionKind: String, size: Int, totalWritten: Int, sizeAfterIteration: Int) {
+    onError(ConcurrentModificationException("Collection corrupted or changed while iterating")) {
+        text("The $collectionKind size() is $size, but $totalWritten entries were available when iterating over it. ")
+        if (sizeAfterIteration != size) {
+            text("The size changed to $sizeAfterIteration after iterating.")
+        } else {
+            text("The $collectionKind is likely broken or corrupted because of a data race.")
+        }
+    }
+}
+
+
+/**
+ * Custom descendants of supported collection/map types that are known to round-trip safely and so must not be reported.
+ */
+private
+val customImplementationExceptions = setOf(
+    "org.gradle.internal.configuration.inputs.AccessTrackingProperties"
+)
+
+
+/**
+ * Emits a deprecation when [actualType] is a custom descendant of one of the [supportedTypes]
+ * a codec serializes specially. The codec is only reached because dispatch matched [actualType] to one of these
+ * base types, so anything that is not exactly one of them is a custom descendant that will be restored as a
+ * standard [kind] (collection/map) — losing its custom behavior. The first supported type is used as the base
+ * type in the message (e.g. `HashSet` for `HashSet`/`LinkedHashSet`).
+ */
+fun warnAboutCustomImplementation(actualType: Class<*>, kind: String, supportedTypes: Array<out Class<*>>) {
+    if (actualType in supportedTypes || actualType.name in customImplementationExceptions) {
+        return
+    }
+    val baseType = supportedTypes.firstOrNull() ?: return
+    DeprecationLogger
+        .deprecateBehaviour(
+            "Serializing a custom $kind type '${actualType.name}', a subtype of '${baseType.name}', " +
+                "which will be restored as a standard $kind, losing any custom state and behavior."
+        )
+        .willBecomeAnErrorInGradle10()
+        .withUserManual("configuration_cache_requirements", "config_cache:requirements:custom_collection_types")
+        .nagUser()
+}

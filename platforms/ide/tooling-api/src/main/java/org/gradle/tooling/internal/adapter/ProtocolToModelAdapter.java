@@ -19,16 +19,14 @@ import com.google.common.base.Optional;
 import org.gradle.internal.Cast;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.reflect.DirectInstantiator;
-import org.gradle.internal.service.scopes.Scope;
-import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.internal.time.CountdownTimer;
 import org.gradle.internal.time.Time;
 import org.gradle.tooling.ToolingModelContract;
 import org.gradle.tooling.model.DomainObjectSet;
 import org.gradle.tooling.model.internal.Exceptions;
 import org.gradle.tooling.model.internal.ImmutableDomainObjectSet;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.Serializable;
 import java.lang.annotation.Annotation;
@@ -55,13 +53,13 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Adapts some source object to some target view type.
  */
-@ServiceScope(Scope.Global.class)
 public class ProtocolToModelAdapter implements ObjectGraphAdapter {
     private static final ViewDecoration NO_OP_MAPPER = new NoOpDecoration();
     private static final TargetTypeProvider IDENTITY_TYPE_PROVIDER = new TargetTypeProvider() {
@@ -144,6 +142,9 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
     private static <T> T createView(Class<T> targetType, @Nullable Object sourceObject, ViewDecoration decoration, ViewGraphDetails graphDetails) {
         if (sourceObject == null) {
             return null;
+        }
+        if (sourceObject instanceof Supplier) {
+            return createView(targetType, ((Supplier<?>) sourceObject).get(), decoration, graphDetails);
         }
 
         // Calculate the actual type
@@ -466,6 +467,9 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
 
         @Override
         public boolean equals(Object obj) {
+            if (!(obj instanceof ViewKey)) {
+                return false;
+            }
             ViewKey other = (ViewKey) obj;
             return other.type.equals(type) && other.viewDecoration.equals(viewDecoration);
         }
@@ -688,28 +692,28 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
                 parameterTypes
             );
             lock.readLock().lock();
-            Optional<Method> cached = store.get(key);
-            if (cached == null) {
-                cacheMiss++;
-                lock.readLock().unlock();
-                lock.writeLock().lock();
-                try {
-                    cached = store.get(key);
-                    if (cached == null) {
-                        cached = lookup(owner, name, parameterTypes);
-                        if (cacheMiss % 10 == 0) {
-                            removeDirtyEntries();
-                        }
-                        store.put(key, cached);
-                    }
-                    lock.readLock().lock();
-                } finally {
-                    lock.writeLock().unlock();
-                }
-            } else {
-                cacheHit++;
-            }
             try {
+                Optional<Method> cached = store.get(key);
+                if (cached == null) {
+                    cacheMiss++;
+                    lock.readLock().unlock();
+                    lock.writeLock().lock();
+                    try {
+                        cached = store.get(key);
+                        if (cached == null) {
+                            cached = lookup(owner, name, parameterTypes);
+                            if (cacheMiss % 10 == 0) {
+                                removeDirtyEntries();
+                            }
+                            store.put(key, cached);
+                        }
+                    } finally {
+                        lock.readLock().lock();
+                        lock.writeLock().unlock();
+                    }
+                } else {
+                    cacheHit++;
+                }
                 return cached.orNull();
             } finally {
                 lock.readLock().unlock();
@@ -931,6 +935,7 @@ public class ProtocolToModelAdapter implements ObjectGraphAdapter {
         private Object instance;
         private final Class<?> mixInClass;
         private final MethodInvoker next;
+        @SuppressWarnings("ThreadLocalUsage") //TODO: evaluate errorprone suppression (https://github.com/gradle/gradle/issues/35864)
         private final ThreadLocal<MethodInvocation> current = new ThreadLocal<>();
 
         ClassMixInMethodInvoker(Class<?> mixInClass, MethodInvoker next) {

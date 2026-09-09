@@ -16,10 +16,12 @@
 
 package org.gradle.api.file;
 
+import org.gradle.api.model.ManagedType;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Provider;
+import org.gradle.declarative.dsl.model.annotations.internal.DeclarativeWithHiddenMembers;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 
 /**
@@ -32,7 +34,12 @@ import java.io.File;
  * <p><b>Note:</b> This interface is not intended for implementation by build script or plugin authors.</p>
  *
  * @since 4.3
+ *
+ * @see ManagedType Create an instance of this as a managed property (preferred).
+ * @see org.gradle.api.model.ObjectFactory#fileProperty() Create an instance of this manually.
  */
+@ManagedType
+@DeclarativeWithHiddenMembers
 public interface RegularFileProperty extends FileSystemLocationProperty<RegularFile> {
     /**
      * {@inheritDoc}

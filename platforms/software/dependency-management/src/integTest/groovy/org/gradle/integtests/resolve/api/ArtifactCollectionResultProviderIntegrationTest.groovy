@@ -24,7 +24,6 @@ import org.gradle.integtests.fixtures.extensions.FluidDependenciesResolveTest
 class ArtifactCollectionResultProviderIntegrationTest extends AbstractHttpDependencyResolutionTest {
 
     def setup() {
-        createDirs("project-lib")
         settingsFile << """
             rootProject.name = 'root'
             include 'project-lib'
@@ -32,14 +31,11 @@ class ArtifactCollectionResultProviderIntegrationTest extends AbstractHttpDepend
         mavenRepo.module("org.external", "external-lib").publish()
         file('lib/file-lib.jar') << 'content'
         buildFile << """
-            project(':project-lib') {
-                apply plugin: 'java'
-            }
             configurations {
                 compile
             }
             repositories {
-                maven { url "${mavenRepo.uri}" }
+                maven { url = "${mavenRepo.uri}" }
             }
             dependencies {
                 compile 'org.external:external-lib:1.0'
@@ -63,6 +59,12 @@ class ArtifactCollectionResultProviderIntegrationTest extends AbstractHttpDepend
                     println(artifactFiles.files)
                     println(resolvedArtifacts.get())
                 }
+            }
+        """
+
+        file("project-lib/build.gradle") << """
+            plugins {
+                id("java-library")
             }
         """
     }
@@ -91,7 +93,6 @@ class ArtifactCollectionResultProviderIntegrationTest extends AbstractHttpDepend
                     assert result.id.componentIdentifier.version == '1.0'
                     assert result.id.fileName == 'external-lib-1.0.jar'
 
-                    assert result.variant instanceof org.gradle.api.internal.artifacts.result.DefaultResolvedVariantResult
                     assert result.variant.owner == result.id.componentIdentifier
                     assert result.variant.attributes.getAttribute(org.gradle.api.artifacts.type.ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE) == 'jar'
                     assert result.variant.attributes.getAttribute(org.gradle.api.internal.project.ProjectInternal.STATUS_ATTRIBUTE) == 'release'

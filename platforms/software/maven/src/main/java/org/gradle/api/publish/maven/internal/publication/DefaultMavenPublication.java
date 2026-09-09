@@ -21,11 +21,11 @@ import org.gradle.api.DomainObjectCollection;
 import org.gradle.api.DomainObjectSet;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Project;
-import org.gradle.api.Task;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.PublishArtifact;
 import org.gradle.api.component.SoftwareComponent;
 import org.gradle.api.file.Directory;
+import org.gradle.api.file.RegularFile;
 import org.gradle.api.internal.CollectionCallbackActionDecorator;
 import org.gradle.api.internal.CompositeDomainObjectSet;
 import org.gradle.api.internal.artifacts.DefaultModuleVersionIdentifier;
@@ -40,6 +40,7 @@ import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.internal.tasks.TaskDependencyFactory;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.provider.SetProperty;
 import org.gradle.api.publish.VersionMappingStrategy;
@@ -58,6 +59,7 @@ import org.gradle.api.publish.maven.internal.artifact.SingleOutputTaskMavenArtif
 import org.gradle.api.publish.maven.internal.publisher.MavenNormalizedPublication;
 import org.gradle.api.publish.maven.internal.publisher.MavenPublicationCoordinates;
 import org.gradle.api.publish.maven.internal.validation.MavenPublicationErrorChecker;
+import org.gradle.api.publish.tasks.GenerateModuleMetadata;
 import org.gradle.api.tasks.TaskDependency;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.internal.Cast;
@@ -66,8 +68,8 @@ import org.gradle.internal.DisplayName;
 import org.gradle.internal.typeconversion.NotationParser;
 import org.gradle.util.internal.CollectionUtils;
 import org.gradle.util.internal.GUtil;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.inject.Inject;
 import java.io.File;
 import java.util.HashSet;
@@ -78,6 +80,7 @@ import java.util.function.Function;
 
 import static java.util.stream.Collectors.toMap;
 
+@SuppressWarnings("this-escape")
 public abstract class DefaultMavenPublication implements MavenPublicationInternal {
 
     private final String name;
@@ -92,11 +95,11 @@ public abstract class DefaultMavenPublication implements MavenPublicationInterna
     private final PublicationArtifactSet<MavenArtifact> metadataArtifacts;
     private final PublicationArtifactSet<MavenArtifact> derivedArtifacts;
     private final PublicationArtifactSet<MavenArtifact> publishableArtifacts;
-    private final SetProperty<MavenArtifact> componentArtifacts;
+
     private final Set<String> silencedVariants = new HashSet<>();
     private MavenArtifact pomArtifact;
     private SingleOutputTaskMavenArtifact moduleMetadataArtifact;
-    private TaskProvider<? extends Task> moduleDescriptorGenerator;
+    private TaskProvider<? extends GenerateModuleMetadata> moduleDescriptorGenerator;
     private boolean isPublishWithOriginalFileName;
     private boolean alias;
     private boolean populated;
@@ -127,16 +130,15 @@ public abstract class DefaultMavenPublication implements MavenPublicationInterna
 
         MavenComponentParser mavenComponentParser = objectFactory.newInstance(MavenComponentParser.class, mavenArtifactParser);
 
-        this.componentArtifacts = objectFactory.setProperty(MavenArtifact.class);
-        this.componentArtifacts.convention(getComponent().map(mavenComponentParser::parseArtifacts));
-        this.componentArtifacts.finalizeValueOnRead();
+        getComponentArtifacts().convention(getComponent().map(mavenComponentParser::parseArtifacts));
+        getComponentArtifacts().finalizeValueOnRead();
 
         this.mainArtifacts = objectFactory.newInstance(DefaultMavenArtifactSet.class, name, mavenArtifactParser, fileCollectionFactory, collectionCallbackActionDecorator);
         this.metadataArtifacts = new DefaultPublicationArtifactSet<>(MavenArtifact.class, "metadata artifacts for " + name, fileCollectionFactory, collectionCallbackActionDecorator);
         this.derivedArtifacts = new DefaultPublicationArtifactSet<>(MavenArtifact.class, "derived artifacts for " + name, fileCollectionFactory, collectionCallbackActionDecorator);
         this.publishableArtifacts = new CompositePublicationArtifactSet<>(taskDependencyFactory, MavenArtifact.class, Cast.uncheckedCast(new PublicationArtifactSet<?>[]{mainArtifacts, metadataArtifacts, derivedArtifacts}));
 
-        this.pom = objectFactory.newInstance(DefaultMavenPom.class, objectFactory);
+        this.pom = objectFactory.newInstance(DefaultMavenPom.class);
         this.pom.getWriteGradleMetadataMarker().set(providerFactory.provider(this::writeGradleMetadataMarker));
         this.pom.getPackagingProperty().convention(providerFactory.provider(this::determinePackagingFromArtifacts));
         this.pom.getDependencies().set(
@@ -196,16 +198,22 @@ public abstract class DefaultMavenPublication implements MavenPublicationInterna
     }
 
     @Override
-    public void setPomGenerator(TaskProvider<? extends Task> pomGenerator) {
+    public void setPomGenerator(Provider<RegularFile> pomFile, Provider<Boolean> generatorEnabled) {
         if (pomArtifact != null) {
             metadataArtifacts.remove(pomArtifact);
         }
-        pomArtifact = new SingleOutputTaskMavenArtifact(pomGenerator, "pom", null, taskDependencyFactory);
+        pomArtifact = new SingleOutputTaskMavenArtifact(
+            pomFile,
+            generatorEnabled,
+            "pom",
+            null,
+            taskDependencyFactory
+        );
         metadataArtifacts.add(pomArtifact);
     }
 
     @Override
-    public void setModuleDescriptorGenerator(TaskProvider<? extends Task> descriptorGenerator) {
+    public void setModuleDescriptorGenerator(TaskProvider<? extends GenerateModuleMetadata> descriptorGenerator) {
         moduleDescriptorGenerator = descriptorGenerator;
         if (moduleMetadataArtifact != null) {
             metadataArtifacts.remove(moduleMetadataArtifact);
@@ -221,7 +229,13 @@ public abstract class DefaultMavenPublication implements MavenPublicationInterna
         if (moduleDescriptorGenerator == null) {
             return;
         }
-        moduleMetadataArtifact = new SingleOutputTaskMavenArtifact(moduleDescriptorGenerator, "module", null, taskDependencyFactory);
+        moduleMetadataArtifact = new SingleOutputTaskMavenArtifact(
+            moduleDescriptorGenerator.flatMap(GenerateModuleMetadata::getOutputFile),
+            moduleDescriptorGenerator.map(GenerateModuleMetadata::getEnabled),
+            "module",
+            null,
+            taskDependencyFactory
+        );
         metadataArtifacts.add(moduleMetadataArtifact);
         moduleDescriptorGenerator = null;
     }
@@ -261,10 +275,12 @@ public abstract class DefaultMavenPublication implements MavenPublicationInterna
             return;
         }
         populated = true;
-        if (!artifactsOverridden && componentArtifacts.isPresent()) {
-            mainArtifacts.addAll(componentArtifacts.get());
+        if (!artifactsOverridden && getComponentArtifacts().isPresent()) {
+            mainArtifacts.addAll(getComponentArtifacts().get());
         }
     }
+
+    protected abstract SetProperty<MavenArtifact> getComponentArtifacts();
 
     @Override
     public MavenArtifact artifact(Object source) {

@@ -20,23 +20,27 @@ import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 
 class MixedMavenAndIvyModulesIntegrationTest extends AbstractDependencyResolutionTest {
-    def resolve = new ResolveTestFixture(buildFile, "conf")
+    def resolve = new ResolveTestFixture(testDirectory)
 
     def setup() {
-        resolve.prepare()
-        resolve.addDefaultVariantDerivationStrategy()
         settingsFile << """
             rootProject.name = 'testproject'
         """
         buildFile << """
+            plugins {
+                id("jvm-ecosystem")
+            }
+
             repositories {
-                maven { url '${mavenRepo.uri}' }
-                ivy { url '${ivyRepo.uri}' }
+                maven { url = '${mavenRepo.uri}' }
+                ivy { url = "${ivyRepo.uri}" }
             }
             configurations {
                 conf
             }
-"""
+
+            ${resolve.configureProject("conf")}
+        """
     }
 
     def "when no target configuration is specified then a dependency on maven module includes the default configuration of required ivy module"() {
@@ -73,7 +77,7 @@ dependencies {
 }
 """
         expect:
-        succeeds 'checkDep'
+        succeeds 'checkDeps'
         resolve.expectGraph {
             root(':', ':testproject:') {
                 module('org.test:maven:1.0:runtime') {
@@ -113,11 +117,11 @@ dependencies {
 
         buildFile << """
 dependencies {
-    conf group: 'org.test', name: 'maven', version: '1.0'
+    conf("org.test:maven:1.0")
 }
 """
         expect:
-        succeeds 'checkDep'
+        succeeds 'checkDeps'
         resolve.expectGraph {
             root(':', ':testproject:') {
                 module('org.test:maven:1.0') {
@@ -157,12 +161,17 @@ dependencies {
 }
 """
         expect:
-        succeeds 'checkDep'
+        succeeds 'checkDeps'
         resolve.expectGraph {
             root(':', ':testproject:') {
                 module('org.test:maven:1.0:runtime') {
                     module('org.test:ivy:1.0') {
-                        module('org.test:in-default:1.0')
+                        module('org.test:in-default:1.0') {
+                            variant("compile")
+                        }
+                        module('org.test:in-default:1.0') {
+                            variant("default")
+                        }
                         artifact(name: 'in-default')
                     }
                 }
@@ -189,11 +198,11 @@ dependencies {
 
         buildFile << """
 dependencies {
-    conf group: 'org.test', name: 'ivy', version: '1.0'
+    conf("org.test:ivy:1.0")
 }
 """
         expect:
-        succeeds 'checkDep'
+        succeeds 'checkDeps'
         resolve.expectGraph {
             root(':', ':testproject:') {
                 module('org.test:ivy:1.0') {
@@ -236,12 +245,12 @@ dependencies {
 
         buildFile << """
 dependencies {
-    conf group: 'org.test', name: 'maven', version: '1.0'
+    conf("org.test:maven:1.0")
 }
 configurations.conf.resolutionStrategy.force('org.test:ivy:1.2')
 """
         expect:
-        succeeds 'checkDep'
+        succeeds 'checkDeps'
         resolve.expectGraph {
             root(':', ':testproject:') {
                 module('org.test:maven:1.0') {
@@ -249,7 +258,15 @@ configurations.conf.resolutionStrategy.force('org.test:ivy:1.2')
                     edge('org.test:ivy:1.0', 'org.test:ivy:1.2') {
                         forced()
                         artifact(name: 'default')
-                        module('org.test:m3:1.0')
+                        module('org.test:m3:1.0') {
+                            variant("compile")
+                        }
+                        module('org.test:m3:1.0') {
+                            variant("default")
+                        }
+                        module('org.test:m3:1.0') {
+                            variant("master")
+                        }
                     }
                 }
             }
@@ -283,18 +300,23 @@ configurations.conf.resolutionStrategy.force('org.test:ivy:1.2')
 
         buildFile << """
 dependencies {
-    conf group: 'org.test', name: 'maven', version: '1.0'
+    conf("org.test:maven:1.0")
 }
 """
         expect:
-        succeeds 'checkDep'
+        succeeds 'checkDeps'
         resolve.expectGraph {
             root(':', ':testproject:') {
                 module('org.test:maven:1.0:runtime') {
                     configuration = 'compile'
                     edge('org.test:ivy:1.+', 'org.test:ivy:1.2') {
                         artifact(name: 'in-default')
-                        module('org.test:in-default:1.0')
+                        module('org.test:in-default:1.0') {
+                            variant("compile")
+                        }
+                        module('org.test:in-default:1.0') {
+                            variant("default")
+                        }
                     }
                 }
             }
@@ -315,11 +337,11 @@ dependencies {
 
         buildFile << """
 dependencies {
-    conf group: 'org.test', name: 'm4', version: '1.0'
+    conf("org.test:m4:1.0")
 }
 """
         expect:
-        succeeds 'checkDep'
+        succeeds 'checkDeps'
         resolve.expectGraph {
             root(':', ':testproject:') {
                 module('org.test:m4:1.0:runtime') {

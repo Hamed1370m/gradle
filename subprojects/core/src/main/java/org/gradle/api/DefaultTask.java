@@ -33,6 +33,7 @@ import org.gradle.api.tasks.TaskDestroyables;
 import org.gradle.api.tasks.TaskLocalState;
 import org.gradle.internal.extensibility.NoConventionMapping;
 import org.gradle.work.DisableCachingByDefault;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 import java.time.Duration;
@@ -41,6 +42,7 @@ import java.util.Set;
 
 /**
  * {@code DefaultTask} is the standard {@link Task} implementation. You can extend this to implement your own task types.
+ * @since 0.7
  */
 @NoConventionMapping
 @SuppressWarnings("deprecation")
@@ -180,22 +182,24 @@ public abstract class DefaultTask extends org.gradle.api.internal.AbstractTask i
     }
 
     @Override
+    @Nullable
     public String getDescription() {
         return super.getDescription();
     }
 
     @Override
-    public void setDescription(String description) {
+    public void setDescription(@Nullable String description) {
         super.setDescription(description);
     }
 
     @Override
+    @Nullable
     public String getGroup() {
         return super.getGroup();
     }
 
     @Override
-    public void setGroup(String group) {
+    public void setGroup(@Nullable String group) {
         super.setGroup(group);
     }
 

@@ -21,6 +21,7 @@ import groovy.lang.Closure;
 import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
 import org.gradle.plugins.ide.api.XmlFileContentMerger;
+import org.gradle.plugins.ide.internal.IdeDeprecations;
 import org.gradle.util.internal.ConfigureUtil;
 
 import javax.inject.Inject;
@@ -40,7 +41,7 @@ import static org.gradle.util.internal.ConfigureUtil.configure;
  * <p>
  * Advanced configuration closures beforeMerged and whenMerged receive {@link WtpFacet} object as parameter.
  *
- * <pre class='autoTested'>
+ * <pre class='autoTestedWithDeprecations'>
  * plugins {
  *     id 'war' // or 'ear' or 'java'
  *     id 'eclipse-wtp'
@@ -79,7 +80,11 @@ import static org.gradle.util.internal.ConfigureUtil.configure;
  * }
  *
  * </pre>
+ *
+ * @deprecated Will be removed in Gradle 10.
+ * @since 1.0
  */
+@Deprecated
 public abstract class EclipseWtpFacet {
 
     private final XmlFileContentMerger file;
@@ -87,11 +92,13 @@ public abstract class EclipseWtpFacet {
 
     @Inject
     public EclipseWtpFacet(XmlFileContentMerger file) {
+        IdeDeprecations.nagDeprecatedType(EclipseWtpFacet.class);
         this.file = file;
     }
 
     /**
      * See {@link #file(Action) }
+     * @since 1.0
      */
     public XmlFileContentMerger getFile() {
         return file;
@@ -105,6 +112,7 @@ public abstract class EclipseWtpFacet {
      * <p>
      *
      * For example see docs for {@link EclipseWtpFacet}
+     * @since 1.0
      */
     public void file(@DelegatesTo(XmlFileContentMerger.class) Closure closure) {
         configure(closure, file);
@@ -127,11 +135,17 @@ public abstract class EclipseWtpFacet {
      * The facets to be added as elements.
      * <p>
      * For examples see docs for {@link EclipseWtpFacet}
+     * @since 1.0
      */
     public List<Facet> getFacets() {
         return facets;
     }
 
+    /**
+     * Sets the facets.
+     *
+     * @since 1.0
+     */
     public void setFacets(List<Facet> facets) {
         this.facets = facets;
     }
@@ -146,6 +160,7 @@ public abstract class EclipseWtpFacet {
      * For examples see docs for {@link EclipseWtpFacet}
      *
      * @param args A map that must contain a 'name' and 'version' key with corresponding values.
+     * @since 1.0
      */
     public void facet(Map<String, ?> args) {
         Facet newFacet = ConfigureUtil.configureByMap(args, new Facet());
@@ -177,6 +192,11 @@ public abstract class EclipseWtpFacet {
         return facets;
     }
 
+    /**
+     * Merge xml facet.
+     *
+     * @since 1.0
+     */
     @SuppressWarnings("unchecked")
     public void mergeXmlFacet(WtpFacet xmlFacet) {
         file.getBeforeMerged().execute(xmlFacet);

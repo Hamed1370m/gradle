@@ -19,7 +19,7 @@ package org.gradle.performance.annotations
 import groovy.transform.CompileStatic
 import org.gradle.performance.fixture.PerformanceTestScenarioDefinition
 import org.gradle.performance.results.OperatingSystem
-import org.junit.Assume
+import org.junit.jupiter.api.Assumptions
 import org.spockframework.runtime.extension.ExtensionAnnotation
 import org.spockframework.runtime.extension.IAnnotationDrivenExtension
 import org.spockframework.runtime.extension.IMethodInterceptor
@@ -36,16 +36,19 @@ import java.lang.reflect.Method
 import static org.gradle.performance.fixture.PerformanceTestScenarioDefinition.PerformanceTestsBean.GroupsBean
 
 /**
- * We scan all performance test classes annotated by @RunFor and generate the scenario definition JSON file (.teamcity/performance-tests-ci.json).
+ * We scan all performance test classes annotated by @RunFor and generate the scenario definition JSON file {@code .teamcity/performance-tests-ci.json}.
  * All performance test methods should be annotated by @RunFor, either at method or class level.
- *
+ * <p>
  * The sanityCheck task checks (via `performance:verifyPerformanceScenarioDefinitions` task):
- * 1. All performance test methods are annotated by {@link @RunFor}. (except for {@link @NoRunFor} and {@link @Ignore} annotated methods).
- * 2. The performance scenario information provided by all {@link @RunFor}s exactly matches scenario definition JSON file, no more, no less.
- *
- * To update the scenario definition JSON file, run `./gradlew performance:writePerformanceScenarioDefinitions`.
- *
- * Also see {@link @NoRunFor}
+ * <ol>
+ * <li> All performance test methods are annotated by @RunFor. (except for @NoRunFor and @Ignore annotated methods).
+ * <li> The performance scenario information provided by all @RunFor's exactly matches scenario definition JSON file, no more, no less.
+ * </ol>
+ * To update the scenario definition JSON file, run
+ * <pre>
+ * ./gradlew :performance:writePerformanceScenarioDefinitions
+ * </pre>
+ * @see NoRunFor
  */
 @Target([ElementType.TYPE, ElementType.METHOD])
 @Retention(RetentionPolicy.RUNTIME)
@@ -74,7 +77,6 @@ import static org.gradle.performance.fixture.PerformanceTestScenarioDefinition.P
 enum ScenarioType {
     PER_COMMIT,
     PER_DAY,
-    PER_WEEK
 }
 
 @CompileStatic
@@ -90,6 +92,18 @@ class RunForExtension implements IAnnotationDrivenExtension<RunFor> {
                 scenarioDefinition.writeTo(SCENARIO_DEFINITION_FILE)
             }
         } as Runnable))
+    }
+
+    /**
+     * Whether this test run only collects the scenario definitions instead of executing the scenarios.
+     *
+     * This is the case for {@code writeTmpPerformanceScenarioDefinitions} and
+     * {@code writePerformanceScenarioDefinitions}, which use the {@code Test} task infrastructure to
+     * visit all performance tests without running any build. Fixture methods still run in that mode,
+     * so they must not require anything from the environment that only a performance test agent has.
+     */
+    static boolean isCollectingScenarioDefinitionsOnly() {
+        return SCENARIO_DEFINITION_FILE != null
     }
 
     @Override
@@ -147,7 +161,7 @@ class RunForExtension implements IAnnotationDrivenExtension<RunFor> {
                 if (!groups.isEmpty()) {
                     scenarioDefinition.getPerformanceTests().add(new PerformanceTestScenarioDefinition.PerformanceTestsBean("${invocation.getSpec().getReflection().getName()}.$testId", groups))
                 }
-                Assume.assumeFalse(true)
+                Assumptions.assumeFalse(true)
             } else {
                 invocation.proceed()
             }

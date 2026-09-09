@@ -16,12 +16,11 @@
 package org.gradle.plugins.ide.internal;
 
 import com.google.common.base.Optional;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
-import org.gradle.api.UncheckedIOException;
 import org.gradle.api.file.FileSystemLocation;
 import org.gradle.api.internal.lambdas.SerializableLambdas;
 import org.gradle.api.invocation.Gradle;
@@ -30,6 +29,8 @@ import org.gradle.api.logging.Logging;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.Delete;
 import org.gradle.api.tasks.TaskProvider;
+import org.gradle.internal.UncheckedException;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.logging.ConsoleRenderer;
 import org.gradle.internal.os.OperatingSystem;
 import org.gradle.plugins.ide.IdeWorkspace;
@@ -48,9 +49,7 @@ public abstract class IdePlugin implements Plugin<Project> {
     protected Project project;
 
     @Inject
-    protected ExecOperations getExecOperations() {
-        throw new UnsupportedOperationException();
-    }
+    protected abstract ExecOperations getExecOperations();
 
     /**
      * Returns the path to the correct Gradle distribution to use. The wrapper of the generating project will be used only if the execution context of the currently running Gradle is in the Gradle home (typical of a wrapper execution context). If this isn't the case, we try to use the current Gradle home, if available, as the distribution. Finally, if nothing matches, we default to the system-wide Gradle distribution.
@@ -82,12 +81,14 @@ public abstract class IdePlugin implements Plugin<Project> {
     @Override
     public void apply(Project target) {
         project = target;
-        String lifecycleTaskName = getLifecycleTaskName();
-        lifecycleTask = target.getTasks().register(lifecycleTaskName);
-        cleanTask = target.getTasks().register(cleanName(lifecycleTaskName), Delete.class, new Action<Delete>() {
+        lifecycleTask = target.getTasks().register(getLifecycleTaskName());
+        cleanTask = target.getTasks().register(cleanName(getLifecycleTaskName()), Delete.class, new Action<Delete>() {
             @Override
             public void execute(Delete task) {
                 task.setGroup("IDE");
+                if (shouldDeprecateLifecycleTask()) {
+                    task.doFirst(deprecateTaskAction());
+                }
             }
         });
         lifecycleTask.configure(new Action<Task>() {
@@ -95,6 +96,9 @@ public abstract class IdePlugin implements Plugin<Project> {
             public void execute(Task task) {
                 task.setGroup("IDE");
                 task.shouldRunAfter(cleanTask);
+                if (shouldDeprecateLifecycleTask()) {
+                    task.doFirst(deprecateTaskAction());
+                }
             }
         });
         onApply(target);
@@ -130,6 +134,7 @@ public abstract class IdePlugin implements Plugin<Project> {
             @Override
             public void execute(Delete cleanWorker) {
                 cleanWorker.delete(worker);
+                cleanWorker.doFirst(deprecateTaskAction());
             }
         });
 
@@ -164,6 +169,13 @@ public abstract class IdePlugin implements Plugin<Project> {
         };
     }
 
+    private static Action<Task> deprecateTaskAction() {
+        return SerializableLambdas.action(task -> DeprecationLogger.deprecateTask(task.getName())
+            .willBeRemovedInGradle10()
+            .withUpgradeGuideSection(9, "ide_task_deprecation")
+            .nagUser());
+    }
+
     protected static Action<? super Task> withDescription(final String description) {
         return new Action<Task>() {
             @Override
@@ -196,6 +208,9 @@ public abstract class IdePlugin implements Plugin<Project> {
                 openTask.setDescription("Opens the " + workspace.getDisplayName());
 
                 ExecOperations execOperations = getExecOperations();
+                if (shouldDeprecateLifecycleTask()) {
+                    openTask.doFirst(deprecateTaskAction());
+                }
                 openTask.doLast(new Action<Task>() {
                     @Override
                     public void execute(Task task) {
@@ -205,7 +220,7 @@ public abstract class IdePlugin implements Plugin<Project> {
                             try {
                                 Desktop.getDesktop().open(workspace.getLocation().get().getAsFile());
                             } catch (IOException e) {
-                                throw new UncheckedIOException(e);
+                                throw UncheckedException.throwAsUncheckedException(e);
                             }
                         }
                     }
@@ -215,6 +230,10 @@ public abstract class IdePlugin implements Plugin<Project> {
     }
 
     protected abstract String getLifecycleTaskName();
+
+    protected boolean shouldDeprecateLifecycleTask() {
+        return false;
+    };
 
     public boolean isRoot() {
         return project.getParent() == null;

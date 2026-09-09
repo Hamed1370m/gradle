@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2009 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,14 @@
 
 package org.gradle.wrapper;
 
+import org.gradle.util.internal.WrapperCredentials;
+
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.reflect.Method;
 import java.net.Authenticator;
 import java.net.HttpURLConnection;
 import java.net.PasswordAuthentication;
@@ -34,6 +35,7 @@ import java.net.URLConnection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import org.jspecify.annotations.Nullable;
 
 public class Download implements IDownload {
     public static final String UNKNOWN_VERSION = "0";
@@ -64,11 +66,11 @@ public class Download implements IDownload {
         return result;
     }
 
-    public Download(Logger logger, DownloadProgressListener progressListener, String appName, String appVersion, Map<String, String> systemProperties) {
+    public Download(Logger logger, @Nullable DownloadProgressListener progressListener, String appName, String appVersion, Map<String, String> systemProperties) {
         this(logger, progressListener, appName, appVersion, systemProperties, DEFAULT_NETWORK_TIMEOUT_MILLISECONDS);
     }
 
-    public Download(Logger logger, DownloadProgressListener progressListener, String appName, String appVersion, Map<String, String> systemProperties, int networkTimeout) {
+    public Download(Logger logger, @Nullable DownloadProgressListener progressListener, String appName, String appVersion, Map<String, String> systemProperties, int networkTimeout) {
         this.logger = logger;
         this.appName = appName;
         this.appVersion = appVersion;
@@ -91,9 +93,10 @@ public class Download implements IDownload {
         try {
             HttpURLConnection conn = (HttpURLConnection)safeUrl.openConnection();
             conn.setRequestMethod("HEAD");
-            addBasicAuthentication(uri, conn);
+            addAuthentication(uri, conn);
             conn.setRequestProperty("User-Agent", calculateUserAgent());
             conn.setConnectTimeout(networkTimeout);
+            conn.setReadTimeout(networkTimeout);
             conn.connect();
             responseCode = conn.getResponseCode();
             if (responseCode != 200) {
@@ -122,11 +125,21 @@ public class Download implements IDownload {
             // No proxy is passed here as proxies are set globally using the HTTP(S) proxy system properties. The respective protocol handler implementation then makes use of these properties.
             conn = safeUrl.openConnection();
 
-            addBasicAuthentication(address, conn);
+            addAuthentication(address, conn);
             final String userAgentValue = calculateUserAgent();
             conn.setRequestProperty("User-Agent", userAgentValue);
             conn.setConnectTimeout(networkTimeout);
             conn.setReadTimeout(networkTimeout);
+
+            // Check HTTP response code before downloading
+            if (conn instanceof HttpURLConnection) {
+                HttpURLConnection httpConn = (HttpURLConnection) conn;
+                int responseCode = httpConn.getResponseCode();
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    throw new IOException("Server returned HTTP response code: " + responseCode + " for URL: " + safeUrl);
+                }
+            }
+
             in = conn.getInputStream();
             byte[] buffer = new byte[BUFFER_SIZE];
             int numRead;
@@ -175,53 +188,18 @@ public class Download implements IDownload {
         }
     }
 
-    private void addBasicAuthentication(URI address, URLConnection connection) throws IOException {
-        String userInfo = calculateUserInfo(address);
-        if (userInfo == null) {
+    private void addAuthentication(URI address, URLConnection connection) throws IOException {
+        WrapperCredentials credentials = WrapperCredentials.findCredentials(address, systemProperties::get);
+        if (credentials == null) {
             return;
         }
+
         if (!"https".equals(address.getScheme())) {
-            logger.log("WARNING Using HTTP Basic Authentication over an insecure connection to download the Gradle distribution. Please consider using HTTPS.");
+            logger.log("WARNING Using HTTP " + credentials.authorizationTypeDisplayName() + " Authentication over an insecure connection to download the Gradle distribution. Please consider using HTTPS.");
         }
-        connection.setRequestProperty("Authorization", "Basic " + base64Encode(userInfo));
-    }
 
-    /**
-     * Base64 encode user info for HTTP Basic Authentication.
-     *
-     * Try to use {@literal java.util.Base64} encoder which is available starting with Java 8.
-     * Fallback to {@literal javax.xml.bind.DatatypeConverter} from JAXB which is available starting with Java 6 but is not anymore in Java 9.
-     * Fortunately, both of these two Base64 encoders implement the right Base64 flavor, the one that does not split the output in multiple lines.
-     *
-     * @param userInfo user info
-     * @return Base64 encoded user info
-     * @throws RuntimeException if no public Base64 encoder is available on this JVM
-     */
-    @SuppressWarnings("StringCharset")
-    private String base64Encode(String userInfo) {
-        ClassLoader loader = getClass().getClassLoader();
-        try {
-            Method getEncoderMethod = loader.loadClass("java.util.Base64").getMethod("getEncoder");
-            Method encodeMethod = loader.loadClass("java.util.Base64$Encoder").getMethod("encodeToString", byte[].class);
-            Object encoder = getEncoderMethod.invoke(null);
-            return (String) encodeMethod.invoke(encoder, new Object[]{userInfo.getBytes("UTF-8")});
-        } catch (Exception java7OrEarlier) {
-            try {
-                Method encodeMethod = loader.loadClass("javax.xml.bind.DatatypeConverter").getMethod("printBase64Binary", byte[].class);
-                return (String) encodeMethod.invoke(null, new Object[]{userInfo.getBytes("UTF-8")});
-            } catch (Exception java5OrEarlier) {
-                throw new RuntimeException("Downloading Gradle distributions with HTTP Basic Authentication is not supported on your JVM.", java5OrEarlier);
-            }
-        }
-    }
-
-    private String calculateUserInfo(URI uri) {
-        String username = systemProperties.get("gradle.wrapperUser");
-        String password = systemProperties.get("gradle.wrapperPassword");
-        if (username != null && password != null) {
-            return username + ':' + password;
-        }
-        return uri.getUserInfo();
+        Map.Entry<String, String> authHeader = credentials.authorizationHeader();
+        connection.setRequestProperty(authHeader.getKey(), authHeader.getValue());
     }
 
     private String calculateUserAgent() {
@@ -262,10 +240,11 @@ public class Download implements IDownload {
 
     private static class DefaultDownloadProgressListener implements DownloadProgressListener {
         private final Logger logger;
+        @Nullable
         private final DownloadProgressListener delegate;
         private int previousDownloadPercent;
 
-        public DefaultDownloadProgressListener(Logger logger, DownloadProgressListener delegate) {
+        public DefaultDownloadProgressListener(Logger logger, @Nullable DownloadProgressListener delegate) {
             this.logger = logger;
             this.delegate = delegate;
             this.previousDownloadPercent = 0;

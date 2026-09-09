@@ -19,22 +19,27 @@ package org.gradle.internal.cc.impl
 import com.google.common.primitives.Bytes
 import groovy.transform.EqualsAndHashCode
 import groovy.transform.ToString
+import org.gradle.api.JavaVersion
 import org.gradle.internal.encryption.impl.EncryptionKind
 import org.gradle.internal.encryption.impl.KeyStoreKeySource
 import org.gradle.internal.nativeintegration.filesystem.FileSystem
+import org.gradle.internal.os.OperatingSystem
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
+import org.gradle.test.preconditions.OsTestPreconditions
+
 import org.gradle.testfixtures.internal.NativeServicesTestFixture
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.FileVisitOption
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission
 import java.security.KeyStore
 import java.util.stream.Stream
 
-import static org.gradle.initialization.IGradlePropertiesLoader.ENV_PROJECT_PROPERTIES_PREFIX
+import static org.gradle.initialization.properties.GradlePropertiesLoader.ENV_PROJECT_PROPERTIES_PREFIX
 import static org.gradle.internal.encryption.impl.EnvironmentVarKeySource.GRADLE_ENCRYPTION_KEY_ENV_KEY
 import static org.gradle.util.Matchers.containsLine
 import static org.gradle.util.Matchers.matchesRegexp
@@ -53,7 +58,7 @@ class ConfigurationCacheEncryptionIntegrationTest extends AbstractConfigurationC
     def "configuration cache can be loaded without errors from #source using #encryptionTransformation"() {
         given:
         def additionalOpts = [
-            "-Dorg.gradle.configuration-cache.internal.encryption-alg=${encryptionTransformation}"
+            "-Dorg.gradle.internal.configuration-cache.encryption-alg=${encryptionTransformation}"
         ]
         def configurationCache = newConfigurationCacheFixture()
         runWithEncryption(source, ["help"], additionalOpts)
@@ -123,7 +128,7 @@ class ConfigurationCacheEncryptionIntegrationTest extends AbstractConfigurationC
             kind,
             ["useSensitive"],
             ["-Psensitive_property_name=sensitive_property_value",
-             "-Dorg.gradle.configuration-cache.internal.deduplicate-strings=false"],
+             "-Dorg.gradle.internal.configuration-cache.deduplicate-strings=false"],
             [(ENV_PROJECT_PROPERTIES_PREFIX + 'sensitive_property_name2'): 'sensitive_property_value2',
              "SENSITIVE_ENV_VAR_NAME": 'sensitive_env_var_value']
         )
@@ -153,15 +158,6 @@ class ConfigurationCacheEncryptionIntegrationTest extends AbstractConfigurationC
         EncryptionKind.ENV_VAR  | true    | false
     }
 
-    private boolean isFoundInDirectory(File startDir, byte[] toFind) {
-        try (Stream<Path> tree = Files.walk(startDir.toPath(), FileVisitOption.FOLLOW_LINKS)) {
-            return tree.filter { it.toFile().file }
-                .anyMatch {
-                    isSubArray(Files.readAllBytes(it), toFind)
-                }
-        }
-    }
-
     def "new configuration cache entry if keystore is not found"() {
         given:
         def configurationCache = newConfigurationCacheFixture()
@@ -184,7 +180,7 @@ class ConfigurationCacheEncryptionIntegrationTest extends AbstractConfigurationC
         and:
         def keyStoreFile = findRequiredKeystoreFile()
 
-        KeyStore ks = KeyStore.getInstance(KeyStoreKeySource.KEYSTORE_TYPE)
+        KeyStore ks = KeyStore.getInstance(KeyStoreKeySource.DEFAULT_KEYSTORE_TYPE)
         keyStoreFile.withInputStream { ks.load(it, new char[]{'c', 'c'}) }
         ks.deleteEntry("gradle-secret")
         keyStoreFile.withOutputStream { ks.store(it, new char[]{'c', 'c'}) }
@@ -197,7 +193,7 @@ class ConfigurationCacheEncryptionIntegrationTest extends AbstractConfigurationC
         outputContains("Calculating task graph as no cached configuration is available for tasks: help")
     }
 
-    @Requires(UnitTestPreconditions.NotWindows)
+    @Requires(OsTestPreconditions.NotWindows)
     def "build fails if keystore cannot be created"() {
         given:
         def fs = NativeServicesTestFixture.instance.get(FileSystem)
@@ -214,37 +210,6 @@ class ConfigurationCacheEncryptionIntegrationTest extends AbstractConfigurationC
         fs.chmod(keyStoreDir, 0666)
     }
 
-    void runWithEncryption(
-        EncryptionKind kind = EncryptionKind.KEYSTORE,
-        List<String> tasks = ["help"],
-        List<String> additionalArgs = [],
-        Map<String, String> envVars = [:],
-        Closure<Void> runner = this::configurationCacheRun
-    ) {
-        def allArgs = tasks + getEncryptionOptions(kind) + additionalArgs + ["-s"]
-        // envVars overrides encryption env vars
-        def allVars = getEncryptionEnvVars(kind) + envVars
-        executer.withEnvironmentVars(allVars)
-        runner(*allArgs)
-    }
-
-    private List<String> getEncryptionOptions(EncryptionKind kind = EncryptionKind.KEYSTORE) {
-        switch (kind) {
-            case EncryptionKind.KEYSTORE:
-                return [
-                    "-Dorg.gradle.configuration-cache.internal.key-store-dir=${keyStoreDir}",
-                ]
-            case EncryptionKind.ENV_VAR:
-                // the env var is all that is required
-                return []
-            default:
-                // NONE
-                return [
-                    "-Dorg.gradle.configuration-cache.internal.encryption=false"
-                ]
-        }
-    }
-
     def "build fails if key is provided via env var but invalid"() {
         given:
         def invalidEncryptionKey = Base64.encoder.encodeToString((encryptionKeyText + "foo").getBytes(StandardCharsets.UTF_8))
@@ -254,7 +219,11 @@ class ConfigurationCacheEncryptionIntegrationTest extends AbstractConfigurationC
 
         then:
         // since the key is not fully validated until needed, we only get an error when encrypting
-        failure.assertHasDescription("Invalid AES key length: 35 bytes")
+        failure.assertHasDescription(
+            JavaVersion.current() >= JavaVersion.VERSION_26
+                ? "Invalid key length (35)."
+                : "Invalid AES key length: 35 bytes"
+        )
         // exception error message varies across JCE implementations, but the exception class is predictable
         containsLine(result.error, matchesRegexp(".*java.security.InvalidKeyException.*"))
     }
@@ -305,6 +274,88 @@ class ConfigurationCacheEncryptionIntegrationTest extends AbstractConfigurationC
         configurationCache.assertStateStored()
     }
 
+    def "encryption service honors default keystore type"() {
+        def defaultKeystoreType = KeyStore.defaultType
+        buildFile """
+            def encryptionService = services.get(org.gradle.internal.encryption.EncryptionConfiguration)
+            // ensure encryption service is triggered
+            assert encryptionService.encrypting
+        """
+        when:
+        run("help", "-i")
+
+        then:
+        outputContains("Encryption key source: default Gradle keystore (${defaultKeystoreType})")
+    }
+
+    @Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = "Test sets a custom security properties file")
+    def "encryption service attempts to honor explicitly requested keystore type"() {
+        buildFile """
+            def encryptionService = services.get(org.gradle.internal.encryption.EncryptionConfiguration)
+            // ensure encryption service is triggered
+            assert encryptionService.encrypting
+            assert java.security.KeyStore.getDefaultType() == "$requestedType"
+        """
+        def customPropertiesFile = file("security.properties") << """
+            keystore.type=${requestedType}
+        """
+
+        when:
+        executer.withArguments("-Djava.security.properties=${customPropertiesFile}")
+        succeeds("help", "-i")
+
+        then:
+        outputContains("Encryption key source: default Gradle keystore (${actualType})")
+
+        where:
+        requestedType   | actualType
+        "pkcs12"        | "pkcs12"
+        "jceks"         | "jceks"
+        // unsupported types should fall back to a supported default type
+        "dks"           | "pkcs12"
+        "jks"           | "pkcs12"
+    }
+
+    private boolean isFoundInDirectory(File startDir, byte[] toFind) {
+        try (Stream<Path> tree = Files.walk(startDir.toPath(), FileVisitOption.FOLLOW_LINKS)) {
+            return tree.filter { it.toFile().file }
+                .anyMatch {
+                    isSubArray(Files.readAllBytes(it), toFind)
+                }
+        }
+    }
+
+    private void runWithEncryption(
+        EncryptionKind kind = EncryptionKind.KEYSTORE,
+        List<String> tasks = ["help"],
+        List<String> additionalArgs = [],
+        Map<String, String> envVars = [:],
+        Closure<Void> runner = this::configurationCacheRun
+    ) {
+        def allArgs = tasks + getEncryptionOptions(kind) + additionalArgs + ["-s"]
+        // envVars overrides encryption env vars
+        def allVars = getEncryptionEnvVars(kind) + envVars
+        executer.withEnvironmentVars(allVars)
+        runner(*allArgs)
+    }
+
+    private List<String> getEncryptionOptions(EncryptionKind kind = EncryptionKind.KEYSTORE) {
+        switch (kind) {
+            case EncryptionKind.KEYSTORE:
+                return [
+                    "-Dorg.gradle.internal.configuration-cache.key-store-dir=${keyStoreDir}",
+                ]
+            case EncryptionKind.ENV_VAR:
+                // the env var is all that is required
+                return []
+            default:
+                // NONE
+                return [
+                    "-Dorg.gradle.internal.configuration-cache.encryption=false"
+                ]
+        }
+    }
+
     private Map<String, String> getEncryptionEnvVars(EncryptionKind kind = EncryptionKind.KEYSTORE) {
         if (kind == EncryptionKind.ENV_VAR) {
             return [(GRADLE_ENCRYPTION_KEY_ENV_KEY): encryptionKeyAsBase64]
@@ -320,6 +371,18 @@ class ConfigurationCacheEncryptionIntegrationTest extends AbstractConfigurationC
         def keyStoreDirFiles = keyStoreDir.allDescendants()
         def keyStorePath = keyStoreDirFiles.find { it.endsWith('gradle.keystore') }
         assert !required || keyStorePath != null
-        return keyStorePath?.with { keyStoreDir.file(keyStorePath) }
+        def keystoreFile = keyStorePath?.with { keyStoreDir.file(keyStorePath) }
+        keystoreFile?.tap { assertKeystoreHasCorrectPermissions(it) }
+        return keystoreFile
+    }
+
+    protected void assertKeystoreHasCorrectPermissions(File keystoreFile) {
+        if (OperatingSystem.current().isWindows()) {
+            // no POSIX permissions on Windows
+            return
+        }
+        def actual = Files.getPosixFilePermissions(keystoreFile.toPath()).sort()
+        def expected = [PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE].sort()
+        assert actual == expected
     }
 }

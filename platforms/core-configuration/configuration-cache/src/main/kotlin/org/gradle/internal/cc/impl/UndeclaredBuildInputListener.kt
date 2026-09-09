@@ -16,17 +16,30 @@
 
 package org.gradle.internal.cc.impl
 
-import org.gradle.internal.service.scopes.EventScope
 import org.gradle.internal.service.scopes.Scope
+import org.gradle.internal.service.scopes.ServiceScope
 import java.io.File
 
 
-@EventScope(Scope.BuildTree::class)
+/**
+ * Receives events of various "environmental things" being accessed by the build logic, like reading files or environment variables.
+ * These events are not sent through {@code ListenerManager}.
+ */
+@ServiceScope(Scope.BuildTree::class)
 interface UndeclaredBuildInputListener {
     /**
      * Called when an undeclared system property read happens.
      */
     fun systemPropertyRead(key: String, value: Any?, consumer: String?)
+
+    /**
+     * System properties mutated in runtime
+     **/
+    fun systemPropertyChanged(key: Any, value: Any?, consumer: String?)
+
+    fun systemPropertyRemoved(key: Any, consumer: String?)
+
+    fun systemPropertiesCleared(consumer: String?)
 
     fun envVariableRead(key: String, value: String?, consumer: String?)
 
@@ -37,4 +50,6 @@ interface UndeclaredBuildInputListener {
     fun fileSystemEntryObserved(file: File, consumer: String?)
 
     fun directoryChildrenObserved(directory: File, consumer: String?)
+
+    fun startParameterProjectPropertiesObserved()
 }

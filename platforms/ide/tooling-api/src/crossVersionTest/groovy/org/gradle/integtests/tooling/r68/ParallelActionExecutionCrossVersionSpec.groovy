@@ -19,10 +19,12 @@ package org.gradle.integtests.tooling.r68
 import org.gradle.integtests.tooling.fixture.TargetGradleVersion
 import org.gradle.integtests.tooling.fixture.TextUtil
 import org.gradle.integtests.tooling.fixture.ToolingApiSpecification
+import org.gradle.test.fixtures.Flaky
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
 import org.gradle.tooling.BuildActionFailureException
 import org.junit.Rule
 
+@Flaky(because = "https://github.com/gradle/gradle-private/issues/4534")
 class ParallelActionExecutionCrossVersionSpec extends ToolingApiSpecification {
     @Rule
     BlockingHttpServer server = new BlockingHttpServer()
@@ -83,7 +85,7 @@ class ParallelActionExecutionCrossVersionSpec extends ToolingApiSpecification {
         models.projects.path == [':', ':a', ':b']
     }
 
-    @TargetGradleVersion(">=6.8")
+    @TargetGradleVersion(">=6.8 <9.4.0")
     def "nested actions that query a project model do not run in parallel when target Gradle version supports it and #args is used"() {
         given:
         setupBuildWithDependencyResolution()
@@ -106,7 +108,7 @@ class ParallelActionExecutionCrossVersionSpec extends ToolingApiSpecification {
         ]
     }
 
-    @TargetGradleVersion(">=3.4 <6.8")
+    @TargetGradleVersion(">=4.0 <6.8")
     def "nested actions do not run in parallel when target Gradle version does not support it"() {
         given:
         setupBuildWithDependencyResolution()
@@ -127,12 +129,12 @@ class ParallelActionExecutionCrossVersionSpec extends ToolingApiSpecification {
         models.projects.path == [':', ':a', ':b']
     }
 
-    @TargetGradleVersion(">=3.4")
     def "nested action can run further nested actions"() {
         settingsFile << """
             rootProject.name = 'root'
-            include 'a', 'b'
         """
+        includeProjects("a", "b")
+
         buildFile << """
             allprojects {
                 apply plugin: CustomPlugin
@@ -172,8 +174,9 @@ class ParallelActionExecutionCrossVersionSpec extends ToolingApiSpecification {
 
         settingsFile << """
             rootProject.name = 'root'
-            include 'a', 'b'
         """
+
+        includeProjects("a", "b")
         buildFile << """
             allprojects {
                 apply plugin: CustomPlugin

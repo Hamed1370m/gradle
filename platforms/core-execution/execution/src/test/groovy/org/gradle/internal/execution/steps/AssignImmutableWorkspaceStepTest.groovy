@@ -20,49 +20,48 @@ import com.google.common.collect.ImmutableListMultimap
 import com.google.common.collect.ImmutableSortedMap
 import org.gradle.caching.internal.origin.OriginMetadata
 import org.gradle.internal.Try
-import org.gradle.internal.execution.ExecutionEngine
+import org.gradle.internal.execution.Execution
 import org.gradle.internal.execution.ImmutableUnitOfWork
 import org.gradle.internal.execution.OutputSnapshotter
 import org.gradle.internal.execution.UnitOfWork
-import org.gradle.internal.execution.history.ExecutionOutputState
 import org.gradle.internal.execution.history.ImmutableWorkspaceMetadata
 import org.gradle.internal.execution.history.ImmutableWorkspaceMetadataStore
+import org.gradle.internal.execution.history.impl.DefaultExecutionOutputState
 import org.gradle.internal.execution.workspace.ImmutableWorkspaceProvider
-import org.gradle.internal.execution.workspace.ImmutableWorkspaceProvider.ImmutableWorkspace
-import org.gradle.internal.execution.workspace.ImmutableWorkspaceProvider.ImmutableWorkspace.TemporaryWorkspaceAction
 import org.gradle.internal.file.Deleter
 import org.gradle.internal.file.FileType
 import org.gradle.internal.snapshot.DirectorySnapshot
 import org.gradle.internal.snapshot.FileSystemLocationSnapshot
-import org.gradle.internal.snapshot.MissingFileSnapshot
 import org.gradle.internal.snapshot.TestSnapshotFixture
 import org.gradle.internal.vfs.FileSystemAccess
-import spock.lang.Issue
+import org.gradle.internal.work.WorkerLeaseService
+import org.gradle.test.fixtures.work.TestWorkerLeaseService
 
-import java.nio.file.AccessDeniedException
-import java.nio.file.Files
-import java.nio.file.Paths
 import java.time.Duration
+import java.util.function.Supplier
 
-import static org.gradle.internal.execution.ExecutionEngine.ExecutionOutcome.UP_TO_DATE
+import static org.gradle.internal.execution.Execution.ExecutionOutcome.EXECUTED_NON_INCREMENTALLY
+import static org.gradle.internal.execution.Execution.ExecutionOutcome.UP_TO_DATE
+import static org.gradle.internal.execution.workspace.ImmutableWorkspaceProvider.ConcurrentResult
+import static org.gradle.internal.execution.workspace.ImmutableWorkspaceProvider.ImmutableWorkspace
 
 class AssignImmutableWorkspaceStepTest extends StepSpec<IdentityContext> implements TestSnapshotFixture {
-    def immutableWorkspace = file("immutable-workspace")
-    def temporaryWorkspace = file("temporary-workspace")
-    def secondTemporaryWorkspace = file("second-temporary-workspace")
+    def cacheDir = temporaryFolder.file("cache")
+    def immutableWorkspace = cacheDir.file("hash123")
     def workspace = Stub(ImmutableWorkspace) {
         immutableLocation >> immutableWorkspace
-        withTemporaryWorkspace(_ as TemporaryWorkspaceAction)
-            >>
-            { TemporaryWorkspaceAction action ->
-                action.executeInTemporaryWorkspace(temporaryWorkspace)
-            }
-            >>
-            { TemporaryWorkspaceAction action ->
-                action.executeInTemporaryWorkspace(secondTemporaryWorkspace)
+
+        getOrCompute(_ as WorkerLeaseService, _ as Supplier) >> {
+            args -> ConcurrentResult.producedByCurrentThread(args[1].get())
+        }
+        withFileLock(_ as Supplier) >>
+            { Supplier action ->
+                cacheDir.file(".internal/locks/").mkdirs()
+                cacheDir.file(".internal/locks/${immutableWorkspace.name}.lock").createFile()
+                immutableWorkspace.mkdirs()
+                action.get()
             }
     }
-
     def deleter = Mock(Deleter)
     def fileSystemAccess = Mock(FileSystemAccess)
     def immutableWorkspaceMetadataStore = Mock(ImmutableWorkspaceMetadataStore)
@@ -71,11 +70,13 @@ class AssignImmutableWorkspaceStepTest extends StepSpec<IdentityContext> impleme
         getWorkspace(workId) >> workspace
     }
 
-    def step = new AssignImmutableWorkspaceStep(deleter, fileSystemAccess, immutableWorkspaceMetadataStore, outputSnapshotter, delegate)
+    def workerLeaseService = new TestWorkerLeaseService()
+    def step = new AssignImmutableWorkspaceStep(deleter, fileSystemAccess, immutableWorkspaceMetadataStore, outputSnapshotter, workerLeaseService, delegate)
     def work = Stub(ImmutableUnitOfWork)
 
     def setup() {
         work.workspaceProvider >> workspaceProvider
+        work.getAllOutputLocationsForInvalidation(_ as File) >> { args -> [(args[0] as File).absolutePath] }
     }
 
     def "returns immutable workspace when already exists"() {
@@ -90,6 +91,10 @@ class AssignImmutableWorkspaceStepTest extends StepSpec<IdentityContext> impleme
         def existingOutputs = ImmutableSortedMap.<String, FileSystemLocationSnapshot> of(
             "output", outputFileSnapshot
         )
+        def originalWorkspaceMetadata = Stub(ImmutableWorkspaceMetadata) {
+            getOriginMetadata() >> delegateOriginMetadata
+            getOutputPropertyHashes() >> ImmutableListMultimap.of("output", outputFileSnapshot.hash)
+        }
 
         when:
         def result = step.execute(work, context)
@@ -104,226 +109,91 @@ class AssignImmutableWorkspaceStepTest extends StepSpec<IdentityContext> impleme
         1 * fileSystemAccess.read(immutableWorkspace.absolutePath) >> existingWorkspaceSnapshot
 
         then:
+        1 * immutableWorkspaceMetadataStore.loadWorkspaceMetadata(immutableWorkspace) >> Optional.of(originalWorkspaceMetadata)
+
+        then:
         1 * outputSnapshotter.snapshotOutputs(work, immutableWorkspace) >> existingOutputs
-
-        then:
-        1 * immutableWorkspaceMetadataStore.loadWorkspaceMetadata(immutableWorkspace) >> Stub(ImmutableWorkspaceMetadata) {
-            getOriginMetadata() >> delegateOriginMetadata
-            getOutputPropertyHashes() >> ImmutableListMultimap.of("output", outputFileSnapshot.hash)
-        }
         0 * _
     }
 
-    def "runs in temporary workspace when immutable workspace doesn't exist"() {
-        def delegateExecution = Mock(ExecutionEngine.Execution)
-        def delegateDuration = Duration.ofSeconds(1)
-        def delegateOriginMetadata = Stub(OriginMetadata)
-        def delegateOutputFiles = ImmutableSortedMap.of()
-        def delegateOutputState = Stub(ExecutionOutputState) {
-            getOriginMetadata() >> delegateOriginMetadata
-            getOutputFilesProducedByWork() >> delegateOutputFiles
-        }
-        def delegateResult = Stub(CachingResult) {
-            getExecution() >> Try.successful(delegateExecution)
-            getDuration() >> delegateDuration
-            getAfterExecutionOutputState() >> Optional.of(delegateOutputState)
-        }
-        def resolvedDelegateResult = Stub(Object)
-
-        when:
-        def result = step.execute(work, context)
-
-        then:
-        1 * fileSystemAccess.read(immutableWorkspace.absolutePath) >> Stub(MissingFileSnapshot) {
-            type >> FileType.Missing
-        }
-
-        then:
-        1 * fileSystemAccess.invalidate([temporaryWorkspace.absolutePath])
-
-        then:
-        1 * delegate.execute(work, _ as WorkspaceContext) >> { UnitOfWork work, WorkspaceContext delegateContext ->
-            assert delegateContext.workspace == temporaryWorkspace
-            temporaryWorkspace.file("output.txt").text = "output"
-            return delegateResult
-        }
-
-        then:
-        1 * immutableWorkspaceMetadataStore.storeWorkspaceMetadata(temporaryWorkspace, _) >> { File workspace, ImmutableWorkspaceMetadata metadata ->
-            metadata.originMetadata == delegateOriginMetadata
-        }
-
-        then:
-        1 * fileSystemAccess.moveAtomically(temporaryWorkspace.absolutePath, immutableWorkspace.absolutePath) >> { String from, String to ->
-            Files.move(Paths.get(from), Paths.get(to))
-        }
-
-        then:
-        immutableWorkspace.file("output.txt").text == "output"
-        0 * _
-
-        when:
-        def resolvedResult = result.getOutputAs(Object)
-
-        then:
-        resolvedResult.get() == resolvedDelegateResult
-
-        1 * delegateExecution.getOutput(immutableWorkspace) >> resolvedDelegateResult
-        0 * _
-    }
-
-    @Issue("https://github.com/gradle/gradle/issues/27844")
-    def "falls back to duplicating temporary workspace when the original cannot be moved atomically"() {
-        def delegateExecution = Mock(ExecutionEngine.Execution)
-        def delegateDuration = Duration.ofSeconds(1)
-        def delegateOriginMetadata = Stub(OriginMetadata)
-        def delegateOutputFiles = ImmutableSortedMap.of()
-        def delegateOutputState = Stub(ExecutionOutputState) {
-            getOriginMetadata() >> delegateOriginMetadata
-            getOutputFilesProducedByWork() >> delegateOutputFiles
-        }
-        def delegateResult = Stub(CachingResult) {
-            getExecution() >> Try.successful(delegateExecution)
-            getDuration() >> delegateDuration
-            getAfterExecutionOutputState() >> Optional.of(delegateOutputState)
-        }
-
-        when:
-        step.execute(work, context)
-
-        then:
-        1 * fileSystemAccess.read(immutableWorkspace.absolutePath) >> Stub(MissingFileSnapshot) {
-            type >> FileType.Missing
-        }
-
-        then:
-        1 * fileSystemAccess.invalidate([temporaryWorkspace.absolutePath])
-
-        then:
-        1 * delegate.execute(work, _ as WorkspaceContext) >> { UnitOfWork work, WorkspaceContext delegateContext ->
-            assert delegateContext.workspace == temporaryWorkspace
-            temporaryWorkspace.file("output.txt").text = "output"
-            return delegateResult
-        }
-
-        then:
-        1 * immutableWorkspaceMetadataStore.storeWorkspaceMetadata(temporaryWorkspace, _)
-        1 * fileSystemAccess.moveAtomically(temporaryWorkspace.absolutePath, immutableWorkspace.absolutePath) >> { String from, String to ->
-            throw new AccessDeniedException("Simulate Windows keeping file locks open")
-        }
-
-        then:
-        1 * fileSystemAccess.moveAtomically(secondTemporaryWorkspace.absolutePath, immutableWorkspace.absolutePath) >> { String from, String to ->
-            Files.move(Paths.get(from), Paths.get(to))
-        }
-
-        then:
-        1 * deleter.deleteRecursively(temporaryWorkspace)
-
-        then:
-        immutableWorkspace.file("output.txt").text == "output"
-        0 * _
-    }
-
-    def "keeps failed outputs in temporary workspace"() {
-        def delegateFailure = Mock(Exception)
-        def delegateDuration = Duration.ofSeconds(1)
-        def delegateResult = Stub(CachingResult) {
-            execution >> Try.failure(delegateFailure)
-            duration >> delegateDuration
-        }
-
-        when:
-        def result = step.execute(work, context)
-
-        then:
-        1 * fileSystemAccess.read(immutableWorkspace.absolutePath) >> Stub(MissingFileSnapshot) {
-            type >> FileType.Missing
-        }
-
-        then:
-        1 * fileSystemAccess.invalidate([temporaryWorkspace.absolutePath])
-
-        then:
-        1 * delegate.execute(work, _ as WorkspaceContext) >> { UnitOfWork work, WorkspaceContext delegateContext ->
-            assert delegateContext.workspace == temporaryWorkspace
-            temporaryWorkspace.file("output.txt").text = "output"
-            return delegateResult
-        }
-
-        then:
-        immutableWorkspace.assertDoesNotExist()
-        temporaryWorkspace.file("output.txt").assertIsFile()
-        temporaryWorkspace.file("origin.bin").assertDoesNotExist()
-        0 * _
-
-        when:
-        def resolvedResult = result.getOutputAs(Object)
-
-        then:
-        resolvedResult.failure.get() == delegateFailure
-        0 * _
-    }
-
-    def "falls back to executing when immutable workspace has been tampered with"() {
+    def "execution runs and clears stale data when immutable workspace has been tampered with"() {
         def outputFile = immutableWorkspace.file("output.txt")
         outputFile.text = "output"
 
-        def originalOutputFileSnapshot = regularFile(outputFile.absolutePath, 1234L)
-        def inconsistentOutputFileSnapshot = regularFile(outputFile.absolutePath, 5678L)
-        def delegateOutputFileSnapshot = regularFile(outputFile.absolutePath, 9876L)
-
-        def inconsistentOutputFiles = ImmutableSortedMap.copyOf(
-            "outputDirectory": inconsistentOutputFileSnapshot
+        def originalWorkspaceSnapshot = directory(immutableWorkspace.absolutePath, [
+            regularFile(outputFile.absolutePath, 1234L)
+        ])
+        def originalWorkspaceMetadata = Stub(ImmutableWorkspaceMetadata) {
+            getOriginMetadata() >> Stub(OriginMetadata)
+            getOutputPropertyHashes() >> ImmutableListMultimap.of("output", originalWorkspaceSnapshot.hash)
+        }
+        def tamperedWorkspaceSnapshot = directory(immutableWorkspace.absolutePath, [
+            regularFile(outputFile.absolutePath, 2345L)
+        ])
+        def tamperedOutputs = ImmutableSortedMap.<String, FileSystemLocationSnapshot> of(
+            "output", tamperedWorkspaceSnapshot
         )
-
-        def originMetadata = Stub(OriginMetadata)
-
-        def delegateOutputFiles = ImmutableSortedMap.copyOf(
-            "outputDirectory": delegateOutputFileSnapshot
-        )
-        def delegateOutputState = Stub(ExecutionOutputState) {
-            getOriginMetadata() >> originMetadata
-            getOutputFilesProducedByWork() >> delegateOutputFiles
+        def delegateExecution = Stub(Execution) {
+            getOutcome() >> EXECUTED_NON_INCREMENTALLY
         }
         def delegateResult = Stub(CachingResult) {
-            getExecution() >> Try.successful(Mock(ExecutionEngine.Execution))
-            getDuration() >> Duration.ofSeconds(1)
-            getAfterExecutionOutputState() >> Optional.of(delegateOutputState)
+            duration >> Duration.ZERO
+            execution >> Try.successful(delegateExecution)
+            afterExecutionOutputState >> Optional.of(new DefaultExecutionOutputState(true, ImmutableSortedMap.of(), Stub(OriginMetadata), false))
         }
 
         when:
-        step.execute(work, context)
+        def result = step.execute(work, context)
 
         then:
-        1 * fileSystemAccess.read(immutableWorkspace.absolutePath) >> Stub(DirectorySnapshot) {
+        result.execution.get().outcome == EXECUTED_NON_INCREMENTALLY
+        result.afterExecutionOutputState.get().successful
+
+        and:
+        1 * fileSystemAccess.read(immutableWorkspace.absolutePath) >> tamperedWorkspaceSnapshot
+        2 * outputSnapshotter.snapshotOutputs(work, immutableWorkspace) >> tamperedOutputs
+        2 * immutableWorkspaceMetadataStore.loadWorkspaceMetadata(immutableWorkspace) >> Optional.of(originalWorkspaceMetadata)
+        1 * fileSystemAccess.invalidate([immutableWorkspace.absolutePath.toString()])
+        1 * deleter.ensureEmptyDirectory(immutableWorkspace)
+        1 * delegate.execute(work, _ as WorkspaceContext) >> { UnitOfWork work, WorkspaceContext context ->
+            assert context.workspace == workspace.immutableLocation
+            return delegateResult
+        }
+        1 * immutableWorkspaceMetadataStore.storeWorkspaceMetadata(immutableWorkspace, _ as ImmutableWorkspaceMetadata)
+        0 * _
+    }
+
+    def "execution runs and clears stale data if there is no metadata"() {
+        def outputFile = immutableWorkspace.file("output.txt")
+        outputFile.text = "output"
+        def existingWorkspaceSnapshot = Stub(DirectorySnapshot) {
             type >> FileType.Directory
         }
-
-        then:
-        1 * outputSnapshotter.snapshotOutputs(work, immutableWorkspace) >> inconsistentOutputFiles
-        1 * immutableWorkspaceMetadataStore.loadWorkspaceMetadata(immutableWorkspace) >> Stub(ImmutableWorkspaceMetadata) {
-            getOriginMetadata() >> originMetadata
-            getOutputPropertyHashes() >> ImmutableListMultimap.of("output", originalOutputFileSnapshot.hash)
+        def delegateExecution = Stub(Execution) {
+            getOutcome() >> EXECUTED_NON_INCREMENTALLY
+        }
+        def delegateResult = Stub(CachingResult) {
+            duration >> Duration.ZERO
+            execution >> Try.successful(delegateExecution)
+            afterExecutionOutputState >> Optional.of(new DefaultExecutionOutputState(true, ImmutableSortedMap.of(), Stub(OriginMetadata), false))
         }
 
-        then:
-        1 * fileSystemAccess.invalidate([immutableWorkspace.absolutePath])
-        // This is where the inconsistent immutable workspace will be moved to
-        1 * fileSystemAccess.invalidate([secondTemporaryWorkspace.absolutePath])
-
-        then: "fallback to executing the work"
-        1 * delegate.execute(work, _ as WorkspaceContext) >> delegateResult
+        when:
+        def result = step.execute(work, context)
 
         then:
-        1 * immutableWorkspaceMetadataStore.storeWorkspaceMetadata(secondTemporaryWorkspace, _) >> { File workspace, ImmutableWorkspaceMetadata metadata ->
-            metadata.originMetadata == originMetadata
+        result.execution.get().outcome == EXECUTED_NON_INCREMENTALLY
+        result.afterExecutionOutputState.get().successful
+        2 * immutableWorkspaceMetadataStore.loadWorkspaceMetadata(immutableWorkspace) >> Optional.empty()
+
+        and:
+        1 * fileSystemAccess.read(immutableWorkspace.absolutePath) >> existingWorkspaceSnapshot
+        1 * deleter.ensureEmptyDirectory(immutableWorkspace)
+        1 * delegate.execute(work, _ as WorkspaceContext) >> { UnitOfWork work, WorkspaceContext context ->
+            assert context.workspace == workspace.immutableLocation
+            return delegateResult
         }
-
-        then:
-        1 * fileSystemAccess.moveAtomically(secondTemporaryWorkspace.absolutePath, immutableWorkspace.absolutePath)
-
-        then:
+        1 * immutableWorkspaceMetadataStore.storeWorkspaceMetadata(immutableWorkspace, _ as ImmutableWorkspaceMetadata)
         0 * _
     }
 }

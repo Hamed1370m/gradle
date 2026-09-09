@@ -1,8 +1,8 @@
 # ADR-0001 - Use Architectural Decision Records
 
-## Date
+## Status
 
-2023-12-01
+- ACCEPTED on 2023-12-01
 
 ## Context
 
@@ -12,7 +12,7 @@ We use *Specification* and *Discovery* documents stored in Google Drive, but the
 
 * They are rarely updated after creation and initial review, and then become hard to follow, especially after important decisions are made
 * They are not synced with the code to reflect the eventual solution that is committed
-* Google Docs is not a "code-oriented" tool, like asciidoc can be
+* Google Docs is not a "code-oriented" tool, like Markdown can be
 * Review in Google Docs is not as simple as a PR code review in GitHub
 
 ## Decision
@@ -36,9 +36,13 @@ The format for ADR should follow this template:
 ```markdown
 # ADR-000X - Title
 
-## Date
+## Status
 
-20YY-MM-DD
+- REPLACED by ADR-000X on 20YY-MM-DD
+- DEPRECATED on 20YY-MM-DD
+- ACCEPTED on 20YY-MM-DD
+- REJECTED on 20YY-MM-DD
+- PROPOSED on 20YY-MM-DD
 
 ## Context
 
@@ -54,10 +58,6 @@ aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi 
 Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint
 occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
 
-## Status
-
-[PROPOSED, ACCEPTED, REJECTED, DEPRECATED, REPLACED]
-
 ## Consequences
 
 * X
@@ -65,14 +65,10 @@ occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim 
 * Z
 ```
 
-## Status
-
-ACCEPTED
-
 ## Consequences
 
 * We start to use Architectural Decision Records
 * We use the proposed template from this ADR
-* We locate `.md` files in the folder `/architecture-standards`
+* We locate `.md` files in the folder `/architecture/standards`
 * We highly encourage usage of ADR to communicate decisions
 * We use links to ADRs in *Specifications*, *Discoveries* and *Pull-Requests* to simplify communication

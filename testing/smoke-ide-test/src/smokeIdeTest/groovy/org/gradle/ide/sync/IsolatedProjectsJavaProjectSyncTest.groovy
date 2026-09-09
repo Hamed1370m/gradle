@@ -16,37 +16,34 @@
 
 package org.gradle.ide.sync
 
-import org.gradle.ide.sync.fixtures.IsolatedProjectsIdeSyncFixture
+import org.gradle.test.fixtures.Flaky
 
+@Flaky(because = "https://github.com/gradle/gradle-private/issues/5093")
+class IsolatedProjectsJavaProjectSyncTest extends AbstractIdeSyncTest {
 
-class IsolatedProjectsJavaProjectSyncTest extends AbstractIdeaSyncTest {
-
-    private IsolatedProjectsIdeSyncFixture fixture = new IsolatedProjectsIdeSyncFixture(testDirectory)
-
-    def "IDEA sync has known IP violations for vanilla Java project"() {
+    def "can sync simple java build without problems"() {
         given:
         simpleJavaProject()
 
         when:
-        ideaSync(IDEA_VERSION)
+        ideaSync()
 
         then:
-        fixture.assertHtmlReportHasNoProblems()
+        report.htmlReport().assertHasNoProblems()
     }
 
     private void simpleJavaProject() {
-        file("settings.gradle") << """
+        projectFile("settings.gradle") << """
             rootProject.name = 'project-under-test'
             include ':app'
             include ':lib'
         """
 
-        file("gradle.properties") << """
-            org.gradle.configuration-cache.problems=warn
-            org.gradle.unsafe.isolated-projects=true
+        projectFile("gradle.properties") << """
+            org.gradle.isolated-projects=true
         """
 
-        file("app/build.gradle") << """
+        projectFile("app/build.gradle") << """
             plugins {
                 id 'java'
             }
@@ -56,10 +53,22 @@ class IsolatedProjectsJavaProjectSyncTest extends AbstractIdeaSyncTest {
             }
         """
 
-        file("lib/build.gradle") << """
+        projectFile("app/src/main/java/App.java") << """
+            public class App {
+                public static void main(String[] args) { System.out.println(Lib.hello()); }
+           }
+        """
+
+        projectFile("lib/build.gradle") << """
             plugins {
                 id 'java'
             }
+        """
+
+        projectFile("lib/src/main/java/Lib.java") << """
+            public class Lib {
+                public static String hello() { return "Hello, sync!"; }
+           }
         """
     }
 }

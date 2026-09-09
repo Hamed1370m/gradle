@@ -18,6 +18,7 @@ package org.gradle.language.swift
 
 import org.gradle.integtests.fixtures.CompilationOutputsFixture
 import org.gradle.integtests.fixtures.SourceFile
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 import org.gradle.nativeplatform.fixtures.ToolChainRequirement
@@ -33,11 +34,13 @@ import org.gradle.nativeplatform.fixtures.app.SwiftApp
 import org.gradle.nativeplatform.fixtures.app.SwiftLib
 import org.gradle.test.fixtures.file.DoesNotSupportNonAsciiPaths
 import org.gradle.test.fixtures.file.TestFile
-import spock.lang.Ignore
+import org.gradle.test.precondition.Requires
+import org.gradle.test.preconditions.OsTestPreconditions
 
-@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC_5_OR_OLDER)
+import spock.lang.Issue
+
+@RequiresInstalledToolChain(ToolChainRequirement.SWIFTC)
 @DoesNotSupportNonAsciiPaths(reason = "swiftc does not support these paths")
-@Ignore("Inconsistent Swift SDK and tooling discovered on our Intel Macs")
 class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
     def "rebuilds application when a single source file changes"() {
         settingsFile << "rootProject.name = 'app'"
@@ -55,8 +58,8 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
         succeeds "assemble"
 
         then:
+        result.assertTasksScheduled(assembleAppTasks)
         result.assertTasksExecuted(assembleAppTasks)
-        result.assertTasksNotSkipped(assembleAppTasks)
         executable("build/exe/main/debug/App").exec().out == app.expectedOutput
 
         when:
@@ -64,18 +67,19 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
         succeeds "assemble"
 
         then:
+        result.assertTasksScheduled(assembleAppTasks)
         result.assertTasksExecuted(assembleAppTasks)
-        result.assertTasksNotSkipped(assembleAppTasks)
         executable("build/exe/main/debug/App").exec().out == app.expectedAlternateOutput
 
         when:
         succeeds "assemble"
 
         then:
-        result.assertTasksExecuted(assembleAppTasks)
+        result.assertTasksScheduled(assembleAppTasks)
         result.assertTasksSkipped(assembleAppTasks)
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp/Swift build")
     def "rebuilds application when a single source file in library changes"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -100,8 +104,8 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
         succeeds "assemble"
 
         then:
-        result.assertTasksExecuted(assembleAppAndLibTasks, ":assemble")
-        result.assertTasksNotSkipped(assembleAppAndLibTasks)
+        result.assertTasksScheduled(assembleAppAndLibTasks, ":assemble")
+        result.assertTasksExecuted(assembleAppAndLibTasks)
         installation("app/build/install/main/debug").exec().out == app.expectedOutput
 
         when:
@@ -109,18 +113,20 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
         succeeds "assemble"
 
         then:
-        result.assertTasksExecuted(assembleAppAndLibTasks, ":assemble")
-        result.assertTasksNotSkipped(assembleAppAndLibTasks)
+        result.assertTasksScheduled(assembleAppAndLibTasks, ":assemble")
+        result.assertTasksExecuted(assembleAppAndLibTasks)
         installation("app/build/install/main/debug").exec().out == app.alternateLibraryOutput
 
         when:
         succeeds "assemble"
 
         then:
-        result.assertTasksExecuted(assembleAppAndLibTasks, ":assemble")
+        result.assertTasksScheduled(assembleAppAndLibTasks, ":assemble")
         result.assertTasksSkipped(assembleAppAndLibTasks, ":assemble")
     }
 
+    @Requires(OsTestPreconditions.MacOs)
+    @Issue("https://github.com/gradle/gradle-native/issues/1117")
     def "removes stale object files for executable"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new IncrementalSwiftStaleCompileOutputApp()
@@ -141,13 +147,13 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
 
         expect:
         succeeds "assemble"
+        result.assertTasksScheduled(assembleAppTasks)
         result.assertTasksExecuted(assembleAppTasks)
-        result.assertTasksNotSkipped(assembleAppTasks)
 
         outputs.deletedClasses("multiply", "sum")
 
         // See https://github.com/gradle/gradle-native/issues/1004
-        if (toolchainUnderTest.version.major == 5) {
+        if (toolchainUnderTest.version.major >= 5) {
             outputs.recompiledClasses('renamed-sum')
         } else {
             outputs.recompiledClasses('greeter', 'renamed-sum', 'main')
@@ -177,12 +183,12 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
 
         expect:
         succeeds "assemble"
+        result.assertTasksScheduled(assembleLibTasks)
         result.assertTasksExecuted(assembleLibTasks)
-        result.assertTasksNotSkipped(assembleLibTasks)
         outputs.deletedClasses("multiply", "sum")
 
         // See https://github.com/gradle/gradle-native/issues/1004
-        if (toolchainUnderTest.version.major == 5) {
+        if (toolchainUnderTest.version.major >= 5) {
             outputs.recompiledClasses('renamed-sum')
         } else {
             outputs.recompiledClasses('greeter', 'renamed-sum')
@@ -208,7 +214,7 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(assembleAppTasks)
+        result.assertTasksScheduled(assembleAppTasks)
         result.assertTasksSkipped(assembleAppTasks)
 
         installation("build/install/main/debug").exec().out == app.expectedOutput
@@ -230,12 +236,14 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
 
         expect:
         succeeds "assemble"
-        result.assertTasksExecuted(assembleLibTasks)
+        result.assertTasksScheduled(assembleLibTasks)
         result.assertTasksSkipped(assembleLibTasks)
 
         sharedLibrary("build/lib/main/debug/${lib.moduleName}").assertExists()
     }
 
+    @Requires(OsTestPreconditions.MacOs)
+    @Issue("https://github.com/gradle/gradle-native/issues/1117")
     def "removes stale installed executable and library file when all source files for executable are removed"() {
         createDirs("app", "greeter")
         settingsFile << "include 'app', 'greeter'"
@@ -276,8 +284,8 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
         succeeds "assemble"
 
         then:
-        result.assertTasksExecuted(assembleAppAndLibTasks, ":assemble")
-        result.assertTasksNotSkipped(getAssembleAppTasks(":app"))
+        result.assertTasksScheduled(assembleAppAndLibTasks, ":assemble")
+        result.assertTasksExecuted(getAssembleAppTasks(":app"))
         result.assertTasksSkipped(":assemble", getAssembleLibTasks(":greeter"))
 
         executable("app/build/exe/main/debug/App").assertDoesNotExist()
@@ -290,6 +298,8 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
         file("greeter/build/obj/main/debug").assertContainsDescendants(expectedIntermediateDescendants(app.library.alternate))
     }
 
+    @Requires(OsTestPreconditions.MacOs)
+    @Issue("https://github.com/gradle/gradle-native/issues/1117")
     def "removes stale executable file when all source files are removed"() {
         settingsFile << "rootProject.name = 'app'"
         def app = new IncrementalSwiftStaleLinkOutputApp()
@@ -313,8 +323,8 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
         succeeds "assemble"
 
         then:
+        result.assertTasksScheduled(assembleAppTasks)
         result.assertTasksExecuted(assembleAppTasks)
-        result.assertTasksNotSkipped(assembleAppTasks)
 
         executable("build/exe/main/debug/App").assertDoesNotExist()
         file("build/exe/main/debug").assertDoesNotExist()
@@ -322,6 +332,8 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
         installation("build/install/main/debug").assertNotInstalled()
     }
 
+    @Requires(OsTestPreconditions.MacOs)
+    @Issue("https://github.com/gradle/gradle-native/issues/1117")
     def "removes stale library file when all source files are removed"() {
         def lib = new IncrementalSwiftStaleLinkOutputLib()
         settingsFile << "rootProject.name = 'greeter'"
@@ -346,8 +358,8 @@ class SwiftIncrementalBuildIntegrationTest extends AbstractInstalledToolChainInt
         succeeds "assemble"
 
         then:
+        result.assertTasksScheduled(assembleLibTasks)
         result.assertTasksExecuted(assembleLibTasks)
-        result.assertTasksNotSkipped(assembleLibTasks)
 
         sharedLibrary("build/lib/main/debug/Hello").assertDoesNotExist()
         file("build/lib/main/debug").assertDoesNotExist()

@@ -22,8 +22,7 @@ import org.gradle.api.attributes.AttributesSchema;
 import org.gradle.api.attributes.Category;
 import org.gradle.api.attributes.HasConfigurableAttributes;
 import org.gradle.api.attributes.MultipleCandidatesDetails;
-import org.gradle.api.internal.ReusableAction;
-import org.gradle.api.internal.artifacts.repositories.metadata.MavenAttributesFactory;
+import org.gradle.api.internal.artifacts.repositories.metadata.MavenVariantAttributesFactory;
 import org.gradle.api.internal.attributes.AttributesSchemaInternal;
 import org.gradle.api.internal.model.NamedObjectInstantiator;
 import org.gradle.internal.component.external.model.ComponentVariant;
@@ -74,8 +73,8 @@ public class PlatformSupport {
         });
     }
 
-    public <T> void addPlatformAttribute(HasConfigurableAttributes<T> dependency, final Category category) {
-        dependency.attributes(attributeContainer -> attributeContainer.attribute(Category.CATEGORY_ATTRIBUTE, category));
+    public <T> void addPlatformAttribute(HasConfigurableAttributes<T> dependency, final String category) {
+        dependency.attributes(attributeContainer -> attributeContainer.attribute(Category.CATEGORY_ATTRIBUTE, attributeContainer.named(Category.class, category)));
     }
 
     /**
@@ -87,10 +86,10 @@ public class PlatformSupport {
      * @return {@code true} if this represents an {@code enforced-platform}, {@code false} otherwise
      */
     public static boolean hasForcedDependencies(ComponentVariant variant) {
-        return Objects.equal(variant.getAttributes().getAttribute(MavenAttributesFactory.CATEGORY_ATTRIBUTE), Category.ENFORCED_PLATFORM);
+        return Objects.equal(variant.getAttributes().getAttribute(MavenVariantAttributesFactory.CATEGORY_ATTRIBUTE), Category.ENFORCED_PLATFORM);
     }
 
-    public static class ComponentCategoryDisambiguationRule implements AttributeDisambiguationRule<Category>, ReusableAction {
+    public static class ComponentCategoryDisambiguationRule implements AttributeDisambiguationRule<Category> {
         final Category library;
         final Category platform;
 

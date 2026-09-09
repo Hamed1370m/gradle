@@ -16,14 +16,18 @@
 
 package org.gradle.internal.build
 
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableSet
 import org.gradle.api.Task
 import org.gradle.api.internal.GradleInternal
 import org.gradle.api.internal.TaskInternal
+import org.gradle.api.internal.project.ProjectIdentity
 import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.api.internal.project.taskfactory.TestTaskIdentities
 import org.gradle.execution.plan.ExecutionPlan
 import org.gradle.execution.plan.LocalTaskNode
 import org.gradle.execution.plan.QueryableExecutionPlan
+import org.gradle.execution.plan.ScheduledWork
 import org.gradle.execution.plan.ToPlannedNodeConverterRegistry
 import org.gradle.execution.plan.ToPlannedTaskConverter
 import org.gradle.internal.operations.TestBuildOperationRunner
@@ -32,25 +36,21 @@ import org.gradle.internal.taskgraph.NodeIdentity
 import org.gradle.util.Path
 import spock.lang.Specification
 
-import java.util.function.BiConsumer
-
 class BuildOperationFiringBuildWorkPreparerTest extends Specification {
-
     def "build operation provides execution plan when queries with all node types"() {
-        def ti1 = TestTaskIdentities.create("t1", Task, Stub(ProjectInternal) {
-            projectPath(_) >> { args -> Path.path(":" + args[0]) }
-        })
+        def project = Stub(ProjectInternal) {
+            getProjectIdentity() >> ProjectIdentity.forRootProject(Path.ROOT, "root")
+        }
+        def ti1 = TestTaskIdentities.create("t1", Task, project)
         def t = Stub(LocalTaskNode) {
             getTask() >> Stub(TaskInternal) {
                 getTaskIdentity() >> ti1
             }
         }
-        List<Node> nodes = [t]
 
-        def scheduledNodesStub = Stub(QueryableExecutionPlan.ScheduledNodes) {
-            visitNodes(_) >> { BiConsumer<List<Node>, Set<Node>> consumer ->
-                consumer.accept(nodes, new HashSet<Node>(nodes))
-            }
+        def scheduledNodesStub = Stub(ScheduledWork) {
+            getScheduledNodes() >> ImmutableList.of(t)
+            getEntryNodes() >> ImmutableSet.of(t)
         }
 
         def executionPlan = Stub(ExecutionPlan) {
@@ -74,5 +74,55 @@ class BuildOperationFiringBuildWorkPreparerTest extends Specification {
             nodeIdentity.nodeType == NodeIdentity.NodeType.TASK
             (nodeIdentity as CalculateTaskGraphBuildOperationType.TaskIdentity).taskPath == ":t1"
         }
+    }
+
+    def "build operation has good progress display name for root build"() {
+        def gradle = Stub(GradleInternal) {
+            isRootBuild() >> true
+            getIdentityPath() >> Path.ROOT
+            contextualize(_) >> { String desc -> desc }
+        }
+
+        def executionPlan = Stub(ExecutionPlan) {
+            getContents() >> Stub(QueryableExecutionPlan) {
+                getScheduledNodes() >> Stub(ScheduledWork)
+            }
+        }
+
+        def buildOperationRunner = new TestBuildOperationRunner()
+        def converterRegistry = new ToPlannedNodeConverterRegistry([new ToPlannedTaskConverter()])
+        def preparer = new BuildOperationFiringBuildWorkPreparer(buildOperationRunner, Stub(BuildWorkPreparer), converterRegistry)
+
+        when:
+        preparer.populateWorkGraph(gradle, executionPlan, {})
+
+        then:
+        def record = buildOperationRunner.log.mostRecent(CalculateTaskGraphBuildOperationType)
+        record.descriptor.progressDisplayName == "Building task graph of root build"
+    }
+
+    def "build operation has good progress display name for included build"() {
+        def gradle = Stub(GradleInternal) {
+            isRootBuild() >> false
+            getIdentityPath() >> Path.path(":buildB")
+            contextualize(_) >> { String desc -> desc + " (:buildB)" }
+        }
+
+        def executionPlan = Stub(ExecutionPlan) {
+            getContents() >> Stub(QueryableExecutionPlan) {
+                getScheduledNodes() >> Stub(ScheduledWork)
+            }
+        }
+
+        def buildOperationRunner = new TestBuildOperationRunner()
+        def converterRegistry = new ToPlannedNodeConverterRegistry([new ToPlannedTaskConverter()])
+        def preparer = new BuildOperationFiringBuildWorkPreparer(buildOperationRunner, Stub(BuildWorkPreparer), converterRegistry)
+
+        when:
+        preparer.populateWorkGraph(gradle, executionPlan, {})
+
+        then:
+        def record = buildOperationRunner.log.mostRecent(CalculateTaskGraphBuildOperationType)
+        record.descriptor.progressDisplayName == "Building task graph of build ':buildB'"
     }
 }

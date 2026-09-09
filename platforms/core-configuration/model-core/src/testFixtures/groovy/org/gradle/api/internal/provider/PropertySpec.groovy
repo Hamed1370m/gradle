@@ -24,6 +24,8 @@ import org.gradle.api.provider.Provider
 import org.gradle.api.specs.Spec
 import org.gradle.internal.Describables
 import org.gradle.internal.DisplayName
+import org.gradle.internal.evaluation.CircularEvaluationException
+import org.gradle.internal.evaluation.EvaluationContext
 import org.gradle.internal.state.Managed
 import org.gradle.internal.state.ModelObject
 import org.gradle.util.internal.TextUtil
@@ -252,8 +254,10 @@ abstract class PropertySpec<T> extends ProviderSpec<T> {
         def property = propertyWithNoValue()
         assert property.getOrNull() != someValue()
 
-        expect:
+        when:
         property.convention(someValue())
+
+        then:
         property.present
         property.get() == someValue()
 
@@ -361,8 +365,10 @@ The value of this property is derived from: <source>""")
         def property = propertyWithNoValue()
         property.set(someValue())
 
-        expect:
+        when:
         property.convention(someOtherValue())
+
+        then:
         property.get() == someValue()
     }
 
@@ -372,8 +378,10 @@ The value of this property is derived from: <source>""")
         def property = propertyWithNoValue()
         property.set(someValue())
 
-        expect:
+        when:
         property.convention(provider)
+
+        then:
         property.get() == someValue()
     }
 
@@ -387,7 +395,10 @@ The value of this property is derived from: <source>""")
         property.present
         property.get() == someOtherValue()
 
+        when:
         property.convention(someValue())
+
+        then:
         property.present
         property.get() == someValue()
     }
@@ -409,8 +420,10 @@ The value of this property is derived from: <source>""")
         def property = propertyWithNoValue()
         property.set(Providers.notDefined())
 
-        expect:
+        when:
         property.convention(someOtherValue())
+
+        then:
         !property.present
         property.getOrNull() == null
     }
@@ -421,8 +434,10 @@ The value of this property is derived from: <source>""")
         def property = propertyWithNoValue()
         property.set(Providers.notDefined())
 
-        expect:
+        when:
         property.convention(provider)
+
+        then:
         !property.present
         property.getOrNull() == null
     }
@@ -3059,7 +3074,7 @@ The value of this provider is derived from:
             consumer.accept(provider)
 
             then:
-            EvaluationContext.CircularEvaluationException ex = thrown()
+            CircularEvaluationException ex = thrown()
             assertExceptionHasExpectedCycle(ex, provider, prop)
 
             where:
@@ -3078,7 +3093,7 @@ The value of this provider is derived from:
             consumer.accept(provider)
 
             then:
-            EvaluationContext.CircularEvaluationException ex = thrown()
+            CircularEvaluationException ex = thrown()
             assertExceptionHasExpectedCycle(ex, provider, prop)
 
             where:

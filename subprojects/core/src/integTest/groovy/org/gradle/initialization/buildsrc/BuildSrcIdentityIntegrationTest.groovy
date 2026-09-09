@@ -17,7 +17,7 @@
 package org.gradle.initialization.buildsrc
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 import static org.gradle.integtests.fixtures.SuggestionsMessages.GET_HELP
 import static org.gradle.integtests.fixtures.SuggestionsMessages.INFO_DEBUG
@@ -69,8 +69,8 @@ class BuildSrcIdentityIntegrationTest extends AbstractIntegrationSpec {
         then:
         outputContains("""
 runtimeClasspath - Runtime classpath of source set 'main'.
-\\--- project :buildSrc:b1
-     \\--- project :buildSrc:b2
+\\--- project ':buildSrc:b1'
+     \\--- project ':buildSrc:b2'
 """)
 
         where:
@@ -87,7 +87,7 @@ runtimeClasspath - Runtime classpath of source set 'main'.
         def buildSrc = file("buildSrc/build.gradle")
         buildSrc << """
             repositories {
-                maven { url '$mavenRepo.uri' }
+                maven { url = '$mavenRepo.uri' }
             }
 
             dependencies {
@@ -100,13 +100,13 @@ runtimeClasspath - Runtime classpath of source set 'main'.
         fails()
 
         then:
-        failure.assertHasDescription("Execution failed for task ':buildSrc:compileJava'.")
+        failure.assertHasDescription("Execution failed for task ':buildSrc:compileJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
         failure.assertHasCause("Could not resolve all files for configuration ':buildSrc:compileClasspath'.")
         failure.assertHasCause("""Could not find org.test:test:1.2.
 Searched in the following locations:
   - ${m.pom.file.displayUri}
 Required by:
-    project :buildSrc""")
+    project ':buildSrc'""")
         failure.assertHasResolutions(repositoryHint("Maven POM"),
             STACKTRACE_MESSAGE,
             INFO_DEBUG,
@@ -121,7 +121,7 @@ Required by:
         fails()
 
         then:
-        failure.assertHasDescription("Execution failed for task ':buildSrc:compileJava'.")
+        failure.assertHasDescription("Execution failed for task ':buildSrc:compileJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
         failure.assertHasCause("Could not resolve all files for configuration ':buildSrc:compileClasspath'.")
         failure.assertHasCause("Could not find test-1.2.jar (org.test:test:1.2).")
 
@@ -144,7 +144,7 @@ Required by:
         fails()
 
         then:
-        failure.assertHasDescription("Execution failed for task ':buildSrc:classes'.")
+        failure.assertHasDescription("Execution failed for task ':buildSrc:classes' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').")
         failure.assertHasCause("broken")
 
         where:
@@ -172,32 +172,21 @@ Required by:
                 def components = configurations.compileClasspath.incoming.resolutionResult.allComponents.id
                 assert components.size() == 2
                 assert components[0].build.buildPath == ':buildSrc'
-                assert components[0].build.name == 'buildSrc'
-                assert components[0].build.currentBuild
                 assert components[0].projectPath == ':'
                 assert components[0].projectName == '$rootProjectName'
                 assert components[0].buildTreePath == ':buildSrc'
                 assert components[1].build.buildPath == ':buildSrc'
-                assert components[1].build.name == 'buildSrc'
-                assert components[1].build.currentBuild
                 assert components[1].projectPath == ':a'
                 assert components[1].projectName == 'a'
                 assert components[1].buildTreePath == ':buildSrc:a'
 
                 def selectors = configurations.runtimeClasspath.incoming.resolutionResult.allDependencies.requested
                 assert selectors.size() == 1
-                assert selectors[0].displayName == 'project :buildSrc:a'
+                assert selectors[0].displayName == "project ':buildSrc:a'"
                 assert selectors[0].buildPath == ':buildSrc'
-                assert selectors[0].buildName == 'buildSrc'
                 assert selectors[0].projectPath == ':a'
             }
         """
-
-        2.times {
-            executer.expectDocumentedDeprecationWarning("The BuildIdentifier.getName() method has been deprecated. This is scheduled to be removed in Gradle 9.0. Use getBuildPath() to get a unique identifier for the build. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#build_identifier_name_and_current_deprecation")
-            executer.expectDocumentedDeprecationWarning("The BuildIdentifier.isCurrentBuild() method has been deprecated. This is scheduled to be removed in Gradle 9.0. Use getBuildPath() to get a unique identifier for the build. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#build_identifier_name_and_current_deprecation")
-        }
-        executer.expectDocumentedDeprecationWarning("The ProjectComponentSelector.getBuildName() method has been deprecated. This is scheduled to be removed in Gradle 9.0. Use getBuildPath() to get a unique identifier for the build. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#build_identifier_name_and_current_deprecation")
 
         expect:
         succeeds()

@@ -16,7 +16,10 @@
 
 package org.gradle.language
 
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+
 abstract class AbstractNativeProductionComponentDependenciesIntegrationTest extends AbstractNativeDependenciesIntegrationTest {
+    @ToBeFixedForIsolatedProjects(because = "C++/Swift cross-project native component config")
     def "can define different implementation dependencies on each binary"() {
         given:
         createDirs("lib")
@@ -36,13 +39,13 @@ abstract class AbstractNativeProductionComponentDependenciesIntegrationTest exte
         run(':assembleDebug')
 
         then:
-        result.assertTasksExecuted(libDebugTasks, assembleDebugTasks, ':assembleDebug')
+        result.assertTasksScheduled(libDebugTasks, assembleDebugTasks, ':assembleDebug')
 
         when:
         run(':assembleRelease')
 
         then:
-        result.assertTasksExecuted(assembleReleaseTasks, ':assembleRelease')
+        result.assertTasksScheduled(assembleReleaseTasks, ':assembleRelease')
     }
 
     def "can define an included build implementation dependency on a binary"() {
@@ -62,13 +65,13 @@ abstract class AbstractNativeProductionComponentDependenciesIntegrationTest exte
         run(':assembleDebug')
 
         then:
-        result.assertTasksExecuted(libDebugTasks, assembleDebugTasks, ':assembleDebug')
+        result.assertTasksScheduled(libDebugTasks, assembleDebugTasks, ':assembleDebug')
 
         when:
         run(':assembleRelease')
 
         then:
-        result.assertTasksExecuted(assembleReleaseTasks, ':assembleRelease')
+        result.assertTasksScheduled(assembleReleaseTasks, ':assembleRelease')
     }
 
     @Override

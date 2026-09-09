@@ -116,7 +116,9 @@ class PgpKeyGrouper {
                     null,
                     null,
                     null,
-                    false
+                    false,
+                    null,
+                    null
                 );
                 remainingUntouched
                     .stream()
@@ -137,7 +139,9 @@ class PgpKeyGrouper {
                 null,
                 null,
                 null,
-                true
+                true,
+                null,
+                null
             );
             for (PgpEntry pgpEntry : e.getValue()) {
                 if (pgpEntry.getGroup().matches(groupRegex)) {
@@ -149,10 +153,11 @@ class PgpKeyGrouper {
 
     // Tries to find the common super-group for a list of groups
     // For example given ["org.foo", "org.foo.bar", "org.foo.baz"] it will group using "org.foo.*"
+    @SuppressWarnings("MixedMutabilityReturnType")
     static List<List<String>> tryComputeCommonPrefixes(List<String> groups) {
         List<List<String>> splitGroups = groups.stream()
             .map(GROUP_SPLITTER::splitToList)
-            .sorted(Comparator.comparing(List::size))
+            .sorted(Comparator.comparingInt(List::size))
             .collect(Collectors.toList());
         List<String> shortest = splitGroups.get(0);
         if (shortest.size() < 2) {
@@ -209,7 +214,9 @@ class PgpKeyGrouper {
             null,
             null,
             null,
-            false
+            false,
+            null,
+            null
         );
         markKeyDeclaredGlobally(e);
     }
@@ -222,7 +229,9 @@ class PgpKeyGrouper {
             mi.getName(),
             null,
             null,
-            false
+            false,
+            null,
+            null
         );
         markKeyDeclaredGlobally(e);
     }
@@ -235,7 +244,9 @@ class PgpKeyGrouper {
             mci.getModule(),
             mci.getVersion(),
             null,
-            false
+            false,
+            null,
+            null
         );
         markKeyDeclaredGlobally(e);
     }

@@ -25,8 +25,8 @@ import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskDependency;
 import org.gradle.internal.HasInternalProtocol;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.io.Reader;
 
@@ -43,6 +43,7 @@ public interface TextResource extends Buildable {
      * Returns a string containing the resource's text
      *
      * @return a string containing the resource's text
+     * @since 2.2
      */
     String asString();
 
@@ -50,6 +51,7 @@ public interface TextResource extends Buildable {
      * Returns an unbuffered {@link Reader} that allows the resource's text to be read. The caller is responsible for closing the reader.
      *
      * @return a reader that allows the resource's text to be read.
+     * @since 2.2
      */
     Reader asReader();
 
@@ -61,11 +63,13 @@ public interface TextResource extends Buildable {
      * @param charset a character encoding (e.g. {@code "utf-8"})
      *
      * @return a file containing the resource's text and using the given character encoding
+     * @since 2.2
      */
     File asFile(String charset);
 
     /**
      * Same as {@code asFile(Charset.defaultCharset().name())}.
+     * @since 2.2
      */
     File asFile();
 
@@ -74,6 +78,7 @@ public interface TextResource extends Buildable {
      * Not typically used directly.
      *
      * @return the input properties registered when this resource is used as task input
+     * @since 2.2
      */
     @Nullable
     @Optional
@@ -85,6 +90,7 @@ public interface TextResource extends Buildable {
      * Not typically used directly.
      *
      * @return the input files registered when this resource is used as task input
+     * @since 2.2
      */
     @Nullable
     @Optional

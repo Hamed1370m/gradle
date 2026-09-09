@@ -17,11 +17,6 @@
 package org.gradle.internal.cc.impl
 
 import org.gradle.internal.cc.impl.initialization.ConfigurationCacheProblemsListener
-import org.gradle.internal.cc.base.services.ConfigurationCacheEnvironmentChangeTracker
-import org.gradle.internal.configuration.inputs.InstrumentedInputsListener
-import org.gradle.internal.event.ListenerManager
-import org.gradle.internal.service.scopes.Scope
-import org.gradle.internal.service.scopes.ServiceScope
 import java.io.File
 
 
@@ -62,18 +57,12 @@ val allowedProperties = setOf(
 )
 
 
-@ServiceScope(Scope.BuildTree::class)
 internal
 class InstrumentedInputAccessListener(
-    listenerManager: ListenerManager,
+    private val inputListener: UndeclaredBuildInputListener,
     configurationCacheProblemsListener: ConfigurationCacheProblemsListener,
-    private val environmentChangeTracker: ConfigurationCacheEnvironmentChangeTracker,
     private val ignoredConfigurationInputs: IgnoredConfigurationInputs
-) : InstrumentedInputsListener {
-
-    private
-    val undeclaredInputBroadcast = listenerManager.getBroadcaster(UndeclaredBuildInputListener::class.java)
-
+) : ConfigurationCacheInputsListener {
     private
     val externalProcessListener = configurationCacheProblemsListener
 
@@ -81,26 +70,26 @@ class InstrumentedInputAccessListener(
         if (allowedProperties.contains(key) || Workarounds.canReadSystemProperty(consumer)) {
             return
         }
-        undeclaredInputBroadcast.systemPropertyRead(key, value, consumer)
+        inputListener.systemPropertyRead(key, value, consumer)
     }
 
     override fun systemPropertyChanged(key: Any, value: Any?, consumer: String) {
-        environmentChangeTracker.systemPropertyChanged(key, value, consumer)
+        inputListener.systemPropertyChanged(key, value, consumer)
     }
 
     override fun systemPropertyRemoved(key: Any, consumer: String) {
-        environmentChangeTracker.systemPropertyRemoved(key)
+        inputListener.systemPropertyRemoved(key, consumer)
     }
 
     override fun systemPropertiesCleared(consumer: String) {
-        environmentChangeTracker.systemPropertiesCleared()
+        inputListener.systemPropertiesCleared(consumer)
     }
 
     override fun envVariableQueried(key: String, value: String?, consumer: String) {
         if (Workarounds.canReadEnvironmentVariable(consumer)) {
             return
         }
-        undeclaredInputBroadcast.envVariableRead(key, value, consumer)
+        inputListener.envVariableRead(key, value, consumer)
     }
 
     override fun externalProcessStarted(command: String, consumer: String) {
@@ -114,11 +103,11 @@ class InstrumentedInputAccessListener(
         if (Workarounds.canReadFiles(consumer)) {
             return
         }
-        undeclaredInputBroadcast.fileOpened(file, consumer)
+        inputListener.fileOpened(file, consumer)
     }
 
     override fun fileObserved(file: File, consumer: String) {
-        undeclaredInputBroadcast.fileObserved(file, consumer)
+        inputListener.fileObserved(file, consumer)
     }
 
     override fun fileSystemEntryObserved(file: File, consumer: String) {
@@ -128,13 +117,17 @@ class InstrumentedInputAccessListener(
         if (ignoredConfigurationInputs.isFileSystemCheckIgnoredFor(file)) {
             return
         }
-        undeclaredInputBroadcast.fileSystemEntryObserved(file, consumer)
+        inputListener.fileSystemEntryObserved(file, consumer)
     }
 
     override fun directoryContentObserved(directory: File, consumer: String) {
         if (Workarounds.canReadFiles(consumer)) {
             return
         }
-        undeclaredInputBroadcast.directoryChildrenObserved(directory, consumer)
+        inputListener.directoryChildrenObserved(directory, consumer)
+    }
+
+    override fun startParameterProjectPropertiesObserved() {
+        inputListener.startParameterProjectPropertiesObserved()
     }
 }

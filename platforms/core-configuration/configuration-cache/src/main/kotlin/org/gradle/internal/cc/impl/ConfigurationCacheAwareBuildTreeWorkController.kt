@@ -16,14 +16,19 @@
 
 package org.gradle.internal.cc.impl
 
+import org.gradle.api.logging.Logging
 import org.gradle.composite.internal.BuildTreeWorkGraphController
-import org.gradle.internal.cc.impl.initialization.ConfigurationCacheStartParameter
 import org.gradle.execution.EntryTaskSelector
+import org.gradle.internal.Try
 import org.gradle.internal.build.BuildStateRegistry
 import org.gradle.internal.build.ExecutionResult
+import org.gradle.internal.buildtree.BuildModelParameters
 import org.gradle.internal.buildtree.BuildTreeWorkController
 import org.gradle.internal.buildtree.BuildTreeWorkExecutor
 import org.gradle.internal.buildtree.BuildTreeWorkPreparer
+import org.gradle.internal.cc.impl.heap.HeapDumper
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 
 class ConfigurationCacheAwareBuildTreeWorkController(
@@ -32,8 +37,14 @@ class ConfigurationCacheAwareBuildTreeWorkController(
     private val workGraph: BuildTreeWorkGraphController,
     private val cache: BuildTreeConfigurationCache,
     private val buildRegistry: BuildStateRegistry,
-    private val startParameter: ConfigurationCacheStartParameter,
+    private val buildModelParameters: BuildModelParameters,
+    heapDumpDir: String?,
 ) : BuildTreeWorkController {
+
+    private val heapDumpBaseName = heapDumpDir
+        ?.let { path ->
+            "$path/${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))}"
+        }
 
     override fun scheduleAndRunRequestedTasks(taskSelector: EntryTaskSelector?): ExecutionResult<Void> {
         val scheduleTaskSelectorPostProcessing: BuildTreeWorkGraphBuilder? = taskSelector?.let { selector ->
@@ -41,33 +52,82 @@ class ConfigurationCacheAwareBuildTreeWorkController(
                 addFinalization(rootBuildState, selector::postProcessExecutionPlan)
             }
         }
-        val executionResult = workGraph.withNewWorkGraph { graph ->
-            val result = cache.loadOrScheduleRequestedTasks(
-                graph = graph,
-                graphBuilder = scheduleTaskSelectorPostProcessing
-            ) { workPreparer.scheduleRequestedTasks(graph, taskSelector) }
-            if (!result.wasLoadedFromCache && !result.entryDiscarded && startParameter.loadAfterStore) {
-                // Load the work graph from cache instead
+        val cachedExecutionResult = loadAndRun(scheduleTaskSelectorPostProcessing)
+        if (cachedExecutionResult != null) {
+            return cachedExecutionResult
+        }
+        return Try.ofFailable {
+            scheduleStoreAndRun(scheduleTaskSelectorPostProcessing, taskSelector)
+        }.getOrMapFailure { ExecutionResult.failed(it) }
+    }
+
+    private fun loadAndRun(
+        scheduleTaskSelectorPostProcessing: BuildTreeWorkGraphBuilder?
+    ): ExecutionResult<Void>? =
+        workGraph.withNewWorkGraph { graph ->
+            when (val outcome = cache.maybeLoadRequestedTasks(graph, scheduleTaskSelectorPostProcessing)) {
+                is BuildTreeConfigurationCache.LoadOutcome.Reused -> {
+                    maybeDumpHeap("cc-hit")
+                    workExecutor.execute(outcome.graph)
+                }
+
+                BuildTreeConfigurationCache.LoadOutcome.Missed -> null
+            }
+        }
+
+    private fun scheduleStoreAndRun(
+        scheduleTaskSelectorPostProcessing: BuildTreeWorkGraphBuilder?,
+        taskSelector: EntryTaskSelector?
+    ): ExecutionResult<Void> {
+        val executionResult: ExecutionResult<Void>? = workGraph.withNewWorkGraph { graph ->
+            val outcome = cache.scheduleRequestedTasks(graph) { workPreparer.scheduleRequestedTasks(graph, taskSelector) }
+            // The model builders can be executed after the tasks (if any) in a build action,
+            // and these builders may access project state as well as the task state. Because of that we execute the prepared graph directly.
+            if (outcome is BuildTreeConfigurationCache.ScheduleOutcome.Stored && !buildModelParameters.isModelBuilding) {
+                // CC miss, graph has been successfully stored. We don't try to execute the graph directly but store it first, discard, and then reload.
+                // We don't want to fold the code below here so the "live" graph can be garbage collected before execution.
                 null
             } else {
-                workExecutor.execute(result.graph)
+                maybeDumpHeap("cc-hit")
+                workExecutor.execute(outcome.graph)
             }
         }
         if (executionResult != null) {
             return executionResult
         }
 
+        maybeDumpHeap("cc-miss-store")
+        return storeAndReload(scheduleTaskSelectorPostProcessing)
+    }
+
+    private fun storeAndReload(scheduleTaskSelectorPostProcessing: BuildTreeWorkGraphBuilder?): ExecutionResult<Void> {
         cache.finalizeCacheEntry()
-        buildRegistry.visitBuilds { build ->
-            build.beforeModelReset().rethrow()
-        }
-        buildRegistry.visitBuilds { build ->
-            build.resetModel()
-        }
+        buildRegistry.resetModels()
 
         return workGraph.withNewWorkGraph { graph ->
-            val finalizedGraph = cache.loadRequestedTasks(graph, scheduleTaskSelectorPostProcessing)
-            workExecutor.execute(finalizedGraph)
+            val (finalizedGraph, workGraphRestorationFailed) = cache.loadRequestedTasks(graph, scheduleTaskSelectorPostProcessing)
+            maybeDumpHeap("cc-miss-load")
+            if (workGraphRestorationFailed) {
+                // The just-stored graph could not be fully restored, so its state is unreliable and must not be executed.
+                // No tasks run, hence no execution-phase failures here; the restoration problem fails the build through
+                // the configuration cache problem report at the end of the build (ConfigurationCacheProblems.report).
+                ExecutionResult.succeeded()
+            } else {
+                workExecutor.execute(finalizedGraph)
+            }
+        }
+    }
+
+    private fun maybeDumpHeap(tag: String) {
+        heapDumpBaseName?.let {
+            val filePath = "$it-$tag.hprof"
+            try {
+                HeapDumper.dumpHeap(filePath)
+            } catch (e: Exception) {
+                Logging.getLogger(ConfigurationCacheAwareBuildTreeWorkController::class.java).apply {
+                    error("Could not dump heap to file '$filePath'.", e)
+                }
+            }
         }
     }
 }

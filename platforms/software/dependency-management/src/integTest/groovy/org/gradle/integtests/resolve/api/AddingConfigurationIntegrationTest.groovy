@@ -89,21 +89,80 @@ class AddingConfigurationIntegrationTest extends AbstractIntegrationSpec {
         mavenRepo.module("org", "foo", "1.0").publish()
 
         buildFile << """
-            repositories {
-                maven { url '$mavenRepo.uri' }
+            ${mavenTestRepository()}
+
+            def conf = configurations.create("conf")
+            conf.dependencies.add(project.dependencies.create("org:foo:1.0"))
+            conf.files
+            configurations.remove(conf)
+
+            def conf2 = configurations.create("conf2")
+            conf2.dependencies.add(project.dependencies.create("org:foo:1.0"))
+            conf2.files
+        """
+
+        expect:
+        succeeds("help")
+    }
+
+    def "can remove and add configurations with no dependencies between resolutions"() {
+        given:
+        buildFile << """
+            def conf = configurations.create("conf")
+            assert conf.files.empty
+            configurations.remove(conf)
+
+            def conf2 = configurations.create("conf2")
+            assert conf2.files.empty
+        """
+
+        expect:
+        succeeds("help")
+    }
+
+    def "can remove configuration without dependencies and resolve it"() {
+        given:
+        mavenRepo.module("org", "foo", "1.0").publish()
+
+        buildFile << """
+            ${mavenTestRepository()}
+
+            def conf = configurations.create("conf")
+            configurations.remove(conf)
+
+            tasks.register("resolve") {
+                def files = conf.incoming.files
+                doLast {
+                    assert files.empty
+                }
             }
 
-            task resolve {
-                def conf = configurations.create("conf")
-                conf.dependencies.add(project.dependencies.create("org:foo:1.0"))
-                conf.files
-                configurations.remove(conf)
+        """
 
-                def conf2 = configurations.create("conf2")
-                conf2.dependencies.add(project.dependencies.create("org:foo:1.0"))
-                conf2.files
+        expect:
+        succeeds("resolve")
+    }
+
+    def "can remove configuration with dependencies and resolve it"() {
+        given:
+        mavenRepo.module("org", "foo", "1.0").publish()
+
+        buildFile << """
+            ${mavenTestRepository()}
+
+            def conf = configurations.create("conf")
+            conf.dependencies.add(project.dependencies.create("org:foo:1.0"))
+            configurations.remove(conf)
+
+            tasks.register("resolve") {
+                def files = conf.incoming.files
+                doLast {
+                    assert files*.name == ["foo-1.0.jar"]
+                }
             }
         """
+
+        when:
 
         expect:
         succeeds("resolve")

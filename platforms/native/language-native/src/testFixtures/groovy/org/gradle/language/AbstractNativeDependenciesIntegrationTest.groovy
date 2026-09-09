@@ -17,8 +17,10 @@
 package org.gradle.language
 
 
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 
+@ToBeFixedForIsolatedProjects(because = "configure projects from root in multi-project Cpp/Swift build")
 abstract class AbstractNativeDependenciesIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
     def setup() {
         settingsFile << """
@@ -43,7 +45,7 @@ abstract class AbstractNativeDependenciesIntegrationTest extends AbstractInstall
         run(assembleDevBinaryTask)
 
         then:
-        result.assertTasksExecuted(libDebugTasks, assembleDevBinaryTasks, assembleDevBinaryTask)
+        result.assertTasksScheduled(libDebugTasks, assembleDevBinaryTasks, assembleDevBinaryTask)
     }
 
     def "can define implementation dependencies on each binary"() {
@@ -65,7 +67,7 @@ abstract class AbstractNativeDependenciesIntegrationTest extends AbstractInstall
         run(assembleDevBinaryTask)
 
         then:
-        result.assertTasksExecuted(libDebugTasks, assembleDevBinaryTasks, assembleDevBinaryTask)
+        result.assertTasksScheduled(libDebugTasks, assembleDevBinaryTasks, assembleDevBinaryTask)
     }
 
     /**

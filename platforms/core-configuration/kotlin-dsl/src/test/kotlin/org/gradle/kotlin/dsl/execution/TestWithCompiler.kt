@@ -16,17 +16,13 @@
 
 package org.gradle.kotlin.dsl.execution
 
-import com.nhaarman.mockito_kotlin.KStubbing
-import com.nhaarman.mockito_kotlin.any
-import com.nhaarman.mockito_kotlin.doAnswer
-import com.nhaarman.mockito_kotlin.doReturn
-import com.nhaarman.mockito_kotlin.mock
 import org.gradle.api.Action
 import org.gradle.api.initialization.Settings
 import org.gradle.api.internal.file.TestFiles
 import org.gradle.api.internal.initialization.ScriptHandlerInternal
 import org.gradle.api.model.ObjectFactory
 import org.gradle.groovy.scripts.ScriptSource
+import org.gradle.internal.classpath.ClassPath
 import org.gradle.internal.hash.HashCode
 import org.gradle.internal.hash.TestHashCodes
 import org.gradle.kotlin.dsl.fixtures.TestWithTempFiles
@@ -37,6 +33,11 @@ import org.gradle.kotlin.dsl.support.KotlinScriptHost
 import org.gradle.plugin.management.PluginManagementSpec
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.junit.Rule
+import org.mockito.kotlin.KStubbing
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
 import java.io.File
 
 
@@ -79,7 +80,10 @@ abstract class TestWithCompiler : TestWithTempFiles() {
             sourceHash,
             programKind,
             programTarget,
-            temporaryFileProvider = TestFiles.tmpDirTemporaryFileProvider(tmpDir.testDirectory)
+            temporaryFileProvider = TestFiles.tmpDirTemporaryFileProvider(tmpDir.testDirectory),
+            metadataCompatibilityChecker = object : KotlinMetadataCompatibilityChecker {
+                override fun incompatibleClasspathElements(classPath: ClassPath): List<File> = listOf()
+            }
         ).compile(program)
     }
 
@@ -89,12 +93,14 @@ abstract class TestWithCompiler : TestWithTempFiles() {
     fun scriptHostWith(
         target: Any = mock(),
         scriptHandler: ScriptHandlerInternal = mock()
-    ) = KotlinScriptHost(target, scriptSource(), scriptHandler, mock(), mock(), mock {
+    ) = KotlinScriptHost(target, scriptSource(), scriptHandler, mock(), mock(), mock(), mock {
         on { get(ObjectFactory::class.java) } doAnswer { mock<ObjectFactory>() }
     })
 
     private
-    fun scriptSource(): ScriptSource = mock { on { fileName } doReturn "script.gradle.kts" }
+    fun scriptSource(): ScriptSource = mock {
+        on { fileName } doReturn "script.gradle.kts"
+    }
 }
 
 

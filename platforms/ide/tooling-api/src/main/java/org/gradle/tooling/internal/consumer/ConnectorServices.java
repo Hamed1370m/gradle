@@ -16,7 +16,7 @@
 
 package org.gradle.tooling.internal.consumer;
 
-import org.gradle.internal.Factory;
+import com.google.common.annotations.VisibleForTesting;
 import org.gradle.internal.concurrent.DefaultExecutorFactory;
 import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.operations.BuildOperationIdFactory;
@@ -28,41 +28,104 @@ import org.gradle.internal.service.ServiceRegistryBuilder;
 import org.gradle.internal.time.Clock;
 import org.gradle.internal.time.Time;
 import org.gradle.tooling.CancellationTokenSource;
+import org.gradle.tooling.GradleConnector;
 import org.gradle.tooling.internal.consumer.loader.CachingToolingImplementationLoader;
 import org.gradle.tooling.internal.consumer.loader.DefaultToolingImplementationLoader;
 import org.gradle.tooling.internal.consumer.loader.SynchronizedToolingImplementationLoader;
 import org.gradle.tooling.internal.consumer.loader.ToolingImplementationLoader;
+import org.jspecify.annotations.NullMarked;
 
+/**
+ * Internal API that is used for cross-version TAPI client testing.
+ */
+@NullMarked
 public class ConnectorServices {
-    private static CloseableServiceRegistry singletonRegistry;
 
-    static {
-        singletonRegistry = ConnectorServiceRegistry.create();
-    }
-
-    public static DefaultGradleConnector createConnector() {
-        return singletonRegistry.getFactory(DefaultGradleConnector.class).create();
-    }
+    private static GradleConnectorFactory sharedConnectorFactory;
+    private static int activeConnectors;
 
     public static CancellationTokenSource createCancellationTokenSource() {
         return new DefaultCancellationTokenSource();
     }
 
-    public static void close() {
-        singletonRegistry.close();
+    public static synchronized GradleConnector createConnector() {
+        if (sharedConnectorFactory == null) {
+            sharedConnectorFactory = createConnectorFactory();
+        }
+        activeConnectors++;
+        return sharedConnectorFactory.createConnector();
+    }
+
+    public static synchronized void close() {
+        GradleConnectorFactory factory = sharedConnectorFactory;
+        if (factory != null) {
+            // Drop the reference before closing. The underlying service registry marks itself as
+            // closed before it stops its services, so a failure while stopping them (for example
+            // an interrupt while shutting a hanging daemon connection down) would otherwise leave
+            // a reachable factory backed by a closed registry, failing every later connector
+            // creation with "connector services has been closed."
+            sharedConnectorFactory = null;
+            factory.close();
+        }
     }
 
     /**
-     * Resets the state of connector services. Meant to be used only for testing!
+     * Called when a connector is disconnected. When the last active connector is gone,
+     * closes the shared services so non-daemon resources (e.g. the file lock request
+     * listener thread) don't keep the JVM alive.
      */
-    public static void reset() {
-        singletonRegistry.close();
-        singletonRegistry = ConnectorServiceRegistry.create();
+    static synchronized void connectorDisconnected() {
+        if (activeConnectors > 0) {
+            activeConnectors--;
+        }
+        if (activeConnectors == 0) {
+            close();
+        }
     }
 
+    /**
+     * Resets the state of connector services.
+     * <p>
+     * Used for cross-version testing of the lifecycle of the connector services.
+     */
+    @VisibleForTesting
+    public static synchronized void reset() {
+        try {
+            close();
+        } finally {
+            activeConnectors = 0;
+        }
+    }
+
+    /**
+     * Used for cross-version testing of the lifecycle of the connector services.
+     */
+    @VisibleForTesting
+    public static GradleConnectorFactory createConnectorFactory() {
+        return new DefaultGradleConnectorFactory();
+    }
+
+    private static class DefaultGradleConnectorFactory implements GradleConnectorFactory {
+        private final CloseableServiceRegistry ownerRegistry = ConnectorServiceRegistry.create();
+
+        @Override
+        public GradleConnector createConnector() {
+            return ownerRegistry.get(GradleConnectorFactory.class).createConnector();
+        }
+
+        @Override
+        public void close() {
+            ownerRegistry.close();
+        }
+    }
+
+    /**
+     * Exists for the purpose of creating {@link GradleConnectorFactory}.
+     * <p>
+     * The service registry is used to simplify setting up and tearing down the dependencies.
+     */
     private static class ConnectorServiceRegistry implements ServiceRegistrationProvider {
 
-        // Note: if the class or the method changes, this has to be adjusted in `ToolingApi.createClientConnectorServiceRegistry()` fixture
         private static CloseableServiceRegistry create() {
             return ServiceRegistryBuilder.builder()
                 .displayName("connector services")
@@ -71,12 +134,15 @@ public class ConnectorServices {
         }
 
         @Provides
-        protected Factory<DefaultGradleConnector> createConnectorFactory(final ConnectionFactory connectionFactory, final DistributionFactory distributionFactory) {
-            return new Factory<DefaultGradleConnector>() {
+        protected GradleConnectorFactory createConnectorFactory(ConnectionFactory connectionFactory, DistributionFactory distributionFactory) {
+            return new GradleConnectorFactory() {
                 @Override
-                public DefaultGradleConnector create() {
+                public GradleConnector createConnector() {
                     return new DefaultGradleConnector(connectionFactory, distributionFactory);
                 }
+
+                @Override
+                public void close() {}
             };
         }
 

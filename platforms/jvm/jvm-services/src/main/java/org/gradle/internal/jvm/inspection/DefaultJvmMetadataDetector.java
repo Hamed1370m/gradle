@@ -23,9 +23,9 @@ import org.gradle.internal.jvm.Jvm;
 import org.gradle.internal.os.OperatingSystem;
 import org.gradle.jvm.toolchain.internal.InstallationLocation;
 import org.gradle.process.ExecResult;
-import org.gradle.process.internal.ExecException;
-import org.gradle.process.internal.ExecHandleBuilder;
-import org.gradle.process.internal.ExecHandleFactory;
+import org.gradle.process.ProcessExecutionException;
+import org.gradle.process.internal.ClientExecHandleBuilder;
+import org.gradle.process.internal.ClientExecHandleBuilderFactory;
 import org.gradle.util.internal.GFileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,14 +39,14 @@ import java.util.EnumMap;
 
 public class DefaultJvmMetadataDetector implements JvmMetadataDetector {
 
-    private final ExecHandleFactory execHandleFactory;
+    private final ClientExecHandleBuilderFactory execHandleFactory;
     private final TemporaryFileProvider temporaryFileProvider;
 
     private final Logger logger = LoggerFactory.getLogger(DefaultJvmMetadataDetector.class);
 
     @Inject
     public DefaultJvmMetadataDetector(
-        final ExecHandleFactory execHandleFactory,
+        final ClientExecHandleBuilderFactory execHandleFactory,
         final TemporaryFileProvider temporaryFileProvider
     ) {
         this.execHandleFactory = execHandleFactory;
@@ -96,12 +96,13 @@ public class DefaultJvmMetadataDetector implements JvmMetadataDetector {
         return JvmInstallationMetadata.from(javaHome, javaVersion, javaVendor, runtimeName, runtimeVersion, jvmName, jvmVersion, jvmVendor, architecture);
     }
 
+    @SuppressWarnings("DefaultCharset") //TODO: evaluate errorprone suppression (https://github.com/gradle/gradle/issues/35864)
     private JvmInstallationMetadata getMetadataFromInstallation(File jdkPath) {
         File tmpDir = temporaryFileProvider.createTemporaryDirectory("jvm", "probe");
         File probe = writeProbeClass(tmpDir);
-        ExecHandleBuilder exec = execHandleFactory.newExec();
+        ClientExecHandleBuilder exec = execHandleFactory.newExecHandleBuilder();
         exec.setWorkingDir(probe.getParentFile());
-        exec.executable(javaExecutable(jdkPath));
+        exec.setExecutable(javaExecutable(jdkPath).getAbsolutePath());
         try {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             ByteArrayOutputStream errorOutput = new ByteArrayOutputStream();
@@ -109,7 +110,6 @@ public class DefaultJvmMetadataDetector implements JvmMetadataDetector {
             exec.args("-Xmx32m", "-Xms32m", "-cp", ".", mainClassname);
             exec.setStandardOutput(out);
             exec.setErrorOutput(errorOutput);
-            exec.setIgnoreExitValue(true);
             ExecResult result = exec.build().start().waitForFinish();
             int exitValue = result.getExitValue();
             if (exitValue == 0) {
@@ -118,7 +118,7 @@ public class DefaultJvmMetadataDetector implements JvmMetadataDetector {
             String errorMessage = "Command returned unexpected result code: " + exitValue + "\nError output:\n" + errorOutput;
             logger.debug("Failed to get metadata from JVM installation at '{}'. {}", jdkPath, errorMessage);
             return failure(jdkPath, errorMessage);
-        } catch (ExecException ex) {
+        } catch (ProcessExecutionException ex) {
             logger.debug("Failed to get metadata from JVM installation at '{}'.", jdkPath, ex);
             return failure(jdkPath, ex);
         } finally {
@@ -132,7 +132,7 @@ public class DefaultJvmMetadataDetector implements JvmMetadataDetector {
     }
 
     private JvmInstallationMetadata parseExecOutput(File jdkPath, String probeResult) {
-        String[] split = Arrays.stream(probeResult.split(System.getProperty("line.separator")))
+        String[] split = Arrays.stream(probeResult.split(System.lineSeparator()))
                 .filter(line -> line.startsWith(MetadataProbe.MARKER_PREFIX))
                 .map(line -> line.substring(MetadataProbe.MARKER_PREFIX.length()))
                 .toArray(String[]::new);

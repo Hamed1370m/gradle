@@ -17,12 +17,14 @@ package org.gradle.cache.internal;
 
 import org.gradle.cache.CacheCleanupStrategy;
 import org.gradle.cache.CacheOpenException;
+import org.gradle.cache.FineGrainedCacheCleanupStrategy;
+import org.gradle.cache.FineGrainedPersistentCache;
 import org.gradle.cache.LockOptions;
 import org.gradle.cache.PersistentCache;
 import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceScope;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -33,6 +35,11 @@ public interface CacheFactory {
      * Opens a cache with the given options. The caller must close the cache when finished with it.
      */
     PersistentCache open(File cacheDir, String displayName, Map<String, ?> properties, LockOptions lockOptions, @Nullable Consumer<? super PersistentCache> initializer, CacheCleanupStrategy cacheCleanupStrategy) throws CacheOpenException;
+
+    /**
+     * Opens a fine-grained persistent cache with the given options. The caller must close the cache when finished with it.
+     */
+    FineGrainedPersistentCache openFineGrained(File cacheDir, String displayName, FineGrainedCacheCleanupStrategy cacheCleanupStrategy) throws CacheOpenException;
 
     /**
      * Visit the caches created by this factory.

@@ -17,8 +17,7 @@
 package org.gradle.integtests.resolve.artifactreuse
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
 import org.junit.Rule
@@ -34,50 +33,55 @@ class ArtifactResolutionQueryIntegrationTest extends AbstractHttpDependencyResol
 
     @Issue('https://github.com/gradle/gradle/issues/3579')
     @IntegrationTestTimeout(60)
-    @UnsupportedWithConfigurationCache(because = "task uses artifact query API")
+    @UnsupportedWithConfigurationCache(because = "https://github.com/gradle/gradle/issues/26365")
     def 'can use artifact resolution queries in parallel to file resolution'() {
         given:
         def module = mavenHttpRepo.module('group', "artifact", '1.0').publish()
         def handler = blockingServer.expectConcurrentAndBlock(blockingServer.get(module.pom.path).sendFile(module.pom.file), blockingServer.get('/sync'))
         blockingServer.expect(blockingServer.get(module.artifact.path).sendFile(module.artifact.file))
 
-        createDirs("query", "resolve")
         settingsFile << 'include "query", "resolve"'
-        buildFile << """
-import org.gradle.internal.component.external.model.DefaultModuleComponentIdentifier
-import org.gradle.api.internal.artifacts.DefaultModuleIdentifier as DMI
+        def common = """
+            import org.gradle.internal.component.external.model.DefaultModuleComponentIdentifier
+            import org.gradle.api.internal.artifacts.DefaultModuleIdentifier as DMI
 
-allprojects {
-    apply plugin: 'java'
-    repositories {
-       maven { url '${blockingServer.uri}/repo' }
-    }
+            plugins {
+                id("java-library")
+            }
 
-    dependencies {
-        implementation 'group:artifact:1.0'
-    }
-}
+            repositories {
+               maven { url = '${blockingServer.uri}/repo' }
+            }
 
-project('query') {
-    task query {
-        doLast {
-            '${blockingServer.uri}/sync'.toURL().text
-            dependencies.createArtifactResolutionQuery()
-                        .forComponents(new DefaultModuleComponentIdentifier(DMI.newId('group','artifact'),'1.0'))
-                        .withArtifacts(JvmLibrary)
-                        .execute()
-        }
-    }
-}
+            dependencies {
+                implementation 'group:artifact:1.0'
+            }
+        """
 
-project('resolve') {
-    task resolve {
-        doLast {
-            configurations.compileClasspath.files.collect { it.file }
-        }
-    }
-}
-"""
+        file("query/build.gradle") << """
+            $common
+
+            task query {
+                doLast {
+                    '${blockingServer.uri}/sync'.toURL().text
+                    dependencies.createArtifactResolutionQuery()
+                                .forComponents(new DefaultModuleComponentIdentifier(DMI.newId('group','artifact'),'1.0'))
+                                .withArtifacts(JvmLibrary)
+                                .execute()
+                }
+            }
+        """
+
+        file("resolve/build.gradle") << """
+            $common
+
+            task resolve {
+                doLast {
+                    configurations.compileClasspath.files.collect { it.file }
+                }
+            }
+        """
+
         executer.requireOwnGradleUserHomeDir().requireIsolatedDaemons()
 
         expect:
@@ -92,7 +96,7 @@ project('resolve') {
     }
 
     @Issue('https://github.com/gradle/gradle/issues/11247')
-    @ToBeFixedForConfigurationCache(because = "task uses artifact query API")
+    @UnsupportedWithConfigurationCache(because = "https://github.com/gradle/gradle/issues/26365")
     def 'respects repository content filter'() {
         given:
         def module = mavenHttpRepo.module('group', "artifact", '1.0').publish()
@@ -103,7 +107,7 @@ project('resolve') {
             apply plugin: 'java'
             repositories {
                 maven {
-                    url '${mavenHttpRepo.uri}'
+                    url = "${mavenHttpRepo.uri}"
                     content {
                         onlyForAttribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
                     }
@@ -129,7 +133,7 @@ project('resolve') {
         succeeds('query')
     }
 
-    @ToBeFixedForConfigurationCache(because = "task uses artifact query API")
+    @UnsupportedWithConfigurationCache(because = "https://github.com/gradle/gradle/issues/26365")
     def "can resolve sources and javadoc for ivy repo"() {
         given:
         ivyRepo.module('group', "artifact", '1.0')

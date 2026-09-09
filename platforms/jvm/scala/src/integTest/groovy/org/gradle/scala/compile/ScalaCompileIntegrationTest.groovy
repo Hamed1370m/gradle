@@ -23,7 +23,8 @@ import org.gradle.integtests.fixtures.TargetCoverage
 import org.gradle.integtests.fixtures.jvm.JavaToolchainFixture
 import org.gradle.internal.jvm.Jvm
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 
 import static org.gradle.scala.ScalaCompilationFixture.scalaDependency
 
@@ -96,7 +97,7 @@ class Person {
         "immutable list" | "[].asImmutable()"
     }
 
-    @Requires(UnitTestPreconditions.Jdk11OrLater)
+    @Requires(JdkVersionTestPreconditions.Jdk11OrLater)
     def "can compile sources using later JDK APIs"() {
         file("src/main/scala/App.scala") << """
             object App {
@@ -115,30 +116,6 @@ class Person {
         executedAndNotSkipped(":compileScala")
 
         JavaVersion.forClass(scalaClassFile("App.class").bytes) == JavaVersion.VERSION_1_8
-    }
-
-    def "setting forkOptions is deprecated"() {
-        buildFile << """
-            tasks.withType(ScalaCompile) {
-              scalaCompileOptions.setForkOptions(scalaCompileOptions.forkOptions)
-            }
-        """
-        executer.expectDocumentedDeprecationWarning("The BaseScalaCompileOptions.setForkOptions(ScalaForkOptions) method has been deprecated. This is scheduled to be removed in Gradle 9.0. Setting a new instance of forkOptions is unnecessary. Please use the forkOptions(Action) method instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_nested_properties_setters")
-
-        expect:
-        succeeds ":compileScala"
-    }
-
-    def "setting incrementalOptions is deprecated"() {
-        buildFile << """
-            tasks.withType(ScalaCompile) {
-              scalaCompileOptions.setIncrementalOptions(scalaCompileOptions.incrementalOptions)
-            }
-        """
-        executer.expectDocumentedDeprecationWarning("The BaseScalaCompileOptions.setIncrementalOptions(IncrementalCompileOptions) method has been deprecated. This is scheduled to be removed in Gradle 9.0. Setting a new instance of scalaDocOptions is unnecessary. Please use the scalaDocOptions(Action) method instead. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#deprecated_nested_properties_setters")
-
-        expect:
-        succeeds ":compileScala"
     }
 
 }

@@ -20,26 +20,25 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.DirectoryBuildCacheFixture
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
 import org.gradle.internal.reflect.validation.ValidationMessageChecker
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
-
-import static org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache.Skip.INVESTIGATE
+import org.gradle.test.preconditions.TestExecutionPreconditions
 
 class BuildResultLoggerIntegrationTest extends AbstractIntegrationSpec implements DirectoryBuildCacheFixture, ValidationMessageChecker {
     def setup() {
 
         file("input.txt") << "data"
-        buildFile << """
+        buildFile """
             task adHocTask {
                 outputs.cacheIf { true }
-                def outputFile = file("\$buildDir/output.txt")
-                inputs.file(file("input.txt"))
+                def inputFile = file("input.txt")
+                def outputFile = layout.buildDirectory.file("output.txt")
+                inputs.file(inputFile)
                 outputs.file(outputFile)
                 doLast {
-                    outputFile.parentFile.mkdirs()
-                    outputFile.text = file("input.txt").text
+                    outputFile.get().asFile.parentFile.mkdirs()
+                    outputFile.get().asFile.text = inputFile.text
                 }
             }
 
@@ -53,13 +52,12 @@ class BuildResultLoggerIntegrationTest extends AbstractIntegrationSpec implement
         """
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
     def "task outcome statistics are reported"() {
         when:
         run "adHocTask", "executedTask"
 
         then:
-        result.assertTasksNotSkipped(":adHocTask", ":executedTask")
+        result.assertTasksExecuted(":adHocTask", ":executedTask")
         result.assertHasPostBuildOutput "2 actionable tasks: 2 executed"
 
         when:
@@ -67,17 +65,16 @@ class BuildResultLoggerIntegrationTest extends AbstractIntegrationSpec implement
 
         then:
         result.assertTaskSkipped(":adHocTask")
-        result.assertTasksNotSkipped(":executedTask")
+        result.assertTasksExecuted(":executedTask")
         result.assertHasPostBuildOutput "2 actionable tasks: 1 executed, 1 up-to-date"
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
     def "cached task outcome statistics are reported"() {
         when:
         withBuildCache().run "adHocTask", "executedTask"
 
         then:
-        result.assertTasksNotSkipped(":adHocTask", ":executedTask")
+        result.assertTasksExecuted(":adHocTask", ":executedTask")
         result.assertHasPostBuildOutput "2 actionable tasks: 2 executed"
 
         when:
@@ -86,7 +83,7 @@ class BuildResultLoggerIntegrationTest extends AbstractIntegrationSpec implement
 
         then:
         result.assertTasksSkipped(":adHocTask")
-        result.assertTasksNotSkipped(":executedTask")
+        result.assertTasksExecuted(":executedTask")
         result.assertHasPostBuildOutput "2 actionable tasks: 1 executed, 1 from cache"
     }
 
@@ -95,11 +92,14 @@ class BuildResultLoggerIntegrationTest extends AbstractIntegrationSpec implement
         run "noActions"
 
         then:
-        result.assertTasksNotSkipped(":noActions", ":executedTask")
+        result.assertTasksExecuted(":noActions", ":executedTask")
         result.assertHasPostBuildOutput "1 actionable task: 1 executed"
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
+    @ToBeFixedForConfigurationCache(
+        issue = "https://github.com/gradle/gradle/issues/37241",
+        because = "CC doesn't save/load excluded tasks, causing noActions task to appear skipped"
+    )
     def "skipped tasks are not counted"() {
         given:
         executer.withArguments "-x", "executedTask"
@@ -109,11 +109,14 @@ class BuildResultLoggerIntegrationTest extends AbstractIntegrationSpec implement
 
         then:
         // No stats are reported because no tasks had any actions
-        result.assertTasksNotSkipped(":noActions")
+        result.assertTasksExecuted(":noActions")
         result.assertNotOutput("actionable tasks")
     }
 
-    @ToBeFixedForConfigurationCache(because = "buildSrc tasks are not executed when loaded from cache")
+    @ToBeFixedForConfigurationCache(
+        issue = "https://github.com/gradle/gradle/issues/37241",
+        because = "buildSrc tasks are not executed when loaded from cache"
+    )
     def "reports tasks from buildSrc"() {
         file("buildSrc/src/main/java/Thing.java") << """
             public class Thing {
@@ -124,7 +127,7 @@ class BuildResultLoggerIntegrationTest extends AbstractIntegrationSpec implement
         run "adHocTask"
 
         then:
-        result.assertTasksNotSkipped(":buildSrc:compileJava", ":buildSrc:jar", ":buildSrc:classes", ":adHocTask")
+        result.assertTasksExecuted(":buildSrc:compileJava", ":buildSrc:jar", ":buildSrc:classes", ":adHocTask")
         result.assertHasPostBuildOutput("3 actionable tasks: 3 executed")
 
         when:
@@ -153,11 +156,14 @@ class BuildResultLoggerIntegrationTest extends AbstractIntegrationSpec implement
         run("executedTask")
 
         then:
-        result.assertTasksNotSkipped(":child:executedTask", ":executedTask")
+        result.assertTasksExecuted(":child:executedTask", ":executedTask")
         result.assertHasPostBuildOutput "2 actionable tasks: 2 executed"
     }
 
-    @ToBeFixedForConfigurationCache(because = "build logic tasks are not executed when loaded from cache")
+    @ToBeFixedForConfigurationCache(
+        issue = "https://github.com/gradle/gradle/issues/37241",
+        because = "build logic tasks are not executed when loaded from cache"
+    )
     def "reports tasks from included builds that provide project plugins"() {
         settingsFile << """
             includeBuild("plugins")
@@ -199,7 +205,7 @@ class BuildResultLoggerIntegrationTest extends AbstractIntegrationSpec implement
         run("executedTask")
 
         then:
-        result.assertTasksNotSkipped(":plugins:compileJava", ":plugins:pluginDescriptors", ":plugins:processResources", ":plugins:classes", ":plugins:jar", ":executedTask")
+        result.assertTasksExecuted(":plugins:compileJava", ":plugins:pluginDescriptors", ":plugins:processResources", ":plugins:classes", ":plugins:jar", ":executedTask")
         result.assertHasPostBuildOutput "5 actionable tasks: 5 executed"
 
         when:
@@ -209,7 +215,7 @@ class BuildResultLoggerIntegrationTest extends AbstractIntegrationSpec implement
         result.assertHasPostBuildOutput "5 actionable tasks: 1 executed, 4 up-to-date"
     }
 
-    @Requires(IntegTestPreconditions.IsEmbeddedExecutor)
+    @Requires(TestExecutionPreconditions.IsEmbeddedExecutor)
     // this test only works in embedded mode because of the use of validation test fixtures
     def "work validation warnings are mentioned in summary"() {
         buildFile << """

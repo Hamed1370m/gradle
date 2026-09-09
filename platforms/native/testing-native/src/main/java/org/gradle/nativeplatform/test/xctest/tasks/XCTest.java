@@ -21,7 +21,6 @@ import org.gradle.api.file.RegularFile;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.internal.tasks.testing.TestExecuter;
 import org.gradle.api.internal.tasks.testing.filter.DefaultTestFilter;
-import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.tasks.InputDirectory;
 import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.Internal;
@@ -34,9 +33,8 @@ import org.gradle.nativeplatform.test.xctest.internal.execution.XCTestExecuter;
 import org.gradle.nativeplatform.test.xctest.internal.execution.XCTestSelection;
 import org.gradle.nativeplatform.test.xctest.internal.execution.XCTestTestExecutionSpec;
 import org.gradle.work.DisableCachingByDefault;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
-import javax.inject.Inject;
 import java.io.File;
 import java.util.List;
 
@@ -47,60 +45,44 @@ import java.util.List;
  */
 @DisableCachingByDefault(because = "Not made cacheable, yet")
 public abstract class XCTest extends AbstractTestTask {
-    private final DirectoryProperty workingDirectory;
-    private final DirectoryProperty testInstallDirectory;
-    private final RegularFileProperty runScriptFile;
-
-    public XCTest() {
-        ObjectFactory objectFactory = getProject().getObjects();
-        workingDirectory = objectFactory.directoryProperty();
-        testInstallDirectory = objectFactory.directoryProperty();
-        runScriptFile = objectFactory.fileProperty();
-    }
-
     @Override
     protected XCTestTestExecutionSpec createTestExecutionSpec() {
         DefaultTestFilter testFilter = (DefaultTestFilter) getFilter();
 
-        return new XCTestTestExecutionSpec(workingDirectory.getAsFile().get(), runScriptFile.getAsFile().get(), getPath(),
+        return new XCTestTestExecutionSpec(getWorkingDirectory().getAsFile().get(), getRunScriptFile().getAsFile().get(), getPath(),
             new XCTestSelection(testFilter.getIncludePatterns(), testFilter.getCommandLineIncludePatterns()));
     }
 
     /**
      * Sets the test suite bundle or executable location
+     * @since 4.5
      */
     @PathSensitive(PathSensitivity.RELATIVE)
     @InputDirectory
-    public DirectoryProperty getTestInstallDirectory() {
-        return testInstallDirectory;
-    }
+    public abstract DirectoryProperty getTestInstallDirectory();
 
     /**
      * Returns test suite bundle or executable location
+     * @since 4.5
      */
     @Internal("Covered by getRunScript")
-    public RegularFileProperty getRunScriptFile() {
-        return runScriptFile;
-    }
+    public abstract RegularFileProperty getRunScriptFile();
 
     /**
      * Returns the working directory property for this test.
+     * @since 4.5
      */
     @Internal
-    public DirectoryProperty getWorkingDirectory() {
-        return workingDirectory;
-    }
+    public abstract DirectoryProperty getWorkingDirectory();
 
     @Override
     protected TestExecuter<XCTestTestExecutionSpec> createTestExecuter() {
         return getObjectFactory().newInstance(XCTestExecuter.class);
     }
 
-    @Inject
-    protected abstract ObjectFactory getObjectFactory();
-
     /**
      * Workaround for when the task is given an input file that doesn't exist
+     * @since 4.5
      */
     @SkipWhenEmpty
     @Nullable

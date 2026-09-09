@@ -16,8 +16,6 @@
 
 package org.gradle.tooling;
 
-import org.gradle.api.Incubating;
-
 /**
  * Used to execute a {@link BuildAction} in the build process.
  *
@@ -46,6 +44,7 @@ public interface BuildActionExecuter<T> extends ConfigurableLauncher<BuildAction
          * @param <T> The returning type of the action.
          * @return The builder.
          * @throws IllegalArgumentException If an action has already been added to this build phase. Multiple actions per phase are not supported yet.
+         * @since 4.8
          */
         <T> Builder projectsLoaded(BuildAction<T> buildAction, IntermediateResultHandler<? super T> handler) throws IllegalArgumentException;
 
@@ -59,6 +58,7 @@ public interface BuildActionExecuter<T> extends ConfigurableLauncher<BuildAction
          * @param <T> The returning type of the action.
          * @return The builder.
          * @throws IllegalArgumentException If an action has already been added to this build phase. Multiple actions per phase are not supported yet.
+         * @since 4.8
          */
         <T> Builder buildFinished(BuildAction<T> buildAction, IntermediateResultHandler<? super T> handler) throws IllegalArgumentException;
 
@@ -66,6 +66,7 @@ public interface BuildActionExecuter<T> extends ConfigurableLauncher<BuildAction
          * Builds the executer from the added actions.
          *
          * @return The executer.
+         * @since 4.8
          */
         BuildActionExecuter<Void> build();
     }
@@ -76,7 +77,6 @@ public interface BuildActionExecuter<T> extends ConfigurableLauncher<BuildAction
      *
      * @since 8.6
      */
-    @Incubating
     void setStreamedValueListener(StreamedValueListener listener);
 
     /**
@@ -111,8 +111,7 @@ public interface BuildActionExecuter<T> extends ConfigurableLauncher<BuildAction
      * Runs the action, blocking until its result is available.
      *
      * @throws UnsupportedVersionException When the target Gradle version does not support build action execution.
-     * @throws org.gradle.tooling.exceptions.UnsupportedOperationConfigurationException
-     *          When the target Gradle version does not support some requested configuration option.
+     * @throws org.gradle.tooling.exceptions.UnsupportedOperationConfigurationException When the target Gradle version does not support some requested configuration option.
      * @throws org.gradle.tooling.exceptions.UnsupportedBuildArgumentException When there is a problem with build arguments provided by {@link #withArguments(String...)}.
      * @throws BuildActionFailureException When the build action fails with an exception.
      * @throws BuildCancelledException When the operation was cancelled before it completed successfully.

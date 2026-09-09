@@ -15,17 +15,17 @@
  */
 package org.gradle.launcher.daemon.bootstrap;
 
-import org.gradle.internal.classpath.DefaultClassPath;
 import org.gradle.internal.concurrent.CompositeStoppable;
 import org.gradle.internal.instrumentation.agent.AgentInitializer;
+import org.gradle.internal.logging.LoggingManagerFactory;
 import org.gradle.internal.logging.LoggingManagerInternal;
 import org.gradle.internal.service.ServiceRegistry;
-import org.gradle.launcher.daemon.configuration.DaemonServerConfiguration;
 import org.gradle.launcher.daemon.registry.DaemonRegistry;
 import org.gradle.launcher.daemon.server.Daemon;
 import org.gradle.launcher.daemon.server.DaemonProcessState;
 import org.gradle.launcher.daemon.server.MasterExpirationStrategy;
 import org.gradle.launcher.daemon.server.expiry.DaemonExpirationStrategy;
+import org.gradle.launcher.daemon.startup.DaemonServerConfiguration;
 
 import static org.gradle.launcher.daemon.server.api.DaemonState.Idle;
 
@@ -41,10 +41,10 @@ public class ForegroundDaemonAction implements Runnable {
 
     @Override
     public void run() {
-        LoggingManagerInternal loggingManager = loggingRegistry.newInstance(LoggingManagerInternal.class);
+        LoggingManagerInternal loggingManager = loggingRegistry.get(LoggingManagerFactory.class).createLoggingManager();
         loggingManager.start();
 
-        DaemonProcessState daemonProcessState = new DaemonProcessState(configuration, loggingRegistry, loggingManager, DefaultClassPath.of());
+        DaemonProcessState daemonProcessState = new DaemonProcessState(configuration, loggingRegistry, loggingManager);
         ServiceRegistry daemonServices = daemonProcessState.getServices();
         Daemon daemon = daemonServices.get(Daemon.class);
         DaemonRegistry daemonRegistry = daemonServices.get(DaemonRegistry.class);

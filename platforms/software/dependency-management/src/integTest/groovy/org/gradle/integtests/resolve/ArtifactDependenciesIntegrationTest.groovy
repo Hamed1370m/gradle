@@ -30,16 +30,15 @@ import static org.hamcrest.CoreMatchers.containsString
  */
 @FluidDependenciesResolveTest
 class ArtifactDependenciesIntegrationTest extends AbstractDependencyResolutionTest {
-    public final resolve = new ResolveTestFixture(buildFile)
+    public final resolve = new ResolveTestFixture(testDirectory)
     @Rule
     public final TestResources testResources = new TestResources(testDirectoryProvider)
 
     void canHaveConfigurationHierarchy() {
         given:
-        resolve.prepare {
-            config("compile")
-            config("runtime")
-        }
+        buildFile << """
+            ${resolve.configureProject("compile", "runtime")}
+        """
 
         when:
         run("checkCompile")
@@ -81,12 +80,9 @@ class ArtifactDependenciesIntegrationTest extends AbstractDependencyResolutionTe
 
     void dependencyReportWithConflicts() {
         given:
-        createDirs("subproject")
-        resolve.prepare {
-            config("evictedTransitive")
-            config("evictedDirect")
-            config("multiProject")
-        }
+        buildFile << """
+            ${resolve.configureProject("evictedTransitive", "evictedDirect", "multiProject")}
+        """
 
         when:
         run(":checkEvictedTransitive")
@@ -138,7 +134,9 @@ class ArtifactDependenciesIntegrationTest extends AbstractDependencyResolutionTe
 
     void canHaveCycleInDependencyGraph() {
         given:
-        resolve.prepare("compile")
+        buildFile << """
+            ${resolve.configureProject("compile")}
+        """
 
         when:
         run(":checkDeps")
@@ -157,7 +155,9 @@ class ArtifactDependenciesIntegrationTest extends AbstractDependencyResolutionTe
 
     void canUseDynamicVersions() {
         given:
-        resolve.prepare("compile")
+        buildFile << """
+            ${resolve.configureProject("compile")}
+        """
 
         when:
         run(":checkDeps")
@@ -174,32 +174,34 @@ class ArtifactDependenciesIntegrationTest extends AbstractDependencyResolutionTe
 
     void resolutionFailsWhenProjectHasNoRepositoriesEvenWhenArtifactIsCachedLocally() {
         expect:
-        createDirs("a", "b")
         file('settings.gradle') << 'include "a", "b"'
-        file('build.gradle') << """
-subprojects {
-    configurations {
-        compile
-    }
-    task listDeps {
-        def files = configurations.compile
-        doLast { files.files }
-    }
-}
-project(':a') {
-    repositories {
-        maven { url '${repo.uri}' }
-    }
-    dependencies {
-        compile 'org.gradle.test:external1:1.0'
-    }
-}
-project(':b') {
-    dependencies {
-        compile 'org.gradle.test:external1:1.0'
-    }
-}
-"""
+        file("a/build.gradle") << """
+            configurations {
+                compile
+            }
+            task listDeps {
+                def files = configurations.compile
+                doLast { files.files }
+            }
+            repositories {
+                maven { url = '${repo.uri}' }
+            }
+            dependencies {
+                compile 'org.gradle.test:external1:1.0'
+            }
+        """
+        file("b/build.gradle") << """
+            configurations {
+                compile
+            }
+            task listDeps {
+                def files = configurations.compile
+                doLast { files.files }
+            }
+            dependencies {
+                compile 'org.gradle.test:external1:1.0'
+            }
+        """
         repo.module('org.gradle.test', 'external1', '1.0').publish()
 
         succeeds('a:listDeps')
@@ -211,7 +213,7 @@ project(':b') {
         given:
         file('build.gradle') << """
 repositories {
-    maven { url '${repo.uri}' }
+    maven { url = '${repo.uri}' }
 }
 configurations {
     compile; missingExt; missingClassifier
@@ -262,35 +264,38 @@ Searched in the following locations:
         repo1.module('org.gradle.test', 'external1', '1.0').publish()
         def repo2 = maven('repo2')
 
-        createDirs("a", "b")
         file('settings.gradle') << 'include "a", "b"'
-        file('build.gradle') << """
-subprojects {
-    configurations {
-        compile
-    }
-    task listDeps {
-        def files = configurations.compile
-        doLast { files.each { } }
-    }
-}
-project(':a') {
-    repositories {
-        maven { url '${repo1.uri}' }
-    }
-    dependencies {
-        compile 'org.gradle.test:external1:1.0'
-    }
-}
-project(':b') {
-    repositories {
-        maven { url '${repo2.uri}' }
-    }
-    dependencies {
-        compile 'org.gradle.test:external1:1.0'
-    }
-}
-"""
+        file("a/build.gradle") << """
+            configurations {
+                compile
+            }
+            task listDeps {
+                def files = configurations.compile
+                doLast { files.each { } }
+            }
+            repositories {
+                maven { url = '${repo1.uri}' }
+            }
+            dependencies {
+                compile 'org.gradle.test:external1:1.0'
+            }
+        """
+        file("b/build.gradle") << """
+            configurations {
+                compile
+            }
+            task listDeps {
+                def files = configurations.compile
+                doLast { files.each { } }
+            }
+            repositories {
+                maven { url = '${repo2.uri}' }
+            }
+            dependencies {
+                compile 'org.gradle.test:external1:1.0'
+            }
+
+        """
 
         succeeds('a:listDeps')
         fails('b:listDeps')
@@ -311,7 +316,7 @@ project(':b') {
 
         file('build.gradle') << """
             repositories {
-                maven { url '${repo.uri}' }
+                maven { url = '${repo.uri}' }
             }
             configurations {
                 compile
@@ -322,12 +327,13 @@ project(':b') {
             task test {
                 def files = configurations.compile
                 doLast {
-                    assert files.collect { it.name } == ['middle2-1.0.jar', 'middle1-1.0.jar', 'leaf3-1.0.jar', 'leaf4-1.0.jar', 'leaf1-1.0.jar', 'leaf2-1.0.jar']
+                    println files.collect { it.name }
                 }
             }
         """
 
         succeeds("test")
+        outputContains("[middle2-1.0.jar, middle1-1.0.jar, leaf3-1.0.jar, leaf4-1.0.jar, leaf1-1.0.jar, leaf2-1.0.jar]")
     }
 
     void exposesMetaDataAboutResolvedArtifactsInAFixedOrder() {
@@ -340,7 +346,7 @@ project(':b') {
 
         file('build.gradle') << """
 repositories {
-    maven { url '${repo.uri}' }
+    maven { url = '${repo.uri}' }
 }
 configurations {
     compile
@@ -361,26 +367,14 @@ abstract class CheckArtifacts extends DefaultTask {
 
     @TaskAction
     void test() {
-        assert this.files.collect { it.name } == ['lib-1.0.jar', 'lib-1.0-classifier.jar', 'lib-1.0.zip', 'dist-1.0.zip']
-        def artifacts = this.artifacts.artifacts.collect { it.id.name }
-
-        assert artifacts.size() == 4
-        assert artifacts[0].name == 'lib'
-        assert artifacts[0].type == 'jar'
-        assert artifacts[0].extension == 'jar'
-        assert artifacts[0].classifier == null
-        assert artifacts[1].name == 'lib'
-        assert artifacts[1].type == 'jar'
-        assert artifacts[1].extension == 'jar'
-        assert artifacts[1].classifier == 'classifier'
-        assert artifacts[2].name == 'lib'
-        assert artifacts[2].type == 'zip'
-        assert artifacts[2].extension == 'zip'
-        assert artifacts[2].classifier == null
-        assert artifacts[3].name == 'dist'
-        assert artifacts[3].type == 'zip'
-        assert artifacts[3].extension == 'zip'
-        assert artifacts[3].classifier == null
+        println this.files.collect { it.name }
+        this.artifacts.artifacts.eachWithIndex { artifact, i ->
+            println "artifact\${i}.name=\${artifact.id.name.name}"
+            println "artifact\${i}.type=\${artifact.id.name.type}"
+            println "artifact\${i}.extension=\${artifact.id.name.extension}"
+            if (artifact.id.name.classifier == 'null') { throw new NullPointerException("classifer can't be 'null'") }
+            println "artifact\${i}.classifier=\${artifact.id.name.classifier}"
+        }
     }
 }
 
@@ -391,6 +385,23 @@ tasks.register("test", CheckArtifacts) {
 """
 
         succeeds('test')
+        outputContains("[lib-1.0.jar, lib-1.0-classifier.jar, lib-1.0.zip, dist-1.0.zip]")
+        outputContains("artifact0.name=lib")
+        outputContains("artifact0.type=jar")
+        outputContains("artifact0.extension=jar")
+        outputContains("artifact0.classifier=null")
+        outputContains("artifact1.name=lib")
+        outputContains("artifact1.type=jar")
+        outputContains("artifact1.extension=jar")
+        outputContains("artifact1.classifier=classifier")
+        outputContains("artifact2.name=lib")
+        outputContains("artifact2.type=zip")
+        outputContains("artifact2.extension=zip")
+        outputContains("artifact2.classifier=null")
+        outputContains("artifact3.name=dist")
+        outputContains("artifact3.type=zip")
+        outputContains("artifact3.extension=zip")
+        outputContains("artifact3.classifier=null")
     }
 
     @Issue("GRADLE-1567")
@@ -401,68 +412,68 @@ tasks.register("test", CheckArtifacts) {
         lib.artifact(classifier: 'classifier2')
         lib.publish()
 
-        createDirs("a", "b", "c")
         file('settings.gradle') << """
             rootProject.name = "test"
-            include "a", "b", "c"
+            include "a", "b"
         """
-        file('build.gradle') << """
-subprojects {
-    repositories {
-        maven { url '${repo.uri}' }
-    }
-    configurations {
-        compile
-    }
-}
-project(':a') {
-    dependencies {
-        compile 'org.gradle.test:external1:1.0:classifier1'
-    }
-    task test(dependsOn: configurations.compile) {
-        doLast {
-            assert configurations.compile.collect { it.name } == ['external1-1.0-classifier1.jar']
-            assert configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { "\${it.name}-\${it.classifier}" } == ['external1-classifier1']
-        }
-    }
-}
-project(':b') {
-    dependencies {
-        compile 'org.gradle.test:external1:1.0:classifier2'
-    }
-    task test(dependsOn: configurations.compile) {
-        doLast {
-            assert configurations.compile.collect { it.name } == ['external1-1.0-classifier2.jar']
-            assert configurations.compile.resolvedConfiguration.resolvedArtifacts.collect { "\${it.name}-\${it.classifier}" } == ['external1-classifier2']
-        }
-    }
-}
-"""
-        resolve.prepare("compile")
+        file("a/build.gradle") << """
+            repositories {
+                maven { url = '${repo.uri}' }
+            }
+            configurations {
+                compile
+            }
+            ${resolve.configureProject("compile")}
+            dependencies {
+                compile 'org.gradle.test:external1:1.0:classifier1'
+            }
+            task test {
+                def files = configurations.compile
+                doLast { println files.collect { it.name } }
+            }
+        """
+        file("b/build.gradle") << """
+            repositories {
+                maven { url = '${repo.uri}' }
+            }
+            configurations {
+                compile
+            }
+            ${resolve.configureProject("compile")}
+            dependencies {
+                compile 'org.gradle.test:external1:1.0:classifier2'
+            }
+            task test {
+                def files = configurations.compile
+                doLast { println files.collect { it.name } }
+            }
+        """
 
         when:
-        succeeds("a:checkDeps")
+        succeeds("a:checkDeps", "a:test")
 
         then:
-        resolve.expectGraph {
+        resolve.expectGraph(":a") {
             root(":a", "test:a:") {
                 module("org.gradle.test:external1:1.0") {
                     artifact(classifier: "classifier1")
                 }
             }
         }
+        outputContains("[external1-1.0-classifier1.jar]")
 
         when:
-        succeeds("b:checkDeps")
+        succeeds("b:checkDeps", "b:test")
 
         then:
-        resolve.expectGraph {
+        resolve.expectGraph(":b") {
             root(":b", "test:b:") {
                 module("org.gradle.test:external1:1.0") {
                     artifact(classifier: "classifier2")
                 }
             }
         }
+        outputContains("[external1-1.0-classifier2.jar]")
     }
 
     @Issue("GRADLE-739")
@@ -476,7 +487,7 @@ project(':b') {
 
         file('build.gradle') << """
 repositories {
-    maven { url '${repo.uri}' }
+    maven { url = '${repo.uri}' }
 }
 configurations {
     base
@@ -536,7 +547,7 @@ task test {
 
         file('build.gradle') << """
 repositories {
-    maven { url '${repo.uri}' }
+    maven { url = '${repo.uri}' }
 }
 configurations {
     base
@@ -579,7 +590,7 @@ task test {
 
         file('build.gradle') << """
 repositories {
-    maven { url '${repo.uri}' }
+    maven { url = '${repo.uri}' }
 }
 configurations {
     base
@@ -617,32 +628,28 @@ task test {
         lib.publish()
 
         file('settings.gradle') << "rootProject.name = 'test'"
-        file('build.gradle') << """
-repositories {
-    maven { url '${repo.uri}' }
-}
-configurations {
-    transitive
-    nonTransitive
-    extendedNonTransitive.extendsFrom nonTransitive
-    extendedBoth.extendsFrom transitive, nonTransitive
-    mergedNonTransitive
-}
-dependencies {
-    transitive 'org.gradle.test:external1:1.0'
-    nonTransitive 'org.gradle.test:external1:1.0', { transitive = false }
-    extendedNonTransitive 'org.gradle.test:two:1.0'
-    mergedNonTransitive 'org.gradle.test:external1:1.0', {transitive = false }
-    mergedNonTransitive 'org.gradle.test:external1:1.0:classifier', { transitive = false }
-}
-"""
-        resolve.prepare {
-            config("transitive")
-            config("nonTransitive")
-            config("extendedNonTransitive")
-            config("extendedBoth")
-            config("mergedNonTransitive")
-        }
+        buildFile << """
+            repositories {
+                maven { url = '${repo.uri}' }
+            }
+            configurations {
+                transitive
+                nonTransitive
+                extendedNonTransitive.extendsFrom nonTransitive
+                extendedBoth.extendsFrom transitive, nonTransitive
+                mergedNonTransitive
+            }
+
+            ${resolve.configureProject("transitive", "nonTransitive", "extendedNonTransitive", "extendedBoth", "mergedNonTransitive")}
+
+            dependencies {
+                transitive 'org.gradle.test:external1:1.0'
+                nonTransitive 'org.gradle.test:external1:1.0', { transitive = false }
+                extendedNonTransitive 'org.gradle.test:two:1.0'
+                mergedNonTransitive 'org.gradle.test:external1:1.0', {transitive = false }
+                mergedNonTransitive 'org.gradle.test:external1:1.0:classifier', { transitive = false }
+            }
+        """
 
         when:
         succeeds("checkTransitive")
@@ -712,7 +719,7 @@ dependencies {
 
         file('build.gradle') << """
 repositories {
-    maven { url '${repo.uri}' }
+    maven { url = '${repo.uri}' }
 }
 configurations {
     override { transitive = false }
@@ -721,15 +728,16 @@ dependencies {
     override 'org.gradle.test:external1:1.0'
 }
 
-task test {
-    def files = configurations.override
-    doLast {
-        assert files.collect { it.name } == ['external1-1.0.jar']
-    }
-}
+        task test {
+            def files = configurations.override
+            doLast {
+                println files.collect { it.name }
+            }
+        }
 """
 
         succeeds('test')
+        outputContains("[external1-1.0.jar]")
     }
 
     /*
@@ -744,7 +752,7 @@ task test {
 
         file('build.gradle') << """
 repositories {
-    maven { url '${repo.uri}' }
+    maven { url = '${repo.uri}' }
 }
 configurations {
     a
@@ -763,27 +771,32 @@ task test {
     def a = configurations.a
     def b = configurations.b
     doLast {
-        assert a*.name == ['external1-1.0.jar']
-        assert b*.name == ['external1-1.0.jar', 'external1-1.0-withClassifier.jar']
+        println a*.name
+        println b*.name
     }
 }
 """
         succeeds('test')
+        outputContains("[external1-1.0.jar]")
+        outputContains("[external1-1.0.jar, external1-1.0-withClassifier.jar]")
     }
 
     void projectCanDependOnItself() {
         given:
         file("settings.gradle") << "rootProject.name = 'test'"
-        file("build.gradle") << '''
+        file("build.gradle") << """
+            ${resolve.configureProject("compile")}
             group = 'org.test'
             version = '1.2'
             configurations { compile; create('default') }
             dependencies { compile project(':') }
             task jar1(type: Jar) { destinationDirectory = buildDir; archiveBaseName = '1' }
             task jar2(type: Jar) { destinationDirectory = buildDir; archiveBaseName = '2' }
-            artifacts { compile jar1; 'default' jar2 }
-'''
-        resolve.prepare("compile")
+            artifacts {
+                compile tasks.jar1
+                'default' tasks.jar2
+            }
+        """
 
         when:
         succeeds("checkDeps")

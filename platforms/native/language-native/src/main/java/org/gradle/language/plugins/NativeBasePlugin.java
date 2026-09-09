@@ -22,6 +22,7 @@ import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.ConsumableConfiguration;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.artifacts.type.ArtifactTypeDefinition;
@@ -37,11 +38,9 @@ import org.gradle.api.component.SoftwareComponentContainer;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.RegularFile;
-import org.gradle.api.internal.artifacts.configurations.ConfigurationRolesForMigration;
 import org.gradle.api.internal.artifacts.configurations.RoleBasedConfigurationContainerInternal;
 import org.gradle.api.internal.artifacts.transform.UnzipTransform;
 import org.gradle.api.internal.project.ProjectInternal;
-import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.publish.PublishingExtension;
@@ -147,9 +146,8 @@ public abstract class NativeBasePlugin implements Plugin<Project> {
 
         // Add incoming artifact transforms
         final DependencyHandler dependencyHandler = project.getDependencies();
-        final ObjectFactory objects = project.getObjects();
 
-        addHeaderZipTransform(dependencyHandler, objects);
+        addHeaderZipTransform(dependencyHandler);
 
         // Add outgoing configurations and publications
         final RoleBasedConfigurationContainerInternal configurations = ((ProjectInternal) project).getConfigurations();
@@ -339,14 +337,11 @@ public abstract class NativeBasePlugin implements Plugin<Project> {
 
     private void addOutgoingConfigurationForLinkUsage(SoftwareComponentContainer components, final RoleBasedConfigurationContainerInternal configurations) {
         components.withType(ConfigurableComponentWithLinkUsage.class, component -> {
-            Names names = component.getNames();
-
-            Configuration linkElements = configurations.migratingUnlocked(names.withSuffix("linkElements"), ConfigurationRolesForMigration.CONSUMABLE_DEPENDENCY_SCOPE_TO_CONSUMABLE);
-            linkElements.extendsFrom(component.getImplementationDependencies());
-            AttributeContainer attributes = component.getLinkAttributes();
-            copyAttributesTo(attributes, linkElements);
-
-            linkElements.getOutgoing().artifact(component.getLinkFile());
+            Provider<ConsumableConfiguration> linkElements = configurations.consumable(component.getNames().withSuffix("linkElements"), conf -> {
+                conf.extendsFrom(component.getImplementationDependencies());
+                copyAttributesTo(component.getLinkAttributes(), conf);
+                conf.getOutgoing().artifact(component.getLinkFile());
+            });
 
             component.getLinkElements().set(linkElements);
         });
@@ -354,17 +349,13 @@ public abstract class NativeBasePlugin implements Plugin<Project> {
 
     private void addOutgoingConfigurationForRuntimeUsage(SoftwareComponentContainer components, final RoleBasedConfigurationContainerInternal configurations) {
         components.withType(ConfigurableComponentWithRuntimeUsage.class, component -> {
-            Names names = component.getNames();
-
-            Configuration runtimeElements = configurations.migratingUnlocked(names.withSuffix("runtimeElements"), ConfigurationRolesForMigration.CONSUMABLE_DEPENDENCY_SCOPE_TO_CONSUMABLE);
-            runtimeElements.extendsFrom(component.getImplementationDependencies());
-
-            AttributeContainer attributes = component.getRuntimeAttributes();
-            copyAttributesTo(attributes, runtimeElements);
-
-            if (component.hasRuntimeFile()) {
-                runtimeElements.getOutgoing().artifact(component.getRuntimeFile());
-            }
+            Provider<ConsumableConfiguration> runtimeElements = configurations.consumable(component.getNames().withSuffix("runtimeElements"), conf -> {
+                conf.extendsFrom(component.getImplementationDependencies());
+                copyAttributesTo(component.getRuntimeAttributes(), conf);
+                if (component.hasRuntimeFile()) {
+                    conf.getOutgoing().artifact(component.getRuntimeFile());
+                }
+            });
 
             component.getRuntimeElements().set(runtimeElements);
         });
@@ -439,12 +430,14 @@ public abstract class NativeBasePlugin implements Plugin<Project> {
         });
     }
 
-    private void addHeaderZipTransform(DependencyHandler dependencyHandler, ObjectFactory objects) {
+    private void addHeaderZipTransform(DependencyHandler dependencyHandler) {
         dependencyHandler.registerTransform(UnzipTransform.class, variantTransform -> {
-            variantTransform.getFrom().attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, ZIP_TYPE);
-            variantTransform.getFrom().attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.class, Usage.C_PLUS_PLUS_API));
-            variantTransform.getTo().attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, DIRECTORY_TYPE);
-            variantTransform.getTo().attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.class, Usage.C_PLUS_PLUS_API));
+            AttributeContainer from =  variantTransform.getFrom();
+            from.attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, ZIP_TYPE);
+            from.attribute(Usage.USAGE_ATTRIBUTE, from.named(Usage.class, Usage.C_PLUS_PLUS_API));
+            AttributeContainer to = variantTransform.getTo();
+            to.attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, DIRECTORY_TYPE);
+            to.attribute(Usage.USAGE_ATTRIBUTE, to.named(Usage.class, Usage.C_PLUS_PLUS_API));
         });
     }
 

@@ -24,8 +24,8 @@ import org.gradle.cache.IndexedCacheParameters;
 import org.gradle.cache.LockOptions;
 import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.serialize.Serializer;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.util.Arrays;
 import java.util.Collection;
@@ -49,6 +49,7 @@ public class DefaultPersistentDirectoryStore implements ReferencablePersistentCa
     private final DefaultCacheCleanupExecutor cleanupExecutor;
     private DefaultCacheCoordinator cacheAccess;
 
+    @SuppressWarnings("this-escape")
     public DefaultPersistentDirectoryStore(
         File dir,
         @Nullable String displayName,

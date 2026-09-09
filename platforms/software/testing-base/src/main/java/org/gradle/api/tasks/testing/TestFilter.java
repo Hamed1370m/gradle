@@ -21,7 +21,16 @@ import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyPro
 import java.util.Set;
 
 /**
- * Allows filtering tests for execution. Some examples:
+ * Allows filtering tests for execution.
+ *
+ * Class-based and non-class-based tests are filtered using the same selection logic.
+ *
+ * Classes can be selected by their simple, fully qualified names or partial matches on class name or package.
+ * Methods can be selected by their full names, containing class or partial matches.
+ *
+ * Non-class-based tests are converted to package-like names using the relative path from their test definition directory.
+ *
+ * Some examples:
  *
  * <pre class='autoTested'>
  *   apply plugin: 'java'
@@ -64,6 +73,8 @@ import java.util.Set;
  * </pre>
  *
  * @since 1.10
+ * <a href="https://docs.gradle.org/current/userguide/java_testing.html#test_filtering">General information about filtering.</a>
+ * <a href="https://docs.gradle.org/current/userguide/java_testing.html#filtering">Special notes about filtering non-class-based tests.</a>
  */
 public interface TestFilter {
 
@@ -73,6 +84,7 @@ public interface TestFilter {
      *
      * @param testNamePattern test name pattern to include, can be class or method name, can contain wildcard '*'
      * @return this filter object
+     * @since 1.10
      */
     TestFilter includeTestsMatching(String testNamePattern);
 
@@ -92,6 +104,7 @@ public interface TestFilter {
      * {@link #setIncludePatterns(String...)}.
      *
      * @return included test name patterns
+     * @since 1.10
      */
     @Input
     @ToBeReplacedByLazyProperty
@@ -114,6 +127,7 @@ public interface TestFilter {
      *
      * @param testNamePatterns class or method name patterns to set, may contain wildcard '*'
      * @return this filter object
+     * @since 1.10
      */
     TestFilter setIncludePatterns(String... testNamePatterns);
 
@@ -132,6 +146,7 @@ public interface TestFilter {
      * @param className the class name of the test to execute
      * @param methodName the method name of the test to execute. Can be null.
      * @return this filter object
+     * @since 2.6
      */
     TestFilter includeTest(String className, String methodName);
 
@@ -148,12 +163,14 @@ public interface TestFilter {
     /**
      * Let the test task fail if a filter configuration was provided but no test matched the given configuration.
      * @param failOnNoMatchingTests whether a test task should fail if no test is matching the filter configuration.
+     * @since 2.6
      * */
     void setFailOnNoMatchingTests(boolean failOnNoMatchingTests);
 
     /**
      * Returns whether the task should fail if no matching tests where found.
      * The default is true.
+     * @since 2.6
      */
     @Input
     @ToBeReplacedByLazyProperty

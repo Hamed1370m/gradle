@@ -33,14 +33,17 @@ public interface DependenciesMetadata<T extends DependencyMetadata> extends Coll
      * Add a dependency or a dependency constraint using the string notation: <code><i>group</i>:<i>name</i>:<i>version</i></code>.
      *
      * @param dependencyNotation the dependency
+     * @since 4.4
      */
     void add(String dependencyNotation);
 
     /**
      * Add a dependency or a dependency constraint using the map notation: <code>group: <i>group</i>, name: <i>name</i>, version: <i>version</i></code>.
      *
-     * @param dependencyNotation the dependency
+     * @deprecated This method will be removed in Gradle 10. Use {@link #add(String)} instead.
+     * @since 4.4
      */
+    @Deprecated
     void add(Map<String, String> dependencyNotation);
 
     /**
@@ -48,6 +51,7 @@ public interface DependenciesMetadata<T extends DependencyMetadata> extends Coll
      *
      * @param dependencyNotation the dependency
      * @param configureAction action to configure details of the dependency - see {@link DependencyMetadata}
+     * @since 4.4
      */
     void add(String dependencyNotation, Action<? super T> configureAction);
 
@@ -56,6 +60,10 @@ public interface DependenciesMetadata<T extends DependencyMetadata> extends Coll
      *
      * @param dependencyNotation the dependency
      * @param configureAction action to configure details of the dependency - see {@link DependencyMetadata}
+     *
+     * @deprecated This method will be removed in Gradle 10. Use {@link #add(String, Action)} instead.
+     * @since 4.4
      */
+    @Deprecated
     void add(Map<String, String> dependencyNotation, Action<? super T> configureAction);
 }

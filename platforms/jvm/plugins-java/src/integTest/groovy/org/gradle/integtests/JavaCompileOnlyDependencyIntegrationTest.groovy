@@ -17,7 +17,7 @@
 package org.gradle.integtests
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 import static org.gradle.util.internal.TextUtil.normaliseFileSeparators
 
@@ -90,7 +90,7 @@ dependencies {
 apply plugin: 'java'
 
 repositories {
-    maven { url '$mavenRepo.uri' }
+    maven { url = '$mavenRepo.uri' }
 }
 
 dependencies {
@@ -135,7 +135,7 @@ task checkRuntimeClasspath {
 apply plugin: 'java'
 
 repositories {
-    maven { url '$mavenRepo.uri' }
+    maven { url = '$mavenRepo.uri' }
 }
 
 configurations {
@@ -200,7 +200,7 @@ allprojects {
     apply plugin: 'java-library'
 
     repositories {
-        maven { url '$mavenRepo.uri' }
+        maven { url = '$mavenRepo.uri' }
     }
 }
 
@@ -240,7 +240,7 @@ project(':projectB') {
             allprojects {
                 apply plugin: 'java-library'
                 repositories {
-                    maven { url '$mavenRepo.uri' }
+                    maven { url = '$mavenRepo.uri' }
                 }
             }
 

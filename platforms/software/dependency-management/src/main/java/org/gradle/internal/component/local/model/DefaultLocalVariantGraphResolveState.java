@@ -17,22 +17,16 @@
 package org.gradle.internal.component.local.model;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import org.gradle.api.Transformer;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.internal.attributes.ImmutableAttributes;
-import org.gradle.internal.Describables;
 import org.gradle.internal.component.external.model.ImmutableCapabilities;
 import org.gradle.internal.component.model.ComponentArtifactMetadata;
-import org.gradle.internal.component.model.ComponentIdGenerator;
-import org.gradle.internal.component.model.DependencyMetadata;
 import org.gradle.internal.component.model.ExcludeMetadata;
 import org.gradle.internal.component.model.IvyArtifactName;
 import org.gradle.internal.component.model.LocalOriginDependencyMetadata;
 import org.gradle.internal.component.model.VariantArtifactResolveState;
 import org.gradle.internal.component.model.VariantResolveMetadata;
 import org.gradle.internal.model.CalculatedValue;
-import org.gradle.internal.model.CalculatedValueContainerFactory;
 
 import java.util.List;
 import java.util.Set;
@@ -50,16 +44,9 @@ public class DefaultLocalVariantGraphResolveState implements LocalVariantGraphRe
     private final CalculatedValue<VariantDependencyMetadata> dependencies;
     private final DefaultLocalVariantArtifactResolveState artifactState;
 
-    // Services
-    private final ComponentIdGenerator idGenerator;
-    private final CalculatedValueContainerFactory calculatedValueContainerFactory;
-
     public DefaultLocalVariantGraphResolveState(
         long instanceId,
-        ComponentIdentifier componentId,
         LocalVariantGraphResolveMetadata metadata,
-        ComponentIdGenerator idGenerator,
-        CalculatedValueContainerFactory calculatedValueContainerFactory,
         CalculatedValue<VariantDependencyMetadata> dependencies,
         Set<LocalVariantMetadata> artifactSets
     ) {
@@ -67,45 +54,7 @@ public class DefaultLocalVariantGraphResolveState implements LocalVariantGraphRe
         this.metadata = metadata;
 
         this.dependencies = dependencies;
-        this.artifactState = new DefaultLocalVariantArtifactResolveState(componentId, artifactSets);
-
-        this.idGenerator = idGenerator;
-        this.calculatedValueContainerFactory = calculatedValueContainerFactory;
-    }
-
-    @Override
-    public LocalVariantGraphResolveState copyWithTransformedArtifacts(Transformer<LocalComponentArtifactMetadata, LocalComponentArtifactMetadata> artifactTransformer) {
-
-        Set<LocalVariantMetadata> artifactSets = artifactState.getArtifactVariants();
-        ImmutableSet.Builder<LocalVariantMetadata> copiedArtifactSets = ImmutableSet.builderWithExpectedSize(artifactSets.size());
-
-        for (LocalVariantMetadata oldArtifactSet : artifactSets) {
-            CalculatedValue<ImmutableList<LocalComponentArtifactMetadata>> newArtifacts =
-                calculatedValueContainerFactory.create(Describables.of(oldArtifactSet.asDescribable(), "artifacts"), c ->
-                    oldArtifactSet.getArtifacts().stream()
-                        .map(artifactTransformer::transform)
-                        .collect(ImmutableList.toImmutableList())
-                );
-
-            copiedArtifactSets.add(new LocalVariantMetadata(
-                oldArtifactSet.getName(),
-                oldArtifactSet.getIdentifier(),
-                oldArtifactSet.asDescribable(),
-                oldArtifactSet.getAttributes(),
-                oldArtifactSet.getCapabilities(),
-                newArtifacts
-            ));
-        }
-
-        return new DefaultLocalVariantGraphResolveState(
-            idGenerator.nextVariantId(),
-            artifactState.componentId,
-            metadata,
-            idGenerator,
-            calculatedValueContainerFactory,
-            dependencies,
-            copiedArtifactSets.build()
-        );
+        this.artifactState = new DefaultLocalVariantArtifactResolveState(metadata.getId().getComponentId(), artifactSets);
     }
 
     @Override
@@ -145,7 +94,7 @@ public class DefaultLocalVariantGraphResolveState implements LocalVariantGraphRe
     }
 
     @Override
-    public List<? extends DependencyMetadata> getDependencies() {
+    public List<LocalOriginDependencyMetadata> getDependencies() {
         dependencies.finalizeIfNotAlready();
         return dependencies.get().dependencies;
     }
@@ -165,6 +114,7 @@ public class DefaultLocalVariantGraphResolveState implements LocalVariantGraphRe
      * The dependencies, dependency constraints, and excludes for this variant.
      */
     public static class VariantDependencyMetadata {
+
         public final List<LocalOriginDependencyMetadata> dependencies;
         public final Set<LocalFileDependencyMetadata> files;
         public final ImmutableList<ExcludeMetadata> excludes;
@@ -178,6 +128,7 @@ public class DefaultLocalVariantGraphResolveState implements LocalVariantGraphRe
             this.files = files;
             this.excludes = ImmutableList.copyOf(excludes);
         }
+
     }
 
     private static class DefaultLocalVariantArtifactResolveState implements VariantArtifactResolveState {
@@ -218,5 +169,7 @@ public class DefaultLocalVariantGraphResolveState implements LocalVariantGraphRe
         public Set<LocalVariantMetadata> getArtifactVariants() {
             return artifactSets;
         }
+
     }
+
 }

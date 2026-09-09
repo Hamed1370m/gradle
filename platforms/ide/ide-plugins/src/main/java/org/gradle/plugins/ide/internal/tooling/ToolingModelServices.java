@@ -18,10 +18,12 @@ package org.gradle.plugins.ide.internal.tooling;
 
 import org.gradle.api.internal.artifacts.ivyservice.projectmodule.ProjectPublicationRegistry;
 import org.gradle.api.internal.file.FileCollectionFactory;
-import org.gradle.api.internal.project.ProjectStateRegistry;
+import org.gradle.api.internal.project.ProjectStateLookup;
 import org.gradle.api.internal.project.ProjectTaskLister;
 import org.gradle.internal.build.BuildStateRegistry;
 import org.gradle.internal.buildtree.BuildModelParameters;
+import org.gradle.internal.composite.BuildIncludeListener;
+import org.gradle.internal.problems.failure.FailureFactory;
 import org.gradle.internal.service.Provides;
 import org.gradle.internal.service.ServiceRegistration;
 import org.gradle.internal.service.ServiceRegistrationProvider;
@@ -42,8 +44,8 @@ public class ToolingModelServices extends AbstractGradleModuleServices {
     private static class BuildScopeToolingServices implements ServiceRegistrationProvider {
 
         @Provides
-        protected UniqueProjectNameProvider createBuildProjectRegistry(ProjectStateRegistry projectRegistry) {
-            return new DefaultUniqueProjectNameProvider(projectRegistry);
+        protected UniqueProjectNameProvider createBuildProjectRegistry(ProjectStateLookup projectStateLookup) {
+            return new DefaultUniqueProjectNameProvider(projectStateLookup);
         }
 
         @Provides
@@ -52,9 +54,11 @@ public class ToolingModelServices extends AbstractGradleModuleServices {
             final ProjectPublicationRegistry projectPublicationRegistry,
             final FileCollectionFactory fileCollectionFactory,
             final BuildStateRegistry buildStateRegistry,
-            final ProjectStateRegistry projectStateRegistry,
+            final ProjectStateLookup projectStateLookup,
             BuildModelParameters buildModelParameters,
-            IntermediateToolingModelProvider intermediateToolingModelProvider
+            IntermediateToolingModelProvider intermediateToolingModelProvider,
+            BuildIncludeListener failedIncludedBuildsRegistry,
+            FailureFactory failureFactory
         ) {
 
             return new BuildScopeToolingModelBuilderRegistryAction() {
@@ -65,17 +69,19 @@ public class ToolingModelServices extends AbstractGradleModuleServices {
                     IdeaModelBuilderInternal ideaModelBuilder = createIdeaModelBuilder(isolatedProjects, gradleProjectBuilder);
                     registry.register(new RunBuildDependenciesTaskBuilder());
                     registry.register(new RunEclipseTasksBuilder());
-                    registry.register(new EclipseModelBuilder(gradleProjectBuilder, projectStateRegistry));
+                    registry.register(new EclipseModelBuilder(gradleProjectBuilder, projectStateLookup));
                     registry.register(ideaModelBuilder);
                     registry.register(gradleProjectBuilder);
-                    registry.register(new GradleBuildBuilder(buildStateRegistry));
+                    registry.register(new GradleBuildBuilder(buildStateRegistry, failedIncludedBuildsRegistry, failureFactory));
                     registry.register(new BasicIdeaModelBuilder(ideaModelBuilder));
                     registry.register(new BuildInvocationsBuilder(taskLister));
                     registry.register(new PublicationsBuilder(projectPublicationRegistry));
                     registry.register(new BuildEnvironmentBuilder(fileCollectionFactory));
+                    registry.register(new HelpBuilder());
                     registry.register(new IsolatedGradleProjectInternalBuilder());
                     registry.register(new IsolatedIdeaModuleInternalBuilder());
                     registry.register(new PluginApplyingBuilder());
+                    registry.register(new GradleDslBaseScriptModelBuilder());
                 }
 
                 private IdeaModelBuilderInternal createIdeaModelBuilder(boolean isolatedProjects, GradleProjectBuilderInternal gradleProjectBuilder) {

@@ -38,7 +38,7 @@ class IvyPublishDescriptorCustomizationIntegTest extends AbstractIvyPublishInteg
 
             publishing {
                 repositories {
-                    ivy { url "${ivyRepo.uri}" }
+                    ivy { url = "${ivyRepo.uri}" }
                 }
                 publications {
                     ivy(IvyPublication) {
@@ -65,8 +65,8 @@ class IvyPublishDescriptorCustomizationIntegTest extends AbstractIvyPublishInteg
                 publications {
                     ivy {
                         descriptor {
-                            status "custom-status"
-                            branch "custom-branch"
+                            status = "custom-status"
+                            branch = "custom-branch"
                             license {
                                 name = 'The Apache License, Version 2.0'
                                 url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
@@ -117,10 +117,8 @@ class IvyPublishDescriptorCustomizationIntegTest extends AbstractIvyPublishInteg
         given:
         def moduleName = module.module
         buildFile << """
-            model {
-                tasks.generateDescriptorFileForIvyPublication {
-                    destination = 'generated-ivy.xml'
-                }
+            tasks.named("generateDescriptorFileForIvyPublication") {
+                destination = 'generated-ivy.xml'
             }
         """
 
@@ -150,7 +148,7 @@ class IvyPublishDescriptorCustomizationIntegTest extends AbstractIvyPublishInteg
         fails 'publish'
 
         then:
-        failure.assertHasDescription("Execution failed for task ':generateDescriptorFileForIvyPublication'.")
+        failure.assertHasDescription("Execution failed for task ':generateDescriptorFileForIvyPublication' (registered by plugin 'org.gradle.ivy-publish').")
         failure.assertHasFileName("Build file '${buildFile}'")
         failure.assertHasLineNumber(23)
         failure.assertHasCause("Could not apply withXml() to Ivy module descriptor")
@@ -173,7 +171,7 @@ class IvyPublishDescriptorCustomizationIntegTest extends AbstractIvyPublishInteg
         fails 'publish'
 
         then:
-        failure.assertHasDescription("Execution failed for task ':publishIvyPublicationToIvyRepository'.")
+        failure.assertHasDescription("Execution failed for task ':publishIvyPublicationToIvyRepository' (registered by plugin 'org.gradle.ivy-publish').")
         failure.assertHasCause("Failed to publish publication 'ivy' to repository 'ivy'")
         failure.assertHasCause("Invalid publication 'ivy': supplied revision does not match ivy descriptor (cannot edit revision directly in the ivy descriptor file).")
     }
@@ -238,7 +236,7 @@ class IvyPublishDescriptorCustomizationIntegTest extends AbstractIvyPublishInteg
         buildFile << """
             publishing {
                 repositories {
-                    ivy { url "${mavenRepo.uri}" }
+                    ivy { url = "${mavenRepo.uri}" }
                 }
                 publications {
                     ivy {

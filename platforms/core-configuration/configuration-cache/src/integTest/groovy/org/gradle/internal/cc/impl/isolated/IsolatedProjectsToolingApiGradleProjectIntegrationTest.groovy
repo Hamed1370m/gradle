@@ -26,10 +26,8 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
     def "can fetch GradleProject model for empty projects"() {
         settingsFile << """
             rootProject.name = 'root'
-
-            include(":lib1")
-            include(":lib1:lib11")
         """
+        includeProjects("lib1", "lib1:lib11")
 
         when: "fetching without Isolated Projects"
         def expectedProjectModel = fetchModel(GradleProject)
@@ -49,7 +47,7 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
         def projectModel = fetchModel(GradleProject)
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             modelsCreated(":", GradleProject, IsolatedGradleProjectInternal)
             modelsCreated(IsolatedGradleProjectInternal, ":lib1", ":lib1:lib11")
         }
@@ -61,15 +59,14 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
         fetchModel(GradleProject)
 
         then:
-        fixture.assertStateLoaded()
+        fixture.assertModelLoaded()
     }
 
     def "can fetch GradleProject model without tasks"() {
         settingsFile << """
             rootProject.name = 'root'
-
-            include(":lib1")
         """
+        includeProjects("lib1")
 
         buildFile << """
             tasks.register("lazy") {
@@ -96,7 +93,7 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
         def projectModel = fetchModel(GradleProject)
 
         then: "fetching with Isolated Projects"
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             modelsCreated(":", GradleProject, IsolatedGradleProjectInternal)
             modelsCreated(":lib1", IsolatedGradleProjectInternal)
         }
@@ -108,14 +105,14 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
         fetchModel(GradleProject)
 
         then:
-        fixture.assertStateLoaded()
+        fixture.assertModelLoaded()
     }
 
     def "fetching GradleProject for non-root project fails"() {
         settingsFile << """
             rootProject.name = "root"
-            include("a")
         """
+        includeProjects("a")
 
         when:
         withIsolatedProjects()
@@ -128,6 +125,7 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
     }
 
     def "can fetch GradleProject model for an included build project"() {
+        createProjectSubDirs("included1", "lib1", "included1/lib2")
         settingsFile << """
             rootProject.name = 'root'
             includeBuild("included1")
@@ -157,7 +155,7 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
         def projectModel = runBuildAction(new FetchGradleProjectForTarget(":included1"))
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             buildModelCreated()
             modelsCreated(":included1", GradleProject, IsolatedGradleProjectInternal)
             modelsCreated(":included1:lib2", IsolatedGradleProjectInternal)
@@ -170,7 +168,7 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
         runBuildAction(new FetchGradleProjectForTarget(":included1"))
 
         then:
-        fixture.assertStateLoaded()
+        fixture.assertModelLoaded()
     }
 
     def "root GradleProject model is invalidated when a child project configuration changes"() {
@@ -193,7 +191,7 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
         def model = fetchModel(GradleProject)
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             modelsCreated(":", GradleProject, IsolatedGradleProjectInternal)
             modelsCreated(":a", IsolatedGradleProjectInternal)
             modelsCreated(":b", IsolatedGradleProjectInternal)
@@ -220,7 +218,7 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
         def updatedModel = fetchModel(GradleProject)
 
         then:
-        fixture.assertStateUpdated {
+        fixture.assertModelUpdated {
             fileChanged("a/build.gradle")
             modelsCreated(":", GradleProject, IsolatedGradleProjectInternal)
             modelsCreated(":a", IsolatedGradleProjectInternal)
@@ -245,7 +243,7 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
         fetchModel(GradleProject)
 
         then:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             modelsCreated(":", GradleProject, IsolatedGradleProjectInternal)
             modelsCreated(":a", IsolatedGradleProjectInternal)
             modelsCreated(":b", IsolatedGradleProjectInternal)
@@ -261,7 +259,7 @@ class IsolatedProjectsToolingApiGradleProjectIntegrationTest extends AbstractIso
 
         then:
         outputDoesNotContain("updated :a")
-        fixture.assertStateUpdated {
+        fixture.assertModelUpdated {
             fileChanged("a/build.gradle")
             runsTasks = false
             modelsReused(":")

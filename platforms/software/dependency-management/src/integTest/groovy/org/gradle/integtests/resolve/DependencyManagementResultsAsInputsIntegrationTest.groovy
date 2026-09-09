@@ -19,18 +19,20 @@ package org.gradle.integtests.resolve
 import groovy.test.NotYetImplemented
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier
 import org.gradle.api.internal.artifacts.DefaultModuleVersionIdentifier
+import org.gradle.api.internal.artifacts.DefaultProjectComponentIdentifier
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ComponentSelectionReasons
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.DefaultComponentSelectionDescriptor
-import org.gradle.api.internal.artifacts.result.DefaultResolvedVariantResult
 import org.gradle.api.internal.attributes.AttributesFactory
+import org.gradle.api.internal.project.ProjectIdentity
+import org.gradle.api.problems.Severity
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
 import org.gradle.internal.Describables
 import org.gradle.internal.component.external.model.DefaultImmutableCapability
 import org.gradle.internal.component.external.model.DefaultModuleComponentArtifactIdentifier
 import org.gradle.internal.component.external.model.DefaultModuleComponentIdentifier
-import org.gradle.internal.component.external.model.ImmutableCapabilities
 import org.gradle.internal.component.local.model.DefaultLibraryComponentSelector
 import org.gradle.test.fixtures.file.TestFile
+import org.gradle.util.Path
 import spock.lang.Issue
 
 class DependencyManagementResultsAsInputsIntegrationTest extends AbstractHttpDependencyResolutionTest {
@@ -83,14 +85,16 @@ class DependencyManagementResultsAsInputsIntegrationTest extends AbstractHttpDep
             .allowAll()
         mavenHttpRepo.module("org.external", "external-tool").publish().allowAll()
         file('lib/file-lib.jar') << 'content'
-        buildFile << """
-            project(':project-lib') {
-                apply plugin: 'java-library'
-                ${variantDeclaration('projectLibAttrValue')}
-                ${unselectedVariantDeclaration('projectUnselectedLibAttrValue')}
+        file("project-lib/build.gradle") << """
+            plugins {
+                id("java-library")
             }
+            ${variantDeclaration('projectLibAttrValue')}
+            ${unselectedVariantDeclaration('projectUnselectedLibAttrValue')}
+        """
+        buildFile << """
             apply plugin: 'java-library'
-            repositories { maven { url "${mavenHttpRepo.uri}" } }
+            repositories { maven { url = "${mavenHttpRepo.uri}" } }
             dependencies {
                 implementation('org.external:external-lib:1.0') {
                     because(System.getProperty('selectionReason', 'original'))
@@ -127,11 +131,11 @@ class DependencyManagementResultsAsInputsIntegrationTest extends AbstractHttpDep
     def "can not use ResolvedArtifactResult as task input annotated with #annotation"() {
 
         executer.beforeExecute {
-            executer.noDeprecationChecks() // Cannot convert the provided notation to a File or URI
             executer.withArgument("-Dorg.gradle.internal.max.validation.errors=20")
         }
 
         given:
+        enableProblemsApiCheck()
         buildFile << """
             interface NestedBean {
                 $annotation
@@ -182,23 +186,18 @@ class DependencyManagementResultsAsInputsIntegrationTest extends AbstractHttpDep
 
         then:
         failureDescriptionStartsWith("Some problems were found with the configuration of task ':verify' (type 'TaskWithInput').")
-        failureDescriptionContains("Type 'TaskWithInput' property 'direct' has $annotation annotation used on property of type 'ResolvedArtifactResult'.")
-        failureDescriptionContains("Type 'TaskWithInput' property 'providerInput' has $annotation annotation used on property of type 'Provider<ResolvedArtifactResult>'.")
-        failureDescriptionContains("Type 'TaskWithInput' property 'propertyInput' has $annotation annotation used on property of type 'Property<ResolvedArtifactResult>'.")
-        failureDescriptionContains("Type 'TaskWithInput' property 'setPropertyInput' has $annotation annotation used on property of type 'SetProperty<ResolvedArtifactResult>'.")
-        failureDescriptionContains("Type 'TaskWithInput' property 'listPropertyInput' has $annotation annotation used on property of type 'ListProperty<ResolvedArtifactResult>'.")
-        failureDescriptionContains("Type 'TaskWithInput' property 'mapPropertyInput' has $annotation annotation used on property of type 'MapProperty<String, ResolvedArtifactResult>'.")
-        failureDescriptionContains("Type 'TaskWithInput' property 'nestedInput.nested' has $annotation annotation used on property of type 'Property<ResolvedArtifactResult>'.")
-
-        // Because
-        failureDescriptionContains("ResolvedArtifactResult is not supported on task properties annotated with $annotation.")
-
-        // Possible solutions
-        failureDescriptionContains("1. Extract artifact metadata and annotate with @Input.")
-        failureDescriptionContains("2. Extract artifact files and annotate with @InputFiles.")
-
-        // Documentation
-        failureDescriptionContains(documentationRegistry.getDocumentationRecommendationFor("information", "validation_problems", "unsupported_value_type"))
+        def expectedDetails = "ResolvedArtifactResult is not supported on task properties annotated with $annotation".toString()
+        def expectedContextualLabelPattern = ~/Type 'TaskWithInput' property '[^']+' has \Q$annotation\E annotation used on property of type '[^']+'/
+        receivedProblems.size().times { index ->
+            verifyAll(receivedProblem(index)) {
+                severity == Severity.ERROR
+                fqid == 'validation:property-validation:unsupported-value-type'
+                definition.id.displayName == 'Unsupported value type'
+                contextualLabel ==~ expectedContextualLabelPattern
+                details == expectedDetails
+                definition.documentationLink.url == "https://docs.gradle.org/${distribution.version.version}/userguide/validation_problems.html#unsupported_value_type"
+            }
+        }
 
         where:
         annotation    | _
@@ -209,15 +208,18 @@ class DependencyManagementResultsAsInputsIntegrationTest extends AbstractHttpDep
 
     def "can use #type as task input"() {
         given:
+        mavenHttpRepo.module("org", "foo").allowAll().publish()
+        mavenHttpRepo.module("org", "bar").allowAll().publish()
         buildFile << """
             import ${DefaultModuleIdentifier.name}
             import ${DefaultModuleVersionIdentifier.name}
             import ${DefaultModuleComponentIdentifier.name}
+            import ${DefaultProjectComponentIdentifier.name}
+            import ${ProjectIdentity.name}
+            import ${Path.name}
             import ${DefaultImmutableCapability.name}
             import ${DefaultModuleComponentArtifactIdentifier.name}
             import ${AttributesFactory.name}
-            import ${DefaultResolvedVariantResult.name}
-            import ${ImmutableCapabilities.name}
             import ${Describables.name}
             import ${DefaultComponentSelectionDescriptor.name}
             import ${ComponentSelectionReasons.name}
@@ -268,11 +270,11 @@ class DependencyManagementResultsAsInputsIntegrationTest extends AbstractHttpDep
         "AttributeContainer"           | "services.get(AttributesFactory).of(Attribute.of('some', String.class), System.getProperty('n'))"
         "Capability"                   | "new DefaultImmutableCapability('group', System.getProperty('n'), '1.0')"
         "ModuleComponentIdentifier"    | "new DefaultModuleComponentIdentifier(DefaultModuleIdentifier.newId('group', System.getProperty('n')),'1.0')"
+        "ProjectComponentIdentifier"   | "new DefaultProjectComponentIdentifier(ProjectIdentity.forRootProject(Path.ROOT, System.getProperty('n')))"
         "ComponentArtifactIdentifier"  | "new DefaultModuleComponentArtifactIdentifier(new DefaultModuleComponentIdentifier(DefaultModuleIdentifier.newId('group', System.getProperty('n')),'1.0'), System.getProperty('n') + '-1.0.jar', 'jar', null)"
-        "ResolvedVariantResult"        | "new DefaultResolvedVariantResult(new DefaultModuleComponentIdentifier(DefaultModuleIdentifier.newId('group', System.getProperty('n')), '1.0'), Describables.of('variantName'), services.get(AttributesFactory).of(Attribute.of('some', String.class), System.getProperty('n')), ImmutableCapabilities.of(new DefaultImmutableCapability('group', System.getProperty('n'), '1.0')), null)"
-        // For ResolvedComponentResult
+        "ResolvedVariantResult"        | "configurations.create('foo'){ it.dependencies.add(project.dependencyFactory.create(\"org:\${System.getProperty('n')}:1.0\")) }.incoming.resolutionResult.rootComponent.get().dependencies.first().resolvedVariant"
+        "ResolvedComponentResult"      | "configurations.create('foo'){ it.dependencies.add(project.dependencyFactory.create(\"org:\${System.getProperty('n')}:1.0\")) }.incoming.resolutionResult.rootComponent.get().dependencies.first().selected"
         "ModuleVersionIdentifier"      | "DefaultModuleVersionIdentifier.newId('group', System.getProperty('n'), '1.0')"
-//        "ResolvedComponentResult"      | "null"
 //        "DependencyResult"             | "null"
         "ComponentSelector"            | "new DefaultLibraryComponentSelector(':sub', System.getProperty('n'))"
         "ComponentSelectionReason"     | "ComponentSelectionReasons.of(ComponentSelectionReasons.REQUESTED.withDescription(Describables.of('csd-' + System.getProperty('n'))))"

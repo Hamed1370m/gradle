@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 the original author or authors.
+ * Copyright 2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package org.gradle.docs.samples;
 
-import org.gradle.api.UncheckedIOException;
 import org.gradle.api.logging.configuration.WarningMode;
 import org.gradle.exemplar.executor.CommandExecutor;
 import org.gradle.integtests.fixtures.AvailableJavaHomes;
@@ -27,6 +26,7 @@ import org.gradle.integtests.fixtures.executer.GradleDistribution;
 import org.gradle.integtests.fixtures.executer.GradleExecuter;
 import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext;
 import org.gradle.integtests.fixtures.executer.UnderDevelopmentGradleDistribution;
+import org.gradle.internal.UncheckedException;
 import org.gradle.internal.jvm.Jvm;
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider;
 
@@ -48,6 +48,18 @@ class IntegrationTestSamplesExecutor extends CommandExecutor {
     private static final String NO_STACKTRACE_CHECK = "-Dorg.gradle.sampletest.noStackTraceCheck=true";
 
     private static final String SAMPLE_ENV_PREFIX = "-Dorg.gradle.sampletest.env.";
+
+    /**
+     * The id of the Gradle test worker this JVM is, as set by {@code org.gradle.api.internal.tasks.testing.worker.TestWorker}.
+     * Declared here rather than referenced, as that class is not on the docsTest classpath.
+     */
+    private static final String WORKER_ID_SYS_PROPERTY = "org.gradle.test.worker";
+
+    /**
+     * Infix of the per-worker Gradle user home directory names. Keep in sync with the cleanup in the {@code docsTest}
+     * task in {@code platforms/documentation/docs/build.gradle.kts}, which deletes these directories before each run.
+     */
+    private static final String SAMPLE_WORKER_HOME_INFIX = "-sample-worker-";
 
     private final File workingDir;
     private final boolean expectFailure;
@@ -75,7 +87,7 @@ class IntegrationTestSamplesExecutor extends CommandExecutor {
             }
             return expectFailure ? 1 : 0;
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     }
 
@@ -96,6 +108,34 @@ class IntegrationTestSamplesExecutor extends CommandExecutor {
             .withArgument("--no-problems-report")
             .withTasks(args);
 
+        if (flags.contains("--build-cache")) {
+            // > Failed to load cache entry b982a8cf9ce337cea7c2eacd8bb478fb for task ':bundle': Could not load from local cache:
+            //   Timeout waiting to lock Build cache (/mnt/tcagent1/work/b6cfc23ab10332e6/intTestHomeDir/distributions-full/caches/build-cache-1).
+            //   It is currently in use by another process.
+            //    Owner PID: 5250
+            //    Our PID: 4769
+            //    Owner Operation:
+            //    Our operation:
+            //    Lock file: /mnt/tcagent1/work/b6cfc23ab10332e6/intTestHomeDir/distributions-full/caches/build-cache-1/build-cache-1.lock
+            executer.withGradleUserHomeDir(new File(workingDir, "user-home"));
+        } else {
+            // Snippet samples run in parallel across docsTest workers, each forking its own Gradle daemon.
+            // When those daemons share a single Gradle user home they contend on - and can deadlock on - the
+            // cross-process file lock of its shared dependency/build caches (LockOnDemandCrossProcessCacheAccess),
+            // which hangs :docs:docsTest until the build times out. Give each worker its own writable user home so
+            // parallel workers never share a cache. A worker runs its samples sequentially, so for the rest of the
+            // run it still reuses that worker's daemon and its now-warm caches.
+            File sharedUserHome = IntegrationTestBuildContext.INSTANCE.getGradleUserHomeDir();
+            executer.withGradleUserHomeDir(sampleWorkerGradleUserHome(sharedUserHome));
+            // If a shared dependency cache is already populated, serve it read-only so the isolated workers don't
+            // each re-resolve everything. Only set it when the modules cache actually exists, otherwise Gradle
+            // disables the read-only cache and prints a warning that pollutes the sample's asserted output.
+            File sharedCaches = new File(sharedUserHome, "caches");
+            if (new File(sharedCaches, "modules-2").isDirectory()) {
+                executer.withReadOnlyCacheDir(sharedCaches);
+            }
+        }
+
         if (flags.stream().anyMatch(NO_STACKTRACE_CHECK::equals)) {
             executer.withStackTraceChecksDisabled();
         }
@@ -111,12 +151,24 @@ class IntegrationTestSamplesExecutor extends CommandExecutor {
         return executer;
     }
 
+    /**
+     * The Gradle user home for the current docsTest worker: a sibling of the shared one, named after the test worker
+     * id so that the set of directories is stable and bounded across builds, and prefixed like the shared home so the
+     * {@code CachesCleaner} sweep of {@code intTestHomeDir/distributions-*} also covers it.
+     */
+    private static File sampleWorkerGradleUserHome(File sharedUserHome) {
+        // Outside a Gradle test worker (e.g. running a sample from the IDE) there is a single JVM, so a constant name
+        // is enough to keep the home isolated from the shared one.
+        String workerId = System.getProperty(WORKER_ID_SYS_PROPERTY, "local").replaceAll("[^A-Za-z0-9]", "_");
+        return new File(sharedUserHome.getParentFile(), sharedUserHome.getName() + SAMPLE_WORKER_HOME_INFIX + workerId);
+    }
+
     private String getAvailableJdksFlag() {
         String allJdkPaths = AvailableJavaHomes.getAvailableJvms().stream()
             .map(Jvm::getJavaHome)
             .map(File::getAbsolutePath)
             .collect(Collectors.joining(","));
-        return "-Porg.gradle.java.installations.paths=" + allJdkPaths;
+        return "-Dorg.gradle.java.installations.paths=" + allJdkPaths;
     }
 
     private static String capitalize(String s) {

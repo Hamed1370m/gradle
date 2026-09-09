@@ -18,8 +18,10 @@ package org.gradle.api.provider;
 
 import org.gradle.api.Incubating;
 import org.gradle.api.SupportsKotlinAssignmentOverloading;
+import org.gradle.api.model.ManagedType;
+import org.gradle.declarative.dsl.model.annotations.internal.DeclarativeWithHiddenMembers;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Map;
 import java.util.Set;
 
@@ -27,7 +29,8 @@ import java.util.Set;
  * Represents a property whose type is a {@link Map} of keys of type {@link K} and values of type {@link V}. Retains iteration order.
  *
  * <p>
- * You can create a {@link MapProperty} instance using factory method {@link org.gradle.api.model.ObjectFactory#mapProperty(Class, Class)}.
+ * Instances of this interface are not thread-safe for reading and writing.
+ * It is not safe to share the same MapProperty instance between different projects.
  * </p>
  *
  * <p><b>Note:</b> This interface is not intended for implementation by build script or plugin authors.
@@ -35,14 +38,20 @@ import java.util.Set;
  * @param <K> the type of keys.
  * @param <V> the type of values.
  * @since 5.1
+ *
+ * @see ManagedType Create an instance of this as a managed property (preferred).
+ * @see org.gradle.api.model.ObjectFactory#mapProperty(Class,Class) Create an instance of this manually.
  */
+@ManagedType
 @SupportsKotlinAssignmentOverloading
+@DeclarativeWithHiddenMembers
 public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableValue, SupportsConvention {
 
     /**
      * Sets the value of this property to an empty map, and replaces any existing value.
      *
      * @return this property.
+     * @since 5.1
      */
     MapProperty<K, V> empty();
 
@@ -50,7 +59,8 @@ public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableV
      * Returns a provider that resolves to the value of the mapping of the given key. It will have no value
      * if the property has no value, or if it does not contain a mapping for the key.
      *
-     * <p>The returned provider will track the value of this property and query its value when it is queried.</p>
+     * <p>The returned provider tracks changes to this property and resolves its value dynamically when queried.
+     * It also inherits the task dependencies of all entries in the map, if any.
      *
      * <p>This method is equivalent to
      *
@@ -62,6 +72,7 @@ public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableV
      *
      * @param key the key
      * @return a {@link Provider} for the value
+     * @since 5.1
      */
     Provider<V> getting(K key);
 
@@ -73,6 +84,7 @@ public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableV
      * The convention for this property, if any, will be used to provide the value instead.
      *
      * @param entries the entries, can be {@code null}
+     * @since 5.1
      */
     void set(@Nullable Map<? extends K, ? extends V> entries);
 
@@ -83,6 +95,7 @@ public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableV
      * When the provider has no value, this property will also have no value.
      *
      * @param provider Provider of the entries.
+     * @since 5.1
      */
     void set(Provider<? extends Map<? extends K, ? extends V>> provider);
 
@@ -116,6 +129,7 @@ public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableV
      *
      * @param key the key
      * @param value the value
+     * @since 5.1
      */
     void put(K key, V value);
 
@@ -127,6 +141,7 @@ public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableV
      *
      * @param key the key
      * @param providerOfValue the provider of the value
+     * @since 5.1
      */
     void put(K key, Provider<? extends V> providerOfValue);
 
@@ -134,6 +149,7 @@ public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableV
      * Adds all entries from another {@link Map} to the property value.
      *
      * @param entries a {@link Map} containing the entries to add
+     * @since 5.1
      */
     void putAll(Map<? extends K, ? extends V> entries);
 
@@ -144,13 +160,15 @@ public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableV
      * This property will have no value when the given provider has no value.
      *
      * @param provider the provider of the entries
+     * @since 5.1
      */
     void putAll(Provider<? extends Map<? extends K, ? extends V>> provider);
 
     /**
      * Returns a {@link Provider} that returns the set of keys for the map that is the property value.
      *
-     * <p>The returned provider will track the value of this property and query its value when it is queried.</p>
+     * <p>The returned provider tracks changes to this property and resolves its value dynamically when queried.
+     * It also inherits the task dependencies of all entries in the map, if any.
      *
      * <p>This method is equivalent to
      *
@@ -161,6 +179,7 @@ public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableV
      * but possibly more efficient.
      *
      * @return a {@link Provider} that provides the set of keys for the map
+     * @since 5.1
      */
     Provider<Set<K>> keySet();
 
@@ -169,6 +188,7 @@ public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableV
      *
      * @param value The value, or {@code null} when the convention is that the property has no value.
      * @return this
+     * @since 5.1
      */
     MapProperty<K, V> convention(@Nullable Map<? extends K, ? extends V> value);
 
@@ -177,6 +197,7 @@ public interface MapProperty<K, V> extends Provider<Map<K, V>>, HasConfigurableV
      *
      * @param valueProvider The provider of the value.
      * @return this
+     * @since 5.1
      */
     MapProperty<K, V> convention(Provider<? extends Map<? extends K, ? extends V>> valueProvider);
 

@@ -18,6 +18,7 @@ package org.gradle.workers.internal;
 
 import org.gradle.api.Describable;
 import org.gradle.api.logging.LogLevel;
+import org.gradle.api.problems.internal.ProblemsInternal;
 import org.gradle.internal.concurrent.Stoppable;
 import org.gradle.process.ExecResult;
 import org.gradle.process.internal.health.memory.JvmMemoryStatus;
@@ -34,6 +35,8 @@ class WorkerDaemonClient implements Stoppable, Describable {
     private final LogLevel logLevel;
     private final ActionExecutionSpecFactory actionExecutionSpecFactory;
     private int uses;
+    private volatile boolean executing;
+    private volatile boolean abandoned;
     private boolean cannotBeExpired = Boolean.getBoolean(DISABLE_EXPIRATION_PROPERTY_KEY);
 
     public WorkerDaemonClient(DaemonForkOptions forkOptions, MultiRequestClient<TransportableActionExecutionSpec, DefaultWorkResult> workerClient, WorkerProcess workerProcess, LogLevel logLevel, ActionExecutionSpecFactory actionExecutionSpecFactory) {
@@ -44,9 +47,45 @@ class WorkerDaemonClient implements Stoppable, Describable {
         this.actionExecutionSpecFactory = actionExecutionSpecFactory;
     }
 
+    void bindProblemsService(ProblemsInternal problems) {
+        workerClient.bindProblemsService(problems);
+    }
+
+    void clearProblemsService() {
+        workerClient.clearProblemsService();
+    }
+
     public DefaultWorkResult execute(IsolatedParametersActionExecutionSpec<?> spec) {
+        TransportableActionExecutionSpec transportableSpec = actionExecutionSpecFactory.newTransportableSpec(spec);
         uses++;
-        return workerClient.run(actionExecutionSpecFactory.newTransportableSpec(spec));
+        executing = true;
+        try {
+            return workerClient.run(transportableSpec);
+        } catch (Throwable t) {
+            // The request never produced a response, typically because the thread waiting on it was
+            // interrupted when the owning task exceeded its timeout. The build has given up on the result,
+            // but the worker process is still running the work item, so this client is neither safe to
+            // reuse nor safe to stop gracefully.
+            abandoned = true;
+            throw t;
+        } finally {
+            executing = false;
+        }
+    }
+
+    /**
+     * Whether this client is currently executing a work item, i.e. the worker process is busy running it.
+     */
+    public boolean isExecuting() {
+        return executing;
+    }
+
+    /**
+     * Whether a work item submitted to this client was abandoned before the worker reported a result.
+     * The worker process may still be running that work item.
+     */
+    public boolean isAbandoned() {
+        return abandoned;
     }
 
     public boolean isCompatibleWith(DaemonForkOptions required) {

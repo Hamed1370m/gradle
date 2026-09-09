@@ -18,8 +18,7 @@ package org.gradle.internal.installation;
 
 import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceScope;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Provides access to the current Gradle installation associated with the runtime.
@@ -27,9 +26,9 @@ import javax.annotation.Nullable;
 @ServiceScope({Scope.Global.class, Scope.Build.class})
 public class CurrentGradleInstallation {
 
-    private static CurrentGradleInstallation instance;
+    private static @Nullable CurrentGradleInstallation instance;
 
-    private final GradleInstallation gradleInstallation;
+    private final @Nullable GradleInstallation gradleInstallation;
 
     public CurrentGradleInstallation(@Nullable GradleInstallation gradleInstallation) {
         this.gradleInstallation = gradleInstallation;

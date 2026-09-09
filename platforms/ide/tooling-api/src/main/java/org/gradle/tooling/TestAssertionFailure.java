@@ -16,8 +16,7 @@
 package org.gradle.tooling;
 
 import org.gradle.api.Incubating;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Represent a test assertion failure where the test fails due to a broken assertion.
@@ -31,6 +30,7 @@ public interface TestAssertionFailure extends TestFailure {
      * Returns the string representation of the expected value.
      *
      * @return the expected value or {@code null} if the test framework doesn't supply detailed information on assertion failures
+     * @since 7.6
      */
     @Nullable
     String getExpected();
@@ -39,6 +39,7 @@ public interface TestAssertionFailure extends TestFailure {
      * Returns the string representation of the actual value.
      *
      * @return the actual value or {@code null} if the test framework doesn't supply detailed information on assertion failures
+     * @since 7.6
      */
     @Nullable
     String getActual();

@@ -16,6 +16,7 @@
 
 package org.gradle.kotlin.dsl.precompile.v1
 
+import org.gradle.api.HasImplicitReceiver
 import org.gradle.api.Project
 import org.gradle.api.initialization.Settings
 import org.gradle.api.invocation.Gradle
@@ -23,7 +24,7 @@ import org.gradle.api.plugins.PluginAware
 import org.gradle.api.provider.Provider
 import org.gradle.api.provider.ProviderConvertible
 import org.gradle.kotlin.dsl.*
-import org.gradle.kotlin.dsl.precompile.PrecompiledScriptDependenciesResolver
+import org.gradle.kotlin.dsl.provider.PrecompiledScriptsEnvironment
 import org.gradle.kotlin.dsl.support.DefaultKotlinScript
 import org.gradle.kotlin.dsl.support.defaultKotlinScriptHostForGradle
 import org.gradle.kotlin.dsl.support.defaultKotlinScriptHostForProject
@@ -31,9 +32,11 @@ import org.gradle.kotlin.dsl.support.defaultKotlinScriptHostForSettings
 import org.gradle.plugin.use.PluginDependenciesSpec
 import org.gradle.plugin.use.PluginDependency
 import org.gradle.plugin.use.PluginDependencySpec
+import org.jetbrains.kotlin.scripting.definitions.annotationsForSamWithReceivers
 import org.jetbrains.kotlin.scripting.definitions.getEnvironment
 import kotlin.script.dependencies.Environment
 import kotlin.script.experimental.annotations.KotlinScript
+import kotlin.script.experimental.api.KotlinType
 import kotlin.script.experimental.api.ScriptCompilationConfiguration
 import kotlin.script.experimental.api.ScriptConfigurationRefinementContext
 import kotlin.script.experimental.api.asSuccess
@@ -46,12 +49,16 @@ import kotlin.script.experimental.api.refineConfiguration
 import kotlin.script.experimental.api.with
 import kotlin.script.experimental.host.ScriptingHostConfiguration
 import kotlin.script.extensions.SamWithReceiverAnnotations
-import kotlin.script.templates.ScriptTemplateDefinition
 
 
 /**
  * Base script template for compilation of `plugins {}` blocks extracted from precompiled scripts.
  */
+@KotlinScript(
+    fileExtension = "gradle.kts",
+    compilationConfiguration = PrecompiledPluginsBlockCompilationConfiguration::class
+)
+@GradleDsl
 open class PrecompiledPluginsBlock(private val pluginDependencies: PluginDependenciesSpec) {
 
     fun plugins(configuration: PluginDependenciesSpecScope.() -> Unit) {
@@ -59,13 +66,22 @@ open class PrecompiledPluginsBlock(private val pluginDependencies: PluginDepende
     }
 }
 
+internal
+object PrecompiledPluginsBlockCompilationConfiguration : ScriptCompilationConfiguration({
+    isStandalone(false)
+    baseClass(PrecompiledPluginsBlock::class)
+    defaultImportsForPrecompiledScript()
+    annotationsForSamWithReceivers.put(listOf(
+        KotlinType(HasImplicitReceiver::class),
+    ))
+})
+
 
 /**
  * Script template definition for precompiled Kotlin script targeting [Gradle] instances.
  *
  * @see PrecompiledProjectScript
  */
-@ScriptTemplateDefinition
 @KotlinScript(
     fileExtension = "init.gradle.kts",
     compilationConfiguration = PrecompiledInitScriptCompilationConfiguration::class
@@ -82,7 +98,6 @@ open class PrecompiledInitScript(
  *
  * @see PrecompiledProjectScript
  */
-@ScriptTemplateDefinition
 @KotlinScript(
     fileExtension = "settings.gradle.kts",
     compilationConfiguration = PrecompiledSettingsScriptCompilationConfiguration::class
@@ -141,7 +156,6 @@ open class PrecompiledSettingsScript(
  * `src/main/kotlin/gradlebuild/code-quality.gradle.kts` would be exposed as the `gradlebuild.code-quality`
  * plugin, again assuming it has the matching package declaration.
  */
-@ScriptTemplateDefinition
 @KotlinScript(
     fileExtension = "gradle.kts",
     compilationConfiguration = PrecompiledProjectScriptCompilationConfiguration::class
@@ -222,7 +236,7 @@ fun ScriptCompilationConfiguration.Builder.defaultImportsForPrecompiledScript() 
             require(environment != null)
             context.compilationConfiguration.with {
                 defaultImports(
-                    PrecompiledScriptDependenciesResolver.implicitImportsForScript(
+                    PrecompiledScriptsEnvironment.implicitImportsForScript(
                         context.script.text,
                         environment
                     )

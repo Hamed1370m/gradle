@@ -22,11 +22,14 @@ data class ResolutionResult(
     val nestedObjectAccessFromDefaults: List<NestedObjectAccessRecord> = emptyList()
 )
 
+sealed interface IdentifiedOperation {
+    val operationId: OperationId
+}
 
-data class DataAdditionRecord(val container: ObjectOrigin, val dataObject: ObjectOrigin)
+data class DataAdditionRecord(val container: ObjectOrigin, val dataObject: ObjectOrigin, override val operationId: OperationId) : IdentifiedOperation
 
 
-data class NestedObjectAccessRecord(val container: ObjectOrigin, val dataObject: ObjectOrigin.AccessAndConfigureReceiver)
+data class NestedObjectAccessRecord(val container: ObjectOrigin, val dataObject: ObjectOrigin, override val operationId: OperationId) : IdentifiedOperation
 
 
 data class ResolutionError(
@@ -47,6 +50,7 @@ sealed interface ErrorReason {
     data class ValReassignment(val localVal: LocalValue) : ErrorReason
     data class ExternalReassignment(val external: ObjectOrigin.External) : ErrorReason
     data class AssignmentTypeMismatch(val expected: DataType, val actual: DataType) : ErrorReason
+    data class AugmentingAssignmentNotResolved(val propertyType: DataType) : ErrorReason
     data class OpaqueArgumentForIdentityParameter(val functionCall: FunctionCall, val parameter: DataParameter, val argument: ObjectOrigin) : ErrorReason
 
     // TODO: these two are never reported for now, instead it is UnresolvedFunctionCallSignature

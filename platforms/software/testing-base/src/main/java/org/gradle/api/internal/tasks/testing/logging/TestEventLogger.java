@@ -16,9 +16,14 @@
 
 package org.gradle.api.internal.tasks.testing.logging;
 
+import org.gradle.api.tasks.testing.TestFailure;
+import org.gradle.api.tasks.testing.TestFileAttachmentDataEvent;
+import org.gradle.api.tasks.testing.TestKeyValueDataEvent;
+import org.gradle.api.tasks.testing.TestMetadataEvent;
 import org.gradle.api.logging.LogLevel;
 import org.gradle.api.tasks.testing.TestDescriptor;
 import org.gradle.api.tasks.testing.TestListener;
+import org.gradle.api.tasks.testing.TestMetadataListener;
 import org.gradle.api.tasks.testing.TestOutputEvent;
 import org.gradle.api.tasks.testing.TestOutputListener;
 import org.gradle.api.tasks.testing.TestResult;
@@ -26,11 +31,14 @@ import org.gradle.api.tasks.testing.logging.TestLogEvent;
 import org.gradle.api.tasks.testing.logging.TestLogging;
 import org.gradle.internal.logging.text.StyledTextOutputFactory;
 import org.gradle.util.internal.TextUtil;
+import org.jspecify.annotations.NullMarked;
+
+import java.util.stream.Collectors;
 
 /**
  * Console logger for test events.
  */
-public class TestEventLogger extends AbstractTestLogger implements TestListener, TestOutputListener {
+public class TestEventLogger extends AbstractTestLogger implements TestListener, TestOutputListener, TestMetadataListener {
     private static final String INDENT = "    ";
 
     private final TestExceptionFormatter exceptionFormatter;
@@ -73,6 +81,23 @@ public class TestEventLogger extends AbstractTestLogger implements TestListener,
         }
     }
 
+    @Override
+    @NullMarked
+    public void onMetadata(TestDescriptor testDescriptor, TestMetadataEvent metadataEvent) {
+        if (shouldLogEvent(testDescriptor, TestLogEvent.METADATA)) {
+            if (metadataEvent instanceof TestKeyValueDataEvent) {
+                TestKeyValueDataEvent keyValueDataEvent = (TestKeyValueDataEvent) metadataEvent;
+                String values = keyValueDataEvent.getValues().entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).collect(Collectors.joining());
+                logEvent(testDescriptor, TestLogEvent.METADATA, values);
+            } else if (metadataEvent instanceof TestFileAttachmentDataEvent) {
+                TestFileAttachmentDataEvent attachmentDataEvent = (TestFileAttachmentDataEvent) metadataEvent;
+                logEvent(testDescriptor, TestLogEvent.METADATA, attachmentDataEvent.getPath().toString());
+            } else {
+                logEvent(testDescriptor, TestLogEvent.METADATA, "Unknown metadata event type: " + metadataEvent.getClass());
+            }
+        }
+    }
+
     private void before(TestDescriptor descriptor) {
         if (shouldLogEvent(descriptor, TestLogEvent.STARTED)) {
             logEvent(descriptor, TestLogEvent.STARTED);
@@ -81,11 +106,32 @@ public class TestEventLogger extends AbstractTestLogger implements TestListener,
 
     private void after(TestDescriptor descriptor, TestResult result) {
         TestLogEvent event = getEvent(result);
-
-        if (shouldLogEvent(descriptor, event)) {
+        boolean bypassGranularity = hasFrameworkFailure(result) || hasOwnFailureOnComposite(descriptor, result);
+        if (shouldLogEvent(descriptor, event, bypassGranularity)) {
             String details = shouldLogExceptions(result) ? exceptionFormatter.format(descriptor, result.getExceptions()) : null;
             logEvent(descriptor, event, details);
         }
+    }
+
+    private boolean hasFrameworkFailure(TestResult result) {
+        for (TestFailure failure : result.getFailures()) {
+            if (failure.getDetails().isFrameworkFailure()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A composite descriptor that has its own failures (not just failures inherited from children)
+     * has no leaf to surface them at; granularity filtering would hide them entirely.
+     * <p>
+     * Children's failures don't propagate into a parent's {@link TestResult#getFailures()} — they set the
+     * parent's {@code failedChild} flag instead — so a non-empty failure list on a composite is
+     * always an own-failure.
+     */
+    private boolean hasOwnFailureOnComposite(TestDescriptor descriptor, TestResult result) {
+        return descriptor.isComposite() && !result.getFailures().isEmpty();
     }
 
     private TestLogEvent getEvent(TestResult result) {
@@ -98,7 +144,11 @@ public class TestEventLogger extends AbstractTestLogger implements TestListener,
     }
 
     private boolean shouldLogEvent(TestDescriptor descriptor, TestLogEvent event) {
-        return isLoggedGranularity(descriptor) && isLoggedEventType(event);
+        return shouldLogEvent(descriptor, event, false);
+    }
+
+    private boolean shouldLogEvent(TestDescriptor descriptor, TestLogEvent event, boolean bypassGranularity) {
+        return (bypassGranularity || isLoggedGranularity(descriptor)) && isLoggedEventType(event);
     }
 
     private boolean shouldLogExceptions(TestResult result) {

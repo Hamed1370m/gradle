@@ -34,13 +34,17 @@ public interface JacocoCoverageReport extends ReportSpec {
      * Contains the {@link JacocoReport} task instance which produces this report
      *
      * @return the task instance
+     * @since 7.4
      */
     TaskProvider<JacocoReport> getReportTask();
 
     /**
-     * Contains a value representing the type of test suite this task belongs to.  See static constants on {@link org.gradle.api.attributes.TestSuiteType} for examples.
+     * Contains the name of the test suite in target projects that this report will aggregate.
      *
-     * @return this report's test type
+     * @return the name of the suite that this report will aggregate.
+     *
+     * @since 8.13
      */
-    Property<String> getTestType();
+    Property<String> getTestSuiteName();
+
 }

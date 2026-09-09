@@ -23,13 +23,10 @@ import gradlebuild.basics.BuildEnvironment.isTeamCity
 import gradlebuild.basics.buildBranch
 import gradlebuild.basics.environmentVariable
 import gradlebuild.basics.isPromotionBuild
-import gradlebuild.basics.isRetryBuild
 import gradlebuild.basics.kotlindsl.execAndGetStdoutIgnoringError
 import gradlebuild.basics.logicalBranch
 import gradlebuild.basics.predictiveTestSelectionEnabled
 import gradlebuild.basics.testDistributionEnabled
-import org.gradle.api.internal.BuildType
-import org.gradle.api.internal.GradleInternal
 import org.gradle.internal.operations.BuildOperationDescriptor
 import org.gradle.internal.operations.BuildOperationListener
 import org.gradle.internal.operations.BuildOperationListenerManager
@@ -81,10 +78,6 @@ buildScan {
     }
 }
 
-if ((project.gradle as GradleInternal).services.get(BuildType::class.java) != BuildType.TASKS) {
-    buildScan?.tag("SYNC")
-}
-
 fun DevelocityConfiguration.extractCiData() {
     fun isEc2Agent() = InetAddress.getLocalHost().hostName.startsWith("ip-")
 
@@ -111,6 +104,10 @@ fun DevelocityConfiguration.extractCiData() {
             }
             if (isEc2Agent()) {
                 tag("EC2")
+                safeAddSystemPropertyToBuildScan(this, "EC2AmiId", "ec2.ami-id")
+                safeAddSystemPropertyToBuildScan(this, "EC2InstanceType", "ec2.instance-type")
+                safeAddSystemPropertyToBuildScan(this, "EC2InstanceId", "ec2.instance-id")
+                safeAddSystemPropertyToBuildScan(this, "EC2CloudProfileId", "cloud.profile_id")
             }
             if (isGhActions) {
                 tag("GH_ACTION")
@@ -121,7 +118,7 @@ fun DevelocityConfiguration.extractCiData() {
                 link("Build Type Scans", customValueSearchUrl(mapOf(tcBuildTypeName to buildType)))
             }
             System.getProperty("buildScan.PartOf")?.let {
-                it.toString().split(",").forEach { partOf ->
+                it.split(",").forEach { partOf ->
                     value("PartOf", partOf)
                 }
             }
@@ -140,11 +137,15 @@ fun DevelocityConfiguration.extractCiData() {
             }
             buildFinished {
                 println("##teamcity[setParameter name='env.GRADLE_RUNNER_FINISHED' value='true']")
-                if (failures.isEmpty() && isRetryBuild) {
-                    println("##teamcity[buildStatus status='SUCCESS' text='Retried build succeeds']")
-                }
             }
         }
+    }
+}
+
+fun Project.safeAddSystemPropertyToBuildScan(buildScan: BuildScanConfiguration, customValueName: String, propertyName: String) {
+    val propertyValue = findProperty(propertyName)
+    if (propertyValue != null) {
+        buildScan.value(customValueName, propertyValue.toString())
     }
 }
 

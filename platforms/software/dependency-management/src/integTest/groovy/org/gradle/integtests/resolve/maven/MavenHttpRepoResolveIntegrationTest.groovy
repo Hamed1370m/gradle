@@ -15,6 +15,9 @@
  */
 package org.gradle.integtests.resolve.maven
 
+import org.gradle.test.fixtures.server.http.HttpRequest
+import org.gradle.test.fixtures.server.http.HttpResponse
+
 import org.gradle.api.credentials.PasswordCredentials
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
@@ -23,8 +26,6 @@ import org.gradle.test.fixtures.encoding.Identifier
 import org.gradle.test.fixtures.server.http.HttpServer
 import org.junit.Rule
 
-import javax.servlet.http.HttpServletRequest
-import javax.servlet.http.HttpServletResponse
 
 class MavenHttpRepoResolveIntegrationTest extends AbstractHttpDependencyResolutionTest {
     @Rule
@@ -37,7 +38,7 @@ class MavenHttpRepoResolveIntegrationTest extends AbstractHttpDependencyResoluti
 
         buildFile << """
 repositories {
-    maven { url '${mavenHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations {
     compile {
@@ -91,7 +92,7 @@ task retrieve(type: Sync) {
 
         buildFile << """
 repositories {
-    maven { url '${mavenHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations {
     compile {
@@ -143,7 +144,7 @@ task retrieve(type: Sync) {
         and:
         buildFile << """
 repositories {
-    maven { url "${mavenHttpRepo.uri}" }
+    maven { url = "${mavenHttpRepo.uri}" }
 }
 configurations {
     compile {
@@ -191,7 +192,7 @@ task retrieve(type: Sync) {
         and:
         buildFile << """
 repositories {
-    maven { url "${mavenHttpRepo.uri}" }
+    maven { url = "${mavenHttpRepo.uri}" }
 }
 configurations {
     compile {
@@ -233,8 +234,8 @@ task retrieve(type: Sync) {
 
         buildFile << """
 repositories {
-    maven { url '${repo1.uri}' }
-    maven { url '${repo2.uri}' }
+    maven { url = '${repo1.uri}' }
+    maven { url = '${repo2.uri}' }
 }
 configurations {
     compile {
@@ -283,7 +284,7 @@ task retrieve(type: Sync) {
         buildFile << """
 repositories {
     maven {
-        url '${repo1.uri}'
+        url = "${repo1.uri}"
         artifactUrls '${repo2.uri}'
     }
 }
@@ -310,6 +311,7 @@ task retrieve(type: Sync) {
         projectBArtifacts.artifact.expectGet()
 
         then:
+        executer.expectDocumentedDeprecationWarning("The MavenArtifactRepository.artifactUrls(Object...) method has been deprecated. This is scheduled to be removed in Gradle 10. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_maven_artifact_urls")
         succeeds 'retrieve'
         file('libs').assertHasDescendants('projectA-1.0.jar', 'projectB-1.0.jar')
     }
@@ -321,7 +323,7 @@ task retrieve(type: Sync) {
 
         buildFile << """
     repositories {
-        maven { url '${mavenHttpRepo.uri}' }
+        maven { url = '${mavenHttpRepo.uri}' }
     }
     configurations {
         compile {
@@ -373,10 +375,10 @@ task retrieve(type: Sync) {
         buildFile << """
             repositories {
                 maven {
-                    url '${mavenHttpRepo.uri}'
+                    url = "${mavenHttpRepo.uri}"
                     credentials(AwsCredentials) {
-                        accessKey "someKey"
-                        secretKey "someSecret"
+                        accessKey = "someKey"
+                        secretKey = "someSecret"
                     }
                 }
             }
@@ -392,7 +394,7 @@ task retrieve(type: Sync) {
         fails 'retrieve'
 
         then:
-        GradleContextualExecuter.configCache || failure.assertHasDescription("Execution failed for task ':retrieve'.")
+        GradleContextualExecuter.configCache || failure.assertHasDescription("Execution failed for task ':retrieve' (registered in build file 'build.gradle').")
         failure.assertHasCause("Could not resolve all files for configuration ':compile'.")
         failure.assertHasCause("Could not resolve org.group.name:projectA:1.2.")
         failure.assertHasCause("Credentials must be an instance of: ${PasswordCredentials.canonicalName}")
@@ -403,7 +405,7 @@ task retrieve(type: Sync) {
         buildFile << """
             repositories {
                 maven {
-                    url '${mavenHttpRepo.uri}'
+                    url = "${mavenHttpRepo.uri}"
                 }
             }
             configurations { compile }
@@ -416,7 +418,7 @@ task retrieve(type: Sync) {
 
         when:
         server.expect('/repo/group/projectA/1.0/projectA-1.0.pom', false, ['GET'], new HttpServer.ActionSupport('Not Modified') {
-            void handle(HttpServletRequest request, HttpServletResponse response) {
+            void handle(HttpRequest request, HttpResponse response) {
                 response.sendError(304, 'Not Modified')
             }
         })
@@ -432,7 +434,7 @@ task retrieve(type: Sync) {
         buildFile << """
             repositories {
                 maven {
-                    url '${mavenHttpRepo.uri}'
+                    url = "${mavenHttpRepo.uri}"
                 }
             }
             configurations { compile }

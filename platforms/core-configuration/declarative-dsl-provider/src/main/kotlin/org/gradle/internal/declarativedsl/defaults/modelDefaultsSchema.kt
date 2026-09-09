@@ -24,28 +24,29 @@ import org.gradle.internal.declarativedsl.analysis.AnalysisStatementFilterUtils.
 import org.gradle.internal.declarativedsl.analysis.DefaultOperationGenerationId
 import org.gradle.internal.declarativedsl.analysis.and
 import org.gradle.internal.declarativedsl.analysis.implies
-import org.gradle.internal.declarativedsl.common.dependencyCollectors
+import org.gradle.internal.declarativedsl.common.UnsupportedSyntaxFeatureCheck
+import org.gradle.internal.declarativedsl.dependencycollectors.dependencyCollectors
 import org.gradle.internal.declarativedsl.common.gradleDslGeneralSchema
 import org.gradle.internal.declarativedsl.evaluationSchema.SimpleInterpretationSequenceStep
 import org.gradle.internal.declarativedsl.evaluationSchema.buildEvaluationSchema
-import org.gradle.internal.declarativedsl.evaluator.defaults.DefineModelDefaults
+import org.gradle.internal.declarativedsl.evaluator.checks.AccessOnCurrentReceiverCheck
 import org.gradle.internal.declarativedsl.evaluator.defaults.DefaultsConfiguringBlock
-import org.gradle.internal.declarativedsl.evaluator.defaults.DefaultsTopLevelReceiver
-import org.gradle.internal.declarativedsl.common.UnsupportedSyntaxFeatureCheck
-import org.gradle.internal.declarativedsl.software.softwareTypesConventions
-import org.gradle.plugin.software.internal.SoftwareTypeRegistry
+import org.gradle.internal.declarativedsl.evaluator.defaults.DefineModelDefaults
+import org.gradle.internal.declarativedsl.evaluator.defaults.DEFAULTS_BLOCK_NAME
+import org.gradle.internal.declarativedsl.features.projectFeaturesComponent
+import org.gradle.features.internal.binding.ProjectFeatureDeclarations
 
 
 internal
-fun defineModelDefaultsInterpretationSequenceStep(softwareTypeRegistry: SoftwareTypeRegistry) = SimpleInterpretationSequenceStep(
+fun defineModelDefaultsInterpretationSequenceStep(projectFeatureDeclarations: ProjectFeatureDeclarations) = SimpleInterpretationSequenceStep(
     "settingsDefaults",
-    features = setOf(DefineModelDefaults(), UnsupportedSyntaxFeatureCheck.feature),
-    buildEvaluationAndConversionSchema = { defaultsEvaluationSchema(softwareTypeRegistry) }
+    features = setOf(DefineModelDefaults(), UnsupportedSyntaxFeatureCheck.feature, AccessOnCurrentReceiverCheck.feature),
+    buildEvaluationAndConversionSchema = { defaultsEvaluationSchema(projectFeatureDeclarations) }
 )
 
 
 private
-fun defaultsEvaluationSchema(softwareTypeRegistry: SoftwareTypeRegistry): EvaluationSchema =
+fun defaultsEvaluationSchema(projectFeatureDeclarations: ProjectFeatureDeclarations): EvaluationSchema =
     buildEvaluationSchema(
         DefaultsTopLevelReceiver::class,
         isTopLevelElement.implies(isDefaultsConfiguringCall),
@@ -53,9 +54,21 @@ fun defaultsEvaluationSchema(softwareTypeRegistry: SoftwareTypeRegistry): Evalua
     ) {
         gradleDslGeneralSchema()
         dependencyCollectors()
-        softwareTypesConventions(DefaultsConfiguringBlock::class, softwareTypeRegistry)
+        projectFeaturesComponent(
+            DefaultsConfiguringBlock::class,
+            projectFeatureDeclarations,
+            // This is the schema for collecting defaults, so it should not apply defaults:
+            withDefaultsApplication = false
+        )
     }
 
 
 val isDefaultsConfiguringCall: AnalysisStatementFilter =
     isConfiguringCall.and(isCallNamed(DefaultsTopLevelReceiver::defaults.name))
+
+
+@Suppress("UnusedPrivateProperty")
+private
+val isDefaultsBlockNameConsistentAcrossProjects = check(DefaultsTopLevelReceiver::defaults.name == DEFAULTS_BLOCK_NAME) {
+    "the default block's name has diverged between projects"
+}

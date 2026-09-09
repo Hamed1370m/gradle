@@ -21,6 +21,7 @@ import org.gradle.api.Describable;
 import org.gradle.api.internal.DomainObjectContext;
 import org.gradle.api.internal.attributes.ImmutableAttributes;
 import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.api.internal.project.ProjectState;
 import org.gradle.api.internal.tasks.NodeExecutionContext;
 import org.gradle.api.internal.tasks.TaskDependencyContainer;
 import org.gradle.api.internal.tasks.TaskDependencyResolveContext;
@@ -28,10 +29,9 @@ import org.gradle.internal.Cast;
 import org.gradle.internal.Deferrable;
 import org.gradle.internal.Try;
 import org.gradle.internal.execution.InputFingerprinter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.gradle.internal.service.scopes.ProjectDomainObjectContext;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 
 /**
@@ -42,18 +42,16 @@ import java.io.File;
  * @see TransformChain
  */
 public class TransformStep implements TaskDependencyContainer, Describable {
-    private static final Logger LOGGER = LoggerFactory.getLogger(TransformStep.class);
-
     private final Transform transform;
     private final TransformInvocationFactory transformInvocationFactory;
-    private final ProjectInternal owningProject;
+    private final @Nullable ProjectState owningProject;
     private final InputFingerprinter globalInputFingerprinter;
 
     public TransformStep(Transform transform, TransformInvocationFactory transformInvocationFactory, DomainObjectContext owner, InputFingerprinter globalInputFingerprinter) {
         this.transform = transform;
         this.transformInvocationFactory = transformInvocationFactory;
         this.globalInputFingerprinter = globalInputFingerprinter;
-        this.owningProject = owner.getProject();
+        this.owningProject = owner instanceof ProjectDomainObjectContext pdoc ? pdoc.getModel() : null;
     }
 
     public Transform getTransform() {
@@ -62,14 +60,13 @@ public class TransformStep implements TaskDependencyContainer, Describable {
 
     @Nullable
     public ProjectInternal getOwningProject() {
-        return owningProject;
+        if (owningProject != null) {
+            return owningProject.getMutableModel();
+        }
+        return null;
     }
 
     public Deferrable<Try<TransformStepSubject>> createInvocation(TransformStepSubject subjectToTransform, TransformUpstreamDependencies upstreamDependencies, @Nullable NodeExecutionContext context) {
-        if (LOGGER.isInfoEnabled()) {
-            LOGGER.info("Transforming {} with {}", subjectToTransform.getDisplayName(), transform.getDisplayName());
-        }
-
         InputFingerprinter inputFingerprinter = context != null ? context.getService(InputFingerprinter.class) : globalInputFingerprinter;
 
         Try<TransformDependencies> resolvedDependencies = upstreamDependencies.computeArtifacts();

@@ -18,10 +18,10 @@ package org.gradle.integtests.resolve.caching
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import spock.lang.Issue
 
-@Requires(IntegTestPreconditions.NotParallelExecutor)
+@Requires(TestExecutionPreconditions.NotParallelExecutor)
 // no point, always runs in parallel
 class ConcurrentDependencyResolutionIntegrationTest extends AbstractIntegrationSpec {
 
@@ -34,54 +34,52 @@ class ConcurrentDependencyResolutionIntegrationTest extends AbstractIntegrationS
     @Issue("gradle/performance#502")
     def "local component selection harness test: thread-safety"() {
         given:
-        buildFile << '''
+        def common = '''
              def usage = Attribute.of('usage', String)
-             allprojects {
 
-                dependencies {
-                    attributesSchema {
-                        attribute(usage)
-                    }
-                }
-                configurations {
-                    compile {
-                        attributes { attribute usage, 'api' }
-                    }
-                    test {
-                        attributes { attribute usage, 'test' }
-                    }
-                    other {
-                        attributes { attribute usage, 'other' }
-                    }
-                    'default'
-                }
-
-                task resolve {
-                    def files = configurations.compile
-                    doLast {
-                        files.files
-                    }
+            dependencies {
+                attributesSchema {
+                    attribute(usage)
                 }
             }
+            configurations {
+                compile {
+                    attributes { attribute usage, 'api' }
+                }
+                test {
+                    attributes { attribute usage, 'test' }
+                }
+                other {
+                    attributes { attribute usage, 'other' }
+                }
+                'default'
+            }
 
+            task resolve {
+                def files = configurations.compile
+                doLast {
+                    files.files
+                }
+            }
         '''
+
         int groups = 20
         int iterations = 100
+
+        iterations.times { i ->
+            file("project_${i}/build.gradle") << common
+        }
+
         groups.times { group ->
             def pfile = file("project$group/build.gradle")
             pfile << """
-
+                $common
                 dependencies {
-            """
-            iterations.times { i ->
-                file("project_${i}/build.gradle") << ''
-                pfile << """
-                    compile project(":project_${i}")
-"""
-            }
-            pfile << '''
+                    ${iterations}.times { i ->
+                        compile project(":project_\${i}")
+                    }
                 }
-'''
+            """
         }
 
         settingsFile << """

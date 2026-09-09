@@ -24,9 +24,12 @@ import org.gradle.internal.buildconfiguration.fixture.DaemonJvmPropertiesFixture
 import org.gradle.internal.jvm.Jvm
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
+import org.gradle.test.preconditions.InstalledJdkTestPreconditions
 import org.junit.Assume
+import spock.lang.Issue
 
+@Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = "explicitly requests a daemon")
 class DaemonToolchainIntegrationTest extends AbstractIntegrationSpec implements DaemonJvmPropertiesFixture, JavaToolchainFixture {
     def setup() {
         executer.requireIsolatedDaemons()
@@ -41,10 +44,9 @@ class DaemonToolchainIntegrationTest extends AbstractIntegrationSpec implements 
         expect:
         succeeds("help")
         assertDaemonUsedJvm(Jvm.current())
-        outputContains("Daemon JVM discovery is an incubating feature.")
     }
 
-    @Requires(IntegTestPreconditions.JavaHomeWithDifferentVersionAvailable)
+    @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
     def "executes the daemon with the specified jdk"() {
         given:
         def otherJvm = AvailableJavaHomes.differentVersion
@@ -56,7 +58,7 @@ class DaemonToolchainIntegrationTest extends AbstractIntegrationSpec implements 
         assertDaemonUsedJvm(otherJvm)
     }
 
-    @Requires(IntegTestPreconditions.JavaHomeWithDifferentVersionAvailable)
+    @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
     def "Given other daemon toolchain version and vendor When executing any task Then daemon jvm was set up with expected configuration"() {
         given:
         def otherJvm = AvailableJavaHomes.differentVersion
@@ -70,6 +72,68 @@ class DaemonToolchainIntegrationTest extends AbstractIntegrationSpec implements 
         assertDaemonUsedJvm(otherJvm)
     }
 
+    @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
+    def "Given criteria matching JAVA_HOME environment variable and disabled auto-detection When executing any task Then daemon jvm was set up with expected configuration"() {
+        given:
+        def otherJvm = AvailableJavaHomes.differentVersion
+        def otherMetadata = AvailableJavaHomes.getJvmInstallationMetadata(otherJvm)
+        writeJvmCriteria(otherJvm.javaVersion, otherMetadata.vendor.knownVendor.name())
+        captureJavaHome()
+
+        executer.withJavaHome(Jvm.current().javaHome.absolutePath)
+            .withEnvironmentVarsIncludingJavaHome([JAVA_HOME: otherJvm.javaHome.absolutePath])
+
+        expect:
+        succeeds("help")
+        assertDaemonUsedJvm(otherJvm)
+    }
+
+    @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
+    def "Given installation with relative path to project and disabled auto-detection When executing any task Then daemon jvm was set up with the relative path toolchain"() {
+        given:
+        def otherJvm = AvailableJavaHomes.differentVersion
+        def otherMetadata = AvailableJavaHomes.getJvmInstallationMetadata(otherJvm)
+        writeJvmCriteria(otherJvm.javaVersion, otherMetadata.vendor.knownVendor.name())
+        captureJavaHome()
+
+        def relativePathOtherJvmInstallation = testDirectory.relativePath(otherJvm.javaHome)
+        executer.withArguments([
+            "-Dorg.gradle.java.installations.auto-detect=false",
+            "-Dorg.gradle.java.installations.paths=" + relativePathOtherJvmInstallation
+        ])
+
+        expect:
+        succeeds("help")
+        assertDaemonUsedJvm(otherJvm)
+    }
+
+    @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
+    def "Given installation with relative path to project and disabled auto-detection When executing from subproject Then daemon jvm was set up with toolchain resolved relative to root dir"() {
+        def otherJvm = AvailableJavaHomes.differentVersion
+        def otherMetadata = AvailableJavaHomes.getJvmInstallationMetadata(otherJvm)
+
+        buildTestFixture.withBuildInSubDir()
+        def subproject = "app"
+        def subprojects = [subproject]
+        def rootProject = multiProjectBuild("project", subprojects) {
+            writeJvmCriteria(otherJvm.javaVersion, otherMetadata.vendor.knownVendor.name(), null, delegate)
+            captureJavaHome(buildFile)
+        }
+
+        when:
+        result = executer
+            .withArguments([
+                "-Dorg.gradle.java.installations.auto-detect=false",
+                "-Dorg.gradle.java.installations.paths=" + rootProject.relativePath(otherJvm.javaHome)
+            ])
+            .withTasks("help")
+            .inDirectory(new File(rootProject, subproject))
+            .run()
+
+        then:
+        assertDaemonUsedJvm(otherJvm, rootProject)
+    }
+
     def "Given daemon toolchain criteria with version that doesn't match installed ones When executing any task Then fails with the expected message"() {
         given:
         // Java 10 is not available
@@ -80,7 +144,7 @@ class DaemonToolchainIntegrationTest extends AbstractIntegrationSpec implements 
 
         expect:
         fails("help")
-        failure.assertHasDescription("Cannot find a Java installation on your machine (${OperatingSystem.current()}) matching: Compatible with Java 10, any vendor (from gradle/gradle-daemon-jvm.properties)")
+        failure.assertHasDescription("Cannot find a Java installation on your machine (${OperatingSystem.current()}) matching: {languageVersion=10, vendor=any vendor, implementation=vendor-specific, nativeImageCapable=false}")
     }
 
     def "Given daemon toolchain criteria with version and vendor that doesn't match installed ones When executing any task Then fails with the expected message"() {
@@ -93,6 +157,21 @@ class DaemonToolchainIntegrationTest extends AbstractIntegrationSpec implements 
 
         expect:
         fails("help")
-        failure.assertHasDescription("Cannot find a Java installation on your machine (${OperatingSystem.current()}) matching: Compatible with Java 10, vendor matching('ibm') (from gradle/gradle-daemon-jvm.properties)")
+        failure.assertHasDescription("Cannot find a Java installation on your machine (${OperatingSystem.current()}) matching: {languageVersion=10, vendor=IBM, implementation=vendor-specific, nativeImageCapable=false}")
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/36118")
+    def "Given daemon toolchain criteria requiring native-image capability that doesn't match installed ones When executing any task Then fails with the expected message"() {
+        given:
+        // Java 10 is not available
+        def java10 = AvailableJavaHomes.getAvailableJdks(JavaVersion.VERSION_1_10)
+        Assume.assumeTrue(java10.isEmpty())
+        writeJvmCriteria(JavaVersion.VERSION_1_10)
+        writeNativeImageCapableCriteria()
+        captureJavaHome()
+
+        expect:
+        fails("help")
+        failure.assertHasDescription("Cannot find a Java installation on your machine (${OperatingSystem.current()}) matching: {languageVersion=10, vendor=any vendor, implementation=vendor-specific, nativeImageCapable=true}")
     }
 }

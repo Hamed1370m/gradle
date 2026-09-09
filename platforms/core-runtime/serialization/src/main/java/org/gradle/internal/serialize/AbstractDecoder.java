@@ -16,13 +16,14 @@
 
 package org.gradle.internal.serialize;
 
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
+
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 
 public abstract class AbstractDecoder implements Decoder {
-    private DecoderStream stream;
+    private @Nullable DecoderStream stream;
 
     @Override
     public InputStream getInputStream() {
@@ -66,7 +67,7 @@ public abstract class AbstractDecoder implements Decoder {
     }
 
     @Override
-    public String readNullableString() throws EOFException, IOException {
+    public @Nullable String readNullableString() throws EOFException, IOException {
         if (readBoolean()) {
             return readString();
         } else {

@@ -16,9 +16,11 @@
 
 package org.gradle.internal.enterprise
 
+import org.gradle.api.problems.ProblemGroup
+import org.gradle.api.problems.ProblemId
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 
-import static org.gradle.api.problems.ReportingScript.getProblemReportingScript
+import static org.gradle.api.problems.fixtures.ReportingScript.getProblemReportingScript
 
 class DevelocityPluginEndOfBuildCallbackIntegrationTest extends AbstractIntegrationSpec {
 
@@ -32,10 +34,10 @@ class DevelocityPluginEndOfBuildCallbackIntegrationTest extends AbstractIntegrat
 
         buildFile """
             ${getProblemReportingScript """
-                problems.getReporter().throwing {
-                    it.id('type', 'label')
-                    .withException(new RuntimeException('failed'))
-            }"""}
+                ${ProblemGroup.name} problemGroup = ${ProblemGroup.name}.create("generic", "group label");
+                ${ProblemId.name} problemId = ${ProblemId.name}.create("type", "label", problemGroup)
+                problems.getReporter().throwing(new RuntimeException('failed'), problemId) {}
+            """}
 
             task $succeedingTaskName
         """
@@ -56,11 +58,14 @@ class DevelocityPluginEndOfBuildCallbackIntegrationTest extends AbstractIntegrat
     }
 
     def "end of build listener is notified on failure"() {
+        enableProblemsApiCheck()
+
         when:
         fails failingTaskName
 
         then:
         plugin.assertEndOfBuildWithFailure(output, "org.gradle.internal.exceptions.LocationAwareException: Build file")
+        receivedProblem.fqid == 'generic:type'
 
         when:
         fails failingTaskName
@@ -69,6 +74,7 @@ class DevelocityPluginEndOfBuildCallbackIntegrationTest extends AbstractIntegrat
         // Note: we test less of the exception here because it's different in a build where configuration came from cache
         // In the non cache case, the exception points to the build file. In the from cache case it does not.
         plugin.assertEndOfBuildWithFailure(output, "org.gradle.internal.exceptions.LocationAwareException")
+        receivedProblem.fqid == 'generic:type'
     }
 
     def "end of build listener may fail with an exception"() {

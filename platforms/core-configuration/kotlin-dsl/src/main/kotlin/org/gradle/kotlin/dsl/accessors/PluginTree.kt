@@ -17,7 +17,6 @@
 package org.gradle.kotlin.dsl.accessors
 
 
-internal
 sealed class PluginTree {
 
     data class PluginGroup(val path: List<String>, val plugins: Map<String, PluginTree>) : PluginTree()
@@ -44,7 +43,7 @@ sealed class PluginTree {
                 when (val group = branch[segment]) {
                     null -> {
                         val newGroupMap = linkedMapOf<String, PluginTree>()
-                        val newGroup = PluginGroup(groupPath.take(index + 1), newGroupMap)
+                        val newGroup = PluginGroup(groupPath.subList(0, index + 1), newGroupMap)
                         branch[segment] = newGroup
                         branch = newGroupMap
                     }

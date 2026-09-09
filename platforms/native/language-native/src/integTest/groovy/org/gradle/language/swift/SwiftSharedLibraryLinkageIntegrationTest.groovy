@@ -19,9 +19,7 @@ package org.gradle.language.swift
 
 import org.gradle.nativeplatform.fixtures.app.SourceElement
 import org.gradle.nativeplatform.fixtures.app.SwiftLib
-import spock.lang.Ignore
 
-@Ignore("Inconsistent Swift SDK and tooling discovered on our Intel Macs")
 class SwiftSharedLibraryLinkageIntegrationTest extends AbstractSwiftIntegrationTest {
     @Override
     protected List<String> getTasksToAssembleDevelopmentBinary(String variant) {
@@ -72,7 +70,7 @@ class SwiftSharedLibraryLinkageIntegrationTest extends AbstractSwiftIntegrationT
         succeeds('assemble')
 
         then:
-        result.assertTasksExecuted(':compileDebugSwift', ':linkDebug', ':assemble')
+        result.assertTasksScheduled(':compileDebugSwift', ':linkDebug', ':assemble')
         sharedLibrary('build/lib/main/debug/Foo').assertExists()
     }
 }

@@ -16,6 +16,8 @@
 
 package org.gradle.internal.operations
 
+
+import org.gradle.internal.time.FixedClock
 import org.gradle.test.fixtures.concurrent.ConcurrentSpec
 
 import javax.annotation.Nullable
@@ -26,12 +28,12 @@ import static org.gradle.internal.operations.DefaultBuildOperationRunner.Readabl
 
 class DefaultBuildOperationRunnerTest extends ConcurrentSpec {
 
-    def timeProvider = Mock(BuildOperationTimeSupplier)
+    def clock = FixedClock.createAt(123L)
     def listener = Mock(BuildOperationExecutionListener)
     def currentBuildOperationRef = CurrentBuildOperationRef.instance()
     def operationRunner = new DefaultBuildOperationRunner(
         currentBuildOperationRef,
-        timeProvider, new DefaultBuildOperationIdFactory(), { listener })
+        clock, new DefaultBuildOperationIdFactory(), { listener })
 
     def setup() {
         currentBuildOperationRef.clear()
@@ -47,11 +49,12 @@ class DefaultBuildOperationRunnerTest extends ConcurrentSpec {
         BuildOperationState operationStateUnderTest
 
         when:
-        operationRunner.execute(buildOperation, worker, defaultParent)
+        CurrentBuildOperationRef.instance().with(defaultParent, () -> {
+            operationRunner.execute(buildOperation, worker)
+        })
 
         then:
         1 * buildOperation.description() >> operationDetailsBuilder
-        1 * timeProvider.currentTime >> 123L
         1 * listener.start(_, _) >> { BuildOperationDescriptor descriptor, BuildOperationState operationState ->
             descriptorUnderTest = descriptor
             operationStateUnderTest = operationState
@@ -100,7 +103,6 @@ class DefaultBuildOperationRunnerTest extends ConcurrentSpec {
         def contextUnderTest = operationRunner.start(operationDetailsBuilder)
 
         then:
-        1 * timeProvider.currentTime >> 123L
         1 * listener.start(_, _) >> { BuildOperationDescriptor descriptor, BuildOperationState operationState ->
             descriptorUnderTest = descriptor
             operationStateUnderTest = operationState
@@ -144,7 +146,7 @@ class DefaultBuildOperationRunnerTest extends ConcurrentSpec {
 
         when:
         try {
-            operationRunner.execute(buildOperation, worker, null)
+            operationRunner.execute(buildOperation, worker)
             assert expectedException == null
         } catch (Exception ex) {
             assert ex == expectedException
@@ -152,7 +154,6 @@ class DefaultBuildOperationRunnerTest extends ConcurrentSpec {
 
         then:
         1 * buildOperation.description() >> operationDetailsBuilder
-        1 * timeProvider.currentTime >> 123L
         1 * listener.start(_, _) >> { BuildOperationDescriptor descriptor, BuildOperationState operationState ->
             descriptorUnderTest = descriptor
             operationStateUnderTest = operationState
@@ -197,7 +198,6 @@ class DefaultBuildOperationRunnerTest extends ConcurrentSpec {
         def contextUnderTest = operationRunner.start(operationDetailsBuilder)
 
         then:
-        1 * timeProvider.currentTime >> 123L
         1 * listener.start(_, _) >> { BuildOperationDescriptor descriptor, BuildOperationState operationState ->
             descriptorUnderTest = descriptor
             operationStateUnderTest = operationState

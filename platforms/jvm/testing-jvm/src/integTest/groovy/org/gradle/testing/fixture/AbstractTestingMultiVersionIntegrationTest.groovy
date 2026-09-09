@@ -16,6 +16,7 @@
 
 package org.gradle.testing.fixture
 
+import org.gradle.api.internal.tasks.testing.report.VerifiesGenericTestReportResults
 import org.gradle.integtests.fixtures.MultiVersionIntegrationSpec
 
 /**
@@ -43,7 +44,7 @@ import org.gradle.integtests.fixtures.MultiVersionIntegrationSpec
  *  └──────────────────────────────────────────────┘      └──────────────────────────────────────────────┘
  *
  */
-abstract class AbstractTestingMultiVersionIntegrationTest extends MultiVersionIntegrationSpec {
+abstract class AbstractTestingMultiVersionIntegrationTest extends MultiVersionIntegrationSpec implements VerifiesGenericTestReportResults {
     abstract BuildScriptConfiguration getBuildScriptConfiguration()
     abstract TestSourceConfiguration getTestSourceConfiguration()
 
@@ -65,6 +66,14 @@ abstract class AbstractTestingMultiVersionIntegrationTest extends MultiVersionIn
 
     String excludeCategoryOrTag(String categoryOrTag) {
         return "${buildScriptConfiguration.excludeCategoryOrTagConfigurationElement} '${categoryOrTag}'"
+    }
+
+    boolean supportsJavaVersion(int javaVersion) {
+        return buildScriptConfiguration.supportsJavaVersion(javaVersion) && testFrameworkSupportsJavaVersion(javaVersion)
+    }
+
+    boolean testFrameworkSupportsJavaVersion(int javaVersion) {
+        return true
     }
 
     String getTestFrameworkImports() {
@@ -115,6 +124,7 @@ abstract class AbstractTestingMultiVersionIntegrationTest extends MultiVersionIn
         String getConfigureTestFramework()
         String getIncludeCategoryOrTagConfigurationElement()
         String getExcludeCategoryOrTagConfigurationElement()
+        boolean supportsJavaVersion(int javaVersion)
 
         default configurationFor(String sourceSet, String configurationName) {
             if (sourceSet == 'main') {

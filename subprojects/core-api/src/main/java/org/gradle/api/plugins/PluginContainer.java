@@ -18,8 +18,7 @@ package org.gradle.api.plugins;
 
 import org.gradle.api.Action;
 import org.gradle.api.Plugin;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * <p>A {@code PluginContainer} is used to manage a set of {@link org.gradle.api.Plugin} instances applied to a
@@ -27,6 +26,7 @@ import javax.annotation.Nullable;
  *
  * <p>Plugins can be specified using either an id or type. The id of a plugin is specified using a
  * META-INF/gradle-plugins/${id}.properties classpath resource.</p>
+ * @since 0.7
  */
 public interface PluginContainer extends PluginCollection<Plugin> {
     /**
@@ -35,6 +35,7 @@ public interface PluginContainer extends PluginCollection<Plugin> {
      *
      * @param id The id of the plugin to be applied.
      * @return The plugin which has been used against the project.
+     * @since 0.9
      */
     Plugin apply(String id);
 
@@ -45,6 +46,7 @@ public interface PluginContainer extends PluginCollection<Plugin> {
      *
      * @param type The type of the plugin to be used
      * @return The plugin which has been used against the project.
+     * @since 0.9
      */
     <T extends Plugin> T apply(Class<T> type);
 
@@ -52,6 +54,7 @@ public interface PluginContainer extends PluginCollection<Plugin> {
      * Returns true if the container has a plugin with the given id, false otherwise.
      *
      * @param id The id of the plugin
+     * @since 0.7
      */
     boolean hasPlugin(String id);
 
@@ -59,6 +62,7 @@ public interface PluginContainer extends PluginCollection<Plugin> {
      * Returns true if the container has a plugin with the given type, false otherwise.
      *
      * @param type The type of the plugin
+     * @since 0.7
      */
     boolean hasPlugin(Class<? extends Plugin> type);
 
@@ -67,6 +71,7 @@ public interface PluginContainer extends PluginCollection<Plugin> {
      *
      * @param id The id of the plugin
      * @return the plugin or null if no plugin for the given id exists.
+     * @since 0.7
      */
     @Nullable
     Plugin findPlugin(String id);
@@ -76,6 +81,7 @@ public interface PluginContainer extends PluginCollection<Plugin> {
      *
      * @param type The type of the plugin
      * @return the plugin or null if no plugin for the given type exists.
+     * @since 0.7
      */
     @Nullable
     <T extends Plugin> T findPlugin(Class<T> type);
@@ -85,6 +91,7 @@ public interface PluginContainer extends PluginCollection<Plugin> {
      *
      * @param id The id of the plugin
      * @throws UnknownPluginException When there is no plugin with the given id.
+     * @since 0.9
      */
     Plugin getPlugin(String id) throws UnknownPluginException;
 
@@ -93,6 +100,7 @@ public interface PluginContainer extends PluginCollection<Plugin> {
      *
      * @param type The type of the plugin
      * @throws UnknownPluginException When there is no plugin with the given type.
+     * @since 0.9
      */
     <T extends Plugin> T getPlugin(Class<T> type) throws UnknownPluginException;
 
@@ -102,6 +110,7 @@ public interface PluginContainer extends PluginCollection<Plugin> {
      *
      * @param id The id of the plugin
      * @throws UnknownPluginException When there is no plugin with the given id.
+     * @since 0.9
      */
     Plugin getAt(String id) throws UnknownPluginException;
 
@@ -111,6 +120,7 @@ public interface PluginContainer extends PluginCollection<Plugin> {
      *
      * @param type The type of the plugin
      * @throws UnknownPluginException When there is no plugin with the given type.
+     * @since 0.9
      */
     <T extends Plugin> T getAt(Class<T> type) throws UnknownPluginException;
 
@@ -123,6 +133,7 @@ public interface PluginContainer extends PluginCollection<Plugin> {
      *
      * @param pluginId the id of the plugin
      * @param action the action
+     * @since 2.0
      */
     void withId(String pluginId, Action<? super Plugin> action);
 

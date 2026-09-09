@@ -19,6 +19,7 @@ package org.gradle.api.tasks.testing;
 import org.gradle.api.Incubating;
 import org.gradle.api.internal.tasks.testing.DefaultTestFailure;
 
+import org.jspecify.annotations.Nullable;
 import java.util.List;
 
 /**
@@ -35,6 +36,7 @@ public abstract class TestFailure {
      * The result is typically non-empty for multi-assertion failures, e.g. for {@code org.test4j.MultipleFailuresError}, where the individual failures are in the returned list.
      *
      * @return the cause failures.
+     * @since 7.6
      */
     public abstract List<TestFailure> getCauses();
 
@@ -42,6 +44,7 @@ public abstract class TestFailure {
      * Returns the raw failure.
      *
      * @return the raw failure
+     * @since 7.6
      */
     public abstract Throwable getRawFailure();
 
@@ -49,6 +52,7 @@ public abstract class TestFailure {
      * Returns structural information about the failure.
      *
      * @return the failure structure
+     * @since 7.6
      */
     public abstract TestFailureDetails getDetails();
 
@@ -59,6 +63,7 @@ public abstract class TestFailure {
      * @param expected the expected value for the failure; can be {@code null}
      * @param actual the actual value for the failure; can be {@code null}
      * @return the new instance
+     * @since 7.6
      */
     public static TestFailure fromTestAssertionFailure(Throwable failure, String expected, String actual) {
         return fromTestAssertionFailure(failure, expected, actual, null);
@@ -72,8 +77,9 @@ public abstract class TestFailure {
      * @param actual the actual value for the failure; can be {@code null}
      * @param causes the list of cause failures; can be {@code null}
      * @return the new instance
+     * @since 7.6
      */
-    public static TestFailure fromTestAssertionFailure(Throwable failure, String expected, String actual, List<TestFailure> causes) {
+    public static TestFailure fromTestAssertionFailure(Throwable failure, String expected, String actual, @Nullable List<TestFailure> causes) {
         return DefaultTestFailure.fromTestAssertionFailure(failure, expected, actual, causes);
     }
 
@@ -81,7 +87,7 @@ public abstract class TestFailure {
      * Todo
      * @since 8.3
      */
-    public static TestFailure fromFileComparisonFailure(Throwable failure, String expected, String actual, byte[] expectedContent, byte[] actualContent, List<TestFailure> causes) {
+    public static TestFailure fromFileComparisonFailure(Throwable failure, String expected, String actual, byte[] expectedContent, byte[] actualContent, @Nullable List<TestFailure> causes) {
         return DefaultTestFailure.fromFileComparisonTestAssertionFailure(failure, expected, actual, causes, expectedContent, actualContent);
     }
 
@@ -90,19 +96,34 @@ public abstract class TestFailure {
      *
      * @param failure the failure
      * @return the new instance
+     * @since 7.6
      */
     public static TestFailure fromTestFrameworkFailure(Throwable failure) {
         return fromTestFrameworkFailure(failure, null);
     }
 
     /**
-     * Creates a new TestFailure instance from a test framework failure.
+     * Creates a new {@link TestFailure} instance from a test framework failure.
      *
      * @param failure the failure
      * @param causes the list of cause failures; can be {@code null}
      * @return the new instance
+     * @since 7.6
      */
-    public static TestFailure fromTestFrameworkFailure(Throwable failure, List<TestFailure> causes) {
+    public static TestFailure fromTestFrameworkFailure(Throwable failure, @Nullable List<TestFailure> causes) {
         return DefaultTestFailure.fromTestFrameworkFailure(failure, causes);
+    }
+
+    /**
+     * Creates a new {@link TestFailure} instance representing a failure occurring during the execution of a test method.
+     *
+     * @param failure the failure
+     * @return the new instance
+     *
+     * @since 9.7.0
+     */
+    @Incubating
+    public static TestFailure fromTestMethodFailure(Throwable failure) {
+        return DefaultTestFailure.fromTestMethodFailure(failure);
     }
 }

@@ -17,8 +17,9 @@
 package org.gradle.integtests.resolve.api
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.extensions.FluidDependenciesResolveTest
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.test.fixtures.maven.MavenFileRepository
 import spock.lang.Issue
 
@@ -31,8 +32,12 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.a.resolve()
             dependencies { a files("some.jar") }
         """
-        when: fails()
-        then: failure.assertHasCause("Cannot change dependencies of dependency configuration ':a' after it has been resolved")
+
+        when:
+        fails()
+
+        then:
+        failure.assertHasCause("Cannot mutate the dependencies of configuration ':a' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     def "does not allow adding artifacts to a configuration that has been resolved"() {
@@ -41,8 +46,12 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.a.resolve()
             artifacts { a file("some.jar") }
         """
-        when: fails()
-        then: failure.assertHasCause("Cannot change artifacts of dependency configuration ':a' after it has been resolved")
+
+        when:
+        fails()
+
+        then:
+        failure.assertHasCause("Cannot mutate the artifacts of configuration ':a' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     def "does not allow changing excludes on a configuration that has been resolved"() {
@@ -51,8 +60,12 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.a.resolve()
             configurations.a.exclude group: 'someGroup'
         """
-        when: fails()
-        then: failure.assertHasCause("Cannot change dependencies of dependency configuration ':a' after it has been resolved")
+
+        when:
+        fails()
+
+        then:
+        failure.assertHasCause("Cannot mutate the dependencies of configuration ':a' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     def "does not allow changing conflict resolution on a configuration that has been resolved"() {
@@ -62,8 +75,11 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.a.resolutionStrategy.failOnVersionConflict()
         """
 
-        when: fails()
-        then: failure.assertHasCause("Cannot change resolution strategy of dependency configuration ':a' after it has been resolved")
+        when:
+        fails()
+
+        then:
+        failure.assertHasCause("Cannot mutate the resolution strategy of configuration ':a' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     def "does not allow changing forced versions on a configuration that has been resolved"() {
@@ -73,8 +89,11 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.a.resolutionStrategy.force "org.utils:api:1.3"
         """
 
-        when: fails()
-        then: failure.assertHasCause("Cannot change resolution strategy of dependency configuration ':a' after it has been resolved")
+        when:
+        fails()
+
+        then:
+        failure.assertHasCause("Cannot mutate the resolution strategy of configuration ':a' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     def "does not allow changing cache policy on a configuration that has been resolved"() {
@@ -84,9 +103,11 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.a.resolutionStrategy.cacheChangingModulesFor 0, "seconds"
         """
 
+        when:
+        fails()
 
-        when: fails()
-        then: failure.assertHasCause("Cannot change resolution strategy of dependency configuration ':a' after it has been resolved")
+        then:
+        failure.assertHasCause("Cannot mutate the resolution strategy of configuration ':a' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     def "does not allow changing resolution rules on a configuration that has been resolved"() {
@@ -96,9 +117,11 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.a.resolutionStrategy.eachDependency {}
         """
 
+        when:
+        fails()
 
-        when: fails()
-        then: failure.assertHasCause("Cannot change resolution strategy of dependency configuration ':a' after it has been resolved")
+        then:
+        failure.assertHasCause("Cannot mutate the resolution strategy of configuration ':a' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     def "does not allow changing substitution rules on a configuration that has been resolved"() {
@@ -108,9 +131,11 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.a.resolutionStrategy.dependencySubstitution.all {}
         """
 
+        when:
+        fails()
 
-        when: fails()
-        then: failure.assertHasCause("Cannot change resolution strategy of dependency configuration ':a' after it has been resolved")
+        then:
+        failure.assertHasCause("Cannot mutate the resolution strategy of configuration ':a' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     def "does not allow changing component selection rules on a configuration that has been resolved"() {
@@ -121,157 +146,170 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
         """
 
 
-        when: fails()
-        then: failure.assertHasCause("Cannot change resolution strategy of dependency configuration ':a' after it has been resolved")
+        when:
+        fails()
+
+        then:
+        failure.assertHasCause("Cannot mutate the resolution strategy of configuration ':a' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
     }
 
-    @ToBeFixedForConfigurationCache(because = "task uses dependencies API")
+    @UnsupportedWithConfigurationCache(because = "task uses dependencies API at execution time")
     def "does not allow changing dependencies of a configuration that has been resolved for task dependencies"() {
         mavenRepo.module("org.utils", "extra", '1.5').publish()
 
-        createDirs("api", "impl")
-        settingsFile << "include 'api', 'impl'"
-        buildFile << """
-            allprojects {
-                repositories {
-                    maven { url "${mavenRepo.uri}" }
-                }
-                configurations {
-                    compile
-                    testCompile { extendsFrom compile }
-                    'default' { extendsFrom compile }
-                }
-                configurations.all {
-                    resolutionStrategy.assumeFluidDependencies()
-                }
+        settingsFile << """
+            include 'api'
+            include 'impl'
+            dependencyResolutionManagement {
+                ${mavenTestRepository()}
             }
+        """
 
-            project(":api") {
-                task addDependency {
-                    doLast {
-                        dependencies {
-                            compile "org.utils:extra:1.5"
-                        }
-                    }
-                }
+        def common = """
+            configurations {
+                compile
+                testCompile { extendsFrom compile }
+                'default' { extendsFrom compile }
             }
+            configurations.all {
+                resolutionStrategy.assumeFluidDependencies()
+            }
+        """
 
-            project(":impl") {
-                dependencies {
-                    compile project(":api")
-                }
+        file("api/build.gradle") << """
+            $common
 
-                task addDependency {
-                    doLast {
-                        dependencies {
-                            compile "org.utils:extra:1.5"
-                        }
-                    }
-                }
-
-                task modifyConfigDuringTaskExecution(dependsOn: [':impl:addDependency', configurations.compile]) {
-                    doLast {
-                        def files = configurations.compile.files
-                        assert files*.name.sort() == ["api.jar", "extra-1.5.jar"]
-                        assert files*.exists() == [ true, true ]
-                    }
-                }
-                task modifyParentConfigDuringTaskExecution(dependsOn: [':impl:addDependency', configurations.testCompile]) {
-                    doLast {
-                        def files = configurations.testCompile.files
-                        assert files*.name.sort() == ["api.jar", "extra-1.5.jar"]
-                        assert files*.exists() == [ true, true ]
-                    }
-                }
-                task modifyDependentConfigDuringTaskExecution(dependsOn: [':api:addDependency', configurations.compile]) {
-                    doLast {
-                        def files = configurations.compile.files
-                        assert files*.name.sort() == ["api.jar"] // Late dependency is not honoured
-                        assert files*.exists() == [ true ]
+            task addDependency {
+                doLast {
+                    dependencies {
+                        compile "org.utils:extra:1.5"
                     }
                 }
             }
-"""
+        """
+
+        file("impl/build.gradle") << """
+            $common
+
+            dependencies {
+                compile project(":api")
+            }
+
+            task addDependency {
+                doLast {
+                    dependencies {
+                        compile "org.utils:extra:1.5"
+                    }
+                }
+            }
+
+            task modifyConfigDuringTaskExecution(dependsOn: [':impl:addDependency', configurations.compile]) {
+                doLast {
+                    def files = configurations.compile.files
+                    assert files*.name.sort() == ["api.jar", "extra-1.5.jar"]
+                    assert files*.exists() == [ true, true ]
+                }
+            }
+            task modifyParentConfigDuringTaskExecution(dependsOn: [':impl:addDependency', configurations.testCompile]) {
+                doLast {
+                    def files = configurations.testCompile.files
+                    assert files*.name.sort() == ["api.jar", "extra-1.5.jar"]
+                    assert files*.exists() == [ true, true ]
+                }
+            }
+            task modifyDependentConfigDuringTaskExecution(dependsOn: [':api:addDependency', configurations.compile]) {
+                doLast {
+                    def files = configurations.compile.files
+                    assert files*.name.sort() == ["api.jar"] // Late dependency is not honoured
+                    assert files*.exists() == [ true ]
+                }
+            }
+        """
 
         when:
         fails("impl:modifyConfigDuringTaskExecution")
 
         then:
-        failure.assertHasCause("Cannot change dependencies of dependency configuration ':impl:compile' after it has been resolved.")
+        failure.assertHasCause("Cannot mutate the dependencies of configuration ':impl:compile' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
 
         when:
         fails("impl:modifyParentConfigDuringTaskExecution")
 
         then:
-        failure.assertHasCause("Cannot change dependencies of dependency configuration ':impl:compile' after it has been included in dependency resolution.")
+        failure.assertHasCause("Cannot mutate the dependencies of configuration ':impl:compile' after the configuration's child configuration ':impl:testCompile' was resolved. After a configuration has been observed, it should not be modified.")
 
         when:
         fails("impl:modifyDependentConfigDuringTaskExecution")
 
         then:
-        failure.assertHasCause("Cannot change dependencies of dependency configuration ':api:compile' after it has been included in dependency resolution.")
+        failure.assertHasCause("Cannot mutate the dependencies of configuration ':api:compile' after the configuration was consumed as a variant. After a configuration has been observed, it should not be modified.")
     }
 
     @ToBeFixedForConfigurationCache(because = "task uses dependencies API")
     def "does not allow changing artifacts of a configuration that has been resolved for task dependencies"() {
         mavenRepo.module("org.utils", "extra", '1.5').publish()
 
-        createDirs("api", "impl")
-        settingsFile << "include 'api', 'impl'"
-        buildFile << """
-            allprojects {
-                repositories {
-                    maven { url "${mavenRepo.uri}" }
+        settingsFile << """
+            include 'api'
+            include 'impl'
+            dependencyResolutionManagement {
+                ${mavenTestRepository()}
+            }
+        """
+
+        def common = """
+            configurations {
+                compile
+                testCompile { extendsFrom compile }
+                'default' { extendsFrom compile }
+            }
+            configurations.all {
+                resolutionStrategy.assumeFluidDependencies()
+            }
+        """
+
+        file("api/build.gradle") << """
+            $common
+
+            task addArtifact {
+                doLast {
+                    artifacts { compile file("some.jar") }
                 }
-                configurations {
-                    compile
-                    testCompile { extendsFrom compile }
-                    'default' { extendsFrom compile }
-                }
-                configurations.all {
-                    resolutionStrategy.assumeFluidDependencies()
+            }
+        """
+
+        file("impl/build.gradle") << """
+            $common
+
+            dependencies {
+                compile project(":api")
+            }
+            task addArtifact {
+                doLast {
+                    artifacts { compile file("some.jar") }
                 }
             }
 
-            project(":api") {
-                task addArtifact {
-                    doLast {
-                        artifacts { compile file("some.jar") }
-                    }
-                }
-            }
-
-            project(":impl") {
-                dependencies {
-                    compile project(":api")
-                }
-                task addArtifact {
-                    doLast {
-                        artifacts { compile file("some.jar") }
-                    }
-                }
-
-                task addArtifactToConfigDuringTaskExecution(dependsOn: [':impl:addArtifact', configurations.compile])
-                task addArtifactToParentConfigDuringTaskExecution(dependsOn: [':impl:addArtifact', configurations.testCompile])
-                task addArtifactToDependentConfigDuringTaskExecution(dependsOn: [':api:addArtifact', configurations.compile])
-            }
-"""
+            task addArtifactToConfigDuringTaskExecution(dependsOn: [':impl:addArtifact', configurations.compile])
+            task addArtifactToParentConfigDuringTaskExecution(dependsOn: [':impl:addArtifact', configurations.testCompile])
+            task addArtifactToDependentConfigDuringTaskExecution(dependsOn: [':api:addArtifact', configurations.compile])
+        """
 
         when:
         fails("impl:addArtifactToConfigDuringTaskExecution")
         then:
-        failure.assertHasCause("Cannot change artifacts of dependency configuration ':impl:compile' after it has been resolved.")
+        failure.assertHasCause("Cannot mutate the artifacts of configuration ':impl:compile' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
 
         when:
         fails("impl:addArtifactToParentConfigDuringTaskExecution")
 
         then:
-        failure.assertHasCause("Cannot change artifacts of dependency configuration ':impl:compile' after it has been included in dependency resolution.")
+        failure.assertHasCause("Cannot mutate the artifacts of configuration ':impl:compile' after the configuration's child configuration ':impl:testCompile' was resolved. After a configuration has been observed, it should not be modified.")
 
         when:
         fails("impl:addArtifactToDependentConfigDuringTaskExecution")
         then:
-        failure.assertHasCause("Cannot change artifacts of dependency configuration ':api:compile' after it has been included in dependency resolution.")
+        failure.assertHasCause("Cannot mutate the artifacts of configuration ':api:compile' after the configuration was consumed as a variant. After a configuration has been observed, it should not be modified.")
     }
 
     @Issue("GRADLE-3155")
@@ -286,10 +324,11 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             dependencies { a files("some.jar") }
         """
 
+        when:
+        fails()
 
-
-        when: fails()
-        then: failure.assertHasCause("Cannot change dependencies of dependency configuration ':a' after it has been included in dependency resolution.")
+        then:
+        failure.assertHasCause("Cannot mutate the dependencies of configuration ':a' after the configuration's child configuration ':c' was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     @Issue("GRADLE-3155")
@@ -304,10 +343,11 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             artifacts { a file("some.jar") }
         """
 
+        when:
+        fails()
 
-
-        when: fails()
-        then: failure.assertHasCause("Cannot change artifacts of dependency configuration ':a' after it has been included in dependency resolution.")
+        then:
+        failure.assertHasCause("Cannot mutate the artifacts of configuration ':a' after the configuration's child configuration ':c' was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     @Issue("GRADLE-3155")
@@ -322,10 +362,11 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.a.exclude group: 'someGroup'
         """
 
+        when:
+        fails()
 
-
-        when: fails()
-        then: failure.assertHasCause("Cannot change dependencies of dependency configuration ':a' after it has been included in dependency resolution.")
+        then:
+        failure.assertHasCause("Cannot mutate the dependencies of configuration ':a' after the configuration's child configuration ':c' was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     def "allows changing resolution strategy of a configuration whose child has been resolved"() {
@@ -344,7 +385,9 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.a.resolutionStrategy.cacheChangingModulesFor 0, "seconds"
             configurations.a.resolutionStrategy.componentSelection.all {}
         """
-        expect: succeeds()
+
+        expect:
+        succeeds()
     }
 
     def "fails when configuration is resolved"() {
@@ -359,10 +402,11 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.a.exclude group: 'otherGroup'
         """
 
+        when:
+        fails()
 
-
-        when: fails()
-        then: failure.assertHasCause("Cannot change dependencies of dependency configuration ':a' after it has been included in dependency resolution.")
+        then:
+        failure.assertHasCause("Cannot mutate the dependencies of configuration ':a' after the configuration's child configuration ':b' was resolved. After a configuration has been observed, it should not be modified.")
     }
 
     @Issue("GRADLE-3155")
@@ -375,7 +419,9 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
                 a.description = 'some conf'
             }
         """
-        expect: succeeds()
+
+        expect:
+        succeeds()
     }
 
     @Issue("GRADLE-3155")
@@ -388,7 +434,9 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             }
             dependencies { a "a:b:c" }
         """
-        expect: succeeds()
+
+        expect:
+        succeeds()
     }
 
     def "allows changing a non-empty configuration that does not affect a resolved configuration"() {
@@ -401,38 +449,52 @@ class UnsupportedConfigurationMutationTest extends AbstractIntegrationSpec {
             configurations.b.resolve()
             dependencies { a "a:b:c" }
         """
-        expect: succeeds()
+
+        expect:
+        succeeds()
     }
 
     def "does not allow changing a dependency project's dependencies after included in resolution"() {
-        createDirs("api", "impl")
-        settingsFile << "include 'api', 'impl'"
-        buildFile << """
-            allprojects {
+        settingsFile << """
+            include 'api'
+            gradle.lifecycle.beforeProject {
                 configurations {
-                    compile
-                    'default' { extendsFrom compile }
+                    create("compile")
+                    create("default") {
+                        extendsFrom compile
+                    }
                 }
             }
+        """
+
+        buildFile << """
             dependencies {
-                compile project(":impl")
-            }
-            project(":impl") {
-                dependencies {
-                    compile project(":api")
-                }
+                compile project(":api")
             }
             configurations.compile.resolve()
-            project(":api") {
+        """
+
+        file("api/build.gradle") << """
+            tasks.register("jar", Jar) {
+                archiveFileName = "jar.jar"
+                destinationDirectory = buildDir
                 dependencies {
                     compile files("some.jar")
                 }
             }
-"""
 
+            configurations {
+                compile {
+                    outgoing.artifact(tasks.named("jar"))
+                }
+            }
+        """
 
-        when: fails()
-        then: failure.assertHasCause("Cannot change dependencies of dependency configuration ':api:compile' after it has been included in dependency resolution.")
+        when:
+        fails()
+
+        then:
+        failure.assertHasCause("Cannot mutate the dependencies of configuration ':api:compile' after the configuration was consumed as a variant. After a configuration has been observed, it should not be modified.")
     }
 
     @Issue("GRADLE-3297")
@@ -451,7 +513,7 @@ dependencies {
   parentConfig "org.test:moduleA:1.0"
 }
 repositories {
-    maven { url '$repo.uri' }
+    maven { url = '$repo.uri' }
 }
 
 task resolveChildFirst {
@@ -475,6 +537,7 @@ task resolveChildFirst {
             configurations.a.resolve()
             configurations.a.attributes { attribute(Attribute.of('foo', String), 'bar') }
         """
+
         when:
         fails()
 
@@ -488,17 +551,18 @@ task resolveChildFirst {
             configurations.a.resolve()
             ${code}
         """
+
         when:
         fails()
 
         then:
-        failure.assertHasCause("Cannot change usage of dependency configuration ':a' after it has been resolved")
+        failure.assertHasCause("Cannot mutate the usage of configuration ':a' after the configuration was resolved. After a configuration has been observed, it should not be modified.")
 
         where:
         role                      | code
         'consume or publish only' | 'configurations.a.canBeResolved = false'
         'query or resolve only'   | 'configurations.a.canBeConsumed = false'
         'dependency scope'        | 'configurations.a.canBeResolved = false; configurations.a.canBeConsumed = false'
-
     }
+
 }

@@ -19,8 +19,7 @@ package org.gradle.api.internal.tasks.execution;
 import org.gradle.api.internal.TaskInternal;
 import org.gradle.internal.service.scopes.EventScope;
 import org.gradle.internal.service.scopes.Scope;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 
 @EventScope(Scope.Build.class)
@@ -37,8 +36,8 @@ public interface TaskExecutionAccessListener {
     void onTaskDependenciesAccess(String invocationDescription, TaskInternal task, @Nullable TaskInternal runningTask);
 
     /**
-     * Called when accessing the convention object during task execution.
+     * Called when accessing task extensions during task execution.
      */
-    void onConventionAccess(String invocationDescription, TaskInternal task, @Nullable TaskInternal runningTask);
+    void onTaskExtensionAccess(String invocationDescription, TaskInternal task, @Nullable TaskInternal runningTask);
 
 }

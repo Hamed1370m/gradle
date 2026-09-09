@@ -18,13 +18,11 @@ package org.gradle.api.model;
 
 import org.gradle.api.DomainObjectSet;
 import org.gradle.api.ExtensiblePolymorphicDomainObjectContainer;
-import org.gradle.api.Incubating;
 import org.gradle.api.Named;
 import org.gradle.api.NamedDomainObjectContainer;
 import org.gradle.api.NamedDomainObjectFactory;
 import org.gradle.api.NamedDomainObjectList;
 import org.gradle.api.NamedDomainObjectSet;
-import org.gradle.api.artifacts.dsl.DependencyCollector;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.ConfigurableFileTree;
 import org.gradle.api.file.DirectoryProperty;
@@ -35,9 +33,14 @@ import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.SetProperty;
 import org.gradle.api.reflect.ObjectInstantiationException;
+import org.gradle.api.services.GradleService;
+import org.gradle.api.services.ProjectService;
+import org.gradle.api.services.SettingsService;
+import org.gradle.api.services.TaskService;
 import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceScope;
 
+import java.io.File;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -50,8 +53,8 @@ import java.util.Set;
  *
  * @since 4.0
  */
-@ServiceScope({Scope.Global.class, Scope.Project.class})
-public interface ObjectFactory {
+@ServiceScope({Scope.Global.class, Scope.BuildTree.class, Scope.Project.class})
+public interface ObjectFactory extends GradleService, ProjectService, SettingsService, TaskService {
     /**
      * Creates a simple immutable {@link Named} object of the given type and name.
      *
@@ -204,6 +207,7 @@ public interface ObjectFactory {
      * <li>For {@link Map} properties, you should use {@link #mapProperty(Class, Class)}.</li>
      * <li>For {@link org.gradle.api.file.Directory} properties, you should use {@link #directoryProperty()}.</li>
      * <li>For {@link org.gradle.api.file.RegularFile} properties, you should use {@link #fileProperty()}.</li>
+     * <li>For {@link File} properties, you should use {@link #fileProperty()} for regular files and {@link #directoryProperty()} for directories.</li>
      * </ul>
      *
      * @param valueType The type of the property.
@@ -263,14 +267,4 @@ public interface ObjectFactory {
      * @since 5.0
      */
     RegularFileProperty fileProperty();
-
-    /**
-     * Creates a new {@link DependencyCollector} used for declaring dependencies.
-     *
-     * <strong>Avoid this method if possible and use managed object instantiation instead.</strong>
-     *
-     * @since 8.6
-     */
-    @Incubating
-    DependencyCollector dependencyCollector();
 }

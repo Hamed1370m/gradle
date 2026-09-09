@@ -18,26 +18,17 @@ package org.gradle.initialization;
 
 import org.gradle.internal.service.scopes.Scope;
 import org.gradle.internal.service.scopes.ServiceScope;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
-import java.io.File;
 import java.util.Map;
 
 /**
- * Provides access to the environment in a configuration cache friendly way.
+ * Provides access to the environment in a configuration-cache-friendly way.
  *
  * Access to resources will be tracked when storing to the configuration cache.
  */
-@ServiceScope(Scope.Build.class)
+@ServiceScope(Scope.BuildTree.class)
 public interface Environment {
-
-    /**
-     * Reads the given Java properties file if it exists.
-     *
-     * @return the properties loaded from the given file or {@code null} if the file does not exist.
-     */
-    @Nullable
-    Map<String, String> propertiesFile(File propertiesFile);
 
     /**
      * Provides access to system properties.
@@ -58,8 +49,17 @@ public interface Environment {
          *
          * The returned map keys still contain the prefix.
          *
-         * @return a map containing only the properties whose name start with the given prefix.
+         * @return a map containing only the properties whose names start with the given prefix.
          */
         Map<String, String> byNamePrefix(String prefix);
+
+        /**
+         * Returns the value of the property with the given name, or {@code null} if it does not exist.
+         *
+         * @param name the property to lookup
+         * @return the property value, or {@code null} if the property does not exist
+         */
+        @Nullable
+        String get(String name);
     }
 }

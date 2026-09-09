@@ -59,7 +59,7 @@ class MavenPublishExternalVariantIntegrationTest extends AbstractMavenPublishInt
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 publications {
                     maven(MavenPublication) {
@@ -556,7 +556,7 @@ class MavenPublishExternalVariantIntegrationTest extends AbstractMavenPublishInt
         })
 
         file("other/build.gradle") << """
-            repositories { maven { url "${mavenRepo.uri}" } }
+            repositories { maven { url = "${mavenRepo.uri}" } }
             dependencies {
                 firstImplementation "com:example:2.0"
             }
@@ -613,25 +613,23 @@ class MavenPublishExternalVariantIntegrationTest extends AbstractMavenPublishInt
 
             file("other-2.0.jar").createNewFile()
 
-            configurations {
-                consumable("elements") {
-                    attributes {
-                        attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, "first"))
-                    }
-                    outgoing {
-                        artifact(file("other-2.0.jar"))
-                    }
+            def elements = configurations.consumable("elements") {
+                attributes {
+                    attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, "first"))
+                }
+                outgoing {
+                    artifact(file("other-2.0.jar"))
                 }
             }
 
-            def component = componentFactory.adhoc("component")
-            component.addVariantsFromConfiguration(configurations.elements) {
+            def component = publishing.softwareComponentFactory.adhoc("component")
+            component.addVariantsFromConfiguration(elements) {
                 mapToMavenScope('runtime')
             }
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 publications {
                     maven(MavenPublication) {
@@ -648,7 +646,7 @@ class MavenPublishExternalVariantIntegrationTest extends AbstractMavenPublishInt
             ${multiCoordinateComponent {
                 compilation("first")
             }}
-            repositories { maven { url "${mavenRepo.uri}" } }
+            repositories { maven { url = "${mavenRepo.uri}" } }
             dependencies {
                 firstImplementation project(":other")
                 firstImplementation "org:foo:3.0"
@@ -781,7 +779,7 @@ class MavenPublishExternalVariantIntegrationTest extends AbstractMavenPublishInt
                 }
             }
 
-            repositories { maven { url "${mavenRepo.uri}" } }
+            repositories { maven { url = "${mavenRepo.uri}" } }
             dependencies {
                 someConf "org:bar:1.0"
                 firstImplementation "org:foo:1.0"
@@ -809,7 +807,7 @@ class MavenPublishExternalVariantIntegrationTest extends AbstractMavenPublishInt
         })
 
         buildFile << """
-            repositories { maven { url "${mavenRepo.uri}" } }
+            repositories { maven { url = "${mavenRepo.uri}" } }
             dependencies {
                 firstImplementation "org:foo:1.0"
             }
@@ -950,7 +948,7 @@ class MavenPublishExternalVariantIntegrationTest extends AbstractMavenPublishInt
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
             }
 
@@ -978,13 +976,6 @@ class MavenPublishExternalVariantIntegrationTest extends AbstractMavenPublishInt
                 @Override
                 abstract NamedDomainObjectContainer<SoftwareComponent> getVariants();
             }
-
-            // This is the only public API way to obtain a SoftwareComponentFactory.
-            interface PublishServices {
-                @Inject
-                SoftwareComponentFactory getSoftwareComponentFactory()
-            }
-            def componentFactory = objects.newInstance(PublishServices).softwareComponentFactory
         """
     }
 
@@ -1041,7 +1032,7 @@ class MavenPublishExternalVariantIntegrationTest extends AbstractMavenPublishInt
 
         def component = "${name}ChildComponent"
         output += """
-            def ${component} = componentFactory.adhoc("${component}")
+            def ${component} = publishing.softwareComponentFactory.adhoc("${component}")
             ${component}.addVariantsFromConfiguration(configurations."${publicationConf}") {
                 mapToMavenScope('runtime')
                 dependencyMapping {

@@ -17,7 +17,7 @@
 package org.gradle.model.dsl.internal.transform
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 
 @UnsupportedWithConfigurationCache(because = "software model")
 class NestedModelRuleDslDetectionIntegrationTest extends AbstractIntegrationSpec {
@@ -57,6 +57,8 @@ model {
 '''
 
         expect:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
         succeeds "show"
         output.contains("outer 1")
         output.contains("outer 2")
@@ -100,9 +102,19 @@ model {
 '''
 
         expect:
+        expectSoftwareModelDeprecation("MyPlugin")
+        expectModelDslDeprecation()
         succeeds "show"
         output.contains("outer 1: param")
         output.contains("inner 1: param")
         output.contains("inner 2: param")
+    }
+
+    private void expectSoftwareModelDeprecation(String pluginName) {
+        executer.expectDocumentedDeprecationWarning("The ${pluginName} plugin has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
+    }
+
+    private void expectModelDslDeprecation() {
+        executer.expectDocumentedDeprecationWarning("The model DSL has been deprecated. This is scheduled to be removed in Gradle 10. Rule-based/software model plugins are no longer supported. Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_9.html#deprecated_software_model")
     }
 }

@@ -30,7 +30,6 @@ import org.gradle.api.plugins.UnknownPluginException;
 import org.gradle.api.reflect.ObjectInstantiationException;
 import org.gradle.configuration.ConfigurationTargetIdentifier;
 import org.gradle.internal.Cast;
-import org.gradle.internal.code.DefaultUserCodeSource;
 import org.gradle.internal.code.UserCodeApplicationContext;
 import org.gradle.internal.code.UserCodeApplicationId;
 import org.gradle.internal.code.UserCodeSource;
@@ -42,8 +41,8 @@ import org.gradle.internal.operations.trace.CustomOperationTraceSerialization;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.plugin.use.PluginId;
 import org.gradle.plugin.use.internal.DefaultPluginId;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -68,6 +67,7 @@ public class DefaultPluginManager implements PluginManagerInternal {
     private final UserCodeApplicationContext userCodeApplicationContext;
     private final DomainObjectCollectionFactory domainObjectCollectionFactory;
 
+    @SuppressWarnings("this-escape")
     public DefaultPluginManager(final PluginRegistry pluginRegistry, Instantiator instantiator, final PluginTarget target, BuildOperationRunner buildOperationRunner, UserCodeApplicationContext userCodeApplicationContext, CollectionCallbackActionDecorator callbackDecorator, DomainObjectCollectionFactory domainObjectCollectionFactory) {
         this.instantiator = instantiator;
         this.target = target;
@@ -143,7 +143,7 @@ public class DefaultPluginManager implements PluginManagerInternal {
     public void apply(String pluginId) {
         PluginImplementation<?> plugin = pluginRegistry.lookup(DefaultPluginId.unvalidated(pluginId));
         if (plugin == null) {
-            throw new UnknownPluginException("Plugin with id '" + pluginId + "' not found.");
+            throw new UnknownPluginException("Plugin with id '" + pluginId + "' not found.", pluginId);
         }
         doApply(plugin);
     }
@@ -165,9 +165,10 @@ public class DefaultPluginManager implements PluginManagerInternal {
             } else {
                 final Runnable adder = addPluginInternal(plugin);
                 if (adder != null) {
-                    UserCodeSource source = new DefaultUserCodeSource(plugin.getDisplayName(), pluginIdStr);
+                    UserCodeSource source = new UserCodeSource.Binary(plugin.getDisplayName(), pluginClass.getName(), pluginIdStr);
                     userCodeApplicationContext.apply(source, userCodeApplicationId ->
-                        buildOperationRunner.run(new AddPluginBuildOperation(adder, plugin, pluginIdStr, pluginClass, userCodeApplicationId)));
+                        buildOperationRunner.run(new AddPluginBuildOperation(adder, plugin, pluginIdStr, pluginClass, userCodeApplicationId))
+                    );
                 }
             }
         } catch (PluginApplicationException e) {
@@ -194,9 +195,6 @@ public class DefaultPluginManager implements PluginManagerInternal {
             // plugins.withType() callbacks waiting to build on what the plugin did
             instances.put(pluginClass, pluginInstance);
             pluginContainer.pluginAdded(pluginInstance);
-
-            // Apply any build-level model defaults for the target
-            target.applySoftwareFeatures(pluginInstance);
         } else {
             target.applyRules(pluginId, pluginClass);
         }

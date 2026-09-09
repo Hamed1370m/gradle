@@ -74,6 +74,9 @@ abstract class NamedDomainObjectContainerDelegate<T : Any> : NamedDomainObjectCo
     override fun addAllLater(provider: Provider<out Iterable<T>>) =
         delegate.addAllLater(provider)
 
+    override fun getElements(): Provider<out Collection<T>> =
+        delegate.elements
+
     override fun create(name: String): T =
         delegate.create(name)
 
@@ -128,6 +131,8 @@ abstract class NamedDomainObjectContainerDelegate<T : Any> : NamedDomainObjectCo
     override fun whenObjectRemoved(action: Closure<Any>) =
         delegate.whenObjectRemoved(action)
 
+    @Suppress("DEPRECATION")
+    @Deprecated("Deprecated Groovy-only API")
     override fun findAll(spec: Closure<Any>): MutableSet<T> =
         delegate.findAll(spec)
 

@@ -16,38 +16,44 @@
 
 package org.gradle.internal.logging;
 
-import com.google.common.collect.ImmutableList;
 import org.gradle.api.logging.LogLevel;
 import org.gradle.api.logging.configuration.ConsoleOutput;
+import org.gradle.api.logging.configuration.ConsoleUnicodeSupport;
 import org.gradle.api.logging.configuration.LoggingConfiguration;
 import org.gradle.api.logging.configuration.ShowStacktrace;
 import org.gradle.api.logging.configuration.WarningMode;
 import org.gradle.cli.CommandLineParser;
+import org.gradle.cli.OptionCategory;
 import org.gradle.cli.ParsedCommandLine;
 import org.gradle.internal.buildoption.AbstractBuildOption;
+import org.gradle.internal.buildoption.BooleanBuildOption;
 import org.gradle.internal.buildoption.BuildOption;
 import org.gradle.internal.buildoption.BuildOptionSet;
 import org.gradle.internal.buildoption.CommandLineOptionConfiguration;
+import org.gradle.internal.buildoption.EnabledOnlyBooleanBuildOption;
 import org.gradle.internal.buildoption.Origin;
 import org.gradle.internal.buildoption.StringBuildOption;
 import org.gradle.util.internal.TextUtil;
+import org.jspecify.annotations.NullMarked;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 public class LoggingConfigurationBuildOptions extends BuildOptionSet<LoggingConfiguration> {
-
-    private static List<BuildOption<LoggingConfiguration>> options = ImmutableList.<BuildOption<LoggingConfiguration>>of(
+    // This can be removed once we've moved to compiling for Java 8+
+    @SuppressWarnings("unchecked")
+    private final List<? extends BuildOption<? super LoggingConfiguration>> options = Arrays.asList(
         new LogLevelOption(),
         new StacktraceOption(),
+        new WarningsOption(),
         new ConsoleOption(),
-        new WarningsOption());
-
-    public static List<BuildOption<LoggingConfiguration>> get() {
-        return options;
-    }
+        new ConsoleUnicodeOption(),
+        new InteractiveOption(),
+        new NonInteractiveOption()
+    );
 
     @Override
     public List<? extends BuildOption<? super LoggingConfiguration>> getAllOptions() {
@@ -55,7 +61,7 @@ public class LoggingConfigurationBuildOptions extends BuildOptionSet<LoggingConf
     }
 
     public Collection<String> getLongLogLevelOptions() {
-        return ImmutableList.of(
+        return Arrays.asList(
             LogLevelOption.DEBUG_LONG_OPTION,
             LogLevelOption.WARN_LONG_OPTION,
             LogLevelOption.INFO_LONG_OPTION,
@@ -77,11 +83,16 @@ public class LoggingConfigurationBuildOptions extends BuildOptionSet<LoggingConf
         public LogLevelOption() {
             super(
                 GRADLE_PROPERTY,
-                CommandLineOptionConfiguration.create(QUIET_LONG_OPTION, QUIET_SHORT_OPTION, "Log errors only."),
-                CommandLineOptionConfiguration.create(WARN_LONG_OPTION, WARN_SHORT_OPTION, "Set log level to warn."),
-                CommandLineOptionConfiguration.create(INFO_LONG_OPTION, INFO_SHORT_OPTION, "Set log level to info."),
-                CommandLineOptionConfiguration.create(DEBUG_LONG_OPTION, DEBUG_SHORT_OPTION, "Log in debug mode (includes normal stacktrace).")
+                CommandLineOptionConfiguration.create(QUIET_LONG_OPTION, QUIET_SHORT_OPTION, "Logs errors only."),
+                CommandLineOptionConfiguration.create(WARN_LONG_OPTION, WARN_SHORT_OPTION, "Sets the log level to warn."),
+                CommandLineOptionConfiguration.create(INFO_LONG_OPTION, INFO_SHORT_OPTION, "Sets the log level to info."),
+                CommandLineOptionConfiguration.create(DEBUG_LONG_OPTION, DEBUG_SHORT_OPTION, "Sets log level to debug. Includes the normal stacktrace.")
             );
+        }
+
+        @Override
+        protected OptionCategory getCategory() {
+            return OptionCategory.LOGGING;
         }
 
         @Override
@@ -139,7 +150,12 @@ public class LoggingConfigurationBuildOptions extends BuildOptionSet<LoggingConf
         private static final String[] ALL_SHORT_OPTIONS = new String[]{STACKTRACE_SHORT_OPTION, FULL_STACKTRACE_SHORT_OPTION};
 
         public StacktraceOption() {
-            super(GRADLE_PROPERTY, CommandLineOptionConfiguration.create(STACKTRACE_LONG_OPTION, STACKTRACE_SHORT_OPTION, "Print out the stacktrace for all exceptions."), CommandLineOptionConfiguration.create(FULL_STACKTRACE_LONG_OPTION, FULL_STACKTRACE_SHORT_OPTION, "Print out the full (very verbose) stacktrace for all exceptions."));
+            super(GRADLE_PROPERTY, CommandLineOptionConfiguration.create(STACKTRACE_LONG_OPTION, STACKTRACE_SHORT_OPTION, "Prints the stacktrace for all exceptions."), CommandLineOptionConfiguration.create(FULL_STACKTRACE_LONG_OPTION, FULL_STACKTRACE_SHORT_OPTION, "Prints the full (very verbose) stacktrace for all exceptions."));
+        }
+
+        @Override
+        protected OptionCategory getCategory() {
+            return OptionCategory.LOGGING;
         }
 
         @Override
@@ -183,12 +199,18 @@ public class LoggingConfigurationBuildOptions extends BuildOptionSet<LoggingConf
         public static final String GRADLE_PROPERTY = "org.gradle.console";
 
         public ConsoleOption() {
-            super(GRADLE_PROPERTY, CommandLineOptionConfiguration.create(LONG_OPTION, "Specifies which type of console output to generate. Values are 'plain', 'auto' (default), 'rich' or 'verbose'."));
+            super(GRADLE_PROPERTY, CommandLineOptionConfiguration.create(LONG_OPTION, "Specifies which type of console output to generate. Supported values are 'plain', 'colored', 'auto' (default), 'rich', or 'verbose'."));
+        }
+
+        @Override
+        protected OptionCategory getCategory() {
+            return OptionCategory.CONSOLE;
         }
 
         @Override
         public void applyTo(String value, LoggingConfiguration settings, Origin origin) {
-            String consoleValue = TextUtil.capitalize(value.toLowerCase(Locale.ROOT));
+            String normalized = value.toLowerCase(Locale.ROOT);
+            String consoleValue = TextUtil.capitalize(normalized);
             try {
                 ConsoleOutput consoleOutput = ConsoleOutput.valueOf(consoleValue);
                 settings.setConsoleOutput(consoleOutput);
@@ -198,12 +220,75 @@ public class LoggingConfigurationBuildOptions extends BuildOptionSet<LoggingConf
         }
     }
 
+    @NullMarked
+    public static class ConsoleUnicodeOption extends StringBuildOption<LoggingConfiguration> {
+        public static final String LONG_OPTION = "console-unicode";
+        public static final String GRADLE_PROPERTY = "org.gradle.console.unicode";
+
+        public ConsoleUnicodeOption() {
+            super(GRADLE_PROPERTY, CommandLineOptionConfiguration.create(LONG_OPTION, "Specifies which character types are allowed in the console output. Supported values are 'auto' (default), 'disable', or 'enable'."));
+        }
+
+        @Override
+        protected OptionCategory getCategory() {
+            return OptionCategory.CONSOLE;
+        }
+
+        @Override
+        public void applyTo(String value, LoggingConfiguration settings, Origin origin) {
+            String normalized = value.toLowerCase(Locale.ROOT);
+            String consoleValue = TextUtil.capitalize(normalized);
+            try {
+                ConsoleUnicodeSupport consoleUnicodeSupport = ConsoleUnicodeSupport.valueOf(consoleValue);
+                settings.setConsoleUnicodeSupport(consoleUnicodeSupport);
+            } catch (IllegalArgumentException e) {
+                origin.handleInvalidValue(value);
+            }
+        }
+    }
+
+    @NullMarked
+    public static class InteractiveOption extends BooleanBuildOption<LoggingConfiguration> {
+        public static final String GRADLE_PROPERTY = "org.gradle.console.interactive";
+
+        public InteractiveOption() {
+            super(GRADLE_PROPERTY);
+        }
+
+        @Override
+        protected OptionCategory getCategory() {
+            return OptionCategory.CONSOLE;
+        }
+
+        @Override
+        public void applyTo(boolean value, LoggingConfiguration settings, Origin origin) {
+            settings.setInteractive(value);
+        }
+    }
+
+    @NullMarked
+    public static class NonInteractiveOption extends EnabledOnlyBooleanBuildOption<LoggingConfiguration> {
+        public NonInteractiveOption() {
+            super(null, CommandLineOptionConfiguration.create("non-interactive", "Do not do interactive prompting.").incubating());
+        }
+
+        @Override
+        protected OptionCategory getCategory() {
+            return OptionCategory.CONSOLE;
+        }
+
+        @Override
+        public void applyTo(LoggingConfiguration settings, Origin origin) {
+            settings.setInteractive(false);
+        }
+    }
+
     public static class WarningsOption extends StringBuildOption<LoggingConfiguration> {
         public static final String LONG_OPTION = "warning-mode";
         public static final String GRADLE_PROPERTY = "org.gradle.warning.mode";
 
         public WarningsOption() {
-            super(GRADLE_PROPERTY, CommandLineOptionConfiguration.create(LONG_OPTION, "Specifies which mode of warnings to generate. Values are 'all', 'fail', 'summary'(default) or 'none'"));
+            super(GRADLE_PROPERTY, CommandLineOptionConfiguration.create(LONG_OPTION, "Specifies which mode of warnings to generate. Supported values are 'all', 'fail', 'summary' (default), or 'none'."));
         }
 
         @Override
@@ -213,6 +298,11 @@ public class LoggingConfigurationBuildOptions extends BuildOptionSet<LoggingConf
             } catch (IllegalArgumentException e) {
                 origin.handleInvalidValue(value);
             }
+        }
+
+        @Override
+        protected OptionCategory getCategory() {
+            return OptionCategory.DIAGNOSTICS;
         }
     }
 }

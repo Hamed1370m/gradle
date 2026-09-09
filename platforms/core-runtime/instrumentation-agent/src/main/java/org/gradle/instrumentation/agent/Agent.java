@@ -16,6 +16,8 @@
 
 package org.gradle.instrumentation.agent;
 
+import org.jspecify.annotations.Nullable;
+
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 
@@ -23,7 +25,7 @@ import java.lang.instrument.Instrumentation;
  * An entry point for the on-the-fly bytecode instrumentation agent.
  */
 public class Agent {
-    private static volatile Instrumentation instrumentation;
+    private static volatile @Nullable Instrumentation instrumentation;
 
     public static void premain(String agentArgs, Instrumentation inst) {
         doMain(inst);
@@ -46,9 +48,17 @@ public class Agent {
     public static boolean installTransformer(ClassFileTransformer transformer) {
         Instrumentation inst = instrumentation;
         if (inst != null) {
+            // We have some assumptions about the order in which transformations are applied, when there are multiple agents/transforms.
+            // Changing the transformer to be retransform-capable here will change the order and break those assumptions.
+            // See DefaultClassFileTransformer and AgentUtils for more information.
             inst.addTransformer(transformer);
             return true;
         }
         return false;
+    }
+
+    @SuppressWarnings("unused")  // Used reflectively.
+    public static @Nullable Instrumentation getInstrumentation() {
+        return instrumentation;
     }
 }

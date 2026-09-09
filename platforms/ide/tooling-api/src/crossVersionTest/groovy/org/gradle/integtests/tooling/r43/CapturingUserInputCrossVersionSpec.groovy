@@ -17,32 +17,48 @@
 package org.gradle.integtests.tooling.r43
 
 import org.gradle.integtests.tooling.fixture.TargetGradleVersion
-import org.gradle.integtests.tooling.fixture.TestResultHandler
 import org.gradle.integtests.tooling.fixture.ToolingApiSpecification
 import org.gradle.tooling.BuildLauncher
 import org.gradle.tooling.ProjectConnection
 import spock.lang.Timeout
 
-import static org.gradle.integtests.fixtures.BuildScanUserInputFixture.DUMMY_TASK_NAME
-import static org.gradle.integtests.fixtures.BuildScanUserInputFixture.PROMPT
-import static org.gradle.integtests.fixtures.BuildScanUserInputFixture.YES
-import static org.gradle.integtests.fixtures.BuildScanUserInputFixture.answerOutput
-import static org.gradle.integtests.fixtures.BuildScanUserInputFixture.buildScanPlugin
-import static org.gradle.integtests.fixtures.BuildScanUserInputFixture.buildScanPluginApplication
-import static org.gradle.test.fixtures.ConcurrentTestUtil.poll
-
-@TargetGradleVersion(">=4.3")
+// 8.8 is excluded: it shipped the new client-side prompt protocol (PromptOutputEvent/UserResponse) but
+// still had the daemon greedily consume the client's stdin, so the forwarded answer is swallowed as raw
+// stdin before the prompt response is read and askYesNoQuestion returns null. The greedy consumption was
+// removed in 8.9 (commit 66832d04eff), and 8.7 and earlier use the older protocol that is unaffected.
+@TargetGradleVersion(">=4.3 !8.8")
 @Timeout(120)
 class CapturingUserInputCrossVersionSpec extends ToolingApiSpecification {
+
     def setup() {
         if (!dist.toolingApiStdinInEmbeddedModeSupported) {
             // Did not work in embedded mode in older versions
             toolingApi.requireDaemons()
         }
 
-        file('buildSrc/src/main/java/BuildScanPlugin.java') << buildScanPlugin()
-        file('build.gradle') << buildScanPluginApplication()
+        file('buildSrc/src/main/java/BuildScanPlugin.java') << """
+            import org.gradle.api.Project;
+            import org.gradle.api.Plugin;
+
+            import org.gradle.api.internal.project.ProjectInternal;
+            import org.gradle.api.internal.tasks.userinput.BuildScanUserInputHandler;
+
+            public class BuildScanPlugin implements Plugin<Project> {
+                @Override
+                public void apply(Project project) {
+                    BuildScanUserInputHandler userInputHandler = ((ProjectInternal) project).getServices().get(BuildScanUserInputHandler.class);
+                    Boolean accepted = userInputHandler.askYesNoQuestion("Accept license?");
+                    System.out.println("License accepted: " + accepted);
+                }
+            }
+        """
+        file('build.gradle') << """
+            apply plugin: BuildScanPlugin
+
+            task doSomething
+        """
     }
+
 
     def "can capture user input if standard input was provided"() {
         when:
@@ -51,8 +67,8 @@ class CapturingUserInputCrossVersionSpec extends ToolingApiSpecification {
         }
 
         then:
-        output.contains(PROMPT)
-        output.contains(answerOutput(true))
+        output.contains("Accept license? [yes, no]")
+        output.contains("License accepted: true")
     }
 
     def "cannot capture user input if standard input was not provided"() {
@@ -62,35 +78,24 @@ class CapturingUserInputCrossVersionSpec extends ToolingApiSpecification {
         }
 
         then:
-        !output.contains(PROMPT)
-        output.contains(answerOutput(null))
+        !output.contains("Accept license? [yes, no]")
+        output.contains("License accepted: null")
     }
 
     private void runBuildWithStandardInput(ProjectConnection connection) {
-        def stdin = new PipedInputStream()
-        def stdinWriter = new PipedOutputStream(stdin)
-        def resultHandler = new TestResultHandler()
+        def stdin = new ByteArrayInputStream(("yes" + System.getProperty('line.separator')).bytes)
 
         basicBuildConfiguration(connection)
             .setStandardInput(stdin)
-            .run(resultHandler)
-
-        poll(60) {
-            assert getOutput().contains(PROMPT)
-        }
-
-        stdinWriter.write((YES + System.getProperty('line.separator')).bytes)
-        stdinWriter.close()
-
-        resultHandler.finished()
-        resultHandler.assertNoFailure()
+            .run()
     }
 
     private static BuildLauncher basicBuildConfiguration(ProjectConnection connection) {
-        connection.newBuild().forTasks(DUMMY_TASK_NAME)
+        connection.newBuild().forTasks("doSomething")
     }
 
     private String getOutput() {
         stdout.toString()
     }
+
 }

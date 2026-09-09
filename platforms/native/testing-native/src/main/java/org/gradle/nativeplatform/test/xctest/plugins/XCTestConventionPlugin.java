@@ -16,21 +16,19 @@
 
 package org.gradle.nativeplatform.test.xctest.plugins;
 
-import com.google.common.collect.Lists;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.internal.attributes.AttributesFactory;
-import org.gradle.api.internal.project.ProjectInternal;
-import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.provider.SetProperty;
 import org.gradle.api.tasks.Sync;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
+import org.gradle.internal.Cast;
 import org.gradle.language.base.plugins.LifecycleBasePlugin;
 import org.gradle.language.internal.NativeComponentFactory;
 import org.gradle.language.nativeplatform.internal.Dimensions;
@@ -45,7 +43,6 @@ import org.gradle.language.swift.internal.DefaultSwiftBinary;
 import org.gradle.language.swift.internal.DefaultSwiftPlatform;
 import org.gradle.language.swift.plugins.SwiftBasePlugin;
 import org.gradle.language.swift.tasks.SwiftCompile;
-import org.gradle.model.internal.registry.ModelRegistry;
 import org.gradle.nativeplatform.TargetMachine;
 import org.gradle.nativeplatform.TargetMachineFactory;
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform;
@@ -61,11 +58,13 @@ import org.gradle.nativeplatform.test.xctest.internal.DefaultSwiftXCTestSuite;
 import org.gradle.nativeplatform.test.xctest.tasks.InstallXCTestBundle;
 import org.gradle.nativeplatform.test.xctest.tasks.XCTest;
 import org.gradle.nativeplatform.toolchain.NativeToolChain;
+import org.gradle.nativeplatform.toolchain.NativeToolChainRegistry;
+import org.gradle.nativeplatform.toolchain.internal.NativeLanguage;
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainRegistryInternal;
 import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
 import org.gradle.nativeplatform.toolchain.internal.xcode.MacOSSdkPlatformPathLocator;
-import org.gradle.util.internal.GUtil;
+import org.gradle.util.internal.TextUtil;
 
 import javax.inject.Inject;
 import java.io.File;
@@ -83,16 +82,14 @@ public abstract class XCTestConventionPlugin implements Plugin<Project> {
     private final MacOSSdkPlatformPathLocator sdkPlatformPathLocator;
     private final ToolChainSelector toolChainSelector;
     private final NativeComponentFactory componentFactory;
-    private final ObjectFactory objectFactory;
     private final AttributesFactory attributesFactory;
     private final TargetMachineFactory targetMachineFactory;
 
     @Inject
-    public XCTestConventionPlugin(MacOSSdkPlatformPathLocator sdkPlatformPathLocator, ToolChainSelector toolChainSelector, NativeComponentFactory componentFactory, ObjectFactory objectFactory, AttributesFactory attributesFactory, TargetMachineFactory targetMachineFactory) {
+    public XCTestConventionPlugin(MacOSSdkPlatformPathLocator sdkPlatformPathLocator, ToolChainSelector toolChainSelector, NativeComponentFactory componentFactory, AttributesFactory attributesFactory, TargetMachineFactory targetMachineFactory) {
         this.sdkPlatformPathLocator = sdkPlatformPathLocator;
         this.toolChainSelector = toolChainSelector;
         this.componentFactory = componentFactory;
-        this.objectFactory = objectFactory;
         this.attributesFactory = attributesFactory;
         this.targetMachineFactory = targetMachineFactory;
     }
@@ -115,7 +112,7 @@ public abstract class XCTestConventionPlugin implements Plugin<Project> {
         project.getComponents().add(testSuite);
 
         // Setup component
-        testSuite.getModule().set(GUtil.toCamelCase(project.getName() + "Test"));
+        testSuite.getModule().set(TextUtil.toCamelCase(project.getName() + "Test"));
 
         final DefaultSwiftXCTestSuite testComponent = testSuite;
 
@@ -157,7 +154,7 @@ public abstract class XCTestConventionPlugin implements Plugin<Project> {
             final SwiftComponent mainComponent = testComponent.getTestedComponent().getOrNull();
             final SetProperty<TargetMachine> mainTargetMachines = mainComponent != null ? mainComponent.getTargetMachines() : null;
             Dimensions.unitTestVariants(testComponent.getModule(), testComponent.getTargetMachines(), mainTargetMachines,
-                    objectFactory, attributesFactory,
+                    attributesFactory,
                     providers.provider(() -> project.getGroup().toString()), providers.provider(() -> project.getVersion().toString()),
                     variantIdentity -> {
                         if (tryToBuildOnHost(variantIdentity)) {
@@ -190,8 +187,8 @@ public abstract class XCTestConventionPlugin implements Plugin<Project> {
 
             // TODO - make this lazy
             final DefaultNativePlatform currentPlatform = new DefaultNativePlatform("current");
-            final ModelRegistry modelRegistry = ((ProjectInternal) project).getModelRegistry();
-            final NativeToolChain toolChain = modelRegistry.realize("toolChains", NativeToolChainRegistryInternal.class).getForPlatform(currentPlatform);
+            NativeToolChainRegistryInternal toolChainRegistry = Cast.uncheckedCast(project.getExtensions().getByType(NativeToolChainRegistry.class));
+            final NativeToolChain toolChain = toolChainRegistry.getForPlatform(NativeLanguage.SWIFT, currentPlatform);
 
             // Platform specific arguments
             // TODO: Need to lazily configure compile task
@@ -211,9 +208,13 @@ public abstract class XCTestConventionPlugin implements Plugin<Project> {
                     File frameworkDir = new File(platformSdkPath, "Developer/Library/Frameworks");
                     // Since Xcode 11/12, the XCTest framework is being replaced by a different library that's available in the sdk root
                     File extraInclude = new File(platformSdkPath, "Developer/usr/lib");
-                    return Lists.newArrayList("-F" + frameworkDir.getAbsolutePath(), "-L", extraInclude.getAbsolutePath(), "-framework", "XCTest",
-                            "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
-                            "-Xlinker", "-rpath", "-Xlinker", "@loader_path/../Frameworks");
+                    return Arrays.asList(
+                        "-F" + frameworkDir.getAbsolutePath(),
+                        "-L", extraInclude.getAbsolutePath(),
+                        "-framework", "XCTest",
+                        "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
+                        "-Xlinker", "-rpath", "-Xlinker", "@loader_path/../Frameworks"
+                    );
                 }));
 
                 task.source(binary.getObjects());

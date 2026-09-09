@@ -24,6 +24,7 @@ import groovy.lang.MetaMethod;
 import groovy.lang.MetaProperty;
 import groovy.lang.MissingMethodException;
 import groovy.lang.MissingPropertyException;
+import org.apache.commons.lang3.StringUtils;
 import org.codehaus.groovy.runtime.InvokerInvocationException;
 import org.codehaus.groovy.runtime.MetaClassHelper;
 import org.codehaus.groovy.runtime.metaclass.MultipleSetterProperty;
@@ -36,10 +37,11 @@ import org.gradle.api.internal.provider.support.LazyGroovySupport;
 import org.gradle.api.provider.HasConfigurableValue;
 import org.gradle.internal.Cast;
 import org.gradle.internal.UncheckedException;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.reflect.JavaPropertyReflectionUtil;
 import org.gradle.internal.state.ModelObject;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -79,7 +81,8 @@ public class BeanDynamicObject extends AbstractDynamicObject {
 
     static {
         try {
-            META_PROP_METHOD = MetaClassImpl.class.getDeclaredMethod("getMetaProperty", String.class, boolean.class);
+            // The 2-arg (name, useStatic) variant existed in Groovy 4.0.29 but was removed in 4.0.30; use the underlying 4-arg helper which is available in both.
+            META_PROP_METHOD = MetaClassImpl.class.getDeclaredMethod("getMetaProperty", Class.class, String.class, boolean.class, boolean.class);
             META_PROP_METHOD.setAccessible(true);
             MISSING_PROPERTY_GET_METHOD = MetaClassImpl.class.getDeclaredField("propertyMissingGet");
             MISSING_PROPERTY_GET_METHOD.setAccessible(true);
@@ -100,6 +103,7 @@ public class BeanDynamicObject extends AbstractDynamicObject {
         this(bean, publicType, true, true, StringToEnumTransformer.INSTANCE, StringToEnumTransformer.INSTANCE);
     }
 
+    @SuppressWarnings("this-escape")
     BeanDynamicObject(Object bean, @Nullable Class<?> publicType, boolean includeProperties, boolean implementsMissing, PropertySetTransformer propertySetTransformer, MethodArgumentsTransformer methodArgumentsTransformer) {
         if (bean == null) {
             throw new IllegalArgumentException("Value is null");
@@ -128,6 +132,7 @@ public class BeanDynamicObject extends AbstractDynamicObject {
         }
     }
 
+    @SuppressWarnings("ExposedPrivateType")
     public MetaClassAdapter determineDelegate(Object bean) {
         if (bean instanceof Class) {
             return new ClassAdapter((Class<?>) bean);
@@ -204,7 +209,12 @@ public class BeanDynamicObject extends AbstractDynamicObject {
     }
 
     @Override
-    public Map<String, ?> getProperties() {
+    public DynamicInvokeResult trySetPropertyWithoutInstrumentation(String name, @Nullable Object value) {
+        return delegate.setPropertyWithoutInstrumentation(name, value);
+    }
+
+    @Override
+    public Map<String, ? extends @Nullable Object> getProperties() {
         return delegate.getProperties();
     }
 
@@ -267,6 +277,16 @@ public class BeanDynamicObject extends AbstractDynamicObject {
                 PropertyMixIn propertyMixIn = (PropertyMixIn) bean;
                 return propertyMixIn.getAdditionalProperties().tryGetProperty(name);
                 // Do not check for opaque properties when implementing PropertyMixIn, as this is expensive
+            }
+
+            MetaMethod metaMethod = lookupMethod(metaClass, "is" + StringUtils.capitalize(name), MetaClassHelper.EMPTY_CLASS_ARRAY);
+            if (metaMethod != null && metaMethod.getReturnType().equals(Boolean.class)) {
+                DeprecationLogger.deprecateAction("Referencing property '" + name + "' that was declared with an 'is-' method with a Boolean type on " + getDisplayName())
+                    .withAdvice("Access the property using " + metaMethod.getName() + "() explicitly, rename " + metaMethod.getName() + ", or change the return type to boolean.")
+                    .startingWithGradle10("this property will no longer be treated like a property")
+                    .withUpgradeGuideSection(8, "groovy_boolean_properties")
+                    .nagUser();
+                return DynamicInvokeResult.found(metaMethod.invoke(bean, MetaClassHelper.EMPTY_CLASS_ARRAY));
             }
 
             if (!implementsMissing) {
@@ -375,7 +395,7 @@ public class BeanDynamicObject extends AbstractDynamicObject {
 
             if (metaClass instanceof MetaClassImpl && !isInstrumented) {
                 try {
-                    return (MetaProperty) META_PROP_METHOD.invoke(metaClass, name, false);
+                    return (MetaProperty) META_PROP_METHOD.invoke(metaClass, metaClass.getTheClass(), name, false, false);
                 } catch (Throwable e) {
                     throw UncheckedException.throwAsUncheckedException(e);
                 }
@@ -394,6 +414,23 @@ public class BeanDynamicObject extends AbstractDynamicObject {
 
             MetaClass metaClass = getMetaClass();
             MetaProperty property = lookupProperty(metaClass, name);
+            return setProperty(metaClass, name, property, value);
+        }
+
+        public DynamicInvokeResult setPropertyWithoutInstrumentation(final String name, @Nullable Object value) {
+            if (!includeProperties) {
+                return DynamicInvokeResult.notFound();
+            }
+
+            MetaClass metaClass = getMetaClass();
+            MetaProperty property = lookupProperty(metaClass, name);
+            if (property instanceof InterceptedMetaProperty) {
+                property = ((InterceptedMetaProperty) property).getOriginal();
+            }
+            return setProperty(metaClass, name, property, value);
+        }
+
+        private DynamicInvokeResult setProperty(final MetaClass metaClass, final String name, @Nullable MetaProperty property, @Nullable Object value) {
             if (property != null) {
                 if (property instanceof MultipleSetterProperty) {
                     // Invoke the setter method, to pick up type coercion
@@ -406,9 +443,11 @@ public class BeanDynamicObject extends AbstractDynamicObject {
                     if (property instanceof MetaBeanProperty) {
                         MetaBeanProperty metaBeanProperty = (MetaBeanProperty) property;
                         if (metaBeanProperty.getSetter() == null) {
-                            if (metaBeanProperty.getField() == null) {
+                            if (metaBeanProperty.getField() == null || metaBeanProperty.getField().isFinal()) {
+                                // Set Property/ConfigurableFileCollection types via setFromAnyValue
                                 trySetGetterOnlyProperty(name, value, metaBeanProperty);
                             } else {
+                                // Set the field directly
                                 value = propertySetTransformer.transformValue(metaBeanProperty.getField().getType(), value);
                                 metaBeanProperty.getField().setProperty(bean, value);
                             }
@@ -474,7 +513,7 @@ public class BeanDynamicObject extends AbstractDynamicObject {
 
         @SuppressWarnings("MixedMutabilityReturnType")
         // This might be too invasive to fix properly because it is in the dynamic code.
-        public Map<String, ?> getProperties() {
+        public Map<String, ? extends @Nullable Object> getProperties() {
             if (!includeProperties) {
                 return Collections.emptyMap();
             }

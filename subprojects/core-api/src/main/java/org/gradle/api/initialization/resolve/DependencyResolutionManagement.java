@@ -20,8 +20,7 @@ import org.gradle.api.Incubating;
 import org.gradle.api.artifacts.dsl.ComponentMetadataHandler;
 import org.gradle.api.artifacts.dsl.RepositoryHandler;
 import org.gradle.api.provider.Property;
-import org.gradle.declarative.dsl.model.annotations.Configuring;
-import org.gradle.declarative.dsl.model.annotations.Restricted;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
 import org.gradle.internal.HasInternalProtocol;
 
 /**
@@ -35,32 +34,48 @@ public interface DependencyResolutionManagement {
     /**
      * Configures the repositories used by all projects
      * @param repositoryConfiguration the repositories configuration
+     * @since 6.8
      */
     @Incubating
-    @Configuring
+    @HiddenInDefinition
     void repositories(Action<? super RepositoryHandler> repositoryConfiguration);
 
     /**
      * Returns the shared repository handler
+     * @since 6.8
      */
     @Incubating
     RepositoryHandler getRepositories();
 
+    /**
+     * Returns the repositories mode.
+     *
+     * @since 6.8
+     */
     @Incubating
-    @Restricted
     Property<RepositoriesMode> getRepositoriesMode();
 
     /**
      * Registers component metadata rules used by all projects
      * @param registration the registration action
+     * @since 6.8
      */
+    @HiddenInDefinition
     void components(Action<? super ComponentMetadataHandler> registration);
 
+    /**
+     * Returns the rules mode.
+     *
+     * @since 6.8
+     */
+    @HiddenInDefinition
     Property<RulesMode> getRulesMode();
 
     /**
      * Returns the shared component metadata handler
+     * @since 6.8
      */
+    @HiddenInDefinition
     ComponentMetadataHandler getComponents();
 
     /**
@@ -69,6 +84,7 @@ public interface DependencyResolutionManagement {
      *
      * @since 7.0
      */
+    @HiddenInDefinition
     void versionCatalogs(Action<? super MutableVersionCatalogContainer> spec);
 
     /**
@@ -76,6 +92,7 @@ public interface DependencyResolutionManagement {
      *
      * @since 7.0
      */
+    @HiddenInDefinition
     MutableVersionCatalogContainer getVersionCatalogs();
 
     /**
@@ -84,6 +101,7 @@ public interface DependencyResolutionManagement {
      *
      * @since 7.0
      */
+    @HiddenInDefinition
     Property<String> getDefaultProjectsExtensionName();
 
     /**
@@ -92,5 +110,6 @@ public interface DependencyResolutionManagement {
      *
      * @since 7.0
      */
+    @HiddenInDefinition
     Property<String> getDefaultLibrariesExtensionName();
 }

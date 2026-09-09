@@ -17,22 +17,43 @@
 package org.gradle.tooling.internal.consumer;
 
 import org.gradle.tooling.Failure;
+import org.gradle.tooling.events.problems.Problem;
+import org.gradle.tooling.internal.protocol.FailureDescriptionReconstructor;
+import org.jspecify.annotations.Nullable;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public final class DefaultFailure implements Failure {
+public class DefaultFailure implements Failure {
 
     private final String message;
-    private final String description;
+    private final @Nullable String fullDescription;
+    private final @Nullable String ownDescription;
     private final List<? extends Failure> causes;
+    private final List<Problem> problems;
+    private @Nullable String reconstructedDescription;
 
     public DefaultFailure(String message, String description, List<? extends Failure> causes) {
+        this(message, description, causes, Collections.<Problem>emptyList());
+    }
+
+    public DefaultFailure(String message, String description, List<? extends Failure> causes, List<Problem> problems) {
+        this(message, description, null, causes, problems);
+    }
+
+    private DefaultFailure(String message, @Nullable String fullDescription, @Nullable String ownDescription, List<? extends Failure> causes, List<Problem> problems) {
         this.message = message;
-        this.description = description;
+        this.fullDescription = fullDescription;
+        this.ownDescription = ownDescription;
         this.causes = causes;
+        this.problems = problems;
+    }
+
+    public static DefaultFailure fromOwnDescription(String message, String ownDescription, List<? extends Failure> causes, List<Problem> problems) {
+        return new DefaultFailure(message, null, ownDescription, causes, problems);
     }
 
     @Override
@@ -42,7 +63,28 @@ public final class DefaultFailure implements Failure {
 
     @Override
     public String getDescription() {
-        return description;
+        if (fullDescription != null) {
+            return fullDescription;
+        }
+        String reconstructed = reconstructedDescription;
+        if (reconstructed == null) {
+            reconstructed = FailureDescriptionReconstructor.reconstruct(this, DefaultFailure::getOwnDescription, DefaultFailure::ownCauses);
+            reconstructedDescription = reconstructed;
+        }
+        return reconstructed;
+    }
+
+    @Override
+    public @Nullable String getOwnDescription() {
+        return ownDescription;
+    }
+
+    private List<DefaultFailure> ownCauses() {
+        List<DefaultFailure> result = new ArrayList<>(causes.size());
+        for (Failure cause : causes) {
+            result.add((DefaultFailure) cause);
+        }
+        return result;
     }
 
     @Override
@@ -50,12 +92,29 @@ public final class DefaultFailure implements Failure {
         return causes;
     }
 
+    @Override
+    public List<Problem> getProblems() {
+        return problems;
+    }
+
     public static DefaultFailure fromThrowable(Throwable t) {
         StringWriter out = new StringWriter();
         PrintWriter wrt = new PrintWriter(out);
         t.printStackTrace(wrt);
         Throwable cause = t.getCause();
-        DefaultFailure causeFailure = cause != null && cause != t ? fromThrowable(cause) : null;
-        return new DefaultFailure(t.getMessage(), out.toString(), Collections.singletonList(causeFailure));
+        List<DefaultFailure> causes = cause != null && cause != t
+            ? Collections.singletonList(fromThrowable(cause))
+            : Collections.emptyList();
+        return new DefaultFailure(t.getMessage(), out.toString(), causes);
+    }
+
+    @Override
+    public String toString() {
+        return "DefaultFailure{" +
+            "message='" + message + '\'' +
+            ", ownDescription='" + ownDescription + '\'' +
+            ", causes=" + causes +
+            ", problems=" + problems +
+            '}';
     }
 }

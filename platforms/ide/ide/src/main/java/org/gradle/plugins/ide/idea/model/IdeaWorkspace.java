@@ -19,6 +19,9 @@ import groovy.lang.Closure;
 import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
 import org.gradle.plugins.ide.api.XmlFileContentMerger;
+import org.gradle.plugins.ide.internal.IdeDeprecations;
+
+import javax.inject.Inject;
 
 import static org.gradle.util.internal.ConfigureUtil.configure;
 
@@ -27,7 +30,7 @@ import static org.gradle.util.internal.ConfigureUtil.configure;
  * <p>
  * At the moment, the only practical way of manipulating the resulting content is via the withXml hook:
  *
- * <pre class='autoTested'>
+ * <pre class='autoTestedWithDeprecations'>
  * plugins {
  *     id 'java'
  *     id 'idea'
@@ -37,20 +40,35 @@ import static org.gradle.util.internal.ConfigureUtil.configure;
  *     provider.asNode().appendNode('gradleRocks', 'true')
  * }
  * </pre>
+ *
+ * @deprecated Will be removed in Gradle 10.
+ * @since 1.0
  */
+@Deprecated
 public abstract class IdeaWorkspace {
 
     private XmlFileContentMerger iws;
+
+    @Inject
+    public IdeaWorkspace() {
+        IdeDeprecations.nagDeprecatedType(IdeaWorkspace.class);
+    }
 
     /**
      * Enables advanced manipulation of the output XML.
      * <p>
      * For example see docs for {@link IdeaWorkspace}
+     * @since 1.0
      */
     public XmlFileContentMerger getIws() {
         return iws;
     }
 
+    /**
+     * Sets the iws.
+     *
+     * @since 1.0
+     */
     public void setIws(XmlFileContentMerger iws) {
         this.iws = iws;
     }
@@ -59,6 +77,7 @@ public abstract class IdeaWorkspace {
      * Enables advanced manipulation of the output XML.
      * <p>
      * For example see docs for {@link IdeaWorkspace}
+     * @since 1.0
      */
     public void iws(@DelegatesTo(XmlFileContentMerger.class) Closure closure) {
         configure(closure, iws);
@@ -75,6 +94,11 @@ public abstract class IdeaWorkspace {
         action.execute(iws);
     }
 
+    /**
+     * Merge xml workspace.
+     *
+     * @since 1.0
+     */
     @SuppressWarnings("unchecked")
     public void mergeXmlWorkspace(Workspace xmlWorkspace) {
         iws.getBeforeMerged().execute(xmlWorkspace);

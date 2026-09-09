@@ -18,10 +18,13 @@ package org.gradle.kotlin.dsl.accessors
 
 import org.gradle.api.Incubating
 import org.gradle.api.NamedDomainObjectContainer
+import org.gradle.api.Project
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.initialization.Settings
+import org.gradle.internal.classpath.ClasspathBuilder
 import org.gradle.kotlin.dsl.concurrent.IO
 import org.gradle.kotlin.dsl.concurrent.writeFile
+import org.gradle.kotlin.dsl.internal.sharedruntime.codegen.KOTLIN_DSL_PACKAGE_NAME
 import org.gradle.kotlin.dsl.support.bytecode.InternalName
 import org.gradle.kotlin.dsl.support.bytecode.beginFileFacadeClassHeader
 import org.gradle.kotlin.dsl.support.bytecode.beginPublicClass
@@ -29,6 +32,7 @@ import org.gradle.kotlin.dsl.support.bytecode.closeHeader
 import org.gradle.kotlin.dsl.support.bytecode.endKotlinClass
 import org.gradle.kotlin.dsl.support.bytecode.moduleFileFor
 import org.gradle.kotlin.dsl.support.bytecode.moduleMetadataBytesFor
+import org.jetbrains.kotlin.lexer.KotlinLexer
 import java.io.File
 
 
@@ -47,6 +51,7 @@ fun IO.emitAccessorsFor(
     // giving the generated accessors lower priority in Kotlin overload resolution.
     val useLowPriorityOverloadResolution = projectSchema.scriptTarget is Settings
     val moduleName = binDir?.name ?: "kotlin-dsl-accessors"
+    val classNamesFromTypeStrings = ClassNamesFromTypeStrings()
     val emittedClassNames =
         accessorsFor(projectSchema).map { accessor ->
             emitClassFor(
@@ -56,7 +61,8 @@ fun IO.emitAccessorsFor(
                 outputPackage,
                 format,
                 moduleName,
-                useLowPriorityOverloadResolution
+                useLowPriorityOverloadResolution,
+                importsRequiredBy(accessor, classNamesFromTypeStrings)
             )
         }.toList()
 
@@ -82,6 +88,91 @@ fun IO.makeAccessorOutputDirs(srcDir: File, binDir: File?, packagePath: String) 
 
 
 internal
+fun emitAccessorsToJars(
+    projectSchema: ProjectSchema<TypeAccessibility>,
+    classesBuilder: ClasspathBuilder.EntryBuilder,
+    sourcesBuilder: ClasspathBuilder.EntryBuilder,
+    outputPackage: OutputPackage,
+    format: AccessorFormat
+): List<InternalName> {
+
+    val useLowPriorityOverloadResolution = projectSchema.scriptTarget is Settings
+    val moduleName = "classes"
+    val classNamesFromTypeStrings = ClassNamesFromTypeStrings()
+    val emittedClassNames =
+        accessorsFor(projectSchema).map { accessor ->
+            emitClassToJars(
+                accessor,
+                classesBuilder,
+                sourcesBuilder,
+                outputPackage,
+                format,
+                moduleName,
+                useLowPriorityOverloadResolution,
+                importsRequiredBy(accessor, classNamesFromTypeStrings)
+            )
+        }.toList()
+
+    classesBuilder.put(
+        "META-INF/$moduleName.kotlin_module",
+        moduleMetadataBytesFor(emittedClassNames)
+    )
+
+    return emittedClassNames
+}
+
+
+private
+fun emitClassToJars(
+    accessor: Accessor,
+    classesBuilder: ClasspathBuilder.EntryBuilder,
+    sourcesBuilder: ClasspathBuilder.EntryBuilder,
+    outputPackage: OutputPackage,
+    format: AccessorFormat,
+    moduleName: String,
+    useLowPriorityOverloadResolution: Boolean,
+    requiredImports: List<String>
+): InternalName {
+
+    val (simpleClassName, fragments) = fragmentsFor(accessor)
+    val className = InternalName("${outputPackage.path}/$simpleClassName")
+    val sourceCode = mutableListOf<String>()
+
+    fun collectSourceFragment(source: String) {
+        sourceCode.add(format(source))
+    }
+
+    val classBytes = generateAccessorBytecode(
+        className,
+        fragments,
+        ::collectSourceFragment,
+        moduleName,
+        useLowPriorityOverloadResolution
+    )
+    classesBuilder.put("$className.class", classBytes)
+
+    sourcesBuilder.put(
+        "${className.value.removeSuffix("Kt")}.kt",
+        accessorSourceContent(sourceCode, requiredImports, outputPackage.name)
+    )
+
+    return className
+}
+
+
+internal
+fun accessorSourceContent(
+    accessors: Iterable<String>,
+    imports: List<String> = emptyList(),
+    packageName: String = KOTLIN_DSL_PACKAGE_NAME
+): ByteArray {
+    val sb = StringBuilder()
+    sb.appendImportsAndAccessors(packageName, imports, accessors)
+    return sb.toString().toByteArray(Charsets.UTF_8)
+}
+
+
+internal
 data class OutputPackage(val name: String) {
 
     val path by lazy {
@@ -98,7 +189,8 @@ fun IO.emitClassFor(
     outputPackage: OutputPackage,
     format: AccessorFormat,
     moduleName: String,
-    useLowPriorityOverloadResolution: Boolean
+    useLowPriorityOverloadResolution: Boolean,
+    requiredImports: List<String>
 ): InternalName {
 
     val (simpleClassName, fragments) = fragmentsFor(accessor)
@@ -127,7 +219,7 @@ fun IO.emitClassFor(
     writeAccessorsTo(
         sourceFileFor(className, srcDir),
         sourceCode,
-        importsRequiredBy(accessor),
+        requiredImports,
         outputPackage.name
     )
 
@@ -140,15 +232,14 @@ fun sourceFileFor(className: InternalName, srcDir: File) =
     srcDir.resolve("${className.value.removeSuffix("Kt")}.kt")
 
 
-private
-fun IO.writeAccessorsBytecodeTo(
-    binDir: File,
+internal
+fun generateAccessorBytecode(
     className: InternalName,
     fragments: Sequence<AccessorFragment>,
     collectSourceFragment: (String) -> Unit,
     moduleName: String,
     useLowPriorityOverloadResolution: Boolean
-) {
+): ByteArray {
 
     val metadataWriter = beginFileFacadeClassHeader()
     val classWriter = beginPublicClass(className)
@@ -160,29 +251,44 @@ fun IO.writeAccessorsBytecodeTo(
     }
 
     val metadata = metadataWriter.closeHeader(moduleName)
-    val classBytes = classWriter.endKotlinClass(metadata)
+    return classWriter.endKotlinClass(metadata)
+}
+
+
+private
+fun IO.writeAccessorsBytecodeTo(
+    binDir: File,
+    className: InternalName,
+    fragments: Sequence<AccessorFragment>,
+    collectSourceFragment: (String) -> Unit,
+    moduleName: String,
+    useLowPriorityOverloadResolution: Boolean
+) {
+    val classBytes = generateAccessorBytecode(className, fragments, collectSourceFragment, moduleName, useLowPriorityOverloadResolution)
     val classFile = binDir.resolve("$className.class")
     writeFile(classFile, classBytes)
 }
 
 
 private
-fun importsRequiredBy(accessor: Accessor): List<String> = accessor.run {
+fun importsRequiredBy(accessor: Accessor, classNamesFromTypeStrings: ClassNamesFromTypeStrings): List<String> = accessor.run {
     when (this) {
-        is Accessor.ForExtension -> importsRequiredBy(spec.receiver, spec.type)
-        is Accessor.ForConvention -> importsRequiredBy(spec.receiver, spec.type)
-        is Accessor.ForTask -> importsRequiredBy(spec.type)
-        is Accessor.ForContainerElement -> importsRequiredBy(spec.receiver, spec.type)
-        is Accessor.ForModelDefault -> importsRequiredBy(spec.receiver, spec.type)
-        is Accessor.ForContainerElementFactory -> importsRequiredBy(spec.receiverType, spec.elementType) + listOf(Incubating::class.java.name)
+        is Accessor.ForExtension -> importsRequiredBy(classNamesFromTypeStrings, spec.receiver, spec.type)
+        is Accessor.ForTask -> importsRequiredBy(classNamesFromTypeStrings, spec.type)
+        is Accessor.ForContainerElement -> importsRequiredBy(classNamesFromTypeStrings, spec.receiver, spec.type)
+        is Accessor.ForModelDefault -> importsRequiredBy(classNamesFromTypeStrings, spec.receiver, spec.type)
+        is Accessor.ForProjectType -> importsRequiredBy(classNamesFromTypeStrings, spec.modelType) +
+            importsRequiredBy(classNamesFromTypeStrings, spec.targetType) + listOf(Incubating::class.java.name, Project::class.java.name)
+
+        is Accessor.ForContainerElementFactory -> importsRequiredBy(classNamesFromTypeStrings, spec.receiverType, spec.elementType) + listOf(Incubating::class.java.name)
         else -> emptyList()
     }
 }
 
 
 private
-fun importsRequiredBy(vararg candidateTypes: TypeAccessibility): List<String> =
-    importsRequiredBy(candidateTypes.asList())
+fun importsRequiredBy(classNamesFromTypeStrings: ClassNamesFromTypeStrings, vararg candidateTypes: TypeAccessibility): List<String> =
+    importsRequiredBy(candidateTypes.asList(), classNamesFromTypeStrings)
 
 
 internal
@@ -192,15 +298,17 @@ sealed class Accessor {
 
     data class ForExtension(val spec: TypedAccessorSpec) : Accessor()
 
-    data class ForConvention(val spec: TypedAccessorSpec) : Accessor()
-
     data class ForContainerElement(val spec: TypedAccessorSpec) : Accessor()
 
     data class ForTask(val spec: TypedAccessorSpec) : Accessor()
 
     data class ForModelDefault(val spec: TypedAccessorSpec) : Accessor()
 
+    data class ForProjectType(val spec: TypedProjectFeatureEntry) : Accessor()
+
     data class ForContainerElementFactory(val spec: TypedContainerElementFactoryEntry) : Accessor()
+
+    data class ForDeclarativeNestedModel(val spec: TypedAccessorSpec) : Accessor()
 }
 
 
@@ -209,22 +317,23 @@ fun accessorsFor(schema: ProjectSchema<TypeAccessibility>): Sequence<Accessor> =
     schema.run {
         AccessorScope().run {
             yieldAll(uniqueAccessorsFor(extensions).map(Accessor::ForExtension))
-            yieldAll(uniqueAccessorsFor(conventions).map(Accessor::ForConvention))
             yieldAll(uniqueAccessorsFor(tasks).map(Accessor::ForTask))
             yieldAll(uniqueAccessorsFor(containerElements).map(Accessor::ForContainerElement))
 
             val configurationNames = configurations.asSequence().mapNotNull { entry ->
-                AccessorNameSpec.createOrNull(entry.target)?.let { accessorNameSpec -> entry.map { accessorNameSpec } }
+                AccessorNameSpec.createOrNull(lexer, entry.target)?.let { accessorNameSpec -> entry.map { accessorNameSpec } }
             }
             yieldAll(
                 uniqueAccessorsFrom(
-                    configurationNames.map { it.target }.map(::configurationAccessorSpec)
+                    configurationNames.map { configurationAccessorSpec(it.target) }
                 ).map(Accessor::ForContainerElement)
             )
             yieldAll(configurationNames.map(Accessor::ForConfiguration))
 
             yieldAll(uniqueAccessorsFor(modelDefaults).map(Accessor::ForModelDefault))
-            yieldAll(uniqueContainerElementFactories(containerElementFactories.mapNotNull(::typedContainerElementFactory)).map(Accessor::ForContainerElementFactory))
+            yieldAll(uniqueProjectFeatureEntries(projectFeatureEntries.mapNotNull { typedProjectType(it, lexer) }).map(Accessor::ForProjectType))
+            yieldAll(uniqueContainerElementFactories(containerElementFactories.mapNotNull { typedContainerElementFactory(it, lexer) }).map(Accessor::ForContainerElementFactory))
+            yieldAll(nestedModelEntries.mapNotNull { typedNestedModel(it, lexer) }.map(Accessor::ForDeclarativeNestedModel))
         }
     }
 }
@@ -238,13 +347,31 @@ fun configurationAccessorSpec(nameSpec: AccessorNameSpec) =
         accessibleType<Configuration>()
     )
 
-private fun typedContainerElementFactory(containerElementFactoryEntry: ContainerElementFactoryEntry<TypeAccessibility>) : TypedContainerElementFactoryEntry? {
-    val name = AccessorNameSpec.createOrNull(containerElementFactoryEntry.factoryName)
+private fun typedProjectType(projectFeatureEntry: ProjectFeatureEntry<TypeAccessibility>, lexer: KotlinLexer): TypedProjectFeatureEntry? {
+    val name = AccessorNameSpec.createOrNull(lexer, projectFeatureEntry.featureName)
+    return name?.let {
+        TypedProjectFeatureEntry(name, projectFeatureEntry.ownDefinitionType, projectFeatureEntry.targetDefinitionType)
+    }
+}
+
+private fun typedContainerElementFactory(containerElementFactoryEntry: ContainerElementFactoryEntry<TypeAccessibility>, lexer: KotlinLexer): TypedContainerElementFactoryEntry? {
+    val name = AccessorNameSpec.createOrNull(lexer, containerElementFactoryEntry.factoryName)
     return name?.let {
         TypedContainerElementFactoryEntry(name, containerElementFactoryEntry.containerReceiverType, containerElementFactoryEntry.publicType)
     }
 }
 
+private fun typedNestedModel(nestedModelEntry: NestedModelEntry<TypeAccessibility>, lexer: KotlinLexer): TypedAccessorSpec? {
+    val name = AccessorNameSpec.createOrNull(lexer, nestedModelEntry.nestedModelPropertyName)
+    return name?.let {
+        TypedAccessorSpec(
+            nestedModelEntry.ownerType as? TypeAccessibility.Accessible ?: return null,
+            name,
+            nestedModelEntry.nestedModelType
+        )
+    }
+}
+
 private
 inline fun <reified T> accessibleType() =
-    TypeAccessibility.Accessible(SchemaType.of<T>())
+    TypeAccessibility.Accessible(SchemaType.of<T>(), emptyList())

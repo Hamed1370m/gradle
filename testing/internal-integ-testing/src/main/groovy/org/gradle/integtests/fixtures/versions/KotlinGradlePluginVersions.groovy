@@ -19,8 +19,8 @@ package org.gradle.integtests.fixtures.versions
 import org.gradle.api.JavaVersion
 import org.gradle.internal.Factory
 import org.gradle.util.internal.VersionNumber
-
-import static org.junit.Assume.assumeTrue
+import org.junit.Assume
+import org.junit.jupiter.api.Assumptions
 
 /**
  * Kotlin Gradle Plugin Versions.
@@ -29,15 +29,14 @@ import static org.junit.Assume.assumeTrue
  */
 class KotlinGradlePluginVersions {
 
-    static final List<String> LANGUAGE_VERSIONS = [
-        "1.4",
-        "1.5",
-        "1.6",
-        "1.7",
-        "1.8",
-        "1.9",
+    private static final List<String> LANGUAGE_VERSIONS = [
         "2.0",
+        "2.1",
+        "2.2",
+        "2.3",
     ]
+
+    private static final LATEST_STABLE_OR_RC_MINIMUM_LANGUAGE_VERSION = VersionNumber.parse("2.0")
 
     private final Factory<Properties> propertiesFactory
     private Properties properties
@@ -100,12 +99,21 @@ class KotlinGradlePluginVersions {
         kgpVersion < VersionNumber.parse(latestStable)
     }
 
-    static final VersionNumber KOTLIN_1_6_21 = VersionNumber.parse('1.6.21')
-    static final VersionNumber KOTLIN_1_8_0 = VersionNumber.parse('1.8.0')
-    static final VersionNumber KOTLIN_1_9_0 = VersionNumber.parse('1.9.0')
-    static final VersionNumber KOTLIN_1_9_20 = VersionNumber.parse('1.9.20')
+    List<String> languageVersionsSupportedByLatestStableOrRc() {
+        return LANGUAGE_VERSIONS.findAll { VersionNumber.parse(it) >= LATEST_STABLE_OR_RC_MINIMUM_LANGUAGE_VERSION }
+    }
+
     static final VersionNumber KOTLIN_2_0_0 = VersionNumber.parse('2.0.0')
     static final VersionNumber KOTLIN_2_0_20 = VersionNumber.parse('2.0.20')
+    static final VersionNumber KOTLIN_2_1_0 = VersionNumber.parse('2.1.0')
+    static final VersionNumber KOTLIN_2_1_20 = VersionNumber.parse('2.1.20')
+    static final VersionNumber KOTLIN_2_1_21 = VersionNumber.parse('2.1.21')
+    static final VersionNumber KOTLIN_2_2_0 = VersionNumber.parse('2.2.0')
+    static final VersionNumber KOTLIN_2_3_0 = VersionNumber.parse('2.3.0')
+    static final VersionNumber KOTLIN_2_3_20 = VersionNumber.parse('2.3.20')
+    static final VersionNumber KOTLIN_2_3_21 = VersionNumber.parse('2.3.21')
+    static final VersionNumber KOTLIN_2_4_0 = VersionNumber.parse('2.4.0')
+    static final VersionNumber KOTLIN_2_4_20 = VersionNumber.parse('2.4.20')
 
     static void assumeCurrentJavaVersionIsSupportedBy(String kotlinVersion) {
         assumeCurrentJavaVersionIsSupportedBy(VersionNumber.parse(kotlinVersion))
@@ -114,16 +122,25 @@ class KotlinGradlePluginVersions {
     static void assumeCurrentJavaVersionIsSupportedBy(VersionNumber kotlinVersionNumber) {
         JavaVersion current = JavaVersion.current()
         JavaVersion mini = getMinimumJavaVersionFor(kotlinVersionNumber)
-        assumeTrue("KGP $kotlinVersionNumber minimum supported Java version is $mini, current is $current", current >= mini)
+        Assumptions.assumeTrue(current >= mini, "KGP $kotlinVersionNumber minimum supported Java version is $mini, current is $current")
         JavaVersion maxi = getMaximumJavaVersionFor(kotlinVersionNumber)
         if (maxi != null) {
-            assumeTrue("KGP $kotlinVersionNumber maximum supported Java version is $maxi, current is $current", current <= maxi)
+            Assumptions.assumeTrue(current <= maxi, "KGP $kotlinVersionNumber maximum supported Java version is $maxi, current is $current")
         }
     }
 
-    static boolean hasConfigurationCacheWarnings(VersionNumber kotlinVersion) {
-        // CacheableTasksKt.isBuildCacheEnabledForKotlin(CacheableTasks.kt:22) is the culprit: https://github.com/JetBrains/kotlin/blob/v1.6.21/libraries/tools/kotlin-gradle-plugin/src/main/kotlin/org/jetbrains/kotlin/gradle/tasks/CacheableTasks.kt#L22
-        return (KOTLIN_1_6_21 <= kotlinVersion && kotlinVersion < KOTLIN_1_8_0)
+    /**
+     * Legacy counterpart of {@link #assumeCurrentJavaVersionIsSupportedBy(VersionNumber)} which must
+     * be used for tests which still run on JUnit 4.
+     */
+    static void assumeCurrentJavaVersionIsSupportedByJunit4(VersionNumber kotlinVersionNumber) {
+        JavaVersion current = JavaVersion.current()
+        JavaVersion mini = getMinimumJavaVersionFor(kotlinVersionNumber)
+        Assume.assumeTrue("KGP $kotlinVersionNumber minimum supported Java version is $mini, current is $current", current >= mini)
+        JavaVersion maxi = getMaximumJavaVersionFor(kotlinVersionNumber)
+        if (maxi != null) {
+            Assume.assumeTrue("KGP $kotlinVersionNumber maximum supported Java version is $maxi, current is $current", current <= maxi)
+        }
     }
 
     static JavaVersion getMinimumJavaVersionFor(VersionNumber kotlinVersion) {
@@ -131,18 +148,20 @@ class KotlinGradlePluginVersions {
     }
 
     private static JavaVersion getMaximumJavaVersionFor(VersionNumber kotlinVersion) {
-        if (kotlinVersion.baseVersion < KOTLIN_1_8_0) {
-            return JavaVersion.VERSION_18
-        }
-        if (kotlinVersion.baseVersion < KOTLIN_1_9_0) {
-            return JavaVersion.VERSION_19
-        }
-        if (kotlinVersion.baseVersion < KOTLIN_1_9_20) {
-            return JavaVersion.VERSION_20
-        }
-        // No baseVersion since the betas don't support Java 22
-        if (kotlinVersion < KOTLIN_2_0_0) {
+        if (kotlinVersion.baseVersion < KOTLIN_2_0_0) {
             return JavaVersion.VERSION_21
+        }
+        if (kotlinVersion.baseVersion < KOTLIN_2_1_20) {
+            return JavaVersion.VERSION_22
+        }
+        if (kotlinVersion.baseVersion < KOTLIN_2_2_0) {
+            return JavaVersion.VERSION_23
+        }
+        if (kotlinVersion.baseVersion < KOTLIN_2_3_0) {
+            return JavaVersion.VERSION_24
+        }
+        if (kotlinVersion.baseVersion < KOTLIN_2_4_0) {
+            return JavaVersion.VERSION_25
         }
         return null
     }

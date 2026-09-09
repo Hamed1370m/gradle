@@ -20,7 +20,6 @@ import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
 
 class ArtifactFilterIntegrationTest extends AbstractHttpDependencyResolutionTest {
     def setup() {
-        createDirs("libInclude", "libExclude")
         settingsFile << """
             rootProject.name = 'root'
             include 'libInclude'
@@ -31,29 +30,29 @@ class ArtifactFilterIntegrationTest extends AbstractHttpDependencyResolutionTest
 
         buildFile << """
             repositories {
-                maven { url "${mavenRepo.uri}" }
-            }
-
-            project(':libInclude') {
-                configurations.create('default')
-                task jar {}
-                artifacts {
-                    'default' file('libInclude.jar'), { builtBy jar }
-                }
-            }
-
-            project(':libExclude') {
-                configurations.create('default')
-                task jar {}
-                artifacts {
-                    'default' file('libExclude.jar'), { builtBy jar }
-                }
+                maven { url = "${mavenRepo.uri}" }
             }
 
             configurations {
                 compile
             }
-"""
+        """
+
+        buildFile("libInclude/build.gradle", """
+            configurations.create('default')
+            def jar = tasks.register("jar")
+            artifacts {
+                'default' file('libInclude.jar'), { builtBy jar }
+            }
+        """)
+
+        buildFile("libExclude/build.gradle", """
+            configurations.create('default')
+            def jar = tasks.register("jar")
+            artifacts {
+                'default' file('libExclude.jar'), { builtBy jar }
+            }
+        """)
     }
 
     def "can filter artifacts based on component id"() {

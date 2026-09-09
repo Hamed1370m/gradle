@@ -17,17 +17,18 @@
 package org.gradle.testing.jacoco.tasks;
 
 import org.gradle.api.Action;
-import org.gradle.api.GradleException;
 import org.gradle.api.tasks.CacheableTask;
 import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.internal.jacoco.AntJacocoCheck;
-import org.gradle.internal.jacoco.JacocoCheckResult;
 import org.gradle.internal.jacoco.rules.JacocoViolationRulesContainerImpl;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.testing.jacoco.tasks.rules.JacocoViolationRulesContainer;
+import org.gradle.workers.WorkQueue;
+import org.gradle.workers.WorkerExecutor;
 
+import javax.inject.Inject;
 import java.io.File;
 import java.io.IOException;
 
@@ -43,6 +44,12 @@ public abstract class JacocoCoverageVerification extends JacocoReportBase {
 
     private final JacocoViolationRulesContainer violationRules;
 
+    /**
+     * Creates a new {@code JacocoCoverageVerification}.
+     *
+     * @since 3.4
+     */
+    @SuppressWarnings("this-escape")
     public JacocoCoverageVerification() {
         super();
         Instantiator instantiator = getInstantiator();
@@ -53,6 +60,7 @@ public abstract class JacocoCoverageVerification extends JacocoReportBase {
      * Returns the violation rules set for this task.
      *
      * @return Violation rules container
+     * @since 3.4
      */
     @Nested
     public JacocoViolationRulesContainer getViolationRules() {
@@ -61,6 +69,7 @@ public abstract class JacocoCoverageVerification extends JacocoReportBase {
 
     /**
      * For internal use only. This property exists, because only tasks with outputs can be up-to-date and cached.
+     * @since 7.1
      */
     @OutputFile
     protected File getDummyOutputFile() {
@@ -71,28 +80,36 @@ public abstract class JacocoCoverageVerification extends JacocoReportBase {
 
     /**
      * Configures the violation rules for this task.
+     * @since 3.4
      */
     public JacocoViolationRulesContainer violationRules(Action<? super JacocoViolationRulesContainer> configureAction) {
         configureAction.execute(violationRules);
         return violationRules;
     }
 
+    @Inject
+    protected abstract WorkerExecutor getWorkerExecutor();
+
+    /**
+     * Check.
+     *
+     * @since 3.4
+     */
     @TaskAction
     public void check() throws IOException {
-        JacocoCheckResult checkResult = new AntJacocoCheck(getAntBuilder()).execute(
-            getJacocoClasspath(),
-            projectName,
-            getAllClassDirs().filter(File::exists),
-            getAllSourceDirs().filter(File::exists),
-            getSourceEncoding().getOrNull(),
-            getExecutionData().filter(File::exists),
-            getViolationRules()
-        );
+        WorkQueue queue = getWorkerExecutor().classLoaderIsolation();
+        queue.submit(AntJacocoCheck.class, parameters -> {
+            parameters.getAntLibraryClasspath().convention(getJacocoClasspath());
+            parameters.getProjectName().convention(projectName);
+            parameters.getEncoding().convention(getSourceEncoding());
+            parameters.getAllSourcesDirs().convention(getAllSourceDirs());
+            parameters.getAllClassesDirs().convention(getAllClassDirs());
+            parameters.getExecutionData().convention(getExecutionData());
 
-        if (!checkResult.isSuccess()) {
-            throw new GradleException(checkResult.getFailureMessage());
-        } else {
-            getDummyOutputFile().createNewFile();
-        }
+            parameters.getFailOnViolation().convention(getViolationRules().isFailOnViolation());
+            parameters.getRules().convention(getViolationRules().getRules());
+
+            parameters.getDummyOutputFile().fileValue(getDummyOutputFile());
+        });
     }
 }

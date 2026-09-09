@@ -43,9 +43,9 @@ import org.gradle.cache.internal.InMemoryCacheDecoratorFactory;
 import org.gradle.cache.scopes.BuildTreeScopedCacheBuilderFactory;
 import org.gradle.cache.scopes.GlobalScopedCacheBuilderFactory;
 import org.gradle.initialization.RootBuildLifecycleListener;
+import org.gradle.initialization.layout.ProjectCacheDir;
 import org.gradle.internal.build.BuildAddedListener;
-import org.gradle.internal.buildoption.IntegerInternalOption;
-import org.gradle.internal.buildoption.InternalFlag;
+import org.gradle.internal.buildoption.InternalOption;
 import org.gradle.internal.buildoption.InternalOptions;
 import org.gradle.internal.classloader.ClasspathHasher;
 import org.gradle.internal.event.ListenerManager;
@@ -79,6 +79,7 @@ import org.gradle.internal.service.PrivateService;
 import org.gradle.internal.service.Provides;
 import org.gradle.internal.service.ServiceRegistration;
 import org.gradle.internal.service.ServiceRegistrationProvider;
+import org.gradle.internal.session.BuildSessionLifecycleListener;
 import org.gradle.internal.snapshot.CaseSensitivity;
 import org.gradle.internal.snapshot.SnapshotHierarchy;
 import org.gradle.internal.snapshot.ValueSnapshotter;
@@ -98,10 +99,8 @@ import org.gradle.internal.watch.vfs.impl.DefaultWatchableFileSystemDetector;
 import org.gradle.internal.watch.vfs.impl.FileWatchingFilter;
 import org.gradle.internal.watch.vfs.impl.WatchingNotSupportedVirtualFileSystem;
 import org.gradle.internal.watch.vfs.impl.WatchingVirtualFileSystem;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.jspecify.annotations.Nullable;
 
-import java.io.File;
 import java.util.Optional;
 import java.util.function.Predicate;
 
@@ -110,24 +109,21 @@ import static org.gradle.internal.snapshot.CaseSensitivity.CASE_SENSITIVE;
 
 public class VirtualFileSystemServices extends AbstractGradleModuleServices {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(VirtualFileSystemServices.class);
-
     /**
      * When file system watching is enabled, this system property can be used to invalidate the entire VFS.
      *
      * @see org.gradle.initialization.StartParameterBuildOptions.WatchFileSystemOption
      */
-    public static final InternalFlag VFS_DROP_PROPERTY = new InternalFlag("org.gradle.vfs.drop");
-    private static final int DEFAULT_MAX_HIERARCHIES_TO_WATCH = 50;
-    public static final IntegerInternalOption MAX_HIERARCHIES_TO_WATCH_PROPERTY = new IntegerInternalOption("org.gradle.vfs.watch.hierarchies.max", DEFAULT_MAX_HIERARCHIES_TO_WATCH);
-    private static final int FILE_HASHER_MEMORY_CACHE_SIZE = 400000;
+    public static final InternalOption<Boolean> VFS_DROP_PROPERTY = InternalOptions.ofBoolean("org.gradle.internal.vfs.drop", false);
+    public static final InternalOption<Integer> MAX_HIERARCHIES_TO_WATCH_PROPERTY = InternalOptions.ofInt("org.gradle.internal.vfs.watch.hierarchies.max", 50);
+    private static final int FILE_HASHER_MEMORY_CACHE_SIZE = 300000;
 
     public static boolean isDropVfs(InternalOptions options) {
-        return options.getOption(VFS_DROP_PROPERTY).get();
+        return options.getBoolean(VFS_DROP_PROPERTY);
     }
 
     public static int getMaximumNumberOfWatchedHierarchies(InternalOptions options) {
-        return options.getOption(MAX_HIERARCHIES_TO_WATCH_PROPERTY).get();
+        return options.getInt(MAX_HIERARCHIES_TO_WATCH_PROPERTY);
     }
 
     @Override
@@ -192,7 +188,7 @@ public class VirtualFileSystemServices extends AbstractGradleModuleServices {
                 }
 
                 @Override
-                public void beforeComplete() {
+                public void beforeComplete(@Nullable Throwable failure) {
                     fileWatchingFilter.buildFinished();
                 }
             });
@@ -211,6 +207,7 @@ public class VirtualFileSystemServices extends AbstractGradleModuleServices {
             NativeCapabilities nativeCapabilities,
             ListenerManager listenerManager,
             FileChangeListeners fileChangeListeners,
+            NativeServices.FileEventFunctionsProvider fileEvents,
             FileSystem fileSystem,
             WatchableFileSystemDetector watchableFileSystemDetector
         ) {
@@ -220,7 +217,8 @@ public class VirtualFileSystemServices extends AbstractGradleModuleServices {
             BuildLifecycleAwareVirtualFileSystem virtualFileSystem = determineWatcherRegistryFactory(
                 OperatingSystem.current(),
                 nativeCapabilities,
-                fileWatchingFilter.getImmutableLocations()::contains)
+                fileEvents,
+                fileWatchingFilter::isImmutableLocation)
                 .<BuildLifecycleAwareVirtualFileSystem>map(watcherRegistryFactory -> new WatchingVirtualFileSystem(
                     watcherRegistryFactory,
                     root,
@@ -231,8 +229,9 @@ public class VirtualFileSystemServices extends AbstractGradleModuleServices {
                 ))
                 .orElse(new WatchingNotSupportedVirtualFileSystem(root));
             listenerManager.addListener((BuildAddedListener) buildState -> {
-                    File buildRootDir = buildState.getBuildRootDir();
-                    virtualFileSystem.registerWatchableHierarchy(buildRootDir);
+                    if (buildState.isImportableBuild()) {
+                        virtualFileSystem.registerWatchableHierarchy(buildState.getBuildRootDir());
+                    }
                 }
             );
             return virtualFileSystem;
@@ -265,16 +264,17 @@ public class VirtualFileSystemServices extends AbstractGradleModuleServices {
         private static Optional<FileWatcherRegistryFactory> determineWatcherRegistryFactory(
             OperatingSystem operatingSystem,
             NativeCapabilities nativeCapabilities,
+            NativeServices.FileEventFunctionsProvider fileEvents,
             Predicate<String> immutableLocationsFilter
         ) {
             if (nativeCapabilities.useFileSystemWatching()) {
                 try {
                     if (operatingSystem.isMacOsX()) {
-                        return Optional.of(new DarwinFileWatcherRegistryFactory(immutableLocationsFilter));
+                        return Optional.of(new DarwinFileWatcherRegistryFactory(fileEvents::getFunctions, immutableLocationsFilter));
                     } else if (operatingSystem.isWindows()) {
-                        return Optional.of(new WindowsFileWatcherRegistryFactory(immutableLocationsFilter));
+                        return Optional.of(new WindowsFileWatcherRegistryFactory(fileEvents::getFunctions, immutableLocationsFilter));
                     } else if (operatingSystem.isLinux()) {
-                        return Optional.of(new LinuxFileWatcherRegistryFactory(immutableLocationsFilter));
+                        return Optional.of(new LinuxFileWatcherRegistryFactory(fileEvents::getFunctions, immutableLocationsFilter));
                     }
                 } catch (NativeIntegrationUnavailableException e) {
                     NativeServices.logFileSystemWatchingUnavailable(e);
@@ -298,13 +298,13 @@ public class VirtualFileSystemServices extends AbstractGradleModuleServices {
         }
 
         @Provides
-        ClasspathFingerprinter createClasspathFingerprinter(ResourceSnapshotterCacheService resourceSnapshotterCacheService, FileCollectionSnapshotter fileCollectionSnapshotter, StringInterner stringInterner) {
-            return new DefaultClasspathFingerprinter(resourceSnapshotterCacheService, fileCollectionSnapshotter, ResourceFilter.FILTER_NOTHING, ResourceEntryFilter.FILTER_NOTHING, PropertiesFileFilter.FILTER_NOTHING, stringInterner, LineEndingSensitivity.DEFAULT);
+        ClasspathFingerprinter createClasspathFingerprinter(ResourceSnapshotterCacheService resourceSnapshotterCacheService, StringInterner stringInterner) {
+            return new DefaultClasspathFingerprinter(resourceSnapshotterCacheService, ResourceFilter.FILTER_NOTHING, ResourceEntryFilter.FILTER_NOTHING, PropertiesFileFilter.FILTER_NOTHING, stringInterner, LineEndingSensitivity.DEFAULT);
         }
 
         @Provides
-        ClasspathHasher createClasspathHasher(ClasspathFingerprinter fingerprinter, FileCollectionFactory fileCollectionFactory) {
-            return new DefaultClasspathHasher(fingerprinter, fileCollectionFactory);
+        ClasspathHasher createClasspathHasher(FileCollectionSnapshotter fileCollectionSnapshotter, ClasspathFingerprinter fingerprinter, FileCollectionFactory fileCollectionFactory) {
+            return new DefaultClasspathHasher(fileCollectionSnapshotter, fingerprinter, fileCollectionFactory);
         }
 
         @Provides
@@ -350,8 +350,18 @@ public class VirtualFileSystemServices extends AbstractGradleModuleServices {
             StringInterner stringInterner,
             VirtualFileSystem root,
             FileSystemAccess.WriteListener writeListener,
-            DirectorySnapshotterStatistics.Collector statisticsCollector
+            DirectorySnapshotterStatistics.Collector statisticsCollector,
+            ProjectCacheDir projectCacheDir,
+            FileWatchingFilter fileWatchingFilter
         ) {
+            fileWatchingFilter.addCurrentSessionImmutableLocation(projectCacheDir.getDir());
+            listenerManager.addListener(new BuildSessionLifecycleListener() {
+                @Override
+                public void beforeComplete() {
+                    fileWatchingFilter.sessionFinished();
+                }
+            });
+
             DefaultFileSystemAccess buildSessionsScopedVirtualFileSystem = new DefaultFileSystemAccess(
                 hasher,
                 stringInterner,
@@ -381,12 +391,10 @@ public class VirtualFileSystemServices extends AbstractGradleModuleServices {
         @Provides
         FileCollectionFingerprinterRegistrations createFileCollectionFingerprinterRegistrations(
             StringInterner stringInterner,
-            FileCollectionSnapshotter fileCollectionSnapshotter,
             ResourceSnapshotterCacheService resourceSnapshotterCacheService
         ) {
             return new FileCollectionFingerprinterRegistrations(
                 stringInterner,
-                fileCollectionSnapshotter,
                 resourceSnapshotterCacheService,
                 ResourceFilter.FILTER_NOTHING,
                 ResourceEntryFilter.FILTER_NOTHING,

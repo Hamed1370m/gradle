@@ -55,13 +55,13 @@ class DeprecatedFeaturesListener(
                 // A couple of places in Gradle continue calling useLogger until this method is removed, and we suppress the
                 // warning for their InternalListeners here.
                 DeprecationLogger.deprecateMethod(Gradle::class.java, "useLogger(Object)")
-                    .willBeRemovedInGradle9()
+                    .willBeRemovedInGradle10()
                     .withUpgradeGuideSection(8, "deprecated_use_logger")
-                    .nagUser();
+                    .nagUser()
             }
             shouldNagAbout(listener) -> {
                 nagUserAbout("Listener registration using $invocationDescription()", 7, "task_execution_events")
-            }
+            } // TODO: this is now the only call site for these "shouldNag.." methods where the ignoreStable flag is not TRUE; probably we should change this too
         }
     }
 
@@ -73,26 +73,27 @@ class DeprecatedFeaturesListener(
 
     override fun onTaskDependenciesAccess(invocationDescription: String, task: TaskInternal, runningTask: TaskInternal?) {
         if (shouldNagFor(task, runningTask)) {
-            throwUnsupported("Invocation of $invocationDescription at execution time")
+            nagUserAbout("Invocation of $invocationDescription at execution time", 9, "task_dependencies")
         }
     }
 
-    override fun onConventionAccess(invocationDescription: String, task: TaskInternal, runningTask: TaskInternal?) {
+    override fun onTaskExtensionAccess(invocationDescription: String, task: TaskInternal, runningTask: TaskInternal?) {
         if (shouldNagFor(task, runningTask)) {
-            nagUserAbout("Invocation of $invocationDescription at execution time", 8, "task_convention")
+            nagUserAbout("Invocation of $invocationDescription at execution time", 9, "task_extensions")
         }
     }
 
     override fun disallowedAtExecutionInjectedServiceAccessed(injectedServiceType: Class<*>, getterName: String, consumer: String) {
         if (shouldNag()) {
-            throwUnsupported("Invocation of $injectedServiceType at execution time")
+            nagUserAbout("Reading injected service of type ${injectedServiceType.simpleName} at execution time", 9, "injected_service_types_at_execution")
         }
     }
 
     private
     fun nagUserAbout(action: String, upgradeGuideMajorVersion: Int, upgradeGuideSection: String) {
         DeprecationLogger.deprecateAction(action)
-            .willBecomeAnErrorInGradle9()
+            .withContext("This API is incompatible with the configuration cache, which will become the only mode supported by Gradle in a future release.")
+            .willBecomeAnErrorInGradle10()
             .withUpgradeGuideSection(upgradeGuideMajorVersion, upgradeGuideSection)
             .nagUser()
     }
@@ -103,11 +104,11 @@ class DeprecatedFeaturesListener(
 
     private
     fun shouldNag(): Boolean =
-        // TODO:configuration-cache - this listener shouldn't be registered when cc is enabled
-        !buildModelParameters.isConfigurationCache && featureFlags.isEnabled(STABLE_CONFIGURATION_CACHE)
+        !buildModelParameters.isConfigurationCache
 
     private
-    fun shouldNagAbout(listener: Any): Boolean = shouldNag() && !isSupportedListener(listener)
+    fun shouldNagAbout(listener: Any): Boolean =
+        !buildModelParameters.isConfigurationCache && featureFlags.isEnabled(STABLE_CONFIGURATION_CACHE) && !isSupportedListener(listener)
 
     /**
      * Only nag about tasks that are actually executing, but not tasks that are configured by the executing tasks.
@@ -116,10 +117,6 @@ class DeprecatedFeaturesListener(
     private
     fun shouldReportInContext(task: TaskInternal, runningTask: TaskInternal?) =
         runningTask == null || task === runningTask
-
-    private
-    fun throwUnsupported(reason: String): Nothing =
-        throw UnsupportedOperationException("$reason is unsupported with the STABLE_CONFIGURATION_CACHE feature preview.")
 }
 
 /**

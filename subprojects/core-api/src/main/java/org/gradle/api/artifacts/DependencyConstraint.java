@@ -18,8 +18,7 @@ package org.gradle.api.artifacts;
 import org.gradle.api.Action;
 import org.gradle.api.attributes.AttributeContainer;
 import org.gradle.api.attributes.HasConfigurableAttributes;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Represents a constraints over all, including transitive, dependencies.
@@ -32,6 +31,7 @@ public interface DependencyConstraint extends ModuleVersionSelector, HasConfigur
      * Configures the version constraint for this dependency constraint.
      *
      * @param configureAction the configuration action for the module version
+     * @since 4.5
      */
     void version(Action<? super MutableVersionConstraint> configureAction);
 
@@ -77,6 +77,7 @@ public interface DependencyConstraint extends ModuleVersionSelector, HasConfigur
     /**
      * Returns the version constraint to be used during selection.
      * @return the version constraint
+     * @since 4.5
      */
     VersionConstraint getVersionConstraint();
 }

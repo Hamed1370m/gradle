@@ -20,6 +20,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.Callables;
 import org.gradle.api.Action;
+import org.gradle.api.NamedDomainObjectProvider;
 import org.gradle.api.Plugin;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
@@ -35,10 +36,10 @@ import org.gradle.api.plugins.quality.CodeQualityExtension;
 import org.gradle.api.reporting.ReportingExtension;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
+import org.gradle.api.tasks.TaskProvider;
 import org.gradle.internal.Cast;
 
 import javax.inject.Inject;
-import java.io.File;
 import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Map;
@@ -50,7 +51,7 @@ public abstract class AbstractCodeQualityPlugin<T> implements Plugin<ProjectInte
     }
 
     protected ProjectInternal project;
-    protected CodeQualityExtension extension;
+    private CodeQualityExtension extension;
 
     @Override
     public final void apply(ProjectInternal project) {
@@ -100,22 +101,22 @@ public abstract class AbstractCodeQualityPlugin<T> implements Plugin<ProjectInte
 
     @SuppressWarnings("deprecation")
     protected void createConfigurations() {
-        Configuration configuration = project.getConfigurations().resolvableDependencyScopeUnlocked(getConfigurationName());
-        configuration.setVisible(false);
-        configuration.setTransitive(true);
-        configuration.setDescription("The " + getToolName() + " libraries to be used for this project.");
-        getJvmPluginServices().configureAsRuntimeClasspath(configuration);
+        project.getConfigurations().resolvableDependencyScopeLocked(getConfigurationName(), configuration -> {
+            configuration.setTransitive(true);
+            configuration.setDescription("The " + getToolName() + " libraries to be used for this project.");
+            getJvmPluginServices().configureAsRuntimeClasspath(configuration);
 
-        // Don't need these things, they're provided by the runtime
-        configuration.exclude(excludeProperties("ant", "ant"));
-        configuration.exclude(excludeProperties("org.apache.ant", "ant"));
-        configuration.exclude(excludeProperties("org.apache.ant", "ant-launcher"));
-        configuration.exclude(excludeProperties("org.slf4j", "slf4j-api"));
-        configuration.exclude(excludeProperties("org.slf4j", "jcl-over-slf4j"));
-        configuration.exclude(excludeProperties("org.slf4j", "log4j-over-slf4j"));
-        configuration.exclude(excludeProperties("commons-logging", "commons-logging"));
-        configuration.exclude(excludeProperties("log4j", "log4j"));
-        configureConfiguration(configuration);
+            // Don't need these things, they're provided by the runtime
+            configuration.exclude(excludeProperties("ant", "ant"));
+            configuration.exclude(excludeProperties("org.apache.ant", "ant"));
+            configuration.exclude(excludeProperties("org.apache.ant", "ant-launcher"));
+            configuration.exclude(excludeProperties("org.slf4j", "slf4j-api"));
+            configuration.exclude(excludeProperties("org.slf4j", "jcl-over-slf4j"));
+            configuration.exclude(excludeProperties("org.slf4j", "log4j-over-slf4j"));
+            configuration.exclude(excludeProperties("commons-logging", "commons-logging"));
+            configuration.exclude(excludeProperties("log4j", "log4j"));
+            configureConfiguration(configuration);
+        });
     }
 
     protected abstract void configureConfiguration(Configuration configuration);
@@ -133,12 +134,7 @@ public abstract class AbstractCodeQualityPlugin<T> implements Plugin<ProjectInte
     private void configureExtensionRule() {
         final ConventionMapping extensionMapping = conventionMappingOf(extension);
         extensionMapping.map("sourceSets", Callables.returning(new ArrayList<>()));
-        extensionMapping.map("reportsDir", new Callable<File>() {
-            @Override
-            public File call() {
-                return project.getExtensions().getByType(ReportingExtension.class).file(getReportName());
-            }
-        });
+        extension.getReportsDirectory().convention(project.getExtensions().getByType(ReportingExtension.class).getBaseDirectory().dir(getReportName()));
         withBasePlugin(new Action<Plugin>() {
             @Override
             public void execute(Plugin plugin) {
@@ -185,17 +181,18 @@ public abstract class AbstractCodeQualityPlugin<T> implements Plugin<ProjectInte
         sourceSets.all(new Action<SourceSet>() {
             @Override
             public void execute(final SourceSet sourceSet) {
-                project.getTasks().register(sourceSet.getTaskName(getTaskBaseName(), null), getCastedTaskType(), new Action<Task>() {
-                    @Override
-                    public void execute(Task task) {
-                        configureForSourceSet(sourceSet, (T) task);
-                    }
-                });
+                String taskName = sourceSet.getTaskName(getTaskBaseName(), null);
+                TaskProvider<?> taskProvider = project.getTasks().register(taskName, getCastedTaskType(), task -> configureForSourceSet(sourceSet, (T) task));
+                NamedDomainObjectProvider<T> castTaskProvider = Cast.uncheckedCast(taskProvider);
+                configureTaskProviderForSourceSet(sourceSet, castTaskProvider);
             }
         });
     }
 
     protected void configureForSourceSet(SourceSet sourceSet, T task) {
+    }
+
+    protected void configureTaskProviderForSourceSet(SourceSet sourceSet, NamedDomainObjectProvider<T> taskProvider) {
     }
 
     @SuppressWarnings("rawtypes")

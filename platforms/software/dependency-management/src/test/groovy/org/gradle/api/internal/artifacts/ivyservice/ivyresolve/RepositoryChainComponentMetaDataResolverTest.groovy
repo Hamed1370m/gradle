@@ -17,11 +17,11 @@
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve
 
 
-import org.gradle.api.artifacts.ModuleVersionSelector
+import org.gradle.api.artifacts.component.ModuleComponentSelector
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier
 import org.gradle.api.internal.artifacts.DefaultModuleVersionIdentifier
 import org.gradle.internal.component.external.model.DefaultModuleComponentIdentifier
-import org.gradle.internal.component.external.model.ModuleComponentGraphResolveState
+import org.gradle.internal.component.external.model.ExternalModuleComponentGraphResolveState
 import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata
 import org.gradle.internal.component.model.ComponentGraphResolveState
 import org.gradle.internal.component.model.ComponentGraphSpecificResolveState
@@ -37,7 +37,7 @@ import spock.lang.Specification
 class RepositoryChainComponentMetaDataResolverTest extends Specification {
     final org.gradle.internal.Factory<String> broken = { "broken" }
     final metaData = metaData("1.2")
-    final componentState = Stub(ModuleComponentGraphResolveState) {
+    final componentState = Stub(ExternalModuleComponentGraphResolveState) {
         getLegacyMetadata() >> metaData
     }
     final moduleComponentId = DefaultModuleComponentIdentifier.newId(DefaultModuleIdentifier.newId("group", "project"), "1.0")
@@ -462,7 +462,7 @@ class RepositoryChainComponentMetaDataResolverTest extends Specification {
 
     def "rethrows failure to resolve local dependency when not available in any repository"() {
         given:
-        def failure = new ModuleVersionResolveException(Stub(ModuleVersionSelector), broken)
+        def failure = new ModuleVersionResolveException(Stub(ModuleComponentSelector), broken)
         def repo1 = addRepo1()
         def repo2 = addRepo2()
 
@@ -489,7 +489,7 @@ class RepositoryChainComponentMetaDataResolverTest extends Specification {
 
     def "rethrows failure to resolve remote dependency when not available in any repository"() {
         given:
-        def failure = new ModuleVersionResolveException(Stub(ModuleVersionSelector), broken)
+        def failure = new ModuleVersionResolveException(Stub(ModuleComponentSelector), broken)
         def repo1 = addRepo1()
         def repo2 = addRepo2()
 

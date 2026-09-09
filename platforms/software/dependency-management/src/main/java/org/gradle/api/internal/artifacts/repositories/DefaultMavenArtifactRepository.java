@@ -19,11 +19,12 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import org.gradle.api.Action;
+import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Transformer;
 import org.gradle.api.artifacts.ComponentMetadataListerDetails;
 import org.gradle.api.artifacts.ComponentMetadataSupplierDetails;
-import org.gradle.api.artifacts.ModuleIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
+import org.gradle.api.artifacts.component.ModuleComponentSelector;
 import org.gradle.api.artifacts.repositories.AuthenticationContainer;
 import org.gradle.api.artifacts.repositories.MavenArtifactRepository;
 import org.gradle.api.artifacts.repositories.MavenRepositoryContentDescriptor;
@@ -32,6 +33,8 @@ import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ConfiguredModuleC
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.GradleModuleMetadataParser;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.MetaDataParser;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionParser;
+import org.gradle.api.internal.artifacts.mvnsettings.MavenMirrorResolver;
+import org.gradle.api.internal.artifacts.mvnsettings.MavenSettingsProvider;
 import org.gradle.api.internal.artifacts.repositories.descriptor.MavenRepositoryDescriptor;
 import org.gradle.api.internal.artifacts.repositories.maven.MavenMetadataLoader;
 import org.gradle.api.internal.artifacts.repositories.metadata.DefaultArtifactMetadataSource;
@@ -50,17 +53,25 @@ import org.gradle.api.internal.artifacts.repositories.resolver.VersionLister;
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransport;
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransportFactory;
 import org.gradle.api.internal.file.FileResolver;
+import org.gradle.api.credentials.HttpHeaderCredentials;
+import org.gradle.api.credentials.PasswordCredentials;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.ProviderFactory;
+import org.gradle.authentication.Authentication;
 import org.gradle.internal.Cast;
+import org.gradle.internal.authentication.AbstractAuthentication;
+import org.gradle.internal.authentication.AllSchemesAuthentication;
+import org.gradle.internal.authentication.DefaultHttpHeaderAuthentication;
+import org.gradle.internal.credentials.DefaultHttpHeaderCredentials;
+import org.gradle.internal.credentials.DefaultPasswordCredentials;
 import org.gradle.internal.action.InstantiatingAction;
 import org.gradle.internal.component.external.model.ModuleComponentArtifactIdentifier;
 import org.gradle.internal.component.external.model.ModuleComponentArtifactMetadata;
 import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata;
-import org.gradle.internal.component.external.model.ModuleDependencyMetadata;
 import org.gradle.internal.component.external.model.MutableModuleComponentResolveMetadata;
 import org.gradle.internal.component.external.model.maven.MutableMavenModuleResolveMetadata;
 import org.gradle.internal.component.model.ComponentOverrideMetadata;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.hash.ChecksumService;
 import org.gradle.internal.instantiation.InstantiatorFactory;
 import org.gradle.internal.isolation.IsolatableFactory;
@@ -68,18 +79,23 @@ import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.resolve.result.BuildableModuleComponentMetaDataResolveResult;
 import org.gradle.internal.resolve.result.BuildableModuleVersionListingResolveResult;
 import org.gradle.internal.resource.local.FileResourceRepository;
+import org.gradle.internal.verifier.HttpRedirectVerifier;
 import org.gradle.internal.resource.local.FileStore;
 import org.gradle.internal.resource.local.LocallyAvailableResourceFinder;
+import org.jspecify.annotations.NonNull;
 
-import javax.annotation.Nonnull;
+import javax.inject.Inject;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
-public class DefaultMavenArtifactRepository extends AbstractAuthenticationSupportedRepository<MavenRepositoryDescriptor> implements MavenArtifactRepository, ResolutionAwareRepository {
+@SuppressWarnings("this-escape")
+public abstract class DefaultMavenArtifactRepository extends AbstractAuthenticationSupportedRepository<MavenRepositoryDescriptor> implements MavenArtifactRepository, ResolutionAwareRepository {
     private static final DefaultMavenPomMetadataSource.MavenMetadataValidator NO_OP_VALIDATION_SERVICES = (repoName, metadata, artifactResolver) -> true;
 
     private final Transformer<String, MavenArtifactRepository> describer;
@@ -98,30 +114,10 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
     private final ChecksumService checksumService;
     private final MavenMetadataSources metadataSources = new MavenMetadataSources();
     private final InstantiatorFactory instantiatorFactory;
+    private final MavenMirrorResolver mavenMirrorResolver;
+    private final ObjectFactory objectFactory;
 
-    public DefaultMavenArtifactRepository(FileResolver fileResolver,
-                                          RepositoryTransportFactory transportFactory,
-                                          LocallyAvailableResourceFinder<ModuleComponentArtifactMetadata> locallyAvailableResourceFinder,
-                                          InstantiatorFactory instantiatorFactory,
-                                          FileStore<ModuleComponentArtifactIdentifier> artifactFileStore,
-                                          MetaDataParser<MutableMavenModuleResolveMetadata> pomParser,
-                                          GradleModuleMetadataParser metadataParser,
-                                          AuthenticationContainer authenticationContainer,
-                                          FileStore<String> resourcesFileStore,
-                                          FileResourceRepository fileResourceRepository,
-                                          MavenMutableModuleMetadataFactory metadataFactory,
-                                          IsolatableFactory isolatableFactory,
-                                          ObjectFactory objectFactory,
-                                          DefaultUrlArtifactRepository.Factory urlArtifactRepositoryFactory,
-                                          ChecksumService checksumService,
-                                          ProviderFactory providerFactory,
-                                          VersionParser versionParser
-    ) {
-        this(new DefaultDescriber(), fileResolver, transportFactory, locallyAvailableResourceFinder, instantiatorFactory,
-            artifactFileStore, pomParser, metadataParser, authenticationContainer,
-            resourcesFileStore, fileResourceRepository, metadataFactory, isolatableFactory, objectFactory, urlArtifactRepositoryFactory, checksumService, providerFactory, versionParser);
-    }
-
+    @Inject
     public DefaultMavenArtifactRepository(Transformer<String, MavenArtifactRepository> describer,
                                           FileResolver fileResolver,
                                           RepositoryTransportFactory transportFactory,
@@ -139,7 +135,8 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
                                           DefaultUrlArtifactRepository.Factory urlArtifactRepositoryFactory,
                                           ChecksumService checksumService,
                                           ProviderFactory providerFactory,
-                                          VersionParser versionParser
+                                          VersionParser versionParser,
+                                          MavenMirrorResolver mavenMirrorResolver
     ) {
         super(instantiatorFactory.decorateLenient(), authenticationContainer, objectFactory, providerFactory, versionParser);
         this.describer = describer;
@@ -157,6 +154,8 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
         this.checksumService = checksumService;
         this.metadataSources.setDefaults();
         this.instantiatorFactory = instantiatorFactory;
+        this.mavenMirrorResolver = mavenMirrorResolver;
+        this.objectFactory = objectFactory;
     }
 
     @Override
@@ -193,7 +192,13 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
     }
 
     @Override
+    @Deprecated
     public Set<URI> getArtifactUrls() {
+        nagAboutArtifactUrlsDeprecation("getArtifactUrls()");
+        return getArtifactUrlsInternal();
+    }
+
+    private Set<URI> getArtifactUrlsInternal() {
         Set<URI> result = new LinkedHashSet<>();
         for (Object additionalUrl : additionalUrls) {
             result.add(fileResolver.resolveUri(additionalUrl));
@@ -202,21 +207,38 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
     }
 
     @Override
+    @Deprecated
     public void artifactUrls(Object... urls) {
+        nagAboutArtifactUrlsDeprecation("artifactUrls(Object...)");
         invalidateDescriptor();
-        additionalUrls.addAll(Lists.newArrayList(urls));
+        additionalUrls.addAll(ImmutableList.copyOf(urls));
     }
 
     @Override
+    @Deprecated
     public void setArtifactUrls(Set<URI> urls) {
+        nagAboutArtifactUrlsDeprecation("setArtifactUrls(Set)");
         invalidateDescriptor();
-        setArtifactUrls((Iterable<?>) urls);
+        setArtifactUrlsInternal(urls);
     }
 
     @Override
+    @Deprecated
     public void setArtifactUrls(Iterable<?> urls) {
+        nagAboutArtifactUrlsDeprecation("setArtifactUrls(Iterable)");
         invalidateDescriptor();
+        setArtifactUrlsInternal(urls);
+    }
+
+    private void setArtifactUrlsInternal(Iterable<?> urls) {
         additionalUrls = Lists.newArrayList(urls);
+    }
+
+    private static void nagAboutArtifactUrlsDeprecation(String methodWithParams) {
+        DeprecationLogger.deprecateMethod(MavenArtifactRepository.class, methodWithParams)
+            .willBeRemovedInGradle10()
+            .withUpgradeGuideSection(9, "deprecated_maven_artifact_urls")
+            .nagUser();
     }
 
     @Override
@@ -226,7 +248,7 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
             .setAuthenticated(usesCredentials())
             .setAuthenticationSchemes(getAuthenticationSchemes())
             .setMetadataSources(metadataSources.asList())
-            .setArtifactUrls(Sets.newHashSet(getArtifactUrls()))
+            .setArtifactUrls(Sets.newHashSet(getArtifactUrlsInternal()))
             .create();
     }
 
@@ -238,13 +260,24 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
         if (root != null) {
             builder.add(root);
         }
-        builder.addAll(getArtifactUrls());
+        builder.addAll(getArtifactUrlsInternal());
         return builder.build();
     }
 
-    @Nonnull
+    @NonNull
     protected URI validateUrl() {
-        return urlArtifactRepository.validateUrl();
+        return applyMavenMirror(urlArtifactRepository.validateUrl());
+    }
+
+    private URI applyMavenMirror(URI url) {
+        return mavenMirrorResolver.mirrorFor(url, getName())
+            .map(mirror -> {
+                if (mirror.isBlocked()) {
+                    throw new InvalidUserDataException(String.format("Repository '%s' (%s) is blocked by Maven mirror '%s' declared in the Maven settings.", getName(), url, mirror.getId()));
+                }
+                return mirror.getUrl();
+            })
+            .orElse(url);
     }
 
     @Override
@@ -254,13 +287,13 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
     }
 
     private MavenResolver createResolver(URI rootUri) {
-        RepositoryTransport transport = getTransport(rootUri.getScheme());
+        RepositoryTransport transport = getTransportForResolution(rootUri.getScheme());
         MavenMetadataLoader mavenMetadataLoader = new MavenMetadataLoader(transport.getResourceAccessor(), resourcesFileStore);
         ImmutableMetadataSources metadataSources = createMetadataSources(mavenMetadataLoader);
         Instantiator injector = createInjectorForMetadataSuppliers(transport, instantiatorFactory, getUrl(), resourcesFileStore);
         InstantiatingAction<ComponentMetadataSupplierDetails> supplier = createComponentMetadataSupplierFactory(injector, isolatableFactory);
         InstantiatingAction<ComponentMetadataListerDetails> lister = createComponentMetadataVersionLister(injector, isolatableFactory);
-        return new MavenResolver(getDescriptor(), rootUri, transport, locallyAvailableResourceFinder, artifactFileStore, metadataSources, MavenMetadataArtifactProvider.INSTANCE, mavenMetadataLoader, supplier, lister, injector, checksumService);
+        return new MavenResolver(getDescriptor(), rootUri, transport, locallyAvailableResourceFinder, artifactFileStore, metadataSources, MavenMetadataArtifactProvider.INSTANCE, mavenMetadataLoader, supplier, lister, injector, checksumService, getAllowInsecureContinueWhenDisabled().get());
     }
 
     @Override
@@ -330,8 +363,94 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
     }
 
     public RepositoryTransport getTransport(String scheme) {
+        // Maven mirrors apply to resolution only, never to deployment, so this keeps the
+        // repository's own credentials and protocol rules. Publishing uses it.
         return transportFactory.createTransport(scheme, getName(), getConfiguredAuthentication(), urlArtifactRepository.createRedirectVerifier());
     }
+
+    /**
+     * The transport for reading from this repository, which is where a Maven mirror takes effect:
+     * the URL is the mirror's, so the credentials and the insecure-protocol check have to be the
+     * mirror's too.
+     */
+    private RepositoryTransport getTransportForResolution(String scheme) {
+        return transportFactory.createTransport(scheme, getName(), getAuthenticationsForUrlInUse(), createRedirectVerifierForUrlInUse());
+    }
+
+    /**
+     * The insecure-protocol check has to run against the URL the transport will actually contact.
+     * When a Maven mirror replaces this repository's URL, checking the declared URL would let an
+     * {@code http} mirror of an {@code https} repository through with no opt-in.
+     */
+    private HttpRedirectVerifier createRedirectVerifierForUrlInUse() {
+        URI originalUrl = urlArtifactRepository.getUrl();
+        if (originalUrl == null) {
+            return urlArtifactRepository.createRedirectVerifier();
+        }
+        URI urlInUse = mavenMirrorResolver.mirrorFor(originalUrl, getName())
+            .map(MavenSettingsProvider.MirroredRepository::getUrl)
+            .orElse(originalUrl);
+        return urlArtifactRepository.createRedirectVerifier(urlInUse);
+    }
+
+    /**
+     * The authentications to use for the URL the transport will actually contact.
+     *
+     * <p>When a Maven mirror replaces this repository's URL, the credentials configured on
+     * this repository belong to the original host and must not be sent to the mirror.
+     * Instead, following Maven semantics, the mirror's own credentials are used: the
+     * settings.xml {@code <server>} entry matching the mirror id.
+     */
+    private Collection<Authentication> getAuthenticationsForUrlInUse() {
+        URI originalUrl = urlArtifactRepository.getUrl();
+        if (originalUrl == null) {
+            return getConfiguredAuthentication();
+        }
+        Optional<MavenSettingsProvider.MirroredRepository> mirror = mavenMirrorResolver.mirrorFor(originalUrl, getName());
+        if (!mirror.isPresent()) {
+            return getConfiguredAuthentication();
+        }
+        if (mirror.get().isBlocked()) {
+            // Resolution fails in validateUrl() before the transport is used
+            return Collections.emptyList();
+        }
+        return mirrorAuthentication(mirror.get());
+    }
+
+    private Collection<Authentication> mirrorAuthentication(MavenSettingsProvider.MirroredRepository mirror) {
+        URI mirrorUrl = mirror.getUrl();
+        // A url with no scheme parses to a null one, and a host:port written without a protocol
+        // parses the host as the scheme. Neither is a repository Gradle can talk to, so leave the
+        // credentials off and let RepositoryTransportFactory report the unusable protocol.
+        String scheme = mirrorUrl.getScheme();
+        if (scheme == null || !scheme.startsWith("http")) {
+            return Collections.emptyList();
+        }
+        MavenSettingsProvider.MirrorCredentials credentials = mirror.getCredentials();
+        if (credentials != null) {
+            PasswordCredentials passwordCredentials = objectFactory.newInstance(DefaultPasswordCredentials.class);
+            passwordCredentials.setUsername(credentials.username());
+            passwordCredentials.setPassword(credentials.password());
+            return hostScoped(new AllSchemesAuthentication(passwordCredentials), mirrorUrl);
+        }
+        MavenSettingsProvider.MirrorHttpHeader httpHeader = mirror.getHttpHeader();
+        if (httpHeader != null) {
+            HttpHeaderCredentials headerCredentials = objectFactory.newInstance(DefaultHttpHeaderCredentials.class);
+            headerCredentials.setName(httpHeader.name());
+            headerCredentials.setValue(httpHeader.value());
+            DefaultHttpHeaderAuthentication authentication = new DefaultHttpHeaderAuthentication("header");
+            authentication.setCredentials(headerCredentials);
+            return hostScoped(authentication, mirrorUrl);
+        }
+        return Collections.emptyList();
+    }
+
+    private static Collection<Authentication> hostScoped(AbstractAuthentication authentication, URI mirrorUrl) {
+        authentication.addHost(mirrorUrl.getHost(), mirrorUrl.getPort());
+        return Collections.singleton(authentication);
+    }
+
+
 
     protected LocallyAvailableResourceFinder<ModuleComponentArtifactMetadata> getLocallyAvailableResourceFinder() {
         return locallyAvailableResourceFinder;
@@ -346,7 +465,7 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
         return new DefaultMavenRepositoryContentDescriptor(this::getDisplayName, versionParser);
     }
 
-    private static class DefaultDescriber implements Transformer<String, MavenArtifactRepository> {
+    static class DefaultDescriber implements Transformer<String, MavenArtifactRepository> {
         @Override
         public String transform(MavenArtifactRepository repository) {
             URI url = repository.getUrl();
@@ -376,7 +495,7 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
         }
 
         /**
-         * This is used to generate the repository id and for reporting purposes on build scans.
+         * This is used to generate the repository id and for reporting purposes on a Build Scan.
          * Changing this means a change of repository.
          *
          * @return a list of implemented metadata sources, as strings.
@@ -460,8 +579,8 @@ public class DefaultMavenArtifactRepository extends AbstractAuthenticationSuppor
         }
 
         @Override
-        public void listModuleVersions(ModuleDependencyMetadata dependency, ModuleIdentifier module, List<ResourcePattern> ivyPatterns, List<ResourcePattern> artifactPatterns, VersionLister versionLister, BuildableModuleVersionListingResolveResult result) {
-            delegate.listModuleVersions(dependency, module, ivyPatterns, artifactPatterns, versionLister, result);
+        public void listModuleVersions(ModuleComponentSelector selector, ComponentOverrideMetadata overrideMetadata, List<ResourcePattern> ivyPatterns, List<ResourcePattern> artifactPatterns, VersionLister versionLister, BuildableModuleVersionListingResolveResult result) {
+            delegate.listModuleVersions(selector, overrideMetadata, ivyPatterns, artifactPatterns, versionLister, result);
         }
     }
 }

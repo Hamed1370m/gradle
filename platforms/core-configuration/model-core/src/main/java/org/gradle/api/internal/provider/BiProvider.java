@@ -16,18 +16,20 @@
 package org.gradle.api.internal.provider;
 
 import org.gradle.api.provider.Provider;
+import org.gradle.internal.evaluation.EvaluationScopeContext;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.function.BiFunction;
 
 public class BiProvider<R, A, B> extends AbstractMinimalProvider<R> {
 
+    @Nullable
     private final Class<R> type;
     private final BiFunction<? super A, ? super B, ? extends R> combiner;
     private final ProviderInternal<A> left;
     private final ProviderInternal<B> right;
 
-    public BiProvider(@Nullable Class<R> type, Provider<A> left, Provider<B> right, BiFunction<? super A, ? super B, ? extends R> combiner) {
+    public BiProvider(@Nullable Class<R> type, Provider<A> left, Provider<B> right, BiFunction<? super A, ? super B, ? extends @Nullable R> combiner) {
         this.type = type;
         this.combiner = combiner;
         this.left = Providers.internal(left);
@@ -41,18 +43,18 @@ public class BiProvider<R, A, B> extends AbstractMinimalProvider<R> {
 
     @Override
     public boolean calculatePresence(ValueConsumer consumer) {
-        try (EvaluationContext.ScopeContext ignored = openScope()) {
+        try (EvaluationScopeContext ignored = openScope()) {
             if (!left.calculatePresence(consumer) || !right.calculatePresence(consumer)) {
                 return false;
             }
         }
-        // Purposefully only calculate full value if left & right are both present, to save time
+        // Purposefully only calculate the full value if left and right are both present, to save time
         return super.calculatePresence(consumer);
     }
 
     @Override
     public ExecutionTimeValue<? extends R> calculateExecutionTimeValue() {
-        try (EvaluationContext.ScopeContext ignored = openScope()) {
+        try (EvaluationScopeContext ignored = openScope()) {
             if (isChangingValue(left) || isChangingValue(right)) {
                 return ExecutionTimeValue.changingValue(this);
             }
@@ -66,7 +68,7 @@ public class BiProvider<R, A, B> extends AbstractMinimalProvider<R> {
 
     @Override
     protected Value<? extends R> calculateOwnValue(ValueConsumer consumer) {
-        try (EvaluationContext.ScopeContext ignored = openScope()) {
+        try (EvaluationScopeContext ignored = openScope()) {
             Value<? extends A> leftValue = left.calculateValue(consumer);
             if (leftValue.isMissing()) {
                 return leftValue.asType();
@@ -92,7 +94,7 @@ public class BiProvider<R, A, B> extends AbstractMinimalProvider<R> {
 
     @Override
     public ValueProducer getProducer() {
-        try (EvaluationContext.ScopeContext ignored = openScope()) {
+        try (EvaluationScopeContext ignored = openScope()) {
             return new PlusProducer(left.getProducer(), right.getProducer());
         }
     }

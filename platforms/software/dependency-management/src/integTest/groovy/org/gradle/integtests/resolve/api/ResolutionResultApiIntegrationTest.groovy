@@ -14,25 +14,21 @@
  * limitations under the License.
  */
 
-
-
 package org.gradle.integtests.resolve.api
 
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.extensions.FluidDependenciesResolveTest
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
+import org.gradle.test.fixtures.dsl.GradleDsl
 import spock.lang.Issue
 
 @FluidDependenciesResolveTest
 class ResolutionResultApiIntegrationTest extends AbstractDependencyResolutionTest {
-    ResolveTestFixture resolve = new ResolveTestFixture(buildFile, 'conf')
 
     /*
     The ResolutionResult API is also covered by the dependency report integration tests.
      */
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the resolution result API")
     def "selection reasons are described"() {
         given:
         mavenRepo.module("org", "leaf", "1.0").publish()
@@ -48,7 +44,7 @@ class ResolutionResultApiIntegrationTest extends AbstractDependencyResolutionTes
         file("build.gradle") << """
             version = '5.0'
             repositories {
-                maven { url "${mavenRepo.uri}" }
+                maven { url = "${mavenRepo.uri}" }
             }
             configurations {
                 conf
@@ -57,9 +53,9 @@ class ResolutionResultApiIntegrationTest extends AbstractDependencyResolutionTes
             dependencies {
                 conf 'org:foo:0.5', 'org:bar:1.0', 'org:baz:1.0'
             }
+            def result = configurations.conf.incoming.resolutionResult
             task resolutionResult {
                 doLast {
-                    def result = configurations.conf.incoming.resolutionResult
                     result.allComponents {
                         if(it.id instanceof ModuleComponentIdentifier) {
                             println it.id.module + ":" + it.id.version + " " + it.selectionReason
@@ -85,7 +81,6 @@ baz:1.0 requested
 """
     }
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the resolution result API")
     def "resolution result API gives access to dependency reasons in case of conflict"() {
         given:
         mavenRepo.with {
@@ -108,7 +103,7 @@ baz:1.0 requested
             }
 
             repositories {
-               maven { url "${mavenRepo.uri}" }
+               maven { url = "${mavenRepo.uri}" }
             }
 
             dependencies {
@@ -117,13 +112,13 @@ baz:1.0 requested
             }
 
             task checkDeps {
+                def result = configurations.conf.incoming.resolutionResult
                 doLast {
-                    def result = configurations.conf.incoming.resolutionResult
                     result.allComponents {
                         if (it.id instanceof ModuleComponentIdentifier && it.id.module == 'leaf') {
                             def selectionReason = it.selectionReason
                             assert selectionReason.conflictResolution
-                            def descriptions = selectionReason.descriptions.reverse()
+                            def descriptions = selectionReason.descriptions
                             assert descriptions.size() > 1
                             descriptions.each {
                                 println "\$it.cause : \$it.description"
@@ -141,9 +136,10 @@ baz:1.0 requested
         run "checkDeps"
     }
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the resolution result API")
     def "resolution result API gives access to dependency reasons in case of conflict and selection by rule"() {
         given:
+        ResolveTestFixture resolve = new ResolveTestFixture(testDirectory)
+
         mavenRepo.with {
             module('org.test', 'leaf', '1.0').publish()
             def leaf2 = module('org.test', 'leaf', '1.1').publish()
@@ -158,7 +154,7 @@ baz:1.0 requested
 
         }
         settingsFile << """rootProject.name='test'"""
-        file("build.gradle") << """
+        buildFile << """
             configurations {
                 conf {
                     resolutionStrategy {
@@ -166,7 +162,7 @@ baz:1.0 requested
                             all {
                                 if (it.requested instanceof ModuleComponentSelector) {
                                     if (it.requested.module == 'leaf' && it.requested.version == '0.9') {
-                                        it.useTarget("substitute 0.9 with 1.0", group: 'org.test', name: it.requested.module, version: '1.0')
+                                        it.useTarget("org.test:\${it.requested.module}:1.0", "substitute 0.9 with 1.0")
                                     }
                                 }
                             }
@@ -175,26 +171,25 @@ baz:1.0 requested
                 }
             }
 
+            ${resolve.configureProject("conf")}
+
             repositories {
-               maven { url "${mavenRepo.uri}" }
+               maven { url = "${mavenRepo.uri}" }
             }
 
             dependencies {
                 conf 'org.test:a:1.0'
                 conf 'org.test:b:1.0'
-
             }
-        """
-        resolve.prepare()
-        buildFile << """
-            checkDeps {
+
+            tasks.register("checkResolutionResult") {
+                def result = configurations.conf.incoming.resolutionResult
                 doLast {
-                    def result = configurations.conf.incoming.resolutionResult
                     result.allComponents {
                         if (it.id instanceof ModuleComponentIdentifier && it.id.module == 'leaf') {
                             def selectionReason = it.selectionReason
                             assert selectionReason.conflictResolution
-                            def descriptions = selectionReason.descriptions.reverse()
+                            def descriptions = selectionReason.descriptions
                             assert descriptions.size() > 1
                             descriptions.each {
                                 println "\$it.cause : \$it.description"
@@ -209,7 +204,7 @@ baz:1.0 requested
 
         when:
 
-        run "checkDeps"
+        run(":checkDeps", ":checkResolutionResult")
 
         then:
         resolve.expectGraph {
@@ -230,7 +225,6 @@ baz:1.0 requested
         }
     }
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the resolution result API")
     def "constraint are not mis-showing up as a separate REQUESTED and do not overwrite selection by rule"() {
         given:
         mavenRepo.module("org", "foo", "1.0").publish()
@@ -239,7 +233,7 @@ baz:1.0 requested
         buildFile << """
 
             repositories {
-               maven { url "${mavenRepo.uri}" }
+               maven { url = "${mavenRepo.uri}" }
             }
 
             configurations {
@@ -267,8 +261,8 @@ baz:1.0 requested
             }
 
             task checkWithApi {
+                def result = configurations.conf.incoming.resolutionResult
                 doLast {
-                    def result = configurations.conf.incoming.resolutionResult
                     result.allComponents {
                         if (it.id instanceof ModuleComponentIdentifier) {
                             println "Module \$it.id"
@@ -294,7 +288,6 @@ baz:1.0 requested
         useReason << [true, false]
     }
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the resolution result API")
     def "direct dependency reasons are not mis-showing up as a separate REQUESTED and do not overwrite selection by rule"() {
         given:
         mavenRepo.module("org", "foo", "1.0").publish()
@@ -303,7 +296,7 @@ baz:1.0 requested
         buildFile << """
 
             repositories {
-               maven { url "${mavenRepo.uri}" }
+               maven { url = "${mavenRepo.uri}" }
             }
 
             configurations {
@@ -324,8 +317,8 @@ baz:1.0 requested
             }
 
             task checkWithApi {
+                def result = configurations.conf.incoming.resolutionResult
                 doLast {
-                    def result = configurations.conf.incoming.resolutionResult
                     result.allComponents {
                         if (it.id instanceof ModuleComponentIdentifier) {
                             println "Module \$it.id"
@@ -350,7 +343,6 @@ baz:1.0 requested
         useReason << [true, false]
     }
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the resolution result API")
     void "expired cache entry doesn't break reading from cache"() {
         given:
         mavenRepo.module("org", "foo", "1.0").publish()
@@ -359,7 +351,7 @@ baz:1.0 requested
         buildFile << """
 
             repositories {
-               maven { url "${mavenRepo.uri}" }
+               maven { url = "${mavenRepo.uri}" }
             }
 
             configurations {
@@ -390,8 +382,8 @@ baz:1.0 requested
             }
 
             task resolveTwice {
+                def result = configurations.conf.incoming.resolutionResult
                 doLast {
-                    def result = configurations.conf.incoming.resolutionResult
                     result.allComponents {
                         it.selectionReason.descriptions.each {
                            println "\${it.cause} : \${it.description}"
@@ -418,38 +410,23 @@ baz:1.0 requested
         noExceptionThrown()
     }
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the resolution result API")
     def "each dependency is associated to its resolved variant"() {
         mavenRepo.module("org", "dep", "1.0").publish()
         mavenRepo.module("com", "foo", "1.0").publish()
         mavenRepo.module("com", "bar", "1.0").publish()
         mavenRepo.module("com", "baz", "1.0").publish()
-        createDirs("lib", "tool")
-        settingsFile << """
-            include 'lib', 'tool'
+        settingsKotlinFile << """
+            rootProject.name = "root"
+            include("lib")
+            include("tool")
+            dependencyResolutionManagement {
+                ${mavenTestRepository(GradleDsl.KOTLIN)}
+            }
         """
-        buildFile << """
-            allprojects {
-               repositories {
-                  maven { url "${mavenRepo.uri}" }
-               }
 
-                apply plugin: 'java-library'
-            }
-
-            project(":lib") {
-                dependencies {
-                   api "org:dep:1.0"
-                }
-            }
-
-            project(":tool") {
-                apply plugin: 'java-test-fixtures'
-                dependencies {
-                    api "com:baz:1.0"
-                    testFixturesApi "com:foo:1.0"
-                    testFixturesImplementation "com:bar:1.0"
-                }
+        buildKotlinFile << """
+            plugins {
+                id("java-library")
             }
 
             dependencies {
@@ -458,53 +435,95 @@ baz:1.0 requested
                 testImplementation(testFixtures(project(":tool"))) // intentional duplication
             }
         """
-        withResolutionResultDumper("testCompileClasspath", "testRuntimeClasspath")
 
-        when:
-        succeeds 'resolve'
-
-        then:
-        outputContains """
-testCompileClasspath
-   project :lib (apiElements)
-      org:dep:1.0 (compile)
-   project :tool (testFixturesApiElements)
-      project :tool (apiElements)
-         com:baz:1.0 (compile)
-      com:foo:1.0 (compile)
-"""
-
-        and:
-        outputContains """testRuntimeClasspath
-   project :lib (runtimeElements)
-      org:dep:1.0 (runtime)
-   project :tool (testFixturesRuntimeElements)
-      project :tool (runtimeElements)
-         com:baz:1.0 (runtime)
-      com:foo:1.0 (runtime)
-      com:bar:1.0 (runtime)
-"""
-    }
-
-    @ToBeFixedForConfigurationCache(because = "task exercises the resolution result API")
-    def "requested dependency attributes are reported on dependency result as desugared attributes"() {
-        createDirs("platform")
-        settingsFile << "include 'platform'"
-        buildFile << """
-            project(":platform") {
-                apply plugin: 'java-platform'
+        file("lib/build.gradle.kts") << """
+            plugins {
+                id("java-library")
             }
 
-            apply plugin: 'java-library'
+            dependencies {
+                api("org:dep:1.0")
+            }
+        """
+
+        file("tool/build.gradle.kts") << """
+            plugins {
+                id("java-library")
+                id("java-test-fixtures")
+            }
+
+            dependencies {
+                api("com:baz:1.0")
+                testFixturesApi("com:foo:1.0")
+                testFixturesImplementation("com:bar:1.0")
+            }
+        """
+
+        buildKotlinFile << """
+            ${graphTraverserTask}
+            ${variantPrinterCallback}
+
+            tasks.register<TraverseTask>("traverseCompile") {
+                resolutionResult = configurations.testCompileClasspath.map { it.incoming.resolutionResult }
+                callback = printVariant
+                outputFile = layout.buildDirectory.file("traverse-compile.txt")
+            }
+
+            tasks.register<TraverseTask>("traverseRuntime") {
+                resolutionResult = configurations.testRuntimeClasspath.map { it.incoming.resolutionResult }
+                callback = printVariant
+                outputFile = layout.buildDirectory.file("traverse-runtime.txt")
+            }
+        """
+
+        when:
+        succeeds("traverseCompile", "traverseRuntime")
+
+        then:
+        file("build/traverse-compile.txt").text.trim() == """
+root project 'root' (testCompileClasspath)
+   project ':lib' (apiElements)
+   project ':tool' (testFixturesApiElements)
+project ':lib' (apiElements)
+   org:dep:1.0 (compile)
+project ':tool' (testFixturesApiElements)
+   project ':tool' (apiElements)
+   com:foo:1.0 (compile)
+project ':tool' (apiElements)
+   com:baz:1.0 (compile)
+""".trim()
+
+        and:
+        file("build/traverse-runtime.txt").text.trim() == """
+root project 'root' (testRuntimeClasspath)
+   project ':lib' (runtimeElements)
+   project ':tool' (testFixturesRuntimeElements)
+project ':lib' (runtimeElements)
+   org:dep:1.0 (runtime)
+project ':tool' (testFixturesRuntimeElements)
+   project ':tool' (runtimeElements)
+   com:foo:1.0 (runtime)
+   com:bar:1.0 (runtime)
+project ':tool' (runtimeElements)
+   com:baz:1.0 (runtime)
+""".trim()
+    }
+
+    def "requested dependency attributes are reported on dependency result as desugared attributes"() {
+        settingsFile << "include 'platform'"
+        buildFile << """
+            plugins {
+                id("java-library")
+            }
 
             dependencies {
                 implementation(platform(project(":platform")))
             }
 
             task checkDependencyAttributes {
-                def compileClasspath = configurations.compileClasspath
+                def rootComponent = configurations.compileClasspath.incoming.resolutionResult.rootComponent
                 doLast {
-                    compileClasspath.incoming.resolutionResult.root.dependencies.each {
+                    rootComponent.get().dependencies.each {
                         def desugaredCategory = Attribute.of("org.gradle.category", String)
                         assert it.requested.attributes.getAttribute(desugaredCategory) == 'platform'
                     }
@@ -512,242 +531,220 @@ testCompileClasspath
             }
         """
 
+        file("platform/build.gradle") << """
+            plugins {
+                id("java-platform")
+            }
+        """
+
         expect:
         succeeds 'checkDependencyAttributes'
     }
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the resolution result API")
     def "reports duplicated dependencies in all variants"() {
         mavenRepo.module('org', 'foo', '1.0').publish()
         mavenRepo.module('org', 'bar', '1.0').publish()
         mavenRepo.module('org', 'baz', '1.0').publish()
         mavenRepo.module('org', 'gaz', '1.0').publish()
 
-        file("producer/build.gradle") << """
-            plugins {
-              id 'java-library'
-              id 'java-test-fixtures'
-            }
-            dependencies {
-              testFixturesApi('org:foo:1.0')
-              testFixturesImplementation('org:bar:1.0')
-              testFixturesImplementation('org:baz:1.0')
-
-              api('org:baz:1.0')
-              implementation('org:gaz:1.0')
-            }
-            """
-                    buildFile << """
-            plugins {
-              id 'java-library'
-            }
-
-            allprojects {
-               repositories {
-                  maven { url "${mavenRepo.uri}" }
-               }
-            }
-
-            dependencies {
-              implementation(project(':producer'))
-              testImplementation(testFixtures(project(':producer')))
+        settingsKotlinFile << """
+            rootProject.name = "root"
+            include("producer")
+            dependencyResolutionManagement {
+                ${mavenTestRepository(GradleDsl.KOTLIN)}
             }
         """
-        createDirs("producer")
-        settingsFile << """
-            include 'producer'
+
+        file("producer/build.gradle.kts") << """
+            plugins {
+                id("java-library")
+                id("java-test-fixtures")
+            }
+            dependencies {
+                testFixturesApi("org:foo:1.0")
+                testFixturesImplementation("org:bar:1.0")
+                testFixturesImplementation("org:baz:1.0")
+
+                api("org:baz:1.0")
+                implementation("org:gaz:1.0")
+            }
         """
 
-        withResolutionResultDumper("testCompileClasspath", "testRuntimeClasspath")
+        buildKotlinFile << """
+            plugins {
+                id("java-library")
+            }
+
+            dependencies {
+                implementation(project(":producer"))
+                testImplementation(testFixtures(project(":producer")))
+            }
+        """
+
+        buildKotlinFile << """
+            ${graphTraverserTask}
+            ${variantPrinterCallback}
+
+            tasks.register<TraverseTask>("traverseCompile") {
+                resolutionResult = configurations.testCompileClasspath.map { it.incoming.resolutionResult }
+                callback = printVariant
+                outputFile = layout.buildDirectory.file("traverse-compile.txt")
+            }
+
+            tasks.register<TraverseTask>("traverseRuntime") {
+                resolutionResult = configurations.testRuntimeClasspath.map { it.incoming.resolutionResult }
+                callback = printVariant
+                outputFile = layout.buildDirectory.file("traverse-runtime.txt")
+            }
+        """
 
         when: "baz should appear in both apiElements and testFixturesRuntimeElements"
-        succeeds 'resolve'
+        succeeds("traverseCompile", "traverseRuntime")
 
         then:
-        outputContains("""
-testCompileClasspath
-   project :producer (apiElements)
-      org:baz:1.0 (compile)
-   project :producer (testFixturesApiElements)
-      project :producer (apiElements)
-      org:foo:1.0 (compile)
-""")
+        file("build/traverse-compile.txt").text.trim() == """
+root project 'root' (testCompileClasspath)
+   project ':producer' (apiElements)
+   project ':producer' (testFixturesApiElements)
+project ':producer' (apiElements)
+   org:baz:1.0 (compile)
+project ':producer' (testFixturesApiElements)
+   project ':producer' (apiElements)
+   org:foo:1.0 (compile)
+""".trim()
 
         and:
-        outputContains("""
-testRuntimeClasspath
-   project :producer (runtimeElements)
-      org:baz:1.0 (runtime)
-      org:gaz:1.0 (runtime)
-   project :producer (testFixturesRuntimeElements)
-      project :producer (runtimeElements)
-      org:foo:1.0 (runtime)
-      org:bar:1.0 (runtime)
-      org:baz:1.0 (runtime)
-""")
+        file("build/traverse-runtime.txt").text.trim() == """
+root project 'root' (testRuntimeClasspath)
+   project ':producer' (runtimeElements)
+   project ':producer' (testFixturesRuntimeElements)
+project ':producer' (runtimeElements)
+   org:baz:1.0 (runtime)
+   org:gaz:1.0 (runtime)
+project ':producer' (testFixturesRuntimeElements)
+   project ':producer' (runtimeElements)
+   org:foo:1.0 (runtime)
+   org:bar:1.0 (runtime)
+   org:baz:1.0 (runtime)
+""".trim()
     }
 
-    @ToBeFixedForConfigurationCache(because = "task exercises the resolution result API")
     def "reports if we try to get dependencies from a different variant"() {
         mavenRepo.module('org', 'foo', '1.0').publish()
+        settingsFile << """
+            rootProject.name = 'test'
+            include 'producer'
+            dependencyResolutionManagement {
+                ${mavenTestRepository()}
+            }
+        """
 
         file("producer/build.gradle") << """
             plugins {
-              id 'java-library'
-              id 'java-test-fixtures'
+                id("java-library")
+                id("java-test-fixtures")
             }
             dependencies {
-              testFixturesApi('org:foo:1.0')
+                testFixturesApi('org:foo:1.0')
             }
             """
         buildFile << """
             plugins {
-              id 'java-library'
-            }
-
-            allprojects {
-               repositories {
-                  maven { url "${mavenRepo.uri}" }
-               }
+                id("java-library")
             }
 
             dependencies {
-              implementation(project(':producer'))
-              testImplementation(testFixtures(project(':producer')))
+                implementation(project(':producer'))
+                testImplementation(testFixtures(project(':producer')))
             }
 
             task resolve {
-                def testCompileClasspath = configurations.testCompileClasspath
+                def result = configurations.testCompileClasspath.incoming.resolutionResult
                 doLast {
-                    def result = testCompileClasspath.incoming.resolutionResult
-                    def rootComponent = result.root
-                    def childComponent = result.allComponents.find { it.toString() == 'project :producer' }
+                    def childComponent = result.allComponents.find { it.toString() == "project ':producer'" }
                     def childVariant = childComponent.variants[0]
                     // try to get dependencies for child variant on the wrong component
-                    println(rootComponent.getDependenciesForVariant(childVariant))
+                    println(result.rootComponent.get().getDependenciesForVariant(childVariant))
                 }
             }
-        """
-        createDirs("producer")
-        settingsFile << """
-            include 'producer'
         """
 
         when:
         fails 'resolve'
 
         then:
-        failure.assertHasCause("Variant 'apiElements' doesn't belong to resolved component 'root project :'. There's no resolved variant with the same name. Most likely you are using a variant from another component to get the dependencies of this component.")
+        failure.assertHasCause("Variant 'apiElements' doesn't belong to resolved component 'root project 'test''. There's no resolved variant with the same name. Most likely you are using a variant from another component to get the dependencies of this component.")
     }
 
     @Issue("https://github.com/gradle/gradle/issues/12643")
-    @ToBeFixedForConfigurationCache(because = "task exercises the resolution result API")
     def "resolved variant of a selected node shouldn't be null"() {
         buildFile << """
-        apply plugin: 'java-library'
-
-        ${mavenCentralRepository()}
-
-        configurations.all {
-            resolutionStrategy.capabilitiesResolution.withCapability('com.google.collections:google-collections') {
-                selectHighestVersion()
+            plugins {
+                id("java-library")
             }
-        }
-        dependencies {
-            implementation 'com.google.guava:guava:28.1-jre'
-            implementation 'com.google.collections:google-collections:1.0'
-            components {
-                withModule('com.google.guava:guava') {
-                    allVariants {
-                        withCapabilities {
-                           addCapability('com.google.collections', 'google-collections', id.version)
+
+            ${mavenCentralRepository()}
+
+            configurations.all {
+                resolutionStrategy.capabilitiesResolution.withCapability('com.google.collections:google-collections') {
+                    selectHighestVersion()
+                }
+            }
+            dependencies {
+                implementation 'com.google.guava:guava:28.1-jre'
+                implementation 'com.google.collections:google-collections:1.0'
+                components {
+                    withModule('com.google.guava:guava') {
+                        allVariants {
+                            withCapabilities {
+                               addCapability('com.google.collections', 'google-collections', id.version)
+                            }
                         }
                     }
                 }
             }
-        }
 
-        task resolve {
-            def compileClasspath = configurations.compileClasspath
-            doLast {
-                def result = compileClasspath.incoming.resolutionResult
-                result.allDependencies {
-                    assert it instanceof ResolvedDependencyResult
-                    assert it.resolvedVariant != null
+            task resolve {
+                def result = configurations.compileClasspath.incoming.resolutionResult
+                doLast {
+                    result.allDependencies {
+                        assert it instanceof ResolvedDependencyResult
+                        assert it.resolvedVariant != null
+                    }
                 }
             }
-        }
         """
 
         expect:
         succeeds 'resolve'
-
     }
 
-    private void withResolutionResultDumper(String... configurations) {
-        def confCapture = configurations.collect( configuration ->
-            "def $configuration = configurations.$configuration"
-        )
-
-        def confList = configurations.collect { configuration ->
-            """
-                // dump variant dependencies
-                def result_$configuration = ${configuration}.incoming.resolutionResult
-                dump("$configuration", result_${configuration}.root, null, 0)
-
-                // check that configuration attributes are visible and desugared
-                def consumerAttributes_$configuration = configurations.${configuration}.attributes
-                assert result_${configuration}.requestedAttributes.keySet().size() == consumerAttributes_${configuration}.keySet().size()
-                consumerAttributes_${configuration}.keySet().each {
-                    println "Checking \$it of type \$it.type"
-                    def desugared = Attribute.of(it.name, String)
-                    assert result_${configuration}.requestedAttributes.getAttribute(desugared) == consumerAttributes_${configuration}.getAttribute(it).toString()
-                }
-            """
-        }
-        buildFile << """
-
-            task resolve {
-                ${confCapture.join('\n')}
-                doLast {
-                    { -> ${confList.join('\n')} }()
-                    println()
-                    println 'Waiting for the cache to expire'
-                    // see org.gradle.api.internal.artifacts.ivyservice.resolveengine.store.CachedStoreFactory
-                    Thread.sleep(800) // must be > cache expiry
-                    println 'Read result again to make sure serialization state is ok'
-                    println();
-                    { -> ${confList.join('\n')} }()
-                }
-            }
-
-            void dump(String root, ResolvedComponentResult result, ResolvedVariantResult variant, int depth, Set visited = []) {
-                if (visited.add([result, variant])) {
-                    if (variant == null) {
-                        println(root)
-                    }
-                    def dependencies = variant == null ? result.dependencies : result.getDependenciesForVariant(variant)
-                    depth++
-                    dependencies.each {
-                        if (it instanceof ResolvedDependencyResult) {
-                            def resolvedVariant = it.resolvedVariant
-                            def selected = it.selected
-                            println("   " * depth + "\$selected (\$resolvedVariant)")
-                            dump(root, selected, resolvedVariant, depth, visited)
-                        } else {
-                            println("   " * depth + "\$it (unresolved)")
+    private static String getVariantPrinterCallback() {
+        """
+            val printVariant: (ResolvedComponentResult, ResolvedVariantResult) -> String = { component, variant ->
+                val deps = component.getDependenciesForVariant(variant)
+                if (deps.isEmpty()) {
+                    ""
+                } else {
+                    buildString {
+                        appendLine("\$component (\${variant.displayName})")
+                        deps.forEach { dep ->
+                            when (dep) {
+                                is ResolvedDependencyResult -> appendLine("   \${dep.selected} (\${dep.resolvedVariant.displayName})")
+                                else -> appendLine("   \$dep (unresolved)")
+                            }
                         }
                     }
                 }
             }
-"""
+        """
     }
 
     @Issue("https://github.com/gradle/gradle/issues/26334")
     def "resolution result does not report duplicate variants for the same module reachable through different paths"() {
-        createDirs("producer", "transitive")
         settingsFile << """
-            include "producer", "transitive"
+            include "producer"
+            include "transitive"
         """
         file("producer/build.gradle") << """
             configurations {
@@ -802,7 +799,6 @@ testRuntimeClasspath
 
     }
     def "resolution result does not realize artifact tasks"() {
-        createDirs("producer")
         settingsFile << "include 'producer'"
         file("producer/build.gradle") << """
             plugins {
@@ -977,7 +973,11 @@ testRuntimeClasspath
         succeeds("resolve")
     }
 
-    def "can traverse a graph at the variant level"() {
+    def "resolution result is a valid task input"() {
+        mavenRepo.module("org", "foo")
+            .dependsOn(mavenRepo.module("org", "bar").publish())
+            .publish()
+
         settingsKotlinFile << """
             rootProject.name = "root"
             include("other")
@@ -1002,39 +1002,81 @@ testRuntimeClasspath
             group = "org"
             version = "1.0"
 
+            ${mavenTestRepository(GradleDsl.KOTLIN)}
+
             dependencies {
+                implementation("org:foo:1.0")
                 implementation(project(":other"))
                 testImplementation(testFixtures(project(":other")))
             }
 
+            ${graphTraverserTask}
+            tasks.register<TraverseTask>("traverse") {
+                resolutionResult = configurations.testRuntimeClasspath.map { it.incoming.resolutionResult }
+                callback = { _, variant ->
+                    val displayName = when (val owner = variant.owner) {
+                        is ProjectComponentIdentifier -> "\${owner.buildTreePath}:\${variant.displayName}"
+                        is ModuleComponentIdentifier -> "\${owner.displayName}:\${variant.displayName}"
+                        else -> error("Unknown component type")
+                    }
+                    "\$displayName\\n"
+                }
+                outputFile = layout.buildDirectory.file("traverse.txt")
+            }
+        """
+
+        def expected = """
+::testRuntimeClasspath
+org:foo:1.0:runtime
+:other:runtimeElements
+::testFixturesRuntimeElements
+:other:testFixturesRuntimeElements
+org:bar:1.0:runtime
+::runtimeElements
+""".trim()
+
+        when:
+        succeeds("traverse")
+
+        then:
+        file("build/traverse.txt").text.trim() == expected
+
+        when:
+        succeeds("traverse")
+
+        then:
+        result.assertAllTasksSkipped()
+        file("build/traverse.txt").text.trim() == expected
+    }
+
+    private static String getGraphTraverserTask() {
+        """
             abstract class TraverseTask : DefaultTask() {
 
                 @get:Input
-                abstract val rootComponent: Property<ResolvedComponentResult>
+                abstract val resolutionResult: Property<ResolutionResult>
 
                 @get:Input
-                abstract val rootVariant: Property<ResolvedVariantResult>
+                abstract val callback: Property<(ResolvedComponentResult, ResolvedVariantResult) -> String>
+
+                @get:OutputFile
+                abstract val outputFile: RegularFileProperty
 
                 @TaskAction
                 fun traverse() {
-                    val variants = mutableListOf<String>()
-                    traverseGraphVariants(rootComponent.get(), rootVariant.get()) { variant ->
-                        val owner = variant.owner as ProjectComponentIdentifier
-                        variants.add("\${owner.buildTreePath}:\${variant.displayName}")
+                    val result = resolutionResult.get()
+                    val cb = callback.get()
+                    val output = StringBuilder()
+                    traverseGraphVariants(result.rootComponent.get(), result.rootVariant.get()) { component, variant ->
+                        output.append(cb(component, variant))
                     }
-                    assert(variants == listOf(
-                        "::testRuntimeClasspath",
-                        ":other:runtimeElements",
-                        "::testFixturesRuntimeElements",
-                        ":other:testFixturesRuntimeElements",
-                        "::runtimeElements"
-                    ))
+                    outputFile.get().asFile.writeText(output.toString())
                 }
 
                 fun traverseGraphVariants(
                     rootComponent: ResolvedComponentResult,
                     rootVariant: ResolvedVariantResult,
-                    callback: (ResolvedVariantResult) -> Unit
+                    callback: (ResolvedComponentResult, ResolvedVariantResult) -> Unit
                 ) {
                     val seen = mutableSetOf(rootVariant)
                     val queue = ArrayDeque(listOf(rootVariant to rootComponent))
@@ -1042,7 +1084,7 @@ testRuntimeClasspath
                     while (queue.isNotEmpty()) {
                         val (variant, component) = queue.removeFirst()
 
-                        callback(variant)
+                        callback(component, variant)
 
                         // Traverse this variant's dependencies
                         component.getDependenciesForVariant(variant).forEach { dependency ->
@@ -1059,14 +1101,71 @@ testRuntimeClasspath
                     }
                 }
             }
+        """
+    }
 
-            tasks.register<TraverseTask>("traverse") {
-                rootComponent = configurations.testRuntimeClasspath.flatMap { it.incoming.resolutionResult.rootComponent }
-                rootVariant = configurations.testRuntimeClasspath.flatMap { it.incoming.resolutionResult.rootVariant }
+    def "attributes on root variant can be requested using Stringly or strongly-typed values"() {
+        settingsFile << """
+            include("producer")
+        """
+
+        file("producer/build.gradle") << """
+            plugins {
+                id("java-library")
+            }
+        """
+
+        buildFile << """
+            plugins {
+                id("java-library")
+            }
+
+            dependencies {
+                implementation project(":producer")
+            }
+
+            task resolve {
+                def root = configurations.runtimeClasspath.incoming.resolutionResult.rootVariant
+
+                doLast {
+                    def usage = root.get().attributes.getAttribute(Usage.USAGE_ATTRIBUTE)
+                    assert Usage.class.isAssignableFrom(usage.class)
+                    assert usage.name == "java-runtime"
+
+                    def usageAsString = root.get().attributes.getAttribute(Attribute.of(Usage.USAGE_ATTRIBUTE.name, String.class))
+                    assert usageAsString == "java-runtime"
+                }
             }
         """
 
         expect:
-        succeeds("traverse")
+        succeeds("resolve")
+    }
+
+    def "capabilities on variant always return same instance"() {
+        mavenRepo.module("org", "foo", "1.0").publish()
+
+        buildFile << """
+            plugins {
+                id("java-library")
+            }
+
+            ${mavenTestRepository()}
+
+            dependencies {
+                implementation("org:foo:1.0")
+            }
+
+            tasks.register("resolve") {
+                def rootComponent = configurations.runtimeClasspath.incoming.resolutionResult.rootComponent
+                doLast {
+                    def variant = rootComponent.get().dependencies.first().resolvedVariant
+                    assert variant.capabilities.is(variant.capabilities)
+                }
+            }
+        """
+
+        expect:
+        succeeds("resolve")
     }
 }

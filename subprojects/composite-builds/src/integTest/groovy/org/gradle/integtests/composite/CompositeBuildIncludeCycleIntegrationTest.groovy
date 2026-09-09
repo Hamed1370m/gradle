@@ -16,6 +16,7 @@
 
 package org.gradle.integtests.composite
 
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.integtests.fixtures.build.BuildTestFile
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 
@@ -138,7 +139,7 @@ class CompositeBuildIncludeCycleIntegrationTest extends AbstractCompositeBuildIn
         execute(buildA, 'task1')
 
         then:
-        result.assertTasksExecuted(':task3', ':buildB:task2', ':task1')
+        result.assertTasksScheduled(':task3', ':buildB:task2', ':task1')
 
         and:
         canRunFromCache(buildA, 'task1')
@@ -169,12 +170,13 @@ class CompositeBuildIncludeCycleIntegrationTest extends AbstractCompositeBuildIn
         execute(buildA, 'task1')
 
         then:
-        result.assertTasksExecuted(':task4', ':buildB:task3', ':buildB:task2', ':task1')
+        result.assertTasksScheduled(':task4', ':buildB:task3', ':buildB:task2', ':task1')
 
         and:
         canRunFromCache(buildA, 'task1')
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-project / cross-build configuration")
     def "can depend back on root build"() {
         given:
         def rootBuild = multiProjectBuild('rootBuild', ['root1', 'root2']) {
@@ -202,12 +204,13 @@ class CompositeBuildIncludeCycleIntegrationTest extends AbstractCompositeBuildIn
         execute(rootBuild, ':root1:compileJava')
 
         then:
-        result.assertTasksExecuted(':root2:compileJava', ':buildA:compileJava', ':root1:compileJava')
+        result.assertTasksScheduled(':root2:compileJava', ':buildA:compileJava', ':root1:compileJava')
 
         and:
         canRunFromCache(rootBuild, ':root1:compileJava')
     }
 
+    @ToBeFixedForIsolatedProjects(because = "cross-build configuration in composite build")
     def "can depend back on root build and back on an included build"() {
         given:
         def rootBuild = multiProjectBuild('rootBuild', ['root1', 'root2', 'x3']) {
@@ -246,7 +249,7 @@ class CompositeBuildIncludeCycleIntegrationTest extends AbstractCompositeBuildIn
         execute(rootBuild, ':root1:compileJava')
 
         then:
-        result.assertTasksExecuted(':x3:compileJava', ':buildB:compileJava', ':root2:compileJava', ':buildA:compileJava', ':root1:compileJava')
+        result.assertTasksScheduled(':x3:compileJava', ':buildB:compileJava', ':root2:compileJava', ':buildA:compileJava', ':root1:compileJava')
 
         and:
         canRunFromCache(rootBuild, ':root1:compileJava')

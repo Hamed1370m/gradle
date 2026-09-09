@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Gradle, Inc.
+// Copyright (C) 2024 Gradle, Inc.
 //
 // Licensed under the Creative Commons Attribution-Noncommercial-ShareAlike 4.0 International License.;
 // you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ You will also benefit from robust support for multi-project builds and easy-to-u
 The biggest challenge in migrating from Ant to Gradle is that there is no such thing as a standard Ant build.
 That makes it difficult to provide specific instructions.
 Fortunately, Gradle has some great integration features with Ant that can make the process relatively smooth.
-Migrating from https://ant.apache.org/ivy/[Ivy]-based dependency management isn't difficult because Gradle has a similar model based on <<glossary.adoc#sub:terminology_configuration,dependency configurations>> that works with Ivy-compatible repositories.
+Migrating from https://ant.apache.org/ivy/[Ivy]-based dependency management isn't difficult because Gradle has a similar model based on dependency configurations that works with Ivy-compatible repositories.
 
 We will start by outlining the things you should consider when migrating a build from Ant to Gradle and offer some general guidelines on how to proceed.
 
@@ -150,16 +150,16 @@ Here's how to apply the Java Library Plugin:
 
 .Applying the Java Library Plugin
 ====
-include::sample[dir="snippets/antMigration/importBuild/kotlin",files="build.gradle.kts[tags=apply-plugin]"]
-include::sample[dir="snippets/antMigration/importBuild/groovy",files="build.gradle[tags=apply-plugin]"]
+include::sample[dir="snippets/releases/migrating/importBuild/kotlin",files="build.gradle.kts[tags=apply-plugin]"]
+include::sample[dir="snippets/releases/migrating/importBuild/groovy",files="build.gradle[tags=apply-plugin]"]
 ====
 
 To rename the `build` task, use the variant of link:{javadocPath}/org/gradle/api/AntBuilder.html#importBuild-java.lang.Object-org.gradle.api.Transformer-[AntBuilder.importBuild()] that accepts a transformer, like this:
 
 .Renaming targets on import
 ====
-include::sample[dir="snippets/antMigration/importBuild/kotlin",files="build.gradle.kts[tags=import-build]"]
-include::sample[dir="snippets/antMigration/importBuild/groovy",files="build.gradle[tags=import-build]"]
+include::sample[dir="snippets/releases/migrating/importBuild/kotlin",files="build.gradle.kts[tags=import-build]"]
+include::sample[dir="snippets/releases/migrating/importBuild/groovy",files="build.gradle[tags=import-build]"]
 ====
 <1> Renames the `build` target to `ant_build` and leaves all other targets unchanged
 
@@ -171,8 +171,8 @@ Here's how you would configure Gradle to use those paths:
 
 .Configuring the source sets
 ====
-include::sample[dir="snippets/antMigration/importBuild/kotlin",files="build.gradle.kts[tags=source-sets]"]
-include::sample[dir="snippets/antMigration/importBuild/groovy",files="build.gradle[tags=source-sets]"]
+include::sample[dir="snippets/releases/migrating/importBuild/kotlin",files="build.gradle.kts[tags=source-sets]"]
+include::sample[dir="snippets/releases/migrating/importBuild/groovy",files="build.gradle[tags=source-sets]"]
 ====
 
 You should eventually switch to the standard directory structure for your type of project so that you will be able to remove this customization.
@@ -184,8 +184,8 @@ Here is the required task dependency configuration for the example scenario, whi
 
 .Configuring the task dependencies
 ====
-include::sample[dir="snippets/antMigration/importBuild/kotlin",files="build.gradle.kts[tags=task-dependencies]"]
-include::sample[dir="snippets/antMigration/importBuild/groovy",files="build.gradle[tags=task-dependencies]"]
+include::sample[dir="snippets/releases/migrating/importBuild/kotlin",files="build.gradle.kts[tags=task-dependencies]"]
+include::sample[dir="snippets/releases/migrating/importBuild/groovy",files="build.gradle[tags=task-dependencies]"]
 ====
 <1> Makes compilation depend on the `prepare` task
 <2> Detaches `package` from the `ant_build` task and makes it depend on `compileJava`
@@ -205,7 +205,7 @@ But if the build performs some extra processing on the compiled classes, or does
 [[migant:managing_dependencies]]
 == Managing dependencies
 
-Ant builds typically take one of two approaches to dealing with binary <<glossary.adoc#sub:terminology_dependency,dependencies>> (such as libraries):
+Ant builds typically take one of two approaches to dealing with binary dependencies (such as libraries):
 
  * Storing them with the project in a local "lib" directory
  * Using https://ant.apache.org/ivy/[Apache Ivy] to manage them
@@ -219,12 +219,12 @@ Let's look at each case, in detail, in the following sections.
 When you are attempting to migrate a build that stores its dependencies on the filesystem, either locally or on the network, you should consider whether you want to eventually move to managed dependencies using remote repositories.
 That's because you can incorporate filesystem dependencies into a Gradle build in one of two ways:
 
- * Define a <<declaring_repositories_adv.adoc#sub:flat_dir_resolver,flat-directory repository>> and use standard dependency declarations
- * Attach the files directly to the appropriate dependency configurations (<<declaring_dependencies#sub:file_dependencies,file dependencies>>)
+ * Define a <<supported_repository_types.adoc#sec:flat-dir-resolver,flat-directory repository>> and use standard dependency declarations
+ * Attach the files directly to the appropriate dependency configurations (<<declaring_dependencies_basics.adoc#sec:file-dependencies,file dependencies>>)
 
 It's easier to migrate to managed dependencies served from Maven, or Ivy-compatible repositories, if you take the first approach, but doing so requires all your files to conform to the naming convention "<moduleName>-<version>.<extension>".
 
-NOTE: If you store your dependencies in the standard Maven repository layout — `<repoDir>/<group>/<module>/<version>` — then you can define a <<declaring_repositories_basics.adoc#sec:declaring_custom_repository,custom Maven repository>> with a `file://` URL.
+NOTE: If you store your dependencies in the standard Maven repository layout — `<repoDir>/<group>/<module>/<version>` — then you can define a <<declaring_repositories_basics.adoc#sec:declaring-custom-repository,custom Maven repository>> with a `file://` URL.
 
 To demonstrate the two techniques, consider a project that has the following library JARs in its `libs` directory:
 
@@ -235,14 +235,14 @@ libs
 └── utility-library-1.0.jar
 
 The file `our-custom.jar` has no version number, so it has to be added as a file dependency.
-The other two JARs match the required naming convention and can be declared as normal <<declaring_dependencies#sub:module_dependencies,module dependencies>> that are retrieved from a flat-directory repository.
+The other two JARs match the required naming convention and can be declared as normal <<declaring_dependencies_basics.adoc#sec:module-dependencies,module dependencies>> that are retrieved from a flat-directory repository.
 
 The following sample build script demonstrates how you can incorporate all of these libraries into a build:
 
 .Declaring dependencies served from the filesystem
 ====
-include::sample[dir="snippets/antMigration/fileDeps/kotlin",files="build.gradle.kts[tags=file-deps]"]
-include::sample[dir="snippets/antMigration/fileDeps/groovy",files="build.gradle[tags=file-deps]"]
+include::sample[dir="snippets/releases/migrating/fileDeps/kotlin",files="build.gradle.kts[tags=file-deps]"]
+include::sample[dir="snippets/releases/migrating/fileDeps/groovy",files="build.gradle[tags=file-deps]"]
 ====
 <1> Specifies the path to the directory containing the JAR files
 <2> Declares a _file dependency_ for the un-versioned JAR
@@ -263,7 +263,7 @@ Then, if you add a normal Maven or Ivy-compatible repository at a later date, Gr
 Apache Ivy is a standalone dependency management tool that is widely used with Ant. It works similarly to Gradle.
 In fact, they both allow you to:
 
- * Define your own <<glossary.adoc#sub:terminology_configuration,configurations>>
+ * Define your own configurations
  * Extend configurations from one another
  * Attach dependencies to configurations
  * Resolve dependencies from Ivy-compatible repositories
@@ -271,7 +271,7 @@ In fact, they both allow you to:
 
 The most notable difference is that Gradle has standard configurations for specific types of projects.
 For example, the <<java_plugin#tab:configurations,Java Plugin>> defines configurations like `implementation`, `testImplementation` and `runtimeOnly`.
-You are able to <<declaring_dependencies_adv.adoc#sec:defining-custom-configurations,define your own dependency configurations>> if needed.
+You are able to <<declaring_configurations.adoc#sec:defining-custom-configurations,define your own dependency configurations>> if needed.
 
 As such, it's typically straightforward to migrate from Ivy to Gradle:
 
@@ -279,7 +279,7 @@ As such, it's typically straightforward to migrate from Ivy to Gradle:
  * Transcribe any configuration declarations from your module descriptors into the link:{groovyDslPath}/org.gradle.api.Project.html#org.gradle.api.Project:configurations(groovy.lang.Closure)[configurations {}] block of the build script for any custom configurations that can't be replaced by Gradle's standard ones.
  * Transcribe the resolvers from your Ivy settings file into the link:{groovyDslPath}/org.gradle.api.Project.html#org.gradle.api.Project:repositories(groovy.lang.Closure)[repositories {}] block of the build script.
 
-See the chapters on <<dependency_configurations.adoc#sec:what-are-dependency-configurations,Managing Dependency Configurations>>, <<declaring_dependencies.adoc#sec:dependency-types,Declaring Dependencies>> and <<declaring_repositories.adoc#declaring-basic-repositories,Declaring Repositories>> for more information.
+See the chapters on <<dependency_configurations.adoc#sub:what-are-dependency-configurations,Managing Dependency Configurations>>, <<declaring_dependencies.adoc#sub:dependency-types,Declaring Dependencies>> and <<declaring_repositories.adoc#three-declaring-repositories,Declaring Repositories>> for more information.
 
 Ivy provides several Ant tasks that handle Ivy's process for fetching dependencies.
 The basic steps of that process consist of:
@@ -307,13 +307,13 @@ See the chapter on <<dependency_constraints.adoc#dependency-constraints,controll
 
 Resolution::
 At the beginning of the build, Gradle will automatically resolve any dependencies that you have declared and download them to its cache.
-Gradle searches the repositories for those dependencies, with the search order defined by <<declaring_repositories_adv.adoc#sec:declaring_multiple_repositories,the order in which the repositories are declared>>.
+Gradle searches the repositories for those dependencies, with the search order defined by <<declaring_repositories_basics.adoc#sec:declaring-multiple-repositories,the order in which the repositories are declared>>.
 +
 It's worth noting that Gradle supports the same dynamic version syntax as Ivy, so you can still use conventions like `1.0.+`.
 You can also use the special `latest.integration` and `latest.release` labels.
-If you decide to use such <<dynamic_versions.adoc#sub:declaring_dependency_with_dynamic_version,dynamic>> and <<dynamic_versions.adoc#sub:declaring_dependency_with_changing_version,changing>> dependencies, you can configure the caching behavior for them via link:{groovyDslPath}/org.gradle.api.artifacts.ResolutionStrategy.html[resolutionStrategy].
+If you decide to use such <<dependency_versions.adoc#sec:declaring-dependency-with-dynamic-version,dynamic>> and <<dependency_versions.adoc#sec:declaring-dependency-with-changing-version,changing>> dependencies, you can configure the caching behavior for them via link:{groovyDslPath}/org.gradle.api.artifacts.ResolutionStrategy.html[resolutionStrategy].
 +
-You might also want to consider <<dependency_locking#dependency-locking,dependency locking>> if you're using dynamic and/or changing dependencies.
+You might also want to consider <<dependency_locking.adoc#sec:dependency-locking,dependency locking>> if you're using dynamic and/or changing dependencies.
 It's a way to make the build more reliable and ensures https://reproducible-builds.org/[reproducibility].
 
 Retrieval::
@@ -323,8 +323,8 @@ If you want to copy the dependencies to a local directory, you can use a link:{g
 +
 .Copying dependencies to a local directory
 ====
-include::sample[dir="snippets/antMigration/fileDeps/kotlin",files="build.gradle.kts[tags=retrieve-deps]"]
-include::sample[dir="snippets/antMigration/fileDeps/groovy",files="build.gradle[tags=retrieve-deps]"]
+include::sample[dir="snippets/releases/migrating/fileDeps/kotlin",files="build.gradle.kts[tags=retrieve-deps]"]
+include::sample[dir="snippets/releases/migrating/fileDeps/groovy",files="build.gradle[tags=retrieve-deps]"]
 ====
 +
 A configuration is also a file collection, hence why it can be used in the `from()` configuration.
@@ -431,13 +431,13 @@ Sometimes you will want to make use of an Ant task directly from your Gradle bui
 If that's the case, you can easily set those properties via the `ant` object, as described in the <<ant#sec:ant_properties,Using Ant from Gradle>> chapter.
 --
 
-Gradle does use something similar in the form of <<project_properties.adoc#sec:project_properties,project properties>>, which are a reasonable way to parameterize a build.
+Gradle does use something similar in the form of <<build_environment.adoc#sec:project_properties,project properties>>, which are a reasonable way to parameterize a build.
 These can be set from the command line, in the <<build_environment#sec:gradle_configuration_properties,`gradle.properties` file>>, or via specially named system properties and environment variables.
 
 If you have existing Ant properties files, you can copy their contents into the project's `gradle.properties` file.
 Just be aware that:
 
- * Properties set in `gradle.properties` **do not** override <<writing_build_scripts#sec:extra_properties,extra project properties>> defined in the build script with the same name
+ * Properties set in `gradle.properties` **do not** override <<writing_build_scripts_intermediate.adoc#sec:extra_properties,extra project properties>> defined in the build script with the same name
  * Imported Ant tasks will not automatically "see" the Gradle project properties — you must copy them into the Ant properties map for that to happen
 
 Another important factor to understand is that a Gradle build script works with an object-oriented API and it's often best to use the properties of tasks, source sets, and other objects where possible.
@@ -445,14 +445,14 @@ For example, this build script fragment creates tasks for packaging Javadoc docu
 
 .Using task properties in place of project properties
 ====
-include::sample[dir="snippets/antMigration/fileDeps/kotlin",files="build.gradle.kts[tags=properties]"]
-include::sample[dir="snippets/antMigration/fileDeps/groovy",files="build.gradle[tags=properties]"]
+include::sample[dir="snippets/releases/migrating/fileDeps/kotlin",files="build.gradle.kts[tags=properties]"]
+include::sample[dir="snippets/releases/migrating/fileDeps/groovy",files="build.gradle[tags=properties]"]
 ====
 <1> Packages all ``javadoc``'s output files — equivalent to `from javadoc.destinationDir`
 <2> Uses the location of the Javadoc JAR held by the `javadocJar` task
 <3> Uses an project property called `tmpDistDir` to define the location of the 'dist' directory
 
-As you can see from the example with `tmpDistDir`, there is often a need to define paths through properties, which is why Gradle also provides <<writing_build_scripts#sec:extra_properties,extra properties>> that can be attached to the project, tasks, and some other types of objects.
+As you can see from the example with `tmpDistDir`, there is often a need to define paths through properties, which is why Gradle also provides <<writing_build_scripts_intermediate.adoc#sec:extra_properties,extra properties>> that can be attached to the project, tasks, and some other types of objects.
 
 [[migant:multi_project_builds]]
 == Migrating multi-project builds
@@ -493,18 +493,18 @@ You will need to replace targets that use `<ant>` tasks with Gradle <<controllin
 For example, your web project depends on a "util" library that's part of the same build. The Ant build file for "web" might have a target like this:
 +
 ====
-include::sample[dir="snippets/antMigration/multiProject/groovy",files="web/build.xml[tags=build-required]"]
+include::sample[dir="snippets/releases/migrating/multiProject/groovy",files="web/build.xml[tags=build-required]"]
 ====
 <1> `root.dir` would have to be defined by the build
 +
 This can be replaced by an inter-project task dependency in the corresponding Gradle build script, as demonstrated in the following example that assumes the "web" project's "compile" task is requires "util" to be built beforehand:
 +
 ====
-include::sample[dir="snippets/antMigration/multiProject/kotlin",files="web/build.gradle.kts[]"]
-include::sample[dir="snippets/antMigration/multiProject/groovy",files="web/build.gradle[]"]
+include::sample[dir="snippets/releases/migrating/multiProject/kotlin",files="web/build.gradle.kts[]"]
+include::sample[dir="snippets/releases/migrating/multiProject/groovy",files="web/build.gradle[]"]
 ====
 +
-This is not as robust or powerful as Gradle's <<declaring_dependencies_between_subprojects#sec:project_jar_dependencies,project dependencies>>, but it solves the immediate problem without big changes to the build.
+This is not as robust or powerful as Gradle's <<multi_project_builds.adoc#sec:project_jar_dependencies,project dependencies>>, but it solves the immediate problem without big changes to the build.
 Just be careful to remove or override any dependencies on tasks that delegate to other subprojects, like the `buildRequiredProjects` task.
  5. Identify the projects that have no dependencies on other projects and migrate them to idiomatic Gradle builds scripts.
 +
@@ -521,6 +521,7 @@ Once those builds have been migrated, such build logic will no longer be needed 
 
 At the end of the process you should have a Gradle build that you are confident works as it should, with much less build logic than before.
 
+[[migant:further_reading]]
 == Further reading
 
 This chapter has covered the major topics that are specific to migrating Ant builds to Gradle.

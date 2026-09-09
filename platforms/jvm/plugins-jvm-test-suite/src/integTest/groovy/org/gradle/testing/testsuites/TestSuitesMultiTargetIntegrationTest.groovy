@@ -29,7 +29,7 @@ class TestSuitesMultiTargetIntegrationTest extends AbstractIntegrationSpec imple
     Jvm otherJvm
 
     def setup() {
-        otherJvm = AvailableJavaHomes.differentVersion
+        otherJvm = AvailableJavaHomes.differentVersionOrNull
         assumeNotNull(otherJvm)
     }
 
@@ -96,8 +96,8 @@ class TestSuitesMultiTargetIntegrationTest extends AbstractIntegrationSpec imple
         withInstallations(Jvm.current(), otherJvm).succeeds("check")
 
         then:
-        result.assertTaskExecuted(":test")
-        result.assertTaskExecuted(":testOtherJdk")
+        result.assertTaskScheduled(":test")
+        result.assertTaskScheduled(":testOtherJdk")
     }
 
     // currently not supported, namespacing issues
@@ -127,8 +127,7 @@ class TestSuitesMultiTargetIntegrationTest extends AbstractIntegrationSpec imple
         failure.assertThatCause(containsNormalizedString("Cannot add task 'test' as a task with that name already exists."))
     }
 
-    // currently not supported, variants are ambiguous without further information
-    def "reports of multiple targets cannot be aggregated"() {
+    def "reports of multiple targets can be aggregated"() {
         setupBasicTestingProject(['test-report-aggregation'])
         buildFile << """
             testing {
@@ -150,11 +149,10 @@ class TestSuitesMultiTargetIntegrationTest extends AbstractIntegrationSpec imple
         """
 
         when:
-        withInstallations(Jvm.current(), otherJvm).fails("testAggregateTestReport")
+        withInstallations(Jvm.current(), otherJvm).succeeds("testAggregateTestReport")
 
         then:
-        failure.assertThatCause(containsNormalizedString("There are several available matching variants of root project :"))
-        failure.assertThatCause(containsNormalizedString("The only attribute distinguishing these variants is 'org.gradle.testsuite.target.name'. Add this attribute to the consumer's configuration to resolve the ambiguity:"))
+        result.assertTaskScheduled(":testAggregateTestReport")
     }
 
     def "reports of multiple targets can be aggregated if variant information is specified"() {
@@ -191,6 +189,6 @@ class TestSuitesMultiTargetIntegrationTest extends AbstractIntegrationSpec imple
         withInstallations(Jvm.current(), otherJvm).succeeds("testAggregateTestReport")
 
         then:
-        result.assertTaskExecuted(":testAggregateTestReport")
+        result.assertTaskScheduled(":testAggregateTestReport")
     }
 }

@@ -18,16 +18,17 @@ package org.gradle.integtests.resolve
 import org.gradle.api.internal.artifacts.ivyservice.CacheLayout
 import org.gradle.cache.internal.scopes.DefaultCacheScopeMapping
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.cache.CachingIntegrationFixture
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.internal.hash.Hashing
 import org.gradle.test.fixtures.file.TestFile
+import spock.lang.Issue
 
 import java.nio.file.Files
 
 class CacheResolveIntegrationTest extends AbstractHttpDependencyResolutionTest implements CachingIntegrationFixture {
-
-    @ToBeFixedForConfigurationCache(because = "CC does not check for deleted or modified artifacts in local cache")
+    @Issue("https://github.com/gradle/gradle/issues/16179")
     void "cache handles manual deletion of cached artifacts"() {
         given:
         def module = ivyHttpRepo.module('group', 'projectA', '1.2').publish()
@@ -37,7 +38,7 @@ class CacheResolveIntegrationTest extends AbstractHttpDependencyResolutionTest i
         and:
         buildFile << """
 repositories {
-    ivy { url "${ivyHttpRepo.uri}" }
+    ivy { url = "${ivyHttpRepo.uri}" }
 }
 configurations { compile }
 dependencies { compile 'group:projectA:1.2' }
@@ -60,14 +61,18 @@ task deleteCacheFiles(type: Delete) {
         succeeds('deleteCacheFiles')
 
         when:
-        server.resetExpectations()
-        module.ivy.expectGet()
-        module.jar.expectGet()
+        // CC does not check for deleted or modified artifacts in local cache, see linked issue
+        if (!GradleContextualExecuter.isConfigCache()) {
+            server.resetExpectations()
+            module.ivy.expectGet()
+            module.jar.expectGet()
+        }
 
         then:
         succeeds('listJars')
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Needs further investigation on IP incompatibility: https://github.com/gradle/gradle/issues/38006")
     void "cache entries are segregated between different repositories"() {
         given:
         def repo1 = ivyHttpRepo('ivy-repo-a')
@@ -76,33 +81,34 @@ task deleteCacheFiles(type: Delete) {
         def module2 = repo2.module('org.gradle', 'testproject', '1.0').publishWithChangedContent()
 
         and:
-        createDirs("a", "b")
         settingsFile << "include 'a','b'"
-        buildFile << """
-subprojects {
-    configurations {
-        test
-    }
-    dependencies {
-        test "org.gradle:testproject:1.0"
-    }
-    task retrieve(type: Sync) {
-        into 'build'
-        from configurations.test
-    }
-}
-project('a') {
-    repositories {
-        ivy { url "${repo1.uri}" }
-    }
-}
-project('b') {
-    repositories {
-        ivy { url "${repo2.uri}" }
-    }
-    retrieve.dependsOn(':a:retrieve')
-}
-"""
+        def header = """
+            configurations {
+                test
+            }
+            dependencies {
+                test "org.gradle:testproject:1.0"
+            }
+            task retrieve(type: Sync) {
+                into 'build'
+                from configurations.test
+            }
+        """
+
+        file("a/build.gradle") << """
+            $header
+            repositories {
+                ivy { url = "${repo1.uri}" }
+            }
+        """
+
+        file("b/build.gradle") << """
+            $header
+            repositories {
+                ivy { url = "${repo2.uri}" }
+            }
+            tasks.retrieve.dependsOn(':a:retrieve')
+        """
 
         when:
         module1.ivy.expectGet()
@@ -130,7 +136,7 @@ project('b') {
         and:
         buildFile << """
 repositories {
-    ivy { url "${ivyHttpRepo.uri}" }
+    ivy { url = "${ivyHttpRepo.uri}" }
 }
 configurations { compile }
 dependencies { compile 'group:projectA:1.2' }
@@ -274,7 +280,7 @@ plugins {
 
 repositories {
     maven {
-        url "${mavenHttpRepo.uri}"
+        url = "${mavenHttpRepo.uri}"
         metadataSources {
             artifact()
         }
@@ -291,7 +297,7 @@ plugins {
 
 repositories {
     maven {
-        url "${mavenHttpRepo.uri}"
+        url = "${mavenHttpRepo.uri}"
     }
 }
 """

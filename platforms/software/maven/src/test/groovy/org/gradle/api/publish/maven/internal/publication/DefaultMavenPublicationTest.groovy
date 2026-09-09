@@ -27,7 +27,7 @@ import org.gradle.api.artifacts.ModuleVersionIdentifier
 import org.gradle.api.artifacts.PublishArtifact
 import org.gradle.api.attributes.Category
 import org.gradle.api.component.ComponentWithVariants
-import org.gradle.api.file.FileCollection
+import org.gradle.api.file.RegularFile
 import org.gradle.api.internal.artifacts.DefaultImmutableModuleIdentifierFactory
 import org.gradle.api.internal.artifacts.DefaultModuleVersionIdentifier
 import org.gradle.api.internal.artifacts.DependencyManagementTestUtil
@@ -38,11 +38,13 @@ import org.gradle.api.internal.artifacts.dependencies.ProjectDependencyInternal
 import org.gradle.api.internal.artifacts.dsl.dependencies.PlatformSupport
 import org.gradle.api.internal.artifacts.ivyservice.projectmodule.ProjectDependencyPublicationResolver
 import org.gradle.api.internal.attributes.AttributeDesugaring
+import org.gradle.api.internal.attributes.AttributesFactory
 import org.gradle.api.internal.attributes.AttributesSchemaInternal
 import org.gradle.api.internal.attributes.ImmutableAttributes
-import org.gradle.api.internal.attributes.AttributesFactory
 import org.gradle.api.internal.component.DefaultSoftwareComponentVariant
 import org.gradle.api.internal.component.SoftwareComponentInternal
+import org.gradle.api.internal.project.ProjectIdentity
+import org.gradle.api.internal.provider.Providers
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.publish.internal.PublicationArtifactInternal
 import org.gradle.api.publish.internal.PublicationInternal
@@ -52,7 +54,6 @@ import org.gradle.api.publish.internal.versionmapping.VersionMappingStrategyInte
 import org.gradle.api.publish.maven.MavenArtifact
 import org.gradle.api.publish.maven.internal.dependencies.VersionRangeMapper
 import org.gradle.api.tasks.TaskDependency
-import org.gradle.api.tasks.TaskOutputs
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.internal.typeconversion.NotationParser
 import org.gradle.test.fixtures.file.TestFile
@@ -421,9 +422,9 @@ class DefaultMavenPublicationTest extends Specification {
     def "maps project dependency to maven dependency"() {
         given:
         def publication = createPublication()
+        def projectIdentity = ProjectIdentity.forSubproject(Path.path(":build"), Path.path(":subproject"))
         def projectDependency = Mock(ProjectDependencyInternal) {
-            getDependencyProject() >> Mock(Project)
-            getIdentityPath() >> Mock(Path)
+            getTargetProjectIdentity() >> projectIdentity
         }
 
         and:
@@ -433,7 +434,7 @@ class DefaultMavenPublicationTest extends Specification {
         projectDependency.getArtifacts() >> []
         projectDependency.getGroup() >> "pub-group"
         projectDependency.getName() >> "pub-name"
-        projectDependencyResolver.resolveComponent(ModuleVersionIdentifier, projectDependency.identityPath) >> DefaultModuleVersionIdentifier.newId("pub-group", "pub-name", "pub-version")
+        projectDependencyResolver.resolveComponent(ModuleVersionIdentifier, projectIdentity.getBuildTreePath()) >> DefaultModuleVersionIdentifier.newId("pub-group", "pub-name", "pub-version")
 
         when:
         publication.from(componentWithDependency(projectDependency))
@@ -453,8 +454,9 @@ class DefaultMavenPublicationTest extends Specification {
     def "ignores self project dependency"() {
         given:
         def publication = createPublication()
+        def projectIdentity = ProjectIdentity.forSubproject(Path.path(":build"), Path.path(":subproject"))
         def projectDependency = Mock(ProjectDependencyInternal) {
-            getIdentityPath() >> Mock(Path)
+            getTargetProjectIdentity() >> projectIdentity
         }
 
         and:
@@ -462,7 +464,7 @@ class DefaultMavenPublicationTest extends Specification {
         projectDependency.getAttributes() >> ImmutableAttributes.EMPTY
         projectDependency.capabilitySelectors >> ([] as Set)
         projectDependency.getArtifacts() >> []
-        projectDependencyResolver.resolveComponent(ModuleVersionIdentifier, projectDependency.identityPath) >> DefaultModuleVersionIdentifier.newId("group", "name", "version")
+        projectDependencyResolver.resolveComponent(ModuleVersionIdentifier, projectIdentity.getBuildTreePath()) >> DefaultModuleVersionIdentifier.newId("group", "name", "version")
 
         when:
         publication.from(componentWithDependency(projectDependency))
@@ -555,7 +557,7 @@ class DefaultMavenPublicationTest extends Specification {
     def "resolving the publishable files does not throw if gradle metadata is not activated"() {
         given:
         def publication = createPublication()
-        publication.setPomGenerator(createArtifactGenerator(pomFile))
+        publication.setPomGenerator(createFileProvider(pomFile), Providers.of(true))
 
         when:
         publication.publishableArtifacts.files.files
@@ -618,20 +620,19 @@ class DefaultMavenPublicationTest extends Specification {
             notationParser,
             versionMappingStrategy
         )
-        publication.setPomGenerator(createArtifactGenerator(pomFile))
+        publication.setPomGenerator(createFileProvider(pomFile), Providers.of(true))
         publication.setModuleDescriptorGenerator(createArtifactGenerator(gradleMetadataFile))
         return publication
     }
 
+    def createFileProvider(File file) {
+        return Providers.of({ file } as RegularFile)
+    }
+
     def createArtifactGenerator(File file) {
         return Stub(TaskProvider) {
-            get() >> Stub(Task) {
-                getOutputs() >> Stub(TaskOutputs) {
-                    getFiles() >> Stub(FileCollection) {
-                        getSingleFile() >> file
-                    }
-                }
-            }
+            flatMap(_) >> createFileProvider(file)
+            map(_) >> Providers.of(true)
         }
     }
 

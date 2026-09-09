@@ -16,18 +16,16 @@
 package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 
 import static org.hamcrest.CoreMatchers.containsString
 
 class IvyDescriptorValidationIntegrationTest extends AbstractDependencyResolutionTest {
-    @ToBeFixedForConfigurationCache
     def "incorrect value for revision attribute is flagged"() {
         given:
         buildFile << """
   repositories {
       ivy {
-          url "${ivyRepo.uri}"
+          url = "${ivyRepo.uri}"
       }
   }
   configurations { compile }
@@ -35,8 +33,9 @@ class IvyDescriptorValidationIntegrationTest extends AbstractDependencyResolutio
       compile 'org.test:projectA:[1.3,1.5]'
   }
   task resolve {
+      inputs.files(configurations.compile)
       doLast {
-          configurations.compile.resolve()
+          println inputs.files
       }
   }
   """

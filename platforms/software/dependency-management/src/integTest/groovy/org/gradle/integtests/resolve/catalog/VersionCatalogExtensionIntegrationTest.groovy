@@ -16,17 +16,27 @@
 
 package org.gradle.integtests.resolve.catalog
 
-import org.gradle.api.internal.catalog.problems.VersionCatalogErrorMessages
 import org.gradle.api.internal.catalog.problems.VersionCatalogProblemId
 import org.gradle.api.internal.catalog.problems.VersionCatalogProblemTestFor
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
-import org.gradle.integtests.resolve.PluginDslSupport
+import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import spock.lang.Issue
 
-class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogIntegrationTest implements PluginDslSupport, VersionCatalogErrorMessages {
+class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogIntegrationTest {
+
+    def resolve = new ResolveTestFixture(testDirectory)
 
     def setup() {
         enableProblemsApiCheck()
+    }
+
+    String getCommon() {
+        """
+            plugins {
+                id("java-library")
+            }
+
+            ${resolve.configureProject("runtimeClasspath")}
+        """
     }
 
     def "dependencies declared in settings trigger the creation of an extension (notation=#notation)"() {
@@ -113,16 +123,13 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         fails()
 
         then:
-        verifyContains(failure.error, aliasNotFinished {
-            inCatalog("libs")
-            alias("my.great.lib")
-        })
-
-        and:
         verifyAll(receivedProblem) {
+            severity == Severity.ERROR
             fqid == 'dependency-version-catalog:alias-not-finished'
-            contextualLabel == 'Problem: In version catalog libs, dependency alias builder \'my.great.lib\' was not finished.'
+            definition.id.displayName == 'Alias builder not finished'
+            contextualLabel == 'In version catalog libs, dependency alias builder \'my.great.lib\' was not finished'
             details == 'A version was not set or explicitly declared as not wanted'
+            definition.documentationLink.url == docUrlFor('alias_not_finished')
             solutions == [
                 'Call `.version()` to give the alias a version',
                 'Call `.withoutVersion()` to explicitly declare that the alias should not have a version',
@@ -147,7 +154,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
 
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.my.great.lib
@@ -184,7 +191,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.myLib
@@ -219,7 +226,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.my.great.lib
@@ -255,7 +262,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.myLib
@@ -303,13 +310,14 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
             it.rootMetaData.expectGet()
             it.artifact.expectGet()
         }
-        publishLib("lib-core", "1.1")
+        // This module will not be resolved at all
+        mavenHttpRepo.module("org.gradle.test", "lib-core", "1.1").withModuleMetadata().publish()
         publishLib("lib-ext", "1.0").with {
             it.rootMetaData.expectGet()
             it.artifact.expectGet()
         }
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation "org.gradle.test:lib-core:1.+" // intentional!
@@ -369,13 +377,14 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
             it.rootMetaData.expectGet()
             it.artifact.expectGet()
         }
-        publishLib("lib-core", "1.1")
+        // This module will not be resolved at all
+        mavenHttpRepo.module("org.gradle.test", "lib-core", "1.1").withModuleMetadata().publish()
         publishLib("lib-ext", "1.0").with {
             it.rootMetaData.expectGet()
             it.artifact.expectGet()
         }
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation "org.gradle.test:lib-core:1.+" // intentional!
@@ -420,7 +429,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.1").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation(libs.myLib) {
@@ -460,7 +469,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.1").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation "org.gradle.test:lib" // intentional!
@@ -509,7 +518,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         def lib2 = mavenHttpRepo.module("org.gradle.test", "lib2", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation(libs.bundles.myBundle)
@@ -551,7 +560,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         def lib2 = mavenHttpRepo.module("org.gradle.test", "lib2", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation(libs.bundles.my.great.bundle)
@@ -593,7 +602,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.1").publish()
         def lib2 = mavenHttpRepo.module("org.gradle.test", "lib2", "1.1").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation(libs.bundles.myBundle) {
@@ -636,7 +645,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation myLibs.myLib
@@ -678,7 +687,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         def lib2 = mavenHttpRepo.module("org.gradle.test", "lib2", "1.1").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation myLibs.myLib
@@ -725,7 +734,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation myLibs.myLib
@@ -761,7 +770,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation project(":other")
@@ -831,7 +840,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
         file("buildSrc/build.gradle") << """
             repositories {
-                maven { url "${mavenHttpRepo.uri}" }
+                maven { url = "${mavenHttpRepo.uri}" }
             }
 
             dependencies {
@@ -848,7 +857,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
             }
         """
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.lib
@@ -892,7 +901,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
 
             dependencyResolutionManagement {
                 repositories {
-                    maven { url "${mavenHttpRepo.uri}" }
+                    maven { url = "${mavenHttpRepo.uri}" }
                 }
                 versionCatalogs {
                     libs {
@@ -907,7 +916,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
 
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation 'com.acme:included:1.0'
@@ -953,7 +962,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         def lib2 = mavenHttpRepo.module("org.gradle.test", "lib2", "1.1").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.myLib
@@ -996,7 +1005,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         def lib2 = mavenHttpRepo.module("org.gradle.test", "lib2", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.myLib
@@ -1036,7 +1045,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
         def lib = mavenHttpRepo.module("org.gradle.test", "lib", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation "org.gradle.test:lib:\${libs.versions.libVersion.get()}"
@@ -1101,7 +1110,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         publishLib("lib")
         publishLib("lib.subgroup")
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation(testFixtures(libs.myLib))
@@ -1155,7 +1164,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
             .publish()
             .pom.expectGet()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation(platform(libs.myLib))
@@ -1210,7 +1219,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
             .publish()
             .pom.expectGet()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation(enforcedPlatform(libs.myLib))
@@ -1269,7 +1278,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         libSubgroup.getArtifact(classifier: 'test-fixtures').expectGet()
 
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation(variantOf(libs.myLib) { classifier('test-fixtures') })
@@ -1321,7 +1330,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
 
 
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation(variantOf(libs.myLib) { artifactType('txt') })
@@ -1359,7 +1368,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         def top = mavenHttpRepo.module("org", "top", "1.0").publish()
         def bottom = mavenHttpRepo.module("org", "bottom", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.top
@@ -1399,7 +1408,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         def top = mavenHttpRepo.module("org", "top", "1.0").publish()
         def bottom = mavenHttpRepo.module("org", "bottom", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.top.middle
@@ -1439,7 +1448,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         def top = mavenHttpRepo.module("org", "top", "1.0").publish()
         def bottom = mavenHttpRepo.module("org", "bottom", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.top
@@ -1480,7 +1489,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         def a = mavenHttpRepo.module("org", "a", "1.0").publish()
         def bar = mavenHttpRepo.module("org", "bar", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.foo.bar.baz.a
@@ -1634,7 +1643,7 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
 
         buildFile << """
-            apply plugin: 'java-library'
+            $common
             apply plugin: MyPlugin
         """
         def lib = mavenHttpRepo.module('org', 'test', '1.0').publish()
@@ -1678,10 +1687,11 @@ class VersionCatalogExtensionIntegrationTest extends AbstractVersionCatalogInteg
         """
 
         buildFile << """
-            apply plugin: 'java-library'
+            plugins {
+                id("my.plugin")
+            }
+            $common
         """
-
-        withPlugin('my.plugin')
 
         def lib = mavenHttpRepo.module('org', 'test', '1.0').publish()
 
@@ -1810,7 +1820,7 @@ Second: 1.1"""
         def lib1 = mavenHttpRepo.module("org", "lib1", "1.0").publish()
         def lib2 = mavenHttpRepo.module("org", "lib2", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.bundles.my
@@ -1853,7 +1863,7 @@ Second: 1.1"""
         def lib1 = mavenHttpRepo.module("org", "lib1", "1.0").publish()
         def lib2 = mavenHttpRepo.module("org", "lib2", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.bundles.my.middle
@@ -1896,7 +1906,7 @@ Second: 1.1"""
         def lib1 = mavenHttpRepo.module("org", "lib1", "1.0").publish()
         def lib2 = mavenHttpRepo.module("org", "lib2", "1.0").publish()
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation libs.bundles.my
@@ -1942,17 +1952,13 @@ Second: 1.1"""
         fails "help"
 
         then:
-        verifyContains(failure.error, reservedAlias {
-            inCatalog("libs")
-            alias(reserved)
-            reservedAliases "extensions", "convention"
-        })
-
-        and:
         verifyAll(receivedProblem) {
+            severity == Severity.ERROR
             fqid == 'dependency-version-catalog:reserved-alias-name'
-            contextualLabel == "Problem: In version catalog libs, alias '$reserved' is not a valid alias."
+            definition.id.displayName == 'Reserved alias name'
+            contextualLabel == "In version catalog libs, alias '$reserved' is a reserved alias"
             details == "Alias '$reserved' is a reserved name in Gradle which prevents generation of accessors."
+            definition.documentationLink.url == docUrlFor('reserved_alias_name')
             solutions == [ 'Use a different alias which doesn\'t contain any of \'convention\' or \'extensions\'.' ]
         }
 
@@ -1983,17 +1989,13 @@ Second: 1.1"""
         fails "help"
 
         then:
-        verifyContains(failure.error, reservedAlias {
-            inCatalog("libs")
-            shouldNotContain(reserved)
-            reservedNames "class"
-        })
-
-        and:
         verifyAll(receivedProblem) {
+            severity == Severity.ERROR
             fqid == 'dependency-version-catalog:reserved-alias-name'
-            contextualLabel == "Problem: In version catalog libs, alias '$reserved' is not a valid alias."
+            definition.id.displayName == 'Reserved alias name'
+            contextualLabel == "In version catalog libs, alias '$reserved' is a reserved alias"
             details == "Alias '$reserved' is a reserved name in Gradle which prevents generation of accessors."
+            definition.documentationLink.url == docUrlFor('reserved_alias_name')
             solutions == [ 'Use a different alias which doesn\'t contain \'class\'.' ]
         }
 
@@ -2024,17 +2026,13 @@ Second: 1.1"""
         fails "help"
 
         then:
-        verifyContains(failure.error, reservedAlias {
-            inCatalog("libs")
-            alias(reservedName).shouldNotBeEqualTo(prefix)
-            reservedAliasPrefix('bundles', 'plugins', 'versions')
-        })
-
-        and:
         verifyAll(receivedProblem) {
+            severity == Severity.ERROR
             fqid == 'dependency-version-catalog:reserved-alias-name'
-            contextualLabel == "Problem: In version catalog libs, alias '$reservedName' is not a valid alias."
+            definition.id.displayName == 'Reserved alias name'
+            contextualLabel == "In version catalog libs, alias '$reservedName' is a reserved alias"
             details == "Prefix for dependency shouldn\'t be equal to '$prefix'"
+            definition.documentationLink.url == docUrlFor('reserved_alias_name')
             solutions == [ 'Use a different alias which prefix is not equal to \'bundles\', \'plugins\', or \'versions\'' ]
         }
 
@@ -2133,7 +2131,7 @@ Second: 1.1"""
         lib.publish()
 
         buildFile << """
-            apply plugin: 'java-library'
+            $common
 
             dependencies {
                 implementation(libs.myLib) {
@@ -2245,7 +2243,8 @@ Second: 1.1"""
         def lib2 = mavenHttpRepo.module("org.gradle.test", "lib2", "3.0.5").publish()
 
         buildFile << """
-            apply plugin: 'java-library'
+            $common
+
             dependencies {
                 implementation "org.gradle.test:lib:3.0.6"
                 implementation "org.gradle.test:lib2:3.0.6"
@@ -2295,7 +2294,8 @@ Second: 1.1"""
         """
 
         buildFile << """
-            apply plugin: 'java-library'
+            $common
+
             dependencies {
                 implementation "org.gradle.test:lib:3.0.6"
                 configurations.all {
@@ -2310,7 +2310,7 @@ Second: 1.1"""
         fails ':checkDeps'
 
         then:
-        failure.assertHasCause("Cannot convert a version catalog entry: 'org.gradle.test:lib:{strictly [3.0, 4.0[; prefer 3.0.5}' to an object of type ModuleVersionSelector. Rich versions are not supported for 'force()'.")
+        failure.assertHasCause("Cannot convert a version catalog entry: 'org.gradle.test:lib:{strictly [3.0, 4.0[; prefer 3.0.5}' to an object of type ModuleComponentSelector. Rich versions are not supported for 'force()'.")
     }
 
     @Issue("https://github.com/gradle/gradle/issues/17874")
@@ -2331,7 +2331,8 @@ Second: 1.1"""
         """
 
         buildFile << """
-            apply plugin: 'java-library'
+            $common
+
             dependencies {
                 implementation "org.gradle.test:lib:3.0.6"
                 configurations.all {
@@ -2346,126 +2347,12 @@ Second: 1.1"""
         fails ':checkDeps'
 
         then:
-        failure.assertHasCause("Cannot convert a version catalog entry '$catalogEntryAsString' to an object of type ModuleVersionSelector. Only dependency accessors are supported but not plugin, bundle or version accessors for 'force()'.")
+        failure.assertHasCause("Cannot convert a version catalog entry '$catalogEntryAsString' to an object of type ModuleComponentSelector. Only dependency accessors are supported but not plugin, bundle or version accessors for 'force()'.")
 
         where:
         catalogEntry         | catalogEntryAsString
         "versions.myVersion" | "1.0"
         "plugins.myPlugin"   | "org.gradle.test:1.0"
         "bundles.myBundle"   | "[org.gradle.test:lib:3.0.5]"
-    }
-
-    @Issue("https://github.com/gradle/gradle/issues/23096")
-    @ToBeFixedForConfigurationCache(because = "task uses Configuration API")
-    def 'all properties of version catalog dependencies are copied when the dependency is copied'() {
-        disableProblemsApiCheck()
-        given:
-        buildFile << """
-            configurations {
-                implementation
-                destination1
-                destination2
-            }
-
-            dependencies {
-                implementation(libs.test1) {
-                    because("reason1")
-
-                    exclude(group: "test-group", module: "test-module")
-                    artifact {
-                        name = "test-name"
-                        classifier = "test-classifier"
-                        extension = "test-ext"
-                        type = "test-type"
-                        url = "test-url"
-                    }
-                    transitive = true
-                    endorseStrictVersions()
-
-                    version {
-                        branch = "branch"
-                        strictly("123")
-                        prefer("789")
-                        reject("aaa")
-                    }
-
-                    changing = true
-                }
-                implementation(libs.test2) {
-                    transitive = false
-                    targetConfiguration = "abc"
-                    doNotEndorseStrictVersions()
-
-                    version {
-                        require("456")
-                    }
-
-                    changing = false
-                }
-                implementation(libs.test3) {
-                    attributes {
-                        attribute(Attribute.of('foo', String), 'bar')
-                    }
-                    capabilities {
-                        requireCapability("org:test-cap:1.1")
-                    }
-                }
-            }
-
-            def verifyDep(original, copied) {
-                // Dependency
-                assert original.group == copied.group
-                assert original.name == copied.name
-                assert original.version == copied.version
-                assert original.reason == copied.reason
-
-                // ModuleDependency
-                assert original.excludeRules == copied.excludeRules
-                assert original.artifacts == copied.artifacts
-                assert original.transitive == copied.transitive
-                assert original.targetConfiguration == copied.targetConfiguration
-                assert original.attributes == copied.attributes
-                assert original.capabilitySelectors == copied.capabilitySelectors
-                assert original.endorsingStrictVersions == copied.endorsingStrictVersions
-
-                // ExternalDependency + ExternalModuleDependency
-                assert original.changing == copied.changing
-                assert original.versionConstraint == copied.versionConstraint
-            }
-
-            def getOriginal(dep) {
-                configurations.implementation.dependencies.find { it.name == dep.name }
-            }
-
-            task copyAndVerifyDependencies {
-                configurations.implementation.dependencies.each {
-                    project.dependencies.add("destination1", it)
-                    configurations.destination2.dependencies.add(it)
-                }
-
-                doLast {
-                    configurations.destination1.dependencies.each {
-                        verifyDep(getOriginal(it), it)
-                    }
-
-                    configurations.destination2.dependencies.each {
-                        verifyDep(getOriginal(it), it)
-                    }
-
-                    configurations.implementation.copy().dependencies.each {
-                        verifyDep(getOriginal(it), it)
-                    }
-                }
-            }
-        """
-
-        file("gradle/libs.versions.toml") << """[libraries]
-test1 = { module = 'org:test1', version = '1.0' }
-test2 = { module = 'org:test2', version = '1.0' }
-test3 = { module = 'org:test3', version = '1.0' }
-"""
-
-        expect:
-        succeeds "copyAndVerifyDependencies"
     }
 }

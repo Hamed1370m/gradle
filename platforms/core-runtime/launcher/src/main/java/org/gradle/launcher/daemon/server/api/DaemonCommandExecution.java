@@ -15,9 +15,9 @@
  */
 package org.gradle.launcher.daemon.server.api;
 
-import org.gradle.launcher.daemon.configuration.DaemonServerConfiguration;
 import org.gradle.launcher.daemon.context.DaemonContext;
 import org.gradle.launcher.daemon.protocol.Command;
+import org.gradle.launcher.daemon.startup.DaemonServerConfiguration;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -25,7 +25,7 @@ import java.util.List;
 /**
  * A continuation style object used to model the execution of a command.
  * <p>
- * Facilitates processing “chains”, making it easier to break up processing logic into discrete {@link org.gradle.launcher.daemon.server.api.DaemonCommandAction actions}.
+ * Facilitates processing "chains", making it easier to break up processing logic into discrete {@link org.gradle.launcher.daemon.server.api.DaemonCommandAction actions}.
  * <p>
  * The given actions will be executed in the order given to the constructor, and should use the {@link #proceed()} method to allow
  * the next action to run. If an action does not call {@code proceed()}, it will be the last action that executes.

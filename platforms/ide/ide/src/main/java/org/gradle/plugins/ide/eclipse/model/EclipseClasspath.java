@@ -22,6 +22,7 @@ import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
 import org.gradle.api.Incubating;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.SetProperty;
@@ -106,7 +107,7 @@ import java.util.Set;
  * <p>
  * Examples of advanced configuration:
  *
- * <pre class='autoTested'>
+ * <pre class='autoTestedWithDeprecations'>
  * plugins {
  *     id 'java'
  *     id 'eclipse'
@@ -136,6 +137,7 @@ import java.util.Set;
  *   }
  * }
  * </pre>
+ * @since 1.0
  */
 public abstract class EclipseClasspath {
     private Iterable<SourceSet> sourceSets;
@@ -162,28 +164,28 @@ public abstract class EclipseClasspath {
 
     private final org.gradle.api.Project project;
 
-    private final Property<Boolean> containsTestFixtures;
-
-    private final SetProperty<SourceSet> testSourceSets;
-    private final SetProperty<Configuration> testConfigurations;
-
+    @SuppressWarnings("this-escape")
     @Inject
     public EclipseClasspath(org.gradle.api.Project project) {
         this.project = project;
-        this.containsTestFixtures = project.getObjects().property(Boolean.class).convention(false);
-        this.testSourceSets = project.getObjects().setProperty(SourceSet.class);
-        this.testConfigurations = project.getObjects().setProperty(Configuration.class);
+        getContainsTestFixtures().convention(false);
     }
 
     /**
      * The source sets to be added.
      * <p>
      * See {@link EclipseClasspath} for an example.
+     * @since 1.0
      */
     public Iterable<SourceSet> getSourceSets() {
         return sourceSets;
     }
 
+    /**
+     * Sets the source sets.
+     *
+     * @since 1.0
+     */
     public void setSourceSets(Iterable<SourceSet> sourceSets) {
         this.sourceSets = sourceSets;
     }
@@ -192,11 +194,17 @@ public abstract class EclipseClasspath {
      * The configurations whose files are to be added as classpath entries.
      * <p>
      * See {@link EclipseClasspath} for an example.
+     * @since 1.0
      */
     public Collection<Configuration> getPlusConfigurations() {
         return plusConfigurations;
     }
 
+    /**
+     * Sets the plus configurations.
+     *
+     * @since 1.0
+     */
     public void setPlusConfigurations(Collection<Configuration> plusConfigurations) {
         this.plusConfigurations = plusConfigurations;
     }
@@ -205,11 +213,17 @@ public abstract class EclipseClasspath {
      * The configurations whose files are to be excluded from the classpath entries.
      * <p>
      * See {@link EclipseClasspath} for an example.
+     * @since 1.0
      */
     public Collection<Configuration> getMinusConfigurations() {
         return minusConfigurations;
     }
 
+    /**
+     * Sets the minus configurations.
+     *
+     * @since 1.0
+     */
     public void setMinusConfigurations(Collection<Configuration> minusConfigurations) {
         this.minusConfigurations = minusConfigurations;
     }
@@ -218,11 +232,17 @@ public abstract class EclipseClasspath {
      * The classpath containers to be added.
      * <p>
      * See {@link EclipseClasspath} for an example.
+     * @since 1.0
      */
     public Set<String> getContainers() {
         return containers;
     }
 
+    /**
+     * Sets the containers.
+     *
+     * @since 1.0
+     */
     public void setContainers(Set<String> containers) {
         this.containers = containers;
     }
@@ -231,11 +251,17 @@ public abstract class EclipseClasspath {
      * The default output directory where Eclipse puts compiled classes.
      * <p>
      * See {@link EclipseClasspath} for an example.
+     * @since 1.0
      */
     public File getDefaultOutputDir() {
         return defaultOutputDir;
     }
 
+    /**
+     * Sets the default output dir.
+     *
+     * @since 1.0
+     */
     public void setDefaultOutputDir(File defaultOutputDir) {
         this.defaultOutputDir = defaultOutputDir;
     }
@@ -248,17 +274,23 @@ public abstract class EclipseClasspath {
      * @since 8.1
      */
     @Incubating
-    public abstract Property<File> getBaseSourceOutputDir();
+    public abstract DirectoryProperty getBaseSourceOutputDir();
 
     /**
      * Whether to download and associate source Jars with the dependency Jars. Defaults to true.
      * <p>
      * See {@link EclipseClasspath} for an example.
+     * @since 1.0
      */
     public boolean isDownloadSources() {
         return downloadSources;
     }
 
+    /**
+     * Sets the download sources.
+     *
+     * @since 1.0
+     */
     public void setDownloadSources(boolean downloadSources) {
         this.downloadSources = downloadSources;
     }
@@ -267,50 +299,97 @@ public abstract class EclipseClasspath {
      * Whether to download and associate Javadoc Jars with the dependency Jars. Defaults to false.
      * <p>
      * See {@link EclipseClasspath} for an example.
+     * @since 1.0
      */
     public boolean isDownloadJavadoc() {
         return downloadJavadoc;
     }
 
+    /**
+     * Sets the download javadoc.
+     *
+     * @since 1.0
+     */
     public void setDownloadJavadoc(boolean downloadJavadoc) {
         this.downloadJavadoc = downloadJavadoc;
     }
 
     /**
      * See {@link #file(Action)}.
+     * @since 1.0
      */
     public XmlFileContentMerger getFile() {
         return file;
     }
 
+    /**
+     * Sets the file.
+     *
+     * @since 1.0
+     */
     public void setFile(XmlFileContentMerger file) {
         this.file = file;
     }
 
+    /**
+     * Returns the path variables.
+     *
+     * @since 1.0
+     */
     public Map<String, File> getPathVariables() {
         return pathVariables;
     }
 
+    /**
+     * Sets the path variables.
+     *
+     * @since 1.0
+     */
     public void setPathVariables(Map<String, File> pathVariables) {
         this.pathVariables = pathVariables;
     }
 
+    /**
+     * Returns whether project dependencies only is set.
+     *
+     * @since 1.0
+     */
     public boolean isProjectDependenciesOnly() {
         return projectDependenciesOnly;
     }
 
+    /**
+     * Sets the project dependencies only.
+     *
+     * @since 1.0
+     */
     public void setProjectDependenciesOnly(boolean projectDependenciesOnly) {
         this.projectDependenciesOnly = projectDependenciesOnly;
     }
 
+    /**
+     * Returns the class folders.
+     *
+     * @since 1.0
+     */
     public List<File> getClassFolders() {
         return classFolders;
     }
 
+    /**
+     * Sets the class folders.
+     *
+     * @since 1.0
+     */
     public void setClassFolders(List<File> classFolders) {
         this.classFolders = classFolders;
     }
 
+    /**
+     * Returns the project.
+     *
+     * @since 1.0
+     */
     public org.gradle.api.Project getProject() {
         return project;
     }
@@ -321,6 +400,7 @@ public abstract class EclipseClasspath {
      * See {@link EclipseClasspath} for an example.
      *
      * @param containers the classpath containers to be added
+     * @since 1.0
      */
     public void containers(String... containers) {
         Preconditions.checkNotNull(containers);
@@ -333,6 +413,7 @@ public abstract class EclipseClasspath {
      * The object passed to the whenMerged{} and beforeMerged{} closures is of type {@link Classpath}.
      * <p>
      * See {@link EclipseProject} for an example.
+     * @since 1.0
      */
     public void file(@DelegatesTo(XmlFileContentMerger.class) Closure closure) {
         ConfigureUtil.configure(closure, file);
@@ -353,6 +434,7 @@ public abstract class EclipseClasspath {
 
     /**
      * Calculates, resolves and returns dependency entries of this classpath.
+     * @since 1.0
      */
     public List<ClasspathEntry> resolveDependencies() {
         ProjectInternal projectInternal = (ProjectInternal) this.project;
@@ -362,6 +444,11 @@ public abstract class EclipseClasspath {
     }
 
 
+    /**
+     * Merge xml classpath.
+     *
+     * @since 1.0
+     */
     @SuppressWarnings("unchecked")
     public void mergeXmlClasspath(Classpath xmlClasspath) {
         file.getBeforeMerged().execute(xmlClasspath);
@@ -370,6 +457,11 @@ public abstract class EclipseClasspath {
         file.getWhenMerged().execute(xmlClasspath);
     }
 
+    /**
+     * Returns the file reference factory.
+     *
+     * @since 1.0
+     */
     public FileReferenceFactory getFileReferenceFactory() {
         FileReferenceFactory referenceFactory = new FileReferenceFactory();
         pathVariables.forEach((key, value) -> referenceFactory.addPathVariable(key, value));
@@ -382,9 +474,7 @@ public abstract class EclipseClasspath {
      *
      * @since 6.8
      */
-    public Property<Boolean> getContainsTestFixtures() {
-        return containsTestFixtures;
-    }
+    public abstract Property<Boolean> getContainsTestFixtures();
 
     /**
      * Returns the test source sets.
@@ -400,9 +490,7 @@ public abstract class EclipseClasspath {
      * @since 7.5
      */
     @Incubating
-    public SetProperty<SourceSet> getTestSourceSets() {
-        return testSourceSets;
-    }
+    public abstract SetProperty<SourceSet> getTestSourceSets();
 
     /**
      * Returns the test configurations.
@@ -411,7 +499,7 @@ public abstract class EclipseClasspath {
      * <p>
      * The default value contains the following elements:
      * <ul>
-     *     <li>The compile and runtime configurations of the {@link #testSourceSets}, including the jvm-test-suite source sets</li>
+     *     <li>The compile and runtime configurations of the {@link #getTestSourceSets()}, including the jvm-test-suite source sets</li>
      *     <li>Other configurations with names containing the 'test' substring (case ignored)</li>
      * </ul>
      * <p>
@@ -420,7 +508,5 @@ public abstract class EclipseClasspath {
      * @since 7.5
      */
     @Incubating
-    public SetProperty<Configuration> getTestConfigurations() {
-        return testConfigurations;
-    }
+    public abstract SetProperty<Configuration> getTestConfigurations();
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2008 the original author or authors.
+ * Copyright 2007 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,22 +18,42 @@ package org.gradle.execution.taskgraph;
 import org.gradle.api.Task;
 import org.gradle.api.execution.TaskExecutionGraph;
 import org.gradle.execution.plan.FinalizedExecutionPlan;
-import org.gradle.execution.plan.Node;
-import org.gradle.internal.build.ExecutionResult;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
-import java.util.List;
-import java.util.Set;
-import java.util.function.BiConsumer;
-
+// Public `TaskExecutionGraph` service shadowed at the project scope by the IP reporting wrapper
+@ServiceScope({Scope.Build.class, Scope.Project.class})
 public interface TaskExecutionGraphInternal extends TaskExecutionGraph {
 
     /**
+     * Adds the internal listener for task execution graph events.
+     * These listeners are not persisted through the configuration cache, beware if you want to receive graph execution events with CC enabled.
+     *
+     * @param listener the listener
+     */
+    void addExecutionListener(TaskExecutionGraphExecutionListener listener);
+
+    /**
+     * Removes the previously registered internal listener.
+     *
+     * @param listener the listener
+     */
+    void removeExecutionListener(TaskExecutionGraphExecutionListener listener);
+
+    /**
+     * Get an aggregate view of all listeners registered by {@link #addExecutionListener(TaskExecutionGraphExecutionListener)}.
+     */
+    TaskExecutionGraphExecutionListener getGraphExecutionListeners();
+
+    /**
      * Find a task with the given path in the task graph.
+     *
      * @param path the path of the task to find in the task graph
      * @return the task with the given path if it is present in the task graph, null otherwise
      */
-    @Nullable Task findTask(String path);
+    @Nullable
+    Task findTask(String path);
 
     /**
      * Attaches the work that this graph will run. Fires events and no further tasks should be added.
@@ -41,29 +61,26 @@ public interface TaskExecutionGraphInternal extends TaskExecutionGraph {
     void populate(FinalizedExecutionPlan plan);
 
     /**
-     * Executes the given work. Discards the contents of this graph when completed. Should call {@link #populate(FinalizedExecutionPlan)} prior to
-     * calling this method.
+     * Detaches the work attached by {@link #populate(FinalizedExecutionPlan)}, so that queries against this
+     * graph no longer see it.
      */
-    ExecutionResult<Void> execute(FinalizedExecutionPlan plan);
+    void depopulate();
 
     /**
-     * Set of requested tasks.
+     * Get the execution plan that Configuration Cache should serialize.
+     *
+     * @return null if the graph is not populated
      */
-    Set<Task> getFilteredTasks();
-
-    /**
-     * Returns the number of work items in this graph.
-     */
-    int size();
-
-    /**
-     * Returns all the work items in this graph scheduled for execution plus all
-     * dependencies from other builds.
-     */
-    void visitScheduledNodes(BiConsumer<List<Node>, Set<Node>> visitor);
+    // TODO: We should find another way for CC to access this work graph rather
+    // than routing it through an internal interface of a public API.
+    @Nullable FinalizedExecutionPlan getExecutionPlan();
 
     /**
      * Resets the lifecycle for this graph.
      */
     void resetState();
+
+    @SuppressWarnings("deprecation")
+    org.gradle.api.execution.TaskExecutionListener getLegacyTaskListenerBroadcast();
+
 }

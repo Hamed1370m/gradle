@@ -17,8 +17,9 @@
 package org.gradle.integtests.resolve.transform
 
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.build.BuildTestFile
+import org.gradle.integtests.fixtures.modes.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
 import org.junit.Rule
 
@@ -76,7 +77,12 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
 
                     void transform(TransformOutputs outputs) {
                         def input = inputArtifact.get().asFile
-                        ${server.callFromBuildUsingExpression("input.name")}
+                        def timestampFormatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+                        def currentTime = java.time.LocalDateTime.now().format(timestampFormatter)
+
+                        println "[" + currentTime + "] Running transform for " + input.name
+
+                        ${server.callFromBuildUsingExpression("\"transform-call-\" + input.name")}
                         if (input.name.startsWith("bad")) {
                             throw new RuntimeException("Transform Failure: " + input.name)
                         }
@@ -104,7 +110,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
 
         buildFile << """
             repositories {
-                maven { url "${mavenRepo.uri}" }
+                maven { url = "${mavenRepo.uri}" }
             }
             dependencies {
                 compile 'test:test:1.3'
@@ -123,7 +129,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
             }
         """
 
-        server.expectConcurrent("test-1.3.jar", "test2-2.3.jar", "test3-3.3.jar")
+        server.expectConcurrent("transform-call-test-1.3.jar", "transform-call-test2-2.3.jar", "transform-call-test3-3.3.jar")
 
         when:
         succeeds ":resolve"
@@ -134,6 +140,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
         outputContains("Transforming test3-3.3.jar to test3-3.3.jar.txt")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Transforms registered and configured in root project using allprojects. This allows transform tests to use the same artifact transform implementation Class.")
     def "transformations are applied in parallel for project artifacts"() {
         given:
         createDirs("lib1", "lib2", "lib3")
@@ -149,7 +156,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
                     destinationDirectory = buildDir
                 }
                 artifacts {
-                    compile jar
+                    compile tasks.jar
                 }
             }
 
@@ -170,7 +177,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
             }
         """
 
-        server.expectConcurrent("lib1.jar", "lib2.jar", "lib3.jar")
+        server.expectConcurrent("transform-call-lib1.jar", "transform-call-lib2.jar", "transform-call-lib3.jar")
 
         when:
         succeeds ":resolve"
@@ -207,7 +214,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
             }
         """
 
-        server.expectConcurrent("a.jar", "b.jar", "c.jar")
+        server.expectConcurrent("transform-call-a.jar", "transform-call-b.jar", "transform-call-c.jar")
 
         when:
         succeeds ":resolve"
@@ -236,7 +243,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
             c.text = '1236'
 
             repositories {
-                maven { url "${mavenRepo.uri}" }
+                maven { url = "${mavenRepo.uri}" }
             }
             dependencies {
                 compile files([a, b])
@@ -257,7 +264,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
             }
         """
 
-        server.expectConcurrent("a.jar", "b.jar", "c.jar", "test-1.3.jar", "test2-2.3.jar", "test3-3.3.jar")
+        server.expectConcurrent("transform-call-a.jar", "transform-call-b.jar", "transform-call-c.jar", "transform-call-test-1.3.jar", "transform-call-test2-2.3.jar", "transform-call-test3-3.3.jar")
 
         when:
         succeeds ":resolve"
@@ -268,7 +275,10 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
         outputContains("Transforming b.jar to b.jar.txt")
     }
 
-    @ToBeFixedForConfigurationCache(because = "Files are downloaded when cache entry is written")
+    @ToBeFixedForConfigurationCache(
+        issue = "https://github.com/gradle/gradle/issues/13566",
+        because = "With CC, transforms are executed only after all artifacts have been downloaded () and transforms for local files are not run in parallel with downloads"
+    )
     def "files are transformed as soon as they are downloaded"() {
         def m1 = mavenRepo.module("test", "test", "1.3").publish()
         m1.artifactFile.text = "1234"
@@ -285,7 +295,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
             c.text = '123'
 
             repositories {
-                maven { url "${server.uri}" }
+                maven { url = "${server.uri}" }
             }
             dependencies {
                 compile files([a, b])
@@ -304,15 +314,17 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
 
         server.expectConcurrent(
             server.get(m1.pom.path).sendFile(m1.pom.file),
-            server.get(m2.pom.path).sendFile(m2.pom.file))
+            server.get(m2.pom.path).sendFile(m2.pom.file)
+        )
 
         def handle = server.expectConcurrentAndBlock(
-            server.get("a.jar"),
-            server.get("b.jar"),
+            server.get("transform-call-a.jar"),
+            server.get("transform-call-b.jar"),
             server.get(m1.artifact.path).sendFile(m1.artifact.file),
-            server.get(m2.artifact.path).sendFile(m2.artifact.file))
-        def transform1 = server.expectAndBlock(server.get("test-1.3.jar"))
-        server.expect(server.get("test2-2.3.jar"))
+            server.get(m2.artifact.path).sendFile(m2.artifact.file)
+        )
+        def transform1 = server.expectAndBlock(server.get("transform-call-test-1.3.jar"))
+        server.expect(server.get("transform-call-test2-2.3.jar"))
 
         when:
         def build = executer.withTasks(':resolve').start()
@@ -321,7 +333,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
         handle.waitForAllPendingCalls()
 
         // Complete one of the downloads and one of the local files
-        handle.release("a.jar")
+        handle.release("transform-call-a.jar")
         handle.release(m1.artifact.path)
 
         // Download has completed, transforming the result. Other artifact is still downloading
@@ -365,7 +377,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
             }
         """
 
-        server.expectConcurrent("a.jar", "bad-b.jar", "bad-c.jar")
+        server.expectConcurrent("transform-call-a.jar", "transform-call-bad-b.jar", "transform-call-bad-c.jar")
 
         when:
         fails ":resolve"
@@ -375,6 +387,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
         failure.assertHasCause("Failed to transform bad-c.jar to match attributes {artifactType=size}")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "Transforms registered and configured in root project using allprojects. This allows transform tests to use the same artifact transform implementation Class.")
     def "only one transformer execution per workspace"() {
 
         createDirs("lib", "app1", "app2")
@@ -393,7 +406,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
                     destinationDirectory = buildDir
                 }
                 artifacts {
-                    compile jar2
+                    compile tasks.jar2
                 }
             }
 
@@ -415,8 +428,8 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
         """
         file("lib/lib1.jar") << "some content"
 
-        server.expect("lib2.jar")
-        server.expect("lib1.jar")
+        server.expect("transform-call-lib2.jar")
+        server.expect("transform-call-lib1.jar")
 
         when:
         def handle = executer.withArguments("--parallel").withTasks("app1:resolve", "app2:resolve").start()
@@ -435,7 +448,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
                 toBeTransformed.text = '1234'
                 buildFile << """
                     repositories {
-                        maven { url '${mavenRepo.uri}' }
+                        maven { url = '${mavenRepo.uri}' }
                     }
 
                     dependencies {
@@ -455,7 +468,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
                         }.artifacts
                         inputs.files(artifacts.artifactFiles)
 
-                        dependsOn(beforeResolve)
+                        dependsOn(tasks.beforeResolve)
 
                         def projectName = project.name
                         doLast {
@@ -470,7 +483,7 @@ class ArtifactTransformParallelIntegrationTest extends AbstractDependencyResolut
 
         expect:
         server.expectConcurrent(buildNames.collect { "resolveStarted_" + it })
-        def transformations = server.expectConcurrentAndBlock(3, buildNames.collect { it + "-1.0.jar" } as String[])
+        def transformations = server.expectConcurrentAndBlock(3, buildNames.collect { "transform-call-${it}-1.0.jar" } as String[])
         def buildHandles = builds.collect {
             executer.inDirectory(it).withTasks("resolve").start()
         }

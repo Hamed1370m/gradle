@@ -17,8 +17,7 @@
 package org.gradle.smoketests
 
 import org.gradle.api.JavaVersion
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
-import org.gradle.util.GradleVersion
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 import org.gradle.util.internal.VersionNumber
 
 import static org.gradle.api.internal.DocumentationRegistry.BASE_URL
@@ -42,7 +41,7 @@ class GrettySmokeTest extends AbstractPluginValidatingSmokeTest {
             ${mavenCentralRepository()}
 
             dependencies {
-                implementation group: 'log4j', name: 'log4j', version: '1.2.15', ext: 'jar'
+                implementation("log4j:log4j:1.2.15@jar")
             }
 
             gretty {
@@ -64,19 +63,11 @@ class GrettySmokeTest extends AbstractPluginValidatingSmokeTest {
         when:
         def result = runner('checkContainerUp')
             .expectDeprecationWarning(
-                "The org.gradle.api.plugins.WarPluginConvention type has been deprecated. This is scheduled to be removed in Gradle 9.0. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_8.html#war_convention_deprecation",
-                "https://github.com/gretty-gradle-plugin/gretty/issues/266")
-            .expectDeprecationWarningIf(
-                grettyVersion < VersionNumber.parse("4.1.0"),
-                "The org.gradle.util.VersionNumber type has been deprecated. This is scheduled to be removed in Gradle 9.0. Consult the upgrading guide for further information: https://docs.gradle.org/${GradleVersion.current().version}/userguide/upgrading_version_8.html#org_gradle_util_reports_deprecations",
-                "https://github.com/gretty-gradle-plugin/gretty/issues/297"
-            )
-            .expectDeprecationWarning(
-                "The Project.javaexec(Closure) method has been deprecated. " +
-                    "This is scheduled to be removed in Gradle 9.0. " +
-                    "Use ExecOperations.javaexec(Action) or ProviderFactory.javaexec(Action) instead. " +
-                    "Consult the upgrading guide for further information: ${BASE_URL}/userguide/upgrading_version_8.html#deprecated_project_exec",
-                "https://github.com/gretty-gradle-plugin/gretty/issues/312"
+                "Invocation of Task.project at execution time has been deprecated. " +
+                    "This will fail with an error in Gradle 10. " +
+                    "This API is incompatible with the configuration cache, which will become the only mode supported by Gradle in a future release. " +
+                    "Consult the upgrading guide for further information: ${BASE_URL}/userguide/upgrading_version_7.html#task_project",
+                "https://github.com/gretty-gradle-plugin/gretty/issues/313"
             )
             .build()
 
@@ -92,6 +83,16 @@ class GrettySmokeTest extends AbstractPluginValidatingSmokeTest {
         [
             'org.gretty': Versions.of(grettyConfigForCurrentJavaVersion().collect { it.version } as String[])
         ]
+    }
+
+    @Override
+    String getSubprojectExtensionAccess(String testedPluginId, String version) {
+        "gretty {}"
+    }
+
+    @Override
+    List<String> getSubprojectExtensionDeprecations(String testedPluginId, String version) {
+        [parentMethodInvocationDeprecation('gretty')]
     }
 
     static def grettyConfigForCurrentJavaVersion() {

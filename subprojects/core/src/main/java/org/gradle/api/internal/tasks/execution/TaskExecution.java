@@ -21,15 +21,18 @@ import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.GeneratedSubclasses;
 import org.gradle.api.internal.TaskInternal;
 import org.gradle.api.internal.TaskOutputsEnterpriseInternal;
+import org.gradle.api.internal.changedetection.TaskExecutionMode;
 import org.gradle.api.internal.file.FileCollectionFactory;
 import org.gradle.api.internal.file.FileCollectionInternal;
+import org.gradle.api.internal.file.FileCollectionStructureVisitor;
+import org.gradle.api.internal.file.FileTreeInternal;
+import org.gradle.api.internal.file.collections.FileSystemMirroringFileTree;
 import org.gradle.api.internal.file.collections.LazilyInitializedFileCollection;
 import org.gradle.api.internal.project.taskfactory.IncrementalTaskAction;
 import org.gradle.api.internal.tasks.InputChangesAwareTaskAction;
 import org.gradle.api.internal.tasks.SnapshotTaskInputsBuildOperationResult;
 import org.gradle.api.internal.tasks.SnapshotTaskInputsBuildOperationType;
 import org.gradle.api.internal.tasks.TaskDependencyFactory;
-import org.gradle.api.internal.tasks.TaskExecutionContext;
 import org.gradle.api.internal.tasks.properties.DefaultPropertyValidationContext;
 import org.gradle.api.internal.tasks.properties.InputFilePropertySpec;
 import org.gradle.api.internal.tasks.properties.InputParameterUtils;
@@ -41,15 +44,24 @@ import org.gradle.api.tasks.Copy;
 import org.gradle.api.tasks.StopActionException;
 import org.gradle.api.tasks.StopExecutionException;
 import org.gradle.api.tasks.Sync;
+import org.gradle.api.tasks.util.PatternSet;
+import org.gradle.execution.plan.LocalTaskNode;
+import org.gradle.execution.plan.MissingTaskDependencyDetector;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.deprecation.DocumentedFailure;
 import org.gradle.internal.event.ListenerManager;
 import org.gradle.internal.exceptions.Contextual;
 import org.gradle.internal.exceptions.DefaultMultiCauseException;
 import org.gradle.internal.exceptions.MultiCauseException;
+import org.gradle.internal.execution.ExecutionContext;
+import org.gradle.internal.execution.Identity;
+import org.gradle.internal.execution.ImplementationVisitor;
 import org.gradle.internal.execution.InputFingerprinter;
+import org.gradle.internal.execution.InputVisitor;
 import org.gradle.internal.execution.MutableUnitOfWork;
 import org.gradle.internal.execution.OutputSnapshotter;
+import org.gradle.internal.execution.OutputVisitor;
+import org.gradle.internal.execution.WorkOutput;
 import org.gradle.internal.execution.WorkValidationContext;
 import org.gradle.internal.execution.caching.CachingDisabledReason;
 import org.gradle.internal.execution.caching.CachingState;
@@ -71,10 +83,10 @@ import org.gradle.internal.snapshot.FileSystemSnapshot;
 import org.gradle.internal.snapshot.SnapshotUtil;
 import org.gradle.internal.snapshot.ValueSnapshot;
 import org.gradle.internal.work.AsyncWorkTracker;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.io.UncheckedIOException;
 import java.time.Duration;
@@ -96,26 +108,34 @@ public class TaskExecution implements MutableUnitOfWork {
     private static final SnapshotTaskInputsBuildOperationType.Details SNAPSHOT_TASK_INPUTS_DETAILS = new SnapshotTaskInputsBuildOperationType.Details() {
     };
 
-    private final TaskInternal task;
-    private final TaskExecutionContext context;
-
+    private final LocalTaskNode node;
+    private final TaskExecutionMode taskExecutionMode;
     private final org.gradle.api.execution.TaskActionListener actionListener;
     private final AsyncWorkTracker asyncWorkTracker;
     private final BuildOperationRunner buildOperationRunner;
     private final ClassLoaderHierarchyHasher classLoaderHierarchyHasher;
     private final ExecutionHistoryStore executionHistoryStore;
     private final FileCollectionFactory fileCollectionFactory;
-    private final TaskDependencyFactory taskDependencyFactory;
     private final PathToFileResolver fileResolver;
     private final InputFingerprinter inputFingerprinter;
     private final ListenerManager listenerManager;
     private final ReservedFileSystemLocationRegistry reservedFileSystemLocationRegistry;
     private final TaskCacheabilityResolver taskCacheabilityResolver;
+    private final TaskDependencyFactory taskDependencyFactory;
+    private final MissingTaskDependencyDetector missingTaskDependencyDetector;
+
+    private final TaskInternal task;
+
+    /**
+     * The operation measuring input snapshotting and cache key calculation.
+     * Started by {@link #markLegacySnapshottingInputsStarted()} and cleared by whichever of the
+     * finish methods runs first.
+     */
+    private @Nullable BuildOperationContext snapshotTaskInputsBuildOperationContext;
 
     public TaskExecution(
-        TaskInternal task,
-        TaskExecutionContext context,
-
+        LocalTaskNode node,
+        TaskExecutionMode taskExecutionMode,
         org.gradle.api.execution.TaskActionListener actionListener,
         AsyncWorkTracker asyncWorkTracker,
         BuildOperationRunner buildOperationRunner,
@@ -127,39 +147,42 @@ public class TaskExecution implements MutableUnitOfWork {
         ListenerManager listenerManager,
         ReservedFileSystemLocationRegistry reservedFileSystemLocationRegistry,
         TaskCacheabilityResolver taskCacheabilityResolver,
-        TaskDependencyFactory taskDependencyFactory
+        TaskDependencyFactory taskDependencyFactory,
+        MissingTaskDependencyDetector missingTaskDependencyDetector
     ) {
-        this.task = task;
-        this.context = context;
-
+        this.node = node;
+        this.taskExecutionMode = taskExecutionMode;
         this.actionListener = actionListener;
         this.asyncWorkTracker = asyncWorkTracker;
         this.buildOperationRunner = buildOperationRunner;
-        this.executionHistoryStore = executionHistoryStore;
         this.classLoaderHierarchyHasher = classLoaderHierarchyHasher;
+        this.executionHistoryStore = executionHistoryStore;
         this.fileCollectionFactory = fileCollectionFactory;
-        this.taskDependencyFactory = taskDependencyFactory;
         this.fileResolver = fileResolver;
         this.inputFingerprinter = inputFingerprinter;
         this.listenerManager = listenerManager;
         this.reservedFileSystemLocationRegistry = reservedFileSystemLocationRegistry;
         this.taskCacheabilityResolver = taskCacheabilityResolver;
+        this.taskDependencyFactory = taskDependencyFactory;
+        this.missingTaskDependencyDetector = missingTaskDependencyDetector;
+
+        this.task = node.getTask();
     }
 
     @Override
-    public Identity identify(Map<String, ValueSnapshot> identityInputs, Map<String, CurrentFileCollectionFingerprint> identityFileInputs) {
+    public Identity identify(Map<String, ValueSnapshot> scalarInputs, Map<String, CurrentFileCollectionFingerprint> fileInputs) {
         return task::getPath;
     }
 
     @Override
-    public WorkOutput execute(ExecutionRequest executionRequest) {
-        FileCollection previousFiles = executionRequest.getPreviouslyProducedOutputs()
+    public WorkOutput execute(ExecutionContext executionContext) {
+        FileCollection previousFiles = executionContext.getPreviouslyProducedOutputs()
             .<FileCollection>map(previousOutputs -> new PreviousOutputFileCollection(task, taskDependencyFactory, fileCollectionFactory, previousOutputs))
             .orElseGet(FileCollectionFactory::empty);
         TaskOutputsEnterpriseInternal outputs = (TaskOutputsEnterpriseInternal) task.getOutputs();
         outputs.setPreviousOutputFiles(previousFiles);
         try {
-            WorkResult didWork = executeWithPreviousOutputFiles(executionRequest.getInputChanges().orElse(null));
+            WorkOutput.WorkResult didWork = executeWithPreviousOutputFiles(executionContext.getInputChanges().orElse(null));
             boolean storeInCache = outputs.getStoreInCache();
             return new WorkOutput() {
                 @Override
@@ -182,18 +205,19 @@ public class TaskExecution implements MutableUnitOfWork {
         }
     }
 
+    @Nullable
     @Override
     public Object loadAlreadyProducedOutput(File workspace) {
         return null;
     }
 
-    private WorkResult executeWithPreviousOutputFiles(@Nullable InputChangesInternal inputChanges) {
+    private WorkOutput.WorkResult executeWithPreviousOutputFiles(@Nullable InputChangesInternal inputChanges) {
         task.getState().setExecuting(true);
         try {
             LOGGER.debug("Executing actions for {}.", task);
             actionListener.beforeActions(task);
             executeActions(task, inputChanges);
-            return task.getState().getDidWork() ? WorkResult.DID_WORK : WorkResult.DID_NO_WORK;
+            return task.getState().getDidWork() ? WorkOutput.WorkResult.DID_WORK : WorkOutput.WorkResult.DID_NO_WORK;
         } finally {
             task.getState().setExecuting(false);
             actionListener.afterActions(task);
@@ -230,7 +254,7 @@ public class TaskExecution implements MutableUnitOfWork {
             @Override
             public BuildOperationDescriptor.Builder description() {
                 return BuildOperationDescriptor
-                    .displayName(actionDisplayName + " for " + task.getIdentityPath().getPath())
+                    .displayName(actionDisplayName + " for " + task.getIdentityPath().asString())
                     .name(actionDisplayName)
                     .details(ExecuteTaskActionBuildOperationType.DETAILS_INSTANCE);
             }
@@ -286,11 +310,17 @@ public class TaskExecution implements MutableUnitOfWork {
         return new MutableWorkspaceProvider() {
             @Override
             public <T> T withWorkspace(String path, WorkspaceAction<T> action) {
-                return action.executeInWorkspace(null, context.getTaskExecutionMode().isTaskHistoryMaintained()
-                    ? executionHistoryStore
-                    : null);
+                // TODO Use a better way to handle a no workspace situation for tasks
+                return action.executeInWorkspace(null);
             }
         };
+    }
+
+    @Override
+    public Optional<ExecutionHistoryStore> getHistory() {
+        return taskExecutionMode.isTaskHistoryMaintained()
+            ? Optional.of(executionHistoryStore)
+            : Optional.empty();
     }
 
     @Override
@@ -304,13 +334,13 @@ public class TaskExecution implements MutableUnitOfWork {
 
         List<InputChangesAwareTaskAction> taskActions = task.getTaskActions();
         for (InputChangesAwareTaskAction taskAction : taskActions) {
-            visitor.visitImplementation(taskAction.getActionImplementation(classLoaderHierarchyHasher));
+            visitor.visitAdditionalImplementation(taskAction.getActionImplementation(classLoaderHierarchyHasher));
         }
     }
 
     @Override
-    public void visitRegularInputs(InputVisitor visitor) {
-        TaskProperties taskProperties = context.getTaskProperties();
+    public void visitMutableInputs(InputVisitor visitor) {
+        TaskProperties taskProperties = node.getTaskProperties();
         for (InputPropertySpec inputProperty : taskProperties.getInputProperties()) {
             visitor.visitInputProperty(
                 inputProperty.getPropertyName(),
@@ -324,7 +354,7 @@ public class TaskExecution implements MutableUnitOfWork {
                 visitor.visitInputFileProperty(
                     inputFileProperty.getPropertyName(),
                     inputFileProperty.getBehavior(),
-                    new InputFileValueSupplier(
+                    new InputVisitor.InputFileValueSupplier(
                         inputFileProperty.getValue(),
                         inputFileProperty.getNormalizer(),
                         inputFileProperty.getDirectorySensitivity(),
@@ -338,13 +368,13 @@ public class TaskExecution implements MutableUnitOfWork {
 
     @Override
     public void visitOutputs(File workspace, OutputVisitor visitor) {
-        TaskProperties taskProperties = context.getTaskProperties();
+        TaskProperties taskProperties = node.getTaskProperties();
         for (OutputFilePropertySpec property : taskProperties.getOutputFileProperties()) {
             try {
                 visitor.visitOutputProperty(
                     property.getPropertyName(),
                     property.getOutputType(),
-                    OutputFileValueSupplier.fromSupplier(property::getOutputFile, property.getPropertyFiles())
+                    OutputVisitor.OutputFileValueSupplier.fromSupplier(property::getOutputFile, property.getPropertyFiles())
                 );
             } catch (OutputSnapshotter.OutputFileSnapshottingException e) {
                 throw decorateSnapshottingException("output", property.getPropertyName(), e.getCause());
@@ -359,27 +389,31 @@ public class TaskExecution implements MutableUnitOfWork {
     }
 
     private RuntimeException decorateSnapshottingException(String propertyType, String propertyName, Throwable cause) {
-        if (!(cause instanceof UncheckedIOException || cause instanceof org.gradle.api.UncheckedIOException)) {
+        if (!(cause instanceof UncheckedIOException)) {
             return UncheckedException.throwAsUncheckedException(cause);
         }
-        boolean isDestinationDir = propertyName.equals("destinationDir");
-        DocumentedFailure.Builder builder = DocumentedFailure.builder();
+        return decorateExceptionBuilder(
+                DocumentedFailure.builder().withUserManual("incremental_build", "sec:disable-state-tracking"),
+                propertyType,
+                propertyName,
+                propertyName.equals("destinationDirectory"))
+            .build(cause);
+    }
+
+    private DocumentedFailure.Builder decorateExceptionBuilder(DocumentedFailure.Builder builder, String propertyType, String propertyName, boolean isDestinationDir) {
         if (isDestinationDir && task instanceof Copy) {
-            builder.withSummary("Cannot access a file in the destination directory.")
+           return builder.withSummary("Cannot access a file in the destination directory.")
                 .withContext("Copying to a directory which contains unreadable content is not supported.")
                 .withAdvice("Declare the task as untracked by using Task.doNotTrackState().");
         } else if (isDestinationDir && task instanceof Sync) {
-            builder.withSummary("Cannot access a file in the destination directory.")
+           return builder.withSummary("Cannot access a file in the destination directory.")
                 .withContext("Syncing to a directory which contains unreadable content is not supported.")
                 .withAdvice("Use a Copy task with Task.doNotTrackState() instead.");
         } else {
-            builder.withSummary(String.format("Cannot access %s property '%s' of %s.",
-                    propertyType, propertyName, getDisplayName()))
+           return builder.withSummary(String.format("Cannot access %s property '%s' of %s.", propertyType, propertyName, getDisplayName()))
                 .withContext("Accessing unreadable inputs or outputs is not supported.")
                 .withAdvice("Declare the task as untracked by using Task.doNotTrackState().");
         }
-        return builder.withUserManual("incremental_build", "sec:disable-state-tracking")
-            .build(cause);
     }
 
     @Override
@@ -389,11 +423,15 @@ public class TaskExecution implements MutableUnitOfWork {
 
     @Override
     public boolean shouldCleanupStaleOutputs() {
-        return context.getTaskExecutionMode().isTaskHistoryMaintained();
+        return taskExecutionMode.isTaskHistoryMaintained();
     }
 
     @Override
     public boolean shouldCleanupOutputsOnNonIncrementalExecution() {
+        // If the task is declared with InputChanges received in its action,
+        // then we know it is prepared to execute non-incrementally.
+        // If the task does not request an InputChanges object, then
+        // we cannot assume if it understands non-incremental execution.
         return getExecutionBehavior() == ExecutionBehavior.INCREMENTAL;
     }
 
@@ -405,7 +443,7 @@ public class TaskExecution implements MutableUnitOfWork {
 
         return taskCacheabilityResolver.shouldDisableCaching(
             task,
-            context.getTaskProperties(),
+            node.getTaskProperties(),
             task.getOutputs().getCacheIfSpecs(),
             task.getOutputs().getDoNotCacheIfSpecs(),
             detectedOverlappingOutputs
@@ -414,7 +452,7 @@ public class TaskExecution implements MutableUnitOfWork {
 
     @Override
     public boolean isAllowedToLoadFromCache() {
-        return context.getTaskExecutionMode().isAllowedToUseCachedResults();
+        return taskExecutionMode.isAllowedToUseCachedResults();
     }
 
     @Override
@@ -440,35 +478,87 @@ public class TaskExecution implements MutableUnitOfWork {
             .displayName("Snapshot task inputs for " + task.getIdentityPath())
             .name("Snapshot task inputs")
             .details(SNAPSHOT_TASK_INPUTS_DETAILS));
-        context.setSnapshotTaskInputsBuildOperationContext(operationContext);
+        this.snapshotTaskInputsBuildOperationContext = operationContext;
     }
 
     @Override
     public void markLegacySnapshottingInputsFinished(CachingState cachingState) {
-        context.removeSnapshotTaskInputsBuildOperationContext()
-            .ifPresent(operation -> operation.setResult(new SnapshotTaskInputsBuildOperationResult(cachingState, context.getTaskProperties().getInputFileProperties())));
+        BuildOperationContext operation = consumeSnapshotTaskInputsBuildOperationContext();
+        if (operation != null) {
+            operation.setResult(new SnapshotTaskInputsBuildOperationResult(cachingState, node.getTaskProperties().getInputFileProperties()));
+        }
     }
 
     @Override
     public void ensureLegacySnapshottingInputsClosed() {
         // If the operation hasn't finished normally (because of a shortcut or an error), we close it without a cache key
-        context.removeSnapshotTaskInputsBuildOperationContext()
-            .ifPresent(operation -> operation.setResult(new SnapshotTaskInputsBuildOperationResult(CachingState.NOT_DETERMINED, Collections.emptySet())));
+        BuildOperationContext operation = consumeSnapshotTaskInputsBuildOperationContext();
+        if (operation != null) {
+            operation.setResult(new SnapshotTaskInputsBuildOperationResult(CachingState.NOT_DETERMINED, Collections.emptySet()));
+        }
+    }
+
+    /**
+     * Returns the running snapshotting operation and clears it, so that only the first caller finishes it.
+     */
+    private @Nullable BuildOperationContext consumeSnapshotTaskInputsBuildOperationContext() {
+        BuildOperationContext operation = snapshotTaskInputsBuildOperationContext;
+        snapshotTaskInputsBuildOperationContext = null;
+        return operation;
     }
 
     @Override
-    public void validate(WorkValidationContext validationContext) {
+    public void validate(WorkValidationContext workValidationContext) {
+        TypeValidationContext validationContext = getTypeValidationContext(workValidationContext);
+        node.getTaskProperties().validateType(validationContext);
+        node.getTaskProperties().validate(new DefaultPropertyValidationContext(
+            fileResolver,
+            reservedFileSystemLocationRegistry,
+            validationContext
+        ));
+    }
+
+    @Override
+    public void checkOutputDependencies(WorkValidationContext workValidationContext) {
+        TypeValidationContext validationContext = getTypeValidationContext(workValidationContext);
+        node.getMutationInfo().getOutputPaths().forEach(outputPath ->
+            missingTaskDependencyDetector.visitOutputLocation(node, validationContext, outputPath));
+    }
+
+    @Override
+    public FileCollectionStructureVisitor getInputDependencyChecker(WorkValidationContext workValidationContext) {
+        TypeValidationContext validationContext = getTypeValidationContext(workValidationContext);
+        return new FileCollectionStructureVisitor() {
+            @Override
+            public void visitCollection(FileCollectionInternal.Source source, Iterable<File> contents) {
+                contents.forEach(root -> missingTaskDependencyDetector.visitUnfilteredInputLocation(
+                    node, validationContext, root.getAbsolutePath()));
+            }
+
+            @Override
+            public void visitFileTree(File root, PatternSet patterns, FileTreeInternal fileTree) {
+                if (patterns.isEmpty()) {
+                    missingTaskDependencyDetector.visitUnfilteredInputLocation(
+                        node, validationContext, root.getAbsolutePath());
+                } else {
+                    missingTaskDependencyDetector.visitFilteredInputLocation(
+                        node, validationContext, root.getAbsolutePath(), patterns.getAsSpec());
+                }
+            }
+
+            @Override
+            public void visitFileTreeBackedByFile(File file, FileTreeInternal fileTree, FileSystemMirroringFileTree sourceTree) {
+                missingTaskDependencyDetector.visitUnfilteredInputLocation(
+                    node, validationContext, file.getAbsolutePath());
+            }
+        };
+    }
+
+    private TypeValidationContext getTypeValidationContext(WorkValidationContext validationContext) {
         Class<?> taskType = GeneratedSubclasses.unpackType(task);
         // TODO This should probably use the task class info store
         boolean cacheable = taskType.isAnnotationPresent(CacheableTask.class);
-        TypeValidationContext typeValidationContext = validationContext.forType(taskType, cacheable);
-        context.getTaskProperties().validateType(typeValidationContext);
-        context.getTaskProperties().validate(new DefaultPropertyValidationContext(
-            fileResolver,
-            reservedFileSystemLocationRegistry,
-            typeValidationContext
-        ));
-        context.getValidationAction().validate(typeValidationContext);
+        return validationContext.forType(taskType, cacheable);
     }
 
     @Override

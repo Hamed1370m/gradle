@@ -16,13 +16,14 @@
 
 package org.gradle.internal.configuration.problems
 
-import org.gradle.internal.DisplayName
+import org.gradle.api.Describable
 import org.gradle.internal.cc.impl.problems.JsonWriter
 import org.gradle.internal.code.UserCodeSource
 import org.gradle.internal.configuration.problems.StructuredMessage.Fragment.Reference
 import org.gradle.internal.configuration.problems.StructuredMessage.Fragment.Text
 import org.gradle.internal.problems.failure.Failure
 import org.gradle.problems.Location
+import org.gradle.util.Path
 import kotlin.reflect.KClass
 
 
@@ -43,19 +44,20 @@ data class PropertyProblem(
 
 
 // TODO:configuration-cache extract interface and move enum back to :configuration-cache
-enum class DocumentationSection(val anchor: String) {
-    NotYetImplemented("config_cache:not_yet_implemented"),
-    NotYetImplementedSourceDependencies("config_cache:not_yet_implemented:source_dependencies"),
-    NotYetImplementedJavaSerialization("config_cache:not_yet_implemented:java_serialization"),
-    NotYetImplementedTestKitJavaAgent("config_cache:not_yet_implemented:testkit_build_with_java_agent"),
-    NotYetImplementedBuildServiceInFingerprint("config_cache:not_yet_implemented:build_services_in_fingerprint"),
-    TaskOptOut("config_cache:task_opt_out"),
-    RequirementsBuildListeners("config_cache:requirements:build_listeners"),
-    RequirementsDisallowedTypes("config_cache:requirements:disallowed_types"),
-    RequirementsExternalProcess("config_cache:requirements:external_processes"),
-    RequirementsTaskAccess("config_cache:requirements:task_access"),
-    RequirementsSysPropEnvVarRead("config_cache:requirements:reading_sys_props_and_env_vars"),
-    RequirementsUseProjectDuringExecution("config_cache:requirements:use_project_during_execution")
+enum class DocumentationSection(val page: String, val anchor: String) {
+    NotYetImplemented("configuration_cache_status", "config_cache:not_yet_implemented"),
+    NotYetImplementedJavaSerialization("configuration_cache_status", "config_cache:not_yet_implemented:java_serialization"),
+    NotYetImplementedBuildServiceInFingerprint("configuration_cache_status", "config_cache:not_yet_implemented:build_services_in_fingerprint"),
+    NotYetImplementedBuildEventListeners("configuration_cache_status", "config_cache:not_yet_implemented:more_build_event_listeners"),
+    TaskOptOut("configuration_cache_debugging", "config_cache:task_opt_out"),
+    RequirementsBuildListeners("configuration_cache_requirements","config_cache:requirements:build_listeners"),
+    RequirementsDisallowedTypes("configuration_cache_requirements","config_cache:requirements:disallowed_types"),
+    RequirementsExternalProcess("configuration_cache_requirements","config_cache:requirements:external_processes"),
+    RequirementsJavaAgent("configuration_cache_requirements", "config_cache:requirements:java_agent"),
+    RequirementsTaskAccess("configuration_cache_requirements","config_cache:requirements:task_access"),
+    RequirementsSysPropEnvVarRead("configuration_cache_requirements","config_cache:requirements:reading_sys_props_and_env_vars"),
+    RequirementsUseProjectDuringExecution("configuration_cache_requirements","config_cache:requirements:use_project_during_execution"),
+    RequirementsGradleModelTypes("configuration_cache_requirements","config_cache:requirements:gradle_model_types"),
 }
 
 
@@ -119,6 +121,10 @@ data class StructuredMessage(val fragments: List<Fragment>) {
             fragments.add(Reference(name))
         }
 
+        fun reference(path: Path): Builder = apply {
+            fragments.add(Reference(path.asString()))
+        }
+
         fun reference(type: Class<*>): Builder = apply {
             reference(type.name)
         }
@@ -175,9 +181,9 @@ sealed class PropertyTrace {
         }
     }
 
-    @Suppress("DataClassPrivateConstructor")
+    @ConsistentCopyVisibility
     data class BuildLogic private constructor(
-        val source: DisplayName,
+        val source: Describable,
         val lineNumber: Int? = null
     ) : PropertyTrace() {
         constructor(location: Location) : this(location.sourceShortDisplayName, location.lineNumber)
@@ -235,6 +241,52 @@ sealed class PropertyTrace {
         }
     }
 
+    data class SerializedLambda(
+        val implClass: String,
+        val implMethodName: String,
+        val functionalInterfaceClass: String,
+        val instantiatedReturnType: String,
+        val trace: PropertyTrace
+    ) : PropertyTrace() {
+        override val containingUserCodeMessage: StructuredMessage
+            get() = trace.containingUserCodeMessage
+
+        override fun toString(): String = asString()
+        override fun describe(builder: StructuredMessage.Builder) {
+            with(builder) {
+                text("lambda of type ")
+                reference(functionalInterfaceClass)
+                text(" returning ")
+                reference(instantiatedReturnType)
+                text(" found in ")
+            }
+        }
+    }
+
+    data class CapturedLambdaArguments(
+        val subkind: Subkind,
+        val owningClass: String,
+        val owningMethod: String,
+        val trace: PropertyTrace
+    ) : PropertyTrace() {
+        enum class Subkind { LambdaBody, BoundReceiver }
+
+        override val containingUserCodeMessage: StructuredMessage
+            get() = trace.containingUserCodeMessage
+
+        override fun toString(): String = asString()
+        override fun describe(builder: StructuredMessage.Builder) {
+            with(builder) {
+                when (subkind) {
+                    Subkind.LambdaBody -> text("captured state from method ")
+                    Subkind.BoundReceiver -> text("bound receiver of method ")
+                }
+                reference("$owningClass.$owningMethod")
+                text(" of ")
+            }
+        }
+    }
+
     data class Property(
         val kind: PropertyKind,
         val name: String,
@@ -284,6 +336,24 @@ sealed class PropertyTrace {
         }
     }
 
+    /**
+     * A virtual property not backed by a concrete field.
+     * Useful to give human-readable names to pieces of state that do not have concise/understandable representations as beans.
+     */
+    data class VirtualProperty(
+        val name: String,
+        val owner: PropertyTrace
+    ): PropertyTrace() {
+        override val containingUserCodeMessage: StructuredMessage
+            get() = owner.containingUserCodeMessage
+        override fun toString(): String = asString()
+        override fun describe(builder: StructuredMessage.Builder) {
+            with(builder) {
+                text("$name of ")
+            }
+        }
+    }
+
     abstract override fun equals(other: Any?): Boolean
 
     abstract override fun hashCode(): Int
@@ -329,14 +399,28 @@ sealed class PropertyTrace {
             }
         }
 
+    /**
+     * A hash that includes the entire property trace chain into account.
+     *
+     * This is a best effort to achieve deep/full property trace uniqueness.
+     */
+    val fullHash: Int get() = sequence.fold(17) { acc, trace -> 31 * acc + trace.hashCode() }
+
     private
     val tail: PropertyTrace?
         get() = when (this) {
             is Bean -> trace
+            is SerializedLambda -> trace
+            is CapturedLambdaArguments -> trace
             is Property -> trace
+            is VirtualProperty -> owner
             is SystemProperty -> trace
             is Project -> trace
-            else -> null
+            is Task -> null
+            is BuildLogic -> null
+            is BuildLogicClass -> null
+            Gradle -> null
+            Unknown -> null
         }
 }
 

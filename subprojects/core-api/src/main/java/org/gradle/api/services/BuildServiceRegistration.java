@@ -30,6 +30,7 @@ import org.gradle.api.provider.Provider;
 public interface BuildServiceRegistration<T extends BuildService<P>, P extends BuildServiceParameters> extends Named {
     /**
      * Returns the parameters that will be used to instantiate the service with.
+     * @since 6.1
      */
     P getParameters();
 
@@ -38,16 +39,18 @@ public interface BuildServiceRegistration<T extends BuildService<P>, P extends B
      * When this property has no value defined, then any number of tasks may use this service in parallel. This is the default.
      *
      * <p>
-     * IMPORTANT: the build service must be explicitly registered with every using task via {@link org.gradle.api.Task#usesService(Provider) Task#usesService}
-     * for this constraint to be honored.
-     * </p>
+     * IMPORTANT: the build service must be consumed via a {@link ServiceReference} property, or explicitly registered with every using task
+     * via {@link org.gradle.api.Task#usesService(Provider) Task#usesService} for this constraint to be honored.
      *
+     * @see ServiceReference
      * @see org.gradle.api.Task#usesService(Provider)
+     * @since 6.1
      */
     Property<Integer> getMaxParallelUsages();
 
     /**
      * Returns a {@link Provider} that will create the service instance when its value is queried.
+     * @since 6.1
      */
     Provider<T> getService();
 }

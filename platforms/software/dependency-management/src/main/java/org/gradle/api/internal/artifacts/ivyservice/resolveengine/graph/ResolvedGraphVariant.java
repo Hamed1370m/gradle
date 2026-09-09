@@ -16,12 +16,13 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph;
 
-import org.gradle.internal.component.model.ComponentGraphResolveState;
+import org.gradle.api.Describable;
 import org.gradle.internal.component.model.VariantGraphResolveState;
+import org.gradle.internal.component.model.VariantIdentifier;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
+public interface ResolvedGraphVariant extends Describable {
 
-public interface ResolvedGraphVariant {
     /**
      * Returns a simple id for this node, unique across all nodes in the same graph.
      * This id cannot be used across graphs.
@@ -29,9 +30,9 @@ public interface ResolvedGraphVariant {
     long getNodeId();
 
     /**
-     * Get the resolve state of the owning component.
+     * Get the ID of this variant.
      */
-    ComponentGraphResolveState getComponentResolveState();
+    VariantIdentifier getId();
 
     /**
      * Get the resolve state of this variant.
@@ -40,4 +41,5 @@ public interface ResolvedGraphVariant {
 
     @Nullable
     ResolvedGraphVariant getExternalVariant();
+
 }

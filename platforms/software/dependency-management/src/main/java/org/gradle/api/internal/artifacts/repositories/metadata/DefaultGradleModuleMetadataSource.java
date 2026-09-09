@@ -18,15 +18,17 @@ package org.gradle.api.internal.artifacts.repositories.metadata;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.artifacts.ModuleIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
+import org.gradle.api.artifacts.component.ModuleComponentSelector;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ComponentResolvers;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ModuleDescriptorHashModuleSource;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.GradleModuleMetadataParser;
 import org.gradle.api.internal.artifacts.repositories.resolver.ExternalResourceArtifactResolver;
+import org.gradle.api.internal.artifacts.repositories.resolver.MavenUniqueSnapshotComponentIdentifier;
 import org.gradle.api.internal.artifacts.repositories.resolver.ResourcePattern;
 import org.gradle.api.internal.artifacts.repositories.resolver.VersionLister;
+import org.gradle.internal.component.external.model.ComponentVariant;
 import org.gradle.internal.component.external.model.DefaultModuleComponentArtifactMetadata;
 import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata;
-import org.gradle.internal.component.external.model.ModuleDependencyMetadata;
 import org.gradle.internal.component.external.model.MutableComponentVariant;
 import org.gradle.internal.component.external.model.MutableModuleComponentResolveMetadata;
 import org.gradle.internal.component.model.ComponentOverrideMetadata;
@@ -42,6 +44,7 @@ import org.gradle.internal.resource.metadata.ExternalResourceMetaData;
 
 import javax.inject.Inject;
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -50,7 +53,6 @@ import java.util.List;
  */
 public class DefaultGradleModuleMetadataSource implements MetadataSource<MutableModuleComponentResolveMetadata> {
     private final GradleModuleMetadataParser metadataParser;
-    private final GradleModuleMetadataCompatibilityConverter metadataCompatibilityConverter;
     private final MutableModuleMetadataFactory<? extends MutableModuleComponentResolveMetadata> mutableModuleMetadataFactory;
     private final boolean listVersions;
     private final ChecksumService checksumService;
@@ -58,7 +60,6 @@ public class DefaultGradleModuleMetadataSource implements MetadataSource<Mutable
     @Inject
     public DefaultGradleModuleMetadataSource(GradleModuleMetadataParser metadataParser, MutableModuleMetadataFactory<? extends MutableModuleComponentResolveMetadata> mutableModuleMetadataFactory, boolean listVersions, ChecksumService checksumService) {
         this.metadataParser = metadataParser;
-        this.metadataCompatibilityConverter = new GradleModuleMetadataCompatibilityConverter(metadataParser.getAttributesFactory(), metadataParser.getInstantiator());
         this.mutableModuleMetadataFactory = mutableModuleMetadataFactory;
         this.listVersions = listVersions;
         this.checksumService = checksumService;
@@ -74,7 +75,7 @@ public class DefaultGradleModuleMetadataSource implements MetadataSource<Mutable
             metadataParser.parse(gradleMetadataArtifact, metaDataFromResource);
             validateGradleMetadata(metaDataFromResource);
             createModuleSources(artifactId, gradleMetadataArtifact, metaDataFromResource);
-            metadataCompatibilityConverter.process(metaDataFromResource);
+            handleMavenSnapshotCompatibility(metaDataFromResource);
             return metaDataFromResource;
         }
         return null;
@@ -103,11 +104,38 @@ public class DefaultGradleModuleMetadataSource implements MetadataSource<Mutable
     }
 
     @Override
-    public void listModuleVersions(ModuleDependencyMetadata dependency, ModuleIdentifier module, List<ResourcePattern> ivyPatterns, List<ResourcePattern> artifactPatterns, VersionLister versionLister, BuildableModuleVersionListingResolveResult result) {
+    public void listModuleVersions(ModuleComponentSelector selector, ComponentOverrideMetadata overrideMetadata, List<ResourcePattern> ivyPatterns, List<ResourcePattern> artifactPatterns, VersionLister versionLister, BuildableModuleVersionListingResolveResult result) {
         if (listVersions) {
             // List modules based on metadata files, but only if we won't check for maven-metadata (which is preferred)
+            ModuleIdentifier module = selector.getModuleIdentifier();
             IvyArtifactName metaDataArtifact = new DefaultIvyArtifactName(module.getName(), "module", "module");
             versionLister.listVersions(module, metaDataArtifact, ivyPatterns, result);
         }
     }
+
+    public static void handleMavenSnapshotCompatibility(MutableModuleComponentResolveMetadata metaDataFromResource) {
+        if (metaDataFromResource.getId() instanceof MavenUniqueSnapshotComponentIdentifier) {
+            // Action needed only for Maven unique snapshots
+            // Verify that the URL of the artifacts properly references the unique version and not -SNAPSHOT
+            MavenUniqueSnapshotComponentIdentifier uniqueIdentifier = (MavenUniqueSnapshotComponentIdentifier) metaDataFromResource.getId();
+            for (MutableComponentVariant mutableVariant : metaDataFromResource.getMutableVariants()) {
+                List<ComponentVariant.File> invalidFiles = null;
+                for (ComponentVariant.File file : mutableVariant.getFiles()) {
+                    if (file.getUri().contains("SNAPSHOT")) {
+                        if (invalidFiles == null) {
+                            invalidFiles = new ArrayList<>(2);
+                        }
+                        invalidFiles.add(file);
+                    }
+                }
+                if (invalidFiles != null) {
+                    for (ComponentVariant.File invalidFile : invalidFiles) {
+                        mutableVariant.removeFile(invalidFile);
+                        mutableVariant.addFile(invalidFile.getName(), invalidFile.getUri().replace("SNAPSHOT", uniqueIdentifier.getTimestamp()));
+                    }
+                }
+            }
+        }
+    }
+
 }

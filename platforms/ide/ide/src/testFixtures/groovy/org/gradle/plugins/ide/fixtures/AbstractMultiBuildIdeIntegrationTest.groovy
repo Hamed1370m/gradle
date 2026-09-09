@@ -16,25 +16,25 @@
 
 package org.gradle.plugins.ide.fixtures
 
-import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import org.gradle.plugins.ide.AbstractIdeIntegrationSpec
 import org.gradle.test.fixtures.file.TestFile
 import spock.lang.Issue
 
 /**
  * Common behaviour tests for all IDE plugins dealing with multiple builds (buildSrc, composite builds, etc).
  */
-abstract class AbstractMultiBuildIdeIntegrationTest extends AbstractIntegrationSpec {
+abstract class AbstractMultiBuildIdeIntegrationTest extends AbstractIdeIntegrationSpec {
     abstract String getPluginId()
     abstract String getWorkspaceTask()
     abstract String getLibraryPluginId()
     abstract IdeWorkspaceFixture workspace(TestFile workspaceDir, String ideWorkspaceName)
     abstract IdeProjectFixture project(TestFile projectDir, String ideProjectName)
 
-    @ToBeFixedForConfigurationCache(because = "ide plugins", bottomSpecs = [
-        "EclipseMultiBuildIntegrationTest",
-        "IdeaMultiBuildIntegrationTest"
-    ])
+    protected String[] getDeprecatedTaskNames() {
+        return new String[0]
+    }
+
     @Issue("https://github.com/gradle/gradle/issues/5110")
     def "buildSrc project can apply IDE plugin"() {
         file("buildSrc/build.gradle") << """
@@ -42,6 +42,7 @@ abstract class AbstractMultiBuildIdeIntegrationTest extends AbstractIntegrationS
         """
 
         expect:
+        expectTaskDeprecations(getDeprecatedTaskNames())
         succeeds(":buildSrc:${workspaceTask}")
         def workspace = workspace(file("buildSrc"), "buildSrc")
         if (libraryPluginId == "java-library") {
@@ -50,10 +51,7 @@ abstract class AbstractMultiBuildIdeIntegrationTest extends AbstractIntegrationS
         } // else, unspecified
     }
 
-    @ToBeFixedForConfigurationCache(because = "ide plugins", bottomSpecs = [
-        "EclipseMultiBuildIntegrationTest",
-        "IdeaMultiBuildIntegrationTest"
-    ])
+    @ToBeFixedForIsolatedProjects(because = "IDE plugin uses allprojects/subprojects across included builds")
     def "workspace includes projects from included builds"() {
         buildTestFixture.withBuildInSubDir()
         def buildA = singleProjectBuild("buildA") {
@@ -80,6 +78,7 @@ abstract class AbstractMultiBuildIdeIntegrationTest extends AbstractIntegrationS
 
         when:
         executer.inDirectory(buildA)
+        expectTaskDeprecations(getDeprecatedTaskNames())
         run(":${workspaceTask}")
 
         then:
@@ -90,10 +89,7 @@ abstract class AbstractMultiBuildIdeIntegrationTest extends AbstractIntegrationS
         workspace.assertContains(project(buildB.file("p2"), "p2"))
     }
 
-    @ToBeFixedForConfigurationCache(because = "ide plugins", bottomSpecs = [
-        "EclipseMultiBuildIntegrationTest",
-        "IdeaMultiBuildIntegrationTest"
-    ])
+    @ToBeFixedForIsolatedProjects(because = "IDE plugin uses allprojects/subprojects across included builds")
     def "workspace includes projects from nested included builds"() {
         buildTestFixture.withBuildInSubDir()
         def buildA = singleProjectBuild("buildA") {
@@ -132,6 +128,7 @@ abstract class AbstractMultiBuildIdeIntegrationTest extends AbstractIntegrationS
 
         when:
         executer.inDirectory(buildA)
+        expectTaskDeprecations(getDeprecatedTaskNames())
         run(":${workspaceTask}")
 
         then:

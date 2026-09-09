@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.gradle.api.internal;
 
 import org.gradle.api.Action;
@@ -25,17 +24,19 @@ import org.gradle.api.internal.tasks.TaskStateInternal;
 import org.gradle.api.internal.tasks.properties.ServiceReferenceSpec;
 import org.gradle.api.specs.Spec;
 import org.gradle.api.tasks.Internal;
-import org.gradle.api.tasks.TaskDependency;
 import org.gradle.internal.Factory;
+import org.gradle.internal.logging.LoggingManagerInternal;
 import org.gradle.internal.logging.StandardOutputCapture;
 import org.gradle.internal.resources.ResourceLock;
 import org.gradle.util.Configurable;
 import org.gradle.util.Path;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.gradle.api.tasks.TaskDependency;
 
 public interface TaskInternal extends Task, Configurable<Task> {
 
@@ -47,6 +48,13 @@ public interface TaskInternal extends Task, Configurable<Task> {
     @Internal
     List<InputChangesAwareTaskAction> getTaskActions();
 
+    /**
+     * Sets the task actions for this task. Used by the configuration cache when restoring the task.
+     *
+     * @param taskActions the actions to restore
+     */
+    void restoreTaskActions(List<InputChangesAwareTaskAction> taskActions);
+
     @Internal
     boolean hasTaskActions();
 
@@ -54,7 +62,14 @@ public interface TaskInternal extends Task, Configurable<Task> {
     Spec<? super TaskInternal> getOnlyIf();
 
     /**
-     * Return the reason for not to track state.
+     * Sets the only-if condition for this task without any decoration. Used by the configuration cache when restoring the task.
+     *
+     * @param onlyIf the spec to restore
+     */
+    void restoreOnlyIf(Spec<? super TaskInternal> onlyIf);
+
+    /**
+     * Returns the combined reasons to not track state in a single String.
      *
      * Gradle considers the task as untracked if the reason is present.
      * When not tracking state, a reason must be present. Hence the {@code Optional} represents the state of enablement, too.
@@ -64,6 +79,22 @@ public interface TaskInternal extends Task, Configurable<Task> {
     @Internal
     Optional<String> getReasonNotToTrackState();
 
+    /**
+     * Returns the individual reasons to not track the task state.  This is used for serializing the reasons to the
+     * configuration cache.
+     */
+    @Internal
+    Set<String> getReasonsNotToTrackState();
+
+    /**
+     * Sets a condition to not track the task state when the given spec matches.  This condition will be evaluated when the return
+     * value of {@link #getReasonNotToTrackState()} is queried.
+     *
+     * @param reason - the reason for not tracking the task state when the condition matches
+     * @param spec - the condition to evaluate
+     */
+    void doNotTrackStateIf(String reason, Spec<? super TaskInternal> spec);
+
     @Internal
     boolean isCompatibleWithConfigurationCache();
 
@@ -72,6 +103,19 @@ public interface TaskInternal extends Task, Configurable<Task> {
 
     @Internal
     StandardOutputCapture getStandardOutputCapture();
+
+    /**
+     * Returns this task's logging manager if one has already been created, without creating one.
+     *
+     * <p>Unlike {@link #getLogging()}, this never forces lazy creation of the per-task logging
+     * manager. It is used during configuration cache serialization to read any registered
+     * standard output/error listeners without allocating a manager for every task.
+     *
+     * @return the task's logging manager, or {@code null} if none has been created yet
+     */
+    @Internal
+    @Nullable
+    LoggingManagerInternal getLoggingManager();
 
     @Override
     TaskInputsInternal getInputs();

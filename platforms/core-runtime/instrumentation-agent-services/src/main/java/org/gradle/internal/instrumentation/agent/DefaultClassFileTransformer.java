@@ -17,18 +17,20 @@
 package org.gradle.internal.instrumentation.agent;
 
 import org.gradle.internal.classloader.InstrumentingClassLoader;
+import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 class DefaultClassFileTransformer implements ClassFileTransformer {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultClassFileTransformer.class);
     private static final AtomicBoolean INSTALLED = new AtomicBoolean();
 
-    @Nullable
     @Override
-    public byte[] transform(
+    public byte @Nullable [] transform(
         @Nullable ClassLoader loader,
         @Nullable String className,
         @Nullable Class<?> classBeingRedefined,
@@ -39,12 +41,29 @@ class DefaultClassFileTransformer implements ClassFileTransformer {
             return null;
         }
         InstrumentingClassLoader instrumentingLoader = (InstrumentingClassLoader) loader;
+        byte[] instrumented = doTransform(instrumentingLoader, className, protectionDomain, classfileBuffer);
+        if (classBeingRedefined != null && instrumented != null && className != null && !instrumentingLoader.canReinstrumentClasses()) {
+            // Another agent requested a class on the build script classpath to be redefined (i.e. it supplied its new bytecode).
+            // On the substitution path we serve bytecode captured during the artifact transform and cannot apply the freshly compiled definition,
+            // so the swap silently has no effect.
+            // Warn so the developer isn't misled into thinking the edit was applied. A typical use case is the debugger requested Hot Code Replace.
+            // In most other cases, we detect the agent and set up the runtime-transformation pipeline.
+            LOGGER.warn("Redefinition (e.g. due to Hot Code Replace) of the class {} had no effect. " +
+                "Gradle serves pre-instrumented bytecode for buildscript and plugin classes, so the recompiled definition is ignored. " +
+                "Restart the build to pick up the change.",
+                className.replace('/', '.')
+            );
+        }
+        return instrumented;
+    }
+
+    private byte @Nullable [] doTransform(InstrumentingClassLoader loader, @Nullable String className, @Nullable ProtectionDomain protectionDomain, byte[] classfileBuffer) {
         try {
-            return instrumentingLoader.instrumentClass(className, protectionDomain, classfileBuffer);
+            return loader.instrumentClass(className, protectionDomain, classfileBuffer);
         } catch (Throwable th) {
             // Throwing exception from the ClassFileTransformer has no effect - if it happens, the class is loaded unchanged silently.
             // This is not something we want, so we notify the class loader about this.
-            instrumentingLoader.transformFailed(className, th);
+            loader.transformFailed(className, th);
             return null;
         }
     }

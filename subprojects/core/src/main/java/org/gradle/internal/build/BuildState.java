@@ -21,7 +21,10 @@ import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.project.ProjectState;
 import org.gradle.initialization.IncludedBuildSpec;
 import org.gradle.internal.DisplayName;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.util.Path;
+import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 import java.util.function.Function;
@@ -31,18 +34,41 @@ import java.util.function.Function;
  *
  * Implementations are not yet entirely thread-safe, but should be.
  */
+@ServiceScope(Scope.Build.class)
 public interface BuildState {
-    DisplayName getDisplayName();
+
+    /**
+     * Returns the immutable identity of this build.
+     */
+    BuildIdentity getBuildIdentity();
+
+    /**
+     * Returns the display name of this build.
+     *
+     * @see BuildIdentity#getDisplayName()
+     */
+    default DisplayName getDisplayName() {
+        return getBuildIdentity();
+    }
 
     /**
      * Returns the identifier for this build. The identifier is fixed for the lifetime of the build.
+     * <p>
+     * Prefer {@link #getBuildIdentity()} or plain {@link #getIdentityPath()}.
      */
     BuildIdentifier getBuildIdentifier();
 
     /**
      * Returns an identifying path for this build in the build tree. This path is fixed for the lifetime of the build.
      */
-    Path getIdentityPath();
+    default Path getIdentityPath() {
+        return getBuildIdentity().getBuildPath();
+    }
+
+    /**
+     * Get the parent build of this build, if any.
+     */
+    @Nullable BuildState getParent();
 
     /**
      * Is this an implicit build? An implicit build is one that is managed by Gradle and which is not addressable by user build logic.
@@ -50,14 +76,20 @@ public interface BuildState {
     boolean isImplicitBuild();
 
     /**
-     * Should this build be imported into an IDE? Some implicit builds, such as source dependency builds, are not intended to be imported into the IDE or editable by users.
+     * Is this a user-facing build whose sources users address and edit directly?
+     *
+     * <p>Returns {@code false} for implicit builds that Gradle manages and reproduces itself and
+     * that are not intended to be edited by users, most notably source-dependency (VCS) builds.
+     *
+     * <p>This governs whether a build takes part in user-facing behavior:
+     * <ul>
+     *     <li>it is exposed to the IDE / Tooling API build model (see {@code DefaultBuildTreeModelCreator} and
+     *         {@code GradleBuildBuilder});</li>
+     *     <li>its tasks can be targeted by task selectors (see {@code DefaultBuildTaskSelector});</li>
+     *     <li>its root directory is registered for file system watching (see {@code VirtualFileSystemServices}).</li>
+     * </ul>
      */
     boolean isImportableBuild();
-
-    /**
-     * Calculates the identity path for a project in this build.
-     */
-    Path calculateIdentityPathForProject(Path projectPath) throws IllegalStateException;
 
     /**
      * Loads the projects for this build so that {@link #getProjects()} can be used, if not already done.
@@ -88,6 +120,16 @@ public interface BuildState {
     BuildProjectRegistry getProjects();
 
     /**
+     * {@return the root project of this build}
+     *
+     * <p>
+     * This is a convenience method for {@link #getProjects()}{@code .}{@link BuildProjectRegistry#getRootProject() getRootProject()}.
+     */
+    default ProjectState getRootProject() {
+        return getProjects().getRootProject();
+    }
+
+    /**
      * Asserts that the given build can be included by this build.
      */
     void assertCanAdd(IncludedBuildSpec includedBuildSpec);
@@ -110,7 +152,7 @@ public interface BuildState {
     /**
      * Runs an action against the tooling model creators of this build. May configure the build as required.
      */
-    <T> T withToolingModels(Function<? super BuildToolingModelController, T> action);
+    <T> T withToolingModels(boolean inResilientContext, Function<? super BuildToolingModelController, T> action);
 
     /**
      * Runs whatever work is required prior to discarding the model for this build. Called prior to {@link #resetModel()}.
@@ -126,4 +168,5 @@ public interface BuildState {
      * Runs whatever work is required prior to discarding the model for this build. Called at the end of the build.
      */
     ExecutionResult<Void> beforeModelDiscarded(boolean failed);
+
 }

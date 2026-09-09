@@ -16,7 +16,7 @@
 
 package org.gradle.plugins.ide
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 abstract class AbstractIdeLifecycleIntegrationTest extends AbstractIdeProjectIntegrationTest {
     abstract String[] getGenerationTaskNames(String projectPath)
@@ -29,9 +29,10 @@ abstract class AbstractIdeLifecycleIntegrationTest extends AbstractIdeProjectInt
         }
     }
 
-    @ToBeFixedForConfigurationCache
+    @ToBeFixedForIsolatedProjects(because = "IDE plugin cross-project configuration")
     def "lifecycle task is added and generates metadata"() {
         when:
+        expectTaskDeprecations(deprecatedTaskNames)
         run lifeCycleTaskName
 
         then:
@@ -46,22 +47,24 @@ abstract class AbstractIdeLifecycleIntegrationTest extends AbstractIdeProjectInt
         projectName("foo/bar") == "bar"
     }
 
-    @ToBeFixedForConfigurationCache
+    @ToBeFixedForIsolatedProjects(because = "IDE plugin cross-project configuration")
     def "clean tasks always run before generation tasks when specified on the command line"() {
         when:
+        expectTaskDeprecations(deprecatedTaskNames + deprecatedCleanTaskNames)
         run cleanTaskName, lifeCycleTaskName
 
         then:
         assertCleanTasksRunBeforeGenerationTasks()
 
         when:
+        expectTaskDeprecations(deprecatedTaskNames + deprecatedCleanTaskNames)
         run lifeCycleTaskName, cleanTaskName
 
         then:
         assertGenerationTasksRunBeforeCleanTasks()
     }
 
-    @ToBeFixedForConfigurationCache
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root, IDE plugin aggregates subprojects")
     def "clean tasks always run before generation tasks when modeled as a dependency"() {
         given:
         buildFile << """
@@ -71,6 +74,7 @@ abstract class AbstractIdeLifecycleIntegrationTest extends AbstractIdeProjectInt
         """
 
         when:
+        expectTaskDeprecations(deprecatedTaskNames + deprecatedCleanTaskNames)
         run lifeCycleTaskName
 
         then:

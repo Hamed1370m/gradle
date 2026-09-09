@@ -16,42 +16,40 @@
 package org.gradle.internal.component.model;
 
 import org.gradle.api.attributes.Attribute;
-import org.gradle.api.attributes.HasAttributes;
 import org.gradle.api.internal.attributes.AttributeContainerInternal;
-import org.gradle.api.internal.attributes.AttributeValue;
+import org.gradle.api.internal.attributes.ImmutableAttributes;
+import org.gradle.api.internal.attributes.ImmutableAttributesEntry;
 
 import java.util.Collection;
 
 public interface AttributeMatchingExplanationBuilder {
-    AttributeMatchingExplanationBuilder NO_OP = () -> true;
+    AttributeMatchingExplanationBuilder NO_OP = new AttributeMatchingExplanationBuilder() { };
 
     static AttributeMatchingExplanationBuilder logging() {
         return LoggingAttributeMatchingExplanationBuilder.logging();
     }
 
-    boolean canSkipExplanation();
-
-    default <T extends HasAttributes> void noCandidates(AttributeContainerInternal requested) {
+    default void noCandidates(ImmutableAttributes requested) {
 
     }
 
-    default <T extends HasAttributes> void singleMatch(T candidate, Collection<? extends T> candidates, AttributeContainerInternal requested) {
+    default void singleMatch(ImmutableAttributes candidate, Collection<ImmutableAttributes> candidates, AttributeContainerInternal requested) {
 
     }
 
-    default <T extends HasAttributes> void candidateDoesNotMatchAttributes(T candidate, AttributeContainerInternal requested) {
+    default void candidateDoesNotMatchAttributes(ImmutableAttributes candidate, AttributeContainerInternal requested) {
 
     }
 
-    default <T extends HasAttributes> void candidateAttributeDoesNotMatch(T candidate, Attribute<?> attribute, Object requestedValue, AttributeValue<?> candidateValue) {
+    default void candidateAttributeDoesNotMatch(ImmutableAttributes candidate, Attribute<?> attribute, Object requestedValue, ImmutableAttributesEntry<?> candidateEntry) {
 
     }
 
-    default <T extends HasAttributes> void candidateAttributeMissing(T candidate, Attribute<?> attribute, Object requestedValue) {
+    default void candidateAttributeMissing(ImmutableAttributes candidate, Attribute<?> attribute, Object requestedValue) {
 
     }
 
-    default <T extends HasAttributes> void candidateIsSuperSetOfAllOthers(T candidate) {
+    default void candidateIsSuperSetOfAllOthers(ImmutableAttributes candidate) {
 
     }
 }

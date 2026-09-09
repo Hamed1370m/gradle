@@ -21,7 +21,8 @@ import org.gradle.buildinit.plugins.fixtures.ScriptDslFixture
 import org.gradle.buildinit.plugins.internal.modifiers.BuildInitDsl
 import org.gradle.buildinit.plugins.internal.modifiers.BuildInitTestFramework
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 
 import static org.gradle.buildinit.plugins.internal.modifiers.BuildInitDsl.KOTLIN
 import static org.hamcrest.CoreMatchers.allOf
@@ -203,7 +204,7 @@ class JavaLibraryInitIntegrationTest extends AbstractJvmLibraryInitIntegrationSp
     }
 
     def "creates sample source with package and #testFramework and #scriptDsl build scripts with --incubating"() {
-        def dslFixture = dslFixtureFor(scriptDsl)
+        def dslFixture = dslFixtureFor(scriptDsl as BuildInitDsl)
 
         when:
         run('init', '--type', 'java-library', '--test-framework', testFramework.id, '--package', 'my.lib', '--dsl', scriptDsl.id, '--incubating', '--java-version', JavaVersion.current().majorVersion)
@@ -229,8 +230,6 @@ class JavaLibraryInitIntegrationTest extends AbstractJvmLibraryInitIntegrationSp
         ].combinations()
     }
 
-    // Spock pulls an old version of Groovy that doesn't work with Java 18
-    @Requires(UnitTestPreconditions.Jdk17OrEarlier)
     def "creates sample source with package and spock and #scriptDsl build scripts"() {
         when:
         run('init', '--type', 'java-library', '--test-framework', 'spock', '--package', 'my.lib', '--dsl', scriptDsl.id, '--java-version', JavaVersion.current().majorVersion)
@@ -252,7 +251,8 @@ class JavaLibraryInitIntegrationTest extends AbstractJvmLibraryInitIntegrationSp
         scriptDsl << ScriptDslFixture.SCRIPT_DSLS
     }
 
-    @Requires(value = UnitTestPreconditions.Jdk17OrEarlier, reason = "Spock pulls an old version of Groovy that doesn't work with Java 18")
+    // TODO: We should also generate a dependency on the latest groovy version, like the above test does.
+    @Requires(value = JdkVersionTestPreconditions.Jdk19OrEarlier, reason = "Spock pulls an old version of Groovy that doesn't work with Java 20")
     def "creates sample source with package and spock and #scriptDsl build scripts with --incubating"() {
         def dslFixture = dslFixtureFor(scriptDsl)
 

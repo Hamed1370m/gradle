@@ -70,8 +70,8 @@ int main() {
         fails("check")
 
         then:
-        result.assertTasksExecuted(tasksToBuildAndRunUnitTest)
-        failure.assertHasDescription("Execution failed for task ':runTest'.")
+        result.assertTasksScheduled(tasksToBuildAndRunUnitTest)
+        failure.assertHasDescription("Execution failed for task ':runTest' (registered by plugin 'org.gradle.cpp-unit-test').")
         failure.assertHasCause("There were failing tests. See the results at:")
     }
 

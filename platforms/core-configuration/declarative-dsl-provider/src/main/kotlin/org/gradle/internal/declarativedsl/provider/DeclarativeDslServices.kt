@@ -16,22 +16,26 @@
 
 package org.gradle.internal.declarativedsl.provider
 
-import org.gradle.api.internal.GradleInternal
+import org.gradle.api.file.ProjectLayout
+import org.gradle.api.initialization.SharedModelDefaults
+import org.gradle.api.initialization.internal.SharedModelDefaultsInternal
 import org.gradle.api.model.ObjectFactory
-import org.gradle.initialization.layout.BuildLayoutConfiguration
-import org.gradle.initialization.layout.BuildLayoutFactory
-import org.gradle.internal.declarativedsl.evaluator.DeclarativeKotlinScriptEvaluator
-import org.gradle.internal.declarativedsl.evaluator.GradleProcessInterpretationSchemaBuilder
-import org.gradle.internal.declarativedsl.evaluator.StoringInterpretationSchemaBuilder
-import org.gradle.internal.declarativedsl.evaluator.defaults.DeclarativeModelDefaultsHandler
-import org.gradle.internal.declarativedsl.evaluator.defaultDeclarativeScriptEvaluator
+import org.gradle.initialization.layout.ProjectCacheDir
+import org.gradle.internal.declarativedsl.evaluationSchema.InterpretationSchemaBuilder
+import org.gradle.internal.declarativedsl.interpreter.DeclarativeKotlinScriptEvaluator
+import org.gradle.internal.declarativedsl.interpreter.GradleProcessInterpretationSchemaBuilder
+import org.gradle.internal.declarativedsl.interpreter.MemoizedInterpretationSchemaBuilder
+import org.gradle.internal.declarativedsl.interpreter.StoringInterpretationSchemaBuilder
+import org.gradle.internal.declarativedsl.interpreter.defaultDeclarativeScriptEvaluator
+import org.gradle.internal.declarativedsl.interpreter.defaults.ActionBasedModelDefaultsHandler
+import org.gradle.internal.declarativedsl.interpreter.defaults.DeclarativeModelDefaultsHandler
+import org.gradle.internal.event.ListenerManager
 import org.gradle.internal.service.Provides
 import org.gradle.internal.service.ServiceRegistration
 import org.gradle.internal.service.ServiceRegistrationProvider
 import org.gradle.internal.service.scopes.AbstractGradleModuleServices
-import org.gradle.plugin.software.internal.ModelDefaultsHandler
-import org.gradle.plugin.software.internal.SoftwareTypeRegistry
-import java.io.File
+import org.gradle.features.internal.binding.ModelDefaultsHandler
+import org.gradle.features.internal.binding.ProjectFeatureDeclarations
 
 
 class DeclarativeDslServices : AbstractGradleModuleServices() {
@@ -48,28 +52,50 @@ class DeclarativeDslServices : AbstractGradleModuleServices() {
 internal
 object BuildServices : ServiceRegistrationProvider {
 
-    @Provides
-    fun createDeclarativeKotlinScriptEvaluator(
-        softwareTypeRegistry: SoftwareTypeRegistry,
-        gradleInternal: GradleInternal,
-        buildLayoutFactory: BuildLayoutFactory
-    ): DeclarativeKotlinScriptEvaluator {
-        val schemaBuilder = StoringInterpretationSchemaBuilder(GradleProcessInterpretationSchemaBuilder(softwareTypeRegistry), buildLayoutFactory.settingsDir(gradleInternal))
-        return defaultDeclarativeScriptEvaluator(schemaBuilder, softwareTypeRegistry)
+    fun configure(listenerManager: ListenerManager, serviceRegistration: ServiceRegistration) {
+        serviceRegistration.add(SettingsUnderInitialization::class.java, SettingsUnderInitialization(listenerManager))
     }
 
-    private
-    fun BuildLayoutFactory.settingsDir(gradle: GradleInternal): File =
-        getLayoutFor(BuildLayoutConfiguration(gradle.startParameter)).settingsDir
-}
+    @Provides
+    fun createDeclarativeKotlinScriptEvaluator(
+        projectFeatureDeclarations: ProjectFeatureDeclarations,
+        schemaBuilder: InterpretationSchemaBuilder
+    ): DeclarativeKotlinScriptEvaluator {
+        return defaultDeclarativeScriptEvaluator(schemaBuilder, projectFeatureDeclarations)
+    }
 
-internal
-object ProjectServices : ServiceRegistrationProvider {
+    @Provides
+    fun createInterpretationSchemaBuilder(
+        projectFeatureDeclarations: ProjectFeatureDeclarations,
+        projectCacheDir: ProjectCacheDir,
+        settingsUnderInitialization: SettingsUnderInitialization
+    ): InterpretationSchemaBuilder =
+        MemoizedInterpretationSchemaBuilder(
+            StoringInterpretationSchemaBuilder(GradleProcessInterpretationSchemaBuilder(settingsUnderInitialization::instance, projectFeatureDeclarations), projectCacheDir.dir)
+        )
+
     @Provides
     fun createDeclarativeModelDefaultsHandler(
-        softwareTypeRegistry: SoftwareTypeRegistry,
+        projectFeatureDeclarations: ProjectFeatureDeclarations,
+        interpretationSchemaBuilder: InterpretationSchemaBuilder,
         objectFactory: ObjectFactory
     ): ModelDefaultsHandler {
-        return objectFactory.newInstance(DeclarativeModelDefaultsHandler::class.java, softwareTypeRegistry)
+        return objectFactory.newInstance(DeclarativeModelDefaultsHandler::class.java, projectFeatureDeclarations, interpretationSchemaBuilder)
+    }
+}
+
+internal object ProjectServices : ServiceRegistrationProvider {
+
+    @Provides
+    fun createActionBasedModelDefaultsHandler(
+        sharedModelDefaults: SharedModelDefaults,
+        projectLayout: ProjectLayout,
+        projectFeatureDeclarations: ProjectFeatureDeclarations
+    ): ModelDefaultsHandler {
+        return ActionBasedModelDefaultsHandler(
+            sharedModelDefaults as SharedModelDefaultsInternal,
+            projectLayout,
+            projectFeatureDeclarations,
+        )
     }
 }

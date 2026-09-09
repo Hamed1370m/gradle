@@ -16,20 +16,22 @@
 
 package org.gradle.process.internal.worker.problem;
 
-import org.gradle.api.NonNullApi;
-import org.gradle.api.problems.internal.Problem;
+import org.gradle.api.problems.internal.ProblemInternal;
 import org.gradle.api.problems.internal.ProblemEmitter;
+import org.gradle.api.problems.internal.ProblemSummarizer;
 import org.gradle.internal.operations.OperationIdentifier;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
+import java.io.File;
 
 /**
  * Worker-side implementation of {@link ProblemEmitter}.
  * <p>
  * This emitter will use the {@link WorkerProblemProtocol} to communicate problems to the daemon.
  */
-@NonNullApi
-public class WorkerProblemEmitter implements ProblemEmitter {
+@NullMarked
+public class WorkerProblemEmitter implements ProblemSummarizer {
     private final WorkerProblemProtocol protocol;
 
     public WorkerProblemEmitter(WorkerProblemProtocol protocol) {
@@ -37,7 +39,17 @@ public class WorkerProblemEmitter implements ProblemEmitter {
     }
 
     @Override
-    public void emit(Problem problem, @Nullable OperationIdentifier id) {
+    public void emit(ProblemInternal problem, @Nullable OperationIdentifier id) {
         protocol.reportProblem(problem, id);
+    }
+
+    @Override
+    public String getId() {
+        return "";
+    }
+
+    @Override
+    public void report(File reportDir, ProblemConsumer validationFailures) {
+        //no op
     }
 }

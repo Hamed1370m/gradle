@@ -15,29 +15,51 @@
  */
 package org.gradle.api.artifacts;
 
-import javax.annotation.Nullable;
+import org.gradle.declarative.dsl.model.annotations.Adding;
+import org.gradle.declarative.dsl.model.annotations.HiddenInDefinition;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A {@code Dependency} represents a dependency on the artifacts from a particular source. A source can be an Ivy
  * module, a Maven POM, another Gradle project, a collection of Files, etc... A source can have zero or more artifacts.
+ * @since 0.7
  */
 public interface Dependency {
+    /**
+     * The default configuration.
+     *
+     * @since 0.7
+     */
     String DEFAULT_CONFIGURATION = "default";
+    /**
+     * The archives configuration.
+     *
+     * @since 0.7
+     */
     String ARCHIVES_CONFIGURATION = "archives";
+    /**
+     * The classifier.
+     *
+     * @since 0.7
+     */
     String CLASSIFIER = "m:classifier";
 
     /**
      * Returns the group of this dependency. The group is often required to find the artifacts of a dependency in a
      * repository. For example, the group name corresponds to a directory name in a Maven like repository. Might return
      * null.
+     * @since 0.7
      */
+    @HiddenInDefinition
     @Nullable
     String getGroup();
 
     /**
      * Returns the name of this dependency. The name is almost always required to find the artifacts of a dependency in
      * a repository. Never returns null.
+     * @since 0.7
      */
+    @HiddenInDefinition
     String getName();
 
     /**
@@ -45,26 +67,19 @@ public interface Dependency {
      * repository. For example the version name corresponds to a directory name in a Maven like repository. Might return
      * null.
      *
+     * @since 0.7
      */
+    @HiddenInDefinition
     @Nullable
     String getVersion();
-
-    /**
-     * Returns whether two dependencies have identical values for their properties. A dependency is an entity with a
-     * key. Therefore dependencies might be equal and yet have different properties.
-     *
-     * @param dependency The dependency to compare this dependency with
-     *
-     * @deprecated Use {@link Object#equals(Object)} instead.
-     */
-    @Deprecated
-    boolean contentEquals(Dependency dependency);
 
     /**
      * Creates and returns a new dependency with the property values of this one.
      *
      * @return The copy. Never returns null.
+     * @since 0.7
      */
+    @HiddenInDefinition
     Dependency copy();
 
     /**
@@ -75,6 +90,7 @@ public interface Dependency {
      *
      * @since 4.6
      */
+    @HiddenInDefinition
     @Nullable
     String getReason();
 
@@ -83,5 +99,6 @@ public interface Dependency {
      *
      * @since 4.6
      */
+    @Adding
     void because(@Nullable String reason);
 }

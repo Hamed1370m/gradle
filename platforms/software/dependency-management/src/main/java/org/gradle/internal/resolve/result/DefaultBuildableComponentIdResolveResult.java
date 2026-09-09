@@ -23,10 +23,11 @@ import org.gradle.internal.component.model.ComponentGraphResolveState;
 import org.gradle.internal.component.model.ComponentGraphSpecificResolveState;
 import org.gradle.internal.resolve.ModuleVersionResolveException;
 import org.gradle.internal.resolve.RejectedVersion;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Set;
 
 public class DefaultBuildableComponentIdResolveResult extends DefaultResourceAwareResolveResult implements BuildableComponentIdResolveResult {
     private ModuleVersionResolveException failure;
@@ -128,7 +129,7 @@ public class DefaultBuildableComponentIdResolveResult extends DefaultResourceAwa
     }
 
     @Override
-    public Collection<String> getUnmatchedVersions() {
+    public Set<String> getUnmatchedVersions() {
         return safeBuild(unmatchedVersions);
     }
 
@@ -146,9 +147,9 @@ public class DefaultBuildableComponentIdResolveResult extends DefaultResourceAwa
         return true;
     }
 
-    private static <T> Collection<T> safeBuild(ImmutableSet.Builder<T> builder) {
+    private static <T> Set<T> safeBuild(ImmutableSet.Builder<T> builder) {
         if (builder == null) {
-            return Collections.emptyList();
+            return Collections.emptySet();
         }
         return builder.build();
     }

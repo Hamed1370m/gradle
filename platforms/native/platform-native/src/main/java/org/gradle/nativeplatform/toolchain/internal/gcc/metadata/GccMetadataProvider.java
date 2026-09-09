@@ -19,8 +19,8 @@ package org.gradle.nativeplatform.toolchain.internal.gcc.metadata;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import org.gradle.api.GradleException;
-import org.gradle.api.UncheckedIOException;
 import org.gradle.internal.FileUtils;
+import org.gradle.internal.UncheckedException;
 import org.gradle.internal.io.StreamByteBuffer;
 import org.gradle.internal.os.OperatingSystem;
 import org.gradle.nativeplatform.platform.internal.ArchitectureInternal;
@@ -108,7 +108,7 @@ public class GccMetadataProvider extends AbstractMetadataProvider<GccMetadata> {
             }
         } catch (IOException e) {
             // Should not happen reading from a StringReader
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
         throw new BrokenResultException(String.format("Could not determine %s metadata: could not find vendor in output of %s.", compilerType.getDescription(), gccBinary));
     }
@@ -158,7 +158,7 @@ public class GccMetadataProvider extends AbstractMetadataProvider<GccMetadata> {
             return builder.build();
         } catch (IOException e) {
             // Should not happen reading from a StringReader
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     }
 
@@ -178,7 +178,7 @@ public class GccMetadataProvider extends AbstractMetadataProvider<GccMetadata> {
 
     private String mapCygwinPath(File cygpathExe, String cygwinPath) {
         ExecAction execAction = getExecActionFactory().newExecAction();
-        execAction.setWorkingDir(new File(".").getAbsolutePath());
+        execAction.getWorkingDirectory().set(new File(".").getAbsoluteFile());
         execAction.commandLine(cygpathExe.getAbsolutePath(), "-w", cygwinPath);
         StreamByteBuffer buffer = new StreamByteBuffer();
         StreamByteBuffer errorBuffer = new StreamByteBuffer();
@@ -202,7 +202,7 @@ public class GccMetadataProvider extends AbstractMetadataProvider<GccMetadata> {
             }
         } catch (IOException e) {
             // Should not happen reading from a StringReader
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
         if (!defines.containsKey("__GNUC__") && !defines.containsKey("__clang__")) {
             throw new BrokenResultException(String.format("Could not determine %s metadata: %s produced unexpected output.", compilerType.getDescription(), gccBinary.getName()));

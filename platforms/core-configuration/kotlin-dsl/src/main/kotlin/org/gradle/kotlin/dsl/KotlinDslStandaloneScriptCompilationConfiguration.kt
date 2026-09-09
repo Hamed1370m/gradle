@@ -26,6 +26,8 @@ import kotlin.script.experimental.api.isStandalone
 
 /**
  * Common script compilation configuration for Kotlin DSL standalone scripts.
+ *
+ * @since 8.1
  */
 abstract class KotlinDslStandaloneScriptCompilationConfiguration protected constructor(
     body: Builder.() -> Unit
@@ -33,14 +35,14 @@ abstract class KotlinDslStandaloneScriptCompilationConfiguration protected const
 
     isStandalone(true)
     compilerOptions.put(listOf(
-        "-language-version", "1.8",
-        "-api-version", "1.8",
-        "-Xjvm-default=all",
+        "-language-version", "2.2",
+        "-api-version", "2.2",
+        "-jvm-default=enable",
         "-Xjsr305=strict",
+        "-Xjspecify-annotations=strict",
         "-Xskip-prerelease-check",
         "-Xallow-unstable-dependencies",
-        "-XXLanguage:+DisableCompatibilityModeForNewInference",
-        "-XXLanguage:-TypeEnhancementImprovementsInStrictMode",
+        "-P=plugin:org.jetbrains.kotlin.assignment:annotation=org.gradle.api.SupportsKotlinAssignmentOverloading",
     ))
     annotationsForSamWithReceivers.put(listOf(
         KotlinType(HasImplicitReceiver::class),

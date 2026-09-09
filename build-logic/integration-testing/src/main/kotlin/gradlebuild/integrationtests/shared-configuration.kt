@@ -17,6 +17,8 @@
 package gradlebuild.integrationtests
 
 import gradlebuild.basics.capitalize
+import gradlebuild.basics.daemonDebuggingIsEnabled
+import gradlebuild.basics.launcherDebuggingIsEnabled
 import gradlebuild.basics.repoRoot
 import gradlebuild.basics.testSplitExcludeTestClasses
 import gradlebuild.basics.testSplitIncludeTestClasses
@@ -24,33 +26,42 @@ import gradlebuild.basics.testSplitOnlyTestGradleVersion
 import gradlebuild.basics.testing.TestType
 import gradlebuild.integrationtests.extension.IntegrationTestExtension
 import gradlebuild.integrationtests.tasks.DistributionTest
+import gradlebuild.integrationtests.tasks.GenerateAutoTestedSamplesTestTask
 import gradlebuild.integrationtests.tasks.IntegrationTest
-import gradlebuild.modules.extension.ExternalModulesExtension
 import gradlebuild.testing.services.BuildBucketProvider
 import org.gradle.api.Action
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Configuration
+import org.gradle.api.artifacts.Dependency
+import org.gradle.api.artifacts.ModuleDependency
+import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.api.attributes.Category
 import org.gradle.api.attributes.LibraryElements
 import org.gradle.api.attributes.Usage
 import org.gradle.api.file.ConfigurableFileCollection
-import org.gradle.api.file.Directory
+import org.gradle.api.file.SourceDirectorySet
 import org.gradle.api.tasks.GroovySourceDirectorySet
-import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.TaskProvider
+import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.kotlin.dsl.*
+import org.gradle.kotlin.dsl.configure
+import org.gradle.kotlin.dsl.withType
+import org.gradle.plugins.ide.eclipse.EclipsePlugin
+import org.gradle.plugins.ide.eclipse.model.EclipseModel
 import org.gradle.plugins.ide.idea.IdeaPlugin
+import org.gradle.plugins.ide.idea.model.IdeaModel
 import org.gradle.process.CommandLineArgumentProvider
+import kotlin.apply
 
+val CROSSVERSION_TEST_MODELS = "${TestType.CROSSVERSION.prefix}TestModels"
 
 fun Project.addDependenciesAndConfigurations(prefix: String) {
     configurations {
-        getByName("${prefix}TestImplementation") { extendsFrom(configurations["testImplementation"]) }
         val platformImplementation = findByName("platformImplementation")
 
         val distributionRuntimeOnly = bucket("${prefix}TestDistributionRuntimeOnly", "Declare the distribution that is required to run tests")
@@ -62,7 +73,6 @@ fun Project.addDependenciesAndConfigurations(prefix: String) {
         val srcDistribution = bucket("${prefix}TestSrcDistribution", "Declare a src distribution to be used by tests - useful for testing the final distribution that is published")
 
         getByName("${prefix}TestRuntimeClasspath") {
-            extendsFrom(distributionRuntimeOnly)
             if (platformImplementation != null) {
                 extendsFrom(platformImplementation)
             }
@@ -75,21 +85,25 @@ fun Project.addDependenciesAndConfigurations(prefix: String) {
 
         resolver("${prefix}TestDistributionRuntimeClasspath", "gradle-bin-installation", distributionRuntimeOnly)
         resolver("${prefix}TestFullDistributionRuntimeClasspath", "gradle-bin-installation")
-        resolver("${prefix}TestLocalRepositoryPath", "gradle-local-repository", localRepository)
         resolver("${prefix}TestNormalizedDistributionPath", "gradle-normalized-distribution-zip", normalizedDistribution)
         resolver("${prefix}TestBinDistributionPath", "gradle-bin-distribution-zip", binDistribution)
         resolver("${prefix}TestAllDistributionPath", "gradle-all-distribution-zip", allDistribution)
         resolver("${prefix}TestDocsDistributionPath", "gradle-docs-distribution-zip", docsDistribution)
         resolver("${prefix}TestSrcDistributionPath", "gradle-src-distribution-zip", srcDistribution)
         resolver("${prefix}TestAgentsClasspath", LibraryElements.JAR)
+
+        localRepositoryResolver("${prefix}TestLocalRepositoryPath", localRepository)
     }
 
     // do not attempt to find projects when the plugin is applied just to generate accessors
     if (project.name != "gradle-kotlin-dsl-accessors" && project.name != "enterprise-plugin-performance" && project.name != "test" /* remove once wrapper is updated */) {
+        val testLibs = project.the<VersionCatalogsExtension>().named("testLibs")
         dependencies {
             "${prefix}TestImplementation"(project)
-            "${prefix}TestRuntimeOnly"(project.the<ExternalModulesExtension>().junit5Vintage)
-            "${prefix}TestImplementation"(project(":internal-integ-testing"))
+            "${prefix}TestImplementation"(testLibs.findLibrary("junitJupiter").get())
+            "${prefix}TestRuntimeOnly"(testLibs.findLibrary("junitPlatform").get())
+            "${prefix}TestRuntimeOnly"(testLibs.findLibrary("junit5Vintage").get())
+            "${prefix}TestImplementation"(project(":internal-distribution-testing"))
             "${prefix}TestFullDistributionRuntimeClasspath"(project(":distributions-full"))
             // Add the agent JAR to the test runtime classpath so the InProcessGradleExecuter can find the module and spawn daemons.
             // This doesn't apply the agent to the test process.
@@ -102,19 +116,34 @@ fun Project.addDependenciesAndConfigurations(prefix: String) {
 
 @Suppress("UnusedPrivateProperty")
 internal
-fun Project.addSourceSet(testType: TestType): SourceSet {
+fun Project.createGenerateAutoTestedSamplesTestTask(sourceSet: SourceSet, testType: TestType) {
     val prefix = testType.prefix
     val sourceSets = the<SourceSetContainer>()
-    val main by sourceSets.getting
-    return sourceSets.create("${prefix}Test")
+    val main = sourceSets.getByName("main")
+    val sourceSet = sourceSets.getByName("${prefix}Test")
+
+    val groovySourceDir = sourceSet.extensions.findByType<GroovySourceDirectorySet>()
+    // The task generate test class in Groovy, so it cannot be used if the project doesn't use Groovy for integration tests.
+    // This is the case for kotlin-dsl integration tests.
+    if (testType == TestType.INTEGRATION && groovySourceDir != null) {
+        val autoTestedSamplesTest = tasks.register<GenerateAutoTestedSamplesTestTask>("generateAutoTestedSamplesTest") {
+            mainSources.from(main.java)
+            generateAutoTestedSamplesTest.set(project.the<IntegrationTestExtension>().generateDefaultAutoTestedSamplesTest)
+        }
+
+        tasks.named<GroovyCompile>("compileIntegTestGroovy").configure {
+            source(autoTestedSamplesTest.map { it.outputDir })
+        }
+    }
 }
 
 
 internal
 fun Project.createTasks(sourceSet: SourceSet, testType: TestType) {
+    createGenerateAutoTestedSamplesTestTask(sourceSet, testType)
+
     val prefix = testType.prefix
     val defaultExecuter = "embedded"
-
     // For all the other executers, add an executer specific task
     testType.executers.forEach { executer ->
         val taskName = "$executer${prefix.capitalize()}Test"
@@ -152,12 +181,6 @@ abstract class AgentsClasspathProvider : CommandLineArgumentProvider {
 
 
 internal
-class SamplesBaseDirPropertyProvider(@InputDirectory @PathSensitive(PathSensitivity.RELATIVE) val autoTestedSamplesDir: Directory) : CommandLineArgumentProvider {
-    override fun asArguments() = listOf("-DdeclaredSampleInputs=${autoTestedSamplesDir.asFile.absolutePath}")
-}
-
-
-internal
 fun Project.createTestTask(name: String, executer: String, sourceSet: SourceSet, testType: TestType, extraConfig: Action<IntegrationTest>): TaskProvider<IntegrationTest> =
     tasks.register<IntegrationTest>(name) {
         val integTest = project.the<IntegrationTestExtension>()
@@ -168,9 +191,8 @@ fun Project.createTestTask(name: String, executer: String, sourceSet: SourceSet,
         testClassesDirs = sourceSet.output.classesDirs
         classpath = sourceSet.runtimeClasspath
         extraConfig.execute(this)
-        if (integTest.usesJavadocCodeSnippets.get()) {
-            val samplesDir = layout.projectDirectory.dir("src/main")
-            jvmArgumentProviders.add(SamplesBaseDirPropertyProvider(samplesDir))
+        if (!integTest.generateDefaultAutoTestedSamplesTest.get()) {
+            inputs.dir(layout.projectDirectory.dir("src/main")).withPathSensitivity(PathSensitivity.RELATIVE)
         }
         setUpAgentIfNeeded(testType, executer)
     }
@@ -196,21 +218,13 @@ fun IntegrationTest.setUpAgentIfNeeded(testType: TestType, executer: String) {
 
 private
 fun IntegrationTest.addDebugProperties() {
-    // TODO Move magic property out
-    val integtestDebug = project.providers.gradleProperty("org.gradle.integtest.debug")
-    if (integtestDebug.isPresent) {
+    if (project.daemonDebuggingIsEnabled) {
         systemProperties["org.gradle.integtest.debug"] = "true"
         testLogging.showStandardStreams = true
     }
-    // TODO Move magic property out
-    val integtestVerbose = project.providers.gradleProperty("org.gradle.integtest.verbose")
-    if (integtestVerbose.isPresent) {
-        testLogging.showStandardStreams = true
-    }
-    // TODO Move magic property out
-    val integtestLauncherDebug = project.providers.gradleProperty("org.gradle.integtest.launcher.debug")
-    if (integtestLauncherDebug.isPresent) {
+    if (project.launcherDebuggingIsEnabled) {
         systemProperties["org.gradle.integtest.launcher.debug"] = "true"
+        testLogging.showStandardStreams = true
     }
 }
 
@@ -226,17 +240,29 @@ fun DistributionTest.setSystemPropertiesOfTestJVM(defaultVersions: String) {
     }
 }
 
+fun Project.configureTestSourceSetInIde(sourceSet: SourceSet) {
+    plugins.withType<EclipsePlugin> {
+        configure<EclipseModel> {
+            classpath {
+                plusConfigurations.apply {
+                    add(configurations.getByName(sourceSet.compileClasspathConfigurationName))
+                    add(configurations.getByName(sourceSet.runtimeClasspathConfigurationName))
+                }
+            }
+        }
+    }
 
-internal
-fun Project.configureIde(testType: TestType) {
-    val prefix = testType.prefix
-    val sourceSet = the<SourceSetContainer>().getByName("${prefix}Test")
-
-    // We apply lazy as we don't want to depend on the order
     plugins.withType<IdeaPlugin> {
-        with(model) {
+        configure<IdeaModel> {
             module {
-                testSources.from(sourceSet.java.srcDirs, sourceSet.the<GroovySourceDirectorySet>().srcDirs)
+                val testKotlinSourceSet = sourceSet.extensions.findByName("kotlin") as SourceDirectorySet?
+                // workaround for https://github.com/gradle/gradle/issues/34646
+                if (testKotlinSourceSet != null) {
+                    testSources.from(sourceSet.java.srcDirs, sourceSet.the<GroovySourceDirectorySet>().srcDirs, testKotlinSourceSet.srcDirs)
+                }
+                else {
+                    testSources.from(sourceSet.java.srcDirs, sourceSet.the<GroovySourceDirectorySet>().srcDirs)
+                }
                 testResources.from(sourceSet.resources.srcDirs)
             }
         }
@@ -246,7 +272,6 @@ fun Project.configureIde(testType: TestType) {
 
 private
 fun Project.bucket(name: String, description: String) = configurations.create(name) {
-    isVisible = false
     isCanBeResolved = false
     isCanBeConsumed = false
     this.description = description
@@ -262,8 +287,30 @@ fun Project.resolver(name: String, libraryElements: String, extends: Configurati
     }
     isCanBeResolved = true
     isCanBeConsumed = false
-    isVisible = false
     if (extends != null) {
         extendsFrom(extends)
     }
+}
+
+private
+fun Project.localRepositoryResolver(name: String, extends: Configuration? = null) = configurations.create(name) {
+    attributes {
+        attribute(Category.CATEGORY_ATTRIBUTE, objects.named("gradle-local-repository"))
+    }
+    isCanBeResolved = true
+    isCanBeConsumed = false
+    if (extends != null) {
+        extendsFrom(extends)
+    }
+}
+
+fun Project.crossVersionTestModels(notation: kotlin.Any, configureAction: Action<Dependency> = Action {}) = provider {
+    val dependency = dependencies.create(notation)
+    if (dependency is ModuleDependency) {
+        dependency.capabilities {
+            requireCapability("${dependency.group}:${dependency.name}-${CROSSVERSION_TEST_MODELS}")
+        }
+    }
+    configureAction.execute(dependency)
+    return@provider dependency
 }

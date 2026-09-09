@@ -16,34 +16,41 @@
 
 package org.gradle.kotlin.dsl.accessors
 
-import kotlinx.metadata.Flag
-import kotlinx.metadata.KmType
-import kotlinx.metadata.flagsOf
 import org.gradle.api.Project
 import org.gradle.api.internal.catalog.ExternalModuleDependencyFactory
 import org.gradle.api.internal.file.FileCollectionFactory
 import org.gradle.api.internal.initialization.ClassLoaderScope
 import org.gradle.api.internal.project.ProjectInternal
+import org.gradle.internal.build.BuildState
+import org.gradle.internal.buildoption.InternalOptions
 import org.gradle.internal.classpath.DefaultClassPath
 import org.gradle.internal.execution.ExecutionEngine
+import org.gradle.internal.execution.Identity
 import org.gradle.internal.execution.ImmutableUnitOfWork
 import org.gradle.internal.execution.InputFingerprinter
-import org.gradle.internal.execution.UnitOfWork
-import org.gradle.internal.execution.UnitOfWork.InputVisitor
-import org.gradle.internal.execution.UnitOfWork.OutputFileValueSupplier
+import org.gradle.internal.execution.InputVisitor
+import org.gradle.internal.execution.OutputVisitor
+import org.gradle.internal.execution.caching.CachingDisabledReason
+import org.gradle.internal.execution.history.OverlappingOutputs
+import org.gradle.internal.execution.OutputVisitor.OutputFileValueSupplier
 import org.gradle.internal.file.TreeType.DIRECTORY
 import org.gradle.internal.fingerprint.CurrentFileCollectionFingerprint
 import org.gradle.internal.hash.ClassLoaderHierarchyHasher
 import org.gradle.internal.hash.HashCode
+import org.gradle.internal.service.scopes.Scope
+import org.gradle.internal.service.scopes.ServiceScope
 import org.gradle.internal.snapshot.ValueSnapshot
 import org.gradle.kotlin.dsl.*
 import org.gradle.kotlin.dsl.cache.KotlinDslWorkspaceProvider
 import org.gradle.kotlin.dsl.concurrent.IO
+import org.gradle.kotlin.dsl.provider.KotlinDslInternalOptions
 import org.gradle.kotlin.dsl.concurrent.writeFile
 import org.gradle.kotlin.dsl.support.bytecode.InternalName
 import org.gradle.kotlin.dsl.support.bytecode.newClassTypeOf
 import java.io.File
+import java.util.Optional
 import javax.inject.Inject
+import kotlin.metadata.KmType
 
 
 /**
@@ -54,27 +61,47 @@ import javax.inject.Inject
  * - dependency version catalogs found in this build,
  * - plugin spec builders for all plugin ids found in the `buildSrc` classpath.
  */
+@ServiceScope(Scope.Build::class)
 class Stage1BlocksAccessorClassPathGenerator @Inject internal constructor(
     private val classLoaderHierarchyHasher: ClassLoaderHierarchyHasher,
     private val fileCollectionFactory: FileCollectionFactory,
     private val executionEngine: ExecutionEngine,
     private val inputFingerprinter: InputFingerprinter,
-    private val workspaceProvider: KotlinDslWorkspaceProvider
+    private val workspaceProvider: KotlinDslWorkspaceProvider,
+    private val buildState: BuildState,
+    internalOptions: InternalOptions,
 ) {
-    fun stage1BlocksAccessorClassPath(project: ProjectInternal): AccessorsClassPath =
-        project.owner.owner.projects.rootProject.mutableModel.let { rootProject ->
-            rootProject.getOrCreateProperty("gradleKotlinDsl.stage1AccessorsClassPath") {
-                val buildSrcClassLoaderScope = baseClassLoaderScopeOf(rootProject)
-                val classLoaderHash = requireNotNull(classLoaderHierarchyHasher.getClassLoaderHash(buildSrcClassLoaderScope.exportClassLoader))
-                val versionCatalogAccessors = generateVersionCatalogAccessors(rootProject, buildSrcClassLoaderScope, classLoaderHash)
-                val pluginSpecBuildersAccessors = generatePluginSpecBuildersAccessors(rootProject, buildSrcClassLoaderScope, classLoaderHash)
-                versionCatalogAccessors + pluginSpecBuildersAccessors
-            }
-        }
+
+    private val scriptDisabledReason = KotlinDslInternalOptions.accessorCachingDisabledReason(internalOptions)
 
     private
-    fun baseClassLoaderScopeOf(rootProject: Project) =
-        (rootProject as ProjectInternal).baseClassLoaderScope
+    val stage1BlocksAccessorClassPath by lazy {
+        buildState.projects.rootProject.fromMutableState { rootProject ->
+            val buildSrcClassLoaderScope = rootProject.baseClassLoaderScope
+            val classLoaderHash = requireNotNull(classLoaderHierarchyHasher.getClassLoaderHash(buildSrcClassLoaderScope.exportClassLoader))
+            val versionCatalogAccessors = generateVersionCatalogAccessors(rootProject, buildSrcClassLoaderScope, classLoaderHash)
+            val pluginSpecBuildersAccessors = generatePluginSpecBuildersAccessors(rootProject, buildSrcClassLoaderScope, classLoaderHash)
+            versionCatalogAccessors + pluginSpecBuildersAccessors
+        }
+    }
+
+    fun stage1BlocksAccessorClassPath(project: ProjectInternal): AccessorsClassPath {
+        require(project.owner.owner === buildState) {
+            "$project belongs to a different build."
+        }
+        return stage1BlocksAccessorClassPath
+    }
+
+    /**
+     * Force-computes the shared classpath on the caller's thread so later readers hit the lazy
+     * fast path. Call before fanning out parallel workers from a thread that already satisfies
+     * `fromMutableState` on the root project (holds the root lock or has uncontrolled access);
+     * otherwise a worker can enter the lazy monitor and then block on the root lock that the
+     * outer thread is still holding.
+     */
+    fun prepareForParallelAccess() {
+        stage1BlocksAccessorClassPath
+    }
 
     private
     fun generateVersionCatalogAccessors(
@@ -94,7 +121,8 @@ class Stage1BlocksAccessorClassPathGenerator @Inject internal constructor(
                     classLoaderHash,
                     fileCollectionFactory,
                     inputFingerprinter,
-                    workspaceProvider
+                    workspaceProvider,
+                    scriptDisabledReason
                 )
                 executionEngine.createRequest(work)
                     .execute()
@@ -118,7 +146,8 @@ class Stage1BlocksAccessorClassPathGenerator @Inject internal constructor(
             classLoaderHash,
             fileCollectionFactory,
             inputFingerprinter,
-            workspaceProvider
+            workspaceProvider,
+            scriptDisabledReason
         )
         return executionEngine.createRequest(work)
             .execute()
@@ -136,6 +165,7 @@ abstract class AbstractStage1BlockAccessorsUnitOfWork(
     private val fileCollectionFactory: FileCollectionFactory,
     private val inputFingerprinter: InputFingerprinter,
     private val workspaceProvider: KotlinDslWorkspaceProvider,
+    private val cachingDisabledReason: CachingDisabledReason?
 ) : ImmutableUnitOfWork {
 
     companion object {
@@ -144,8 +174,10 @@ abstract class AbstractStage1BlockAccessorsUnitOfWork(
         const val CLASSES_OUTPUT_PROPERTY = "classes"
     }
 
-    override fun identify(identityInputs: MutableMap<String, ValueSnapshot>, identityFileInputs: MutableMap<String, CurrentFileCollectionFingerprint>) =
-        UnitOfWork.Identity { "$classLoaderHash-$identitySuffix" }
+    override fun shouldDisableCaching(detectedOverlappingOutputs: OverlappingOutputs?): Optional<CachingDisabledReason> = Optional.ofNullable(cachingDisabledReason)
+
+    override fun identify(scalarInputs: MutableMap<String, ValueSnapshot>, fileInputs: MutableMap<String, CurrentFileCollectionFingerprint>) =
+        Identity { "$classLoaderHash-$identitySuffix" }
 
     protected
     abstract val identitySuffix: String
@@ -159,11 +191,11 @@ abstract class AbstractStage1BlockAccessorsUnitOfWork(
 
     override fun getInputFingerprinter() = inputFingerprinter
 
-    override fun visitIdentityInputs(visitor: InputVisitor) {
+    override fun visitImmutableInputs(visitor: InputVisitor) {
         visitor.visitInputProperty(BUILD_SRC_CLASSLOADER_INPUT_PROPERTY) { classLoaderHash }
     }
 
-    override fun visitOutputs(workspace: File, visitor: UnitOfWork.OutputVisitor) {
+    override fun visitOutputs(workspace: File, visitor: OutputVisitor) {
         val sourcesOutputDir = getSourcesOutputDir(workspace)
         val classesOutputDir = getClassesOutputDir(workspace)
         visitor.visitOutputProperty(SOURCES_OUTPUT_PROPERTY, DIRECTORY, OutputFileValueSupplier.fromStatic(sourcesOutputDir, fileCollectionFactory.fixed(sourcesOutputDir)))
@@ -199,7 +231,3 @@ fun IO.writeClassFileTo(binDir: File, internalClassName: InternalName, classByte
     val classFile = binDir.resolve("$internalClassName.class")
     writeFile(classFile, classBytes)
 }
-
-
-internal
-val nonInlineGetterFlags = flagsOf(Flag.IS_PUBLIC, Flag.PropertyAccessor.IS_NOT_DEFAULT)

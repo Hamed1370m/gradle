@@ -18,7 +18,6 @@ package org.gradle.ide.xcode
 
 import org.gradle.ide.xcode.fixtures.AbstractXcodeIntegrationSpec
 import org.gradle.ide.xcode.internal.DefaultXcodeProject
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.nativeplatform.fixtures.app.CppAppWithLibrariesWithApiDependencies
 import org.gradle.nativeplatform.fixtures.app.CppAppWithLibrary
 import spock.lang.Ignore
@@ -30,7 +29,6 @@ class XcodeMultipleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpe
         useXcodebuildTool()
     }
 
-    @ToBeFixedForConfigurationCache
     def "can create xcode project for C++ application"() {
         given:
         settingsFile << """
@@ -73,7 +71,7 @@ class XcodeMultipleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds()
 
         then:
-        resultDebugApp.assertTasksExecuted(':greeter:compileDebugCpp', ':greeter:linkDebug',
+        resultDebugApp.assertTasksScheduled(':greeter:compileDebugCpp', ':greeter:linkDebug',
             ':app:compileDebugCpp', ':app:linkDebug', ':app:installDebug', ':app:_xcode___App_Debug')
 
         when:
@@ -84,11 +82,10 @@ class XcodeMultipleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds()
 
         then:
-        resultReleaseApp.assertTasksExecuted(':greeter:compileReleaseCpp', ':greeter:linkRelease', ':greeter:stripSymbolsRelease',
+        resultReleaseApp.assertTasksScheduled(':greeter:compileReleaseCpp', ':greeter:linkRelease', ':greeter:stripSymbolsRelease',
             ':app:compileReleaseCpp', ':app:linkRelease', ':app:stripSymbolsRelease', ':app:installRelease', ':app:_xcode___App_Release')
     }
 
-    @ToBeFixedForConfigurationCache
     def "can create xcode project for C++ application with transitive dependencies"() {
         def app = new CppAppWithLibrariesWithApiDependencies()
 
@@ -148,7 +145,7 @@ class XcodeMultipleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds()
 
         then:
-        resultDebugApp.assertTasksExecuted(':shuffle:compileDebugCpp', ':shuffle:linkDebug',
+        resultDebugApp.assertTasksScheduled(':shuffle:compileDebugCpp', ':shuffle:linkDebug',
             ':card:compileDebugCpp', ':card:linkDebug',
             ':deck:compileDebugCpp', ':deck:linkDebug',
             ':app:compileDebugCpp', ':app:linkDebug', ':app:installDebug', ':app:_xcode___App_Debug')
@@ -161,12 +158,11 @@ class XcodeMultipleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds()
 
         then:
-        resultReleaseHello.assertTasksExecuted(':shuffle:compileReleaseCpp', ':shuffle:linkRelease', ':shuffle:stripSymbolsRelease',
+        resultReleaseHello.assertTasksScheduled(':shuffle:compileReleaseCpp', ':shuffle:linkRelease', ':shuffle:stripSymbolsRelease',
             ':card:compileReleaseCpp', ':card:linkRelease', ':card:stripSymbolsRelease',
             ':deck:compileReleaseCpp', ':deck:linkRelease', ':deck:stripSymbolsRelease', ':deck:_xcode___Deck_Release')
     }
 
-    @ToBeFixedForConfigurationCache
     def "can create xcode project for C++ application with binary-specific dependencies"() {
         def app = new CppAppWithLibrariesWithApiDependencies()
 
@@ -234,7 +230,7 @@ class XcodeMultipleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds()
 
         then:
-        resultDebugApp.assertTasksExecuted(':shuffle:compileDebugCpp', ':shuffle:linkDebug',
+        resultDebugApp.assertTasksScheduled(':shuffle:compileDebugCpp', ':shuffle:linkDebug',
             ':card:compileDebugCpp', ':card:linkDebug',
             ':deck:compileDebugCpp', ':deck:linkDebug',
             ':app:compileDebugCpp', ':app:linkDebug', ':app:installDebug', ':app:_xcode___App_Debug')
@@ -247,7 +243,7 @@ class XcodeMultipleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds()
 
         then:
-        resultReleaseHello.assertTasksExecuted(':shuffle:compileReleaseCpp', ':shuffle:linkRelease', ':shuffle:stripSymbolsRelease',
+        resultReleaseHello.assertTasksScheduled(':shuffle:compileReleaseCpp', ':shuffle:linkRelease', ':shuffle:stripSymbolsRelease',
             ':card:compileReleaseCpp', ':card:linkRelease', ':card:stripSymbolsRelease',
             ':deck:compileReleaseCpp', ':deck:linkRelease', ':deck:stripSymbolsRelease', ':deck:_xcode___Deck_Release')
     }
@@ -300,7 +296,7 @@ class XcodeMultipleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds()
 
         then:
-        resultDebugApp.assertTasksExecuted(':greeter:compileDebugCpp', ':greeter:linkDebug',
+        resultDebugApp.assertTasksScheduled(':greeter:compileDebugCpp', ':greeter:linkDebug',
             ':compileDebugCpp', ':linkDebug', ':installDebug', ':_xcode___App_Debug')
 
         when:
@@ -311,6 +307,6 @@ class XcodeMultipleCppProjectIntegrationTest extends AbstractXcodeIntegrationSpe
             .succeeds()
 
         then:
-        resultReleaseGreeter.assertTasksExecuted(':compileReleaseCpp', ':linkRelease', ':stripSymbolsRelease', ':_xcode___Greeter_Release')
+        resultReleaseGreeter.assertTasksScheduled(':compileReleaseCpp', ':linkRelease', ':stripSymbolsRelease', ':_xcode___Greeter_Release')
     }
 }

@@ -16,22 +16,29 @@
 package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
+import org.gradle.test.fixtures.DependencyDeclarationFixture
 import org.gradle.test.fixtures.Repository
 import org.gradle.test.fixtures.encoding.Identifier
 import org.gradle.test.fixtures.server.http.IvyHttpModule
 import spock.lang.Issue
 
-class IvyDynamicRevisionRemoteResolveIntegrationTest extends AbstractHttpDependencyResolutionTest {
-    ResolveTestFixture resolve
+class IvyDynamicRevisionRemoteResolveIntegrationTest extends AbstractHttpDependencyResolutionTest implements DependencyDeclarationFixture {
+    ResolveTestFixture resolve = new ResolveTestFixture(testDirectory)
 
     def setup() {
-        settingsFile << "rootProject.name = 'test' "
+        settingsFile << """
+            rootProject.name = 'test'
+        """
 
-        resolve = new ResolveTestFixture(buildFile, "compile")
-        resolve.prepare()
-        resolve.addDefaultVariantDerivationStrategy()
+        buildFile << """
+            plugins {
+                id("jvm-ecosystem")
+            }
+
+            ${resolve.configureProject("compile")}
+        """
     }
 
     @Issue("GRADLE-3264")
@@ -43,7 +50,7 @@ class IvyDynamicRevisionRemoteResolveIntegrationTest extends AbstractHttpDepende
 configurations { compile }
 
 dependencies {
-    compile group: "group", name: "projectA", version: "1.+"
+    compile("group:projectA:1.+")
 }
 """
         when:
@@ -78,8 +85,8 @@ if (project.hasProperty('refreshDynamicVersions')) {
     }
 }
 dependencies {
-    compile group: "group", name: "projectA", version: "1.+"
-    compile group: "group", name: "projectB", version: "latest.integration"
+    compile("group:projectA:1.+")
+    compile("group:projectB:latest.integration")
 }
 """
         when:
@@ -119,9 +126,8 @@ configurations { compile }
 configurations.all {
     resolutionStrategy.cacheDynamicVersionsFor 0, "seconds"
 }
-
 dependencies {
-    compile group: /${name}/, name: /${name}/, version: "latest.integration"
+    compile(${asDependencyNotation(name, name, "latest.integration")})
 }
 """
         when:
@@ -154,8 +160,8 @@ repositories.all {
 }
 configurations { compile }
 dependencies {
-  compile group: "group", name: "projectA", version: "1.+"
-  compile group: "group", name: "projectB", version: "latest.integration"
+  compile("group:projectA:1.+")
+  compile("group:projectB:latest.integration")
 }
 """
 
@@ -196,7 +202,7 @@ def latestRevision = project.getProperty('latestRevision')
 configurations { compile }
 
 dependencies {
-    compile group: "group", name: "projectA", version: "latest.\${latestRevision}"
+    compile("group:projectA:latest.\${latestRevision}")
 }
 """
 
@@ -256,8 +262,8 @@ configurations {
     compile
 }
 dependencies {
-    staticVersions group: "group", name: "projectA", version: "1.1"
-    compile group: "group", name: "projectA", version: "latest.milestone"
+    staticVersions("group:projectA:1.1")
+    compile("group:projectA:latest.milestone")
 }
 task cache {
     def files = configurations.staticVersions
@@ -302,7 +308,7 @@ task cache {
         buildFile << """
     configurations { compile }
     dependencies {
-        compile group: "group", name: "projectA", version: "latest.milestone"
+        compile("group:projectA:latest.milestone")
     }
     """
 
@@ -333,18 +339,18 @@ task cache {
         given:
         buildFile << """
 repositories {
-    ivy { url "${repo1.uri}" }
+    ivy { url = "${repo1.uri}" }
 }
 
 if (project.hasProperty('addRepo2')) {
     repositories {
-        ivy { url "${repo2.uri}" }
+        ivy { url = "${repo2.uri}" }
     }
 }
 
 configurations { compile }
 dependencies {
-    compile group: "group", name: "projectA", version: "1.+"
+    compile("group:projectA:1.+")
 }
 """
 
@@ -383,7 +389,7 @@ dependencies {
         buildFile << """
     configurations { compile }
     dependencies {
-        compile group: "group", name: "projectA", version: "1.+"
+        compile("group:projectA:1.+")
     }
     """
 
@@ -419,7 +425,7 @@ dependencies {
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "group", name: "projectA", version: "1.+"
+    compile("group:projectA:1.+")
 }
 """
 
@@ -450,8 +456,8 @@ dependencies {
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "org.test", name: "projectA", version: "1.+"
-    compile group: "org.test", name: "projectA", version: "latest.integration"
+    compile("org.test:projectA:1.+")
+    compile("org.test:projectA:latest.integration")
 }
 """
 
@@ -477,7 +483,7 @@ dependencies {
         and:
         buildFile << """
 dependencies {
-    compile group: "org.test", name: "projectA", version: "[1.0,2.0)"
+    compile("org.test:projectA:[1.0,2.0)")
 }
 """
 
@@ -493,30 +499,30 @@ dependencies {
     }
 
     @Issue("gradle/gradle#3019")
-    @ToBeFixedForConfigurationCache(because = "Does not check for updates to remote artifact")
-    def "should honour dynamic version cache expiry for subsequent resolutions in the same build"() {
+    def "should honour dynamic version cache expiry for subsequent resolutions"() {
         given:
         useRepository ivyHttpRepo
         buildFile << """
-configurations {
-    fresh
-    stale
-}
-configurations.fresh.resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
+            configurations {
+                fresh
+                stale
+            }
+            configurations.fresh.resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
 
-dependencies {
-    fresh group: "org.test", name: "projectA", version: "1.+"
-    stale group: "org.test", name: "projectA", version: "1.+"
-}
+            dependencies {
+                fresh("org.test:projectA:1.+")
+                stale("org.test:projectA:1.+")
+            }
 
-task resolveStaleThenFresh {
-    def stale = configurations.stale
-    def fresh = configurations.fresh
-    doFirst {
-        println 'stale:' + stale.collect { it.name } + ',fresh:' + fresh.collect { it.name }
-    }
-}
-"""
+            task resolveStaleThenFresh {
+                // Force resolution at Configuration time, to ensure stale is resolved BEFORE fresh, so it doesn't see the new dynamic version fresh will later add to the resolution cache
+                def stale = configurations.stale.files
+                def fresh = configurations.fresh.files
+                doFirst {
+                    println 'stale:' + stale.collect { it.name } + ',fresh:' + fresh.collect { it.name }
+                }
+            }
+        """
 
         when:
         def projectA11 = ivyHttpRepo.module("org.test", "projectA", "1.1").publish()
@@ -546,13 +552,124 @@ task resolveStaleThenFresh {
         outputContains("stale:[projectA-1.2.jar],fresh:[projectA-1.3.jar]")
     }
 
+    def "dynamic version cache expiry will cause CC invalidation for subsequent resolutions"() {
+        given:
+        useRepository ivyHttpRepo
+        file("gradle.properties")
+
+        buildFile << """
+            configurations {
+                fresh
+                stale
+            }
+            configurations.fresh.resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
+
+            dependencies {
+                fresh("org.test:projectA:1.+")
+                stale("org.test:projectA:1.+")
+            }
+
+            task resolveStaleThenFresh {
+                // Proper CC serialization versus the above test
+                def stale = configurations.stale
+                def fresh = configurations.fresh
+                doFirst {
+                    println 'stale:' + stale.collect { it.name } + ',fresh:' + fresh.collect { it.name }
+                }
+            }
+        """
+
+        when:
+        def projectA11 = ivyHttpRepo.module("org.test", "projectA", "1.1").publish()
+        def projectA12 = ivyHttpRepo.module("org.test", "projectA", "1.2").publish()
+
+        and:
+        expectGetDynamicRevision(projectA12)
+
+        then:
+        succeeds "resolveStaleThenFresh"
+
+        and:
+        outputContains("stale:[projectA-1.2.jar],fresh:[projectA-1.2.jar]")
+
+        when:
+        def projectA13 = ivyHttpRepo.module("org.test", "projectA", "1.3").publish()
+        server.resetExpectations()
+
+        and:
+        // Should get the newer version when resolving 'fresh'
+        expectGetDynamicRevision(projectA13)
+
+        then:
+        succeeds "resolveStaleThenFresh"
+
+        and:
+        if (GradleContextualExecuter.isConfigCache()) { // CC has expired, so conf stale is re-resolved and gets the newer version
+            outputContains("stale:[projectA-1.3.jar],fresh:[projectA-1.3.jar]")
+        } else { // No CC, so conf stale is not re-resolved and still has the older version
+            outputContains("stale:[projectA-1.2.jar],fresh:[projectA-1.3.jar]")
+        }
+    }
+
+    /**
+     * This test ensures that even if the conf is a part of the task fingerprint, if it isn't actually resolved, it doesn't force re-resolution
+     * Compare this with {@link #"should honour dynamic version cache expiry for subsequent resolutions"()} above.
+     */
+    def "expired dynamic version on a conf doesn't invalidate configuration cache if the cache is not resolved"() {
+        given:
+        useRepository ivyHttpRepo
+        buildFile << """
+            configurations {
+                fresh
+                stale
+            }
+            configurations.fresh.resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
+
+            dependencies {
+                fresh("org.test:projectA:1.+")
+                stale("org.test:projectA:1.+")
+            }
+
+            task resolveOnlyStale {
+                def fresh = configurations.fresh
+                def stale = configurations.stale
+                doFirst {
+                    println 'stale:' + stale.collect { it.name }
+                }
+            }
+        """
+
+        when:
+        def projectA11 = ivyHttpRepo.module("org.test", "projectA", "1.1").publish()
+        def projectA12 = ivyHttpRepo.module("org.test", "projectA", "1.2").publish()
+
+        and:
+        expectGetDynamicRevision(projectA12)
+
+        then:
+        succeeds "resolveOnlyStale"
+
+        and:
+        outputContains("stale:[projectA-1.2.jar]")
+
+        when:
+        def projectA13 = ivyHttpRepo.module("org.test", "projectA", "1.3").publish()
+        server.resetExpectations()
+
+        then:
+        succeeds "resolveOnlyStale"
+
+        and:
+        outputContains("stale:[projectA-1.2.jar]")
+    }
+
     def "reuses cached version lists unless no matches"() {
         given:
         useRepository ivyHttpRepo
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "org.test", name: "projectA", version: "1.+"
+    compile("org.test:projectA:1.+")
 }
 """
 
@@ -585,7 +702,7 @@ dependencies {
         and:
         buildFile << """
 dependencies {
-    compile group: "org.test", name: "projectA", version: "2.+"
+    compile("org.test:projectA:2.+")
 }
 """
 
@@ -611,7 +728,7 @@ dependencies {
         and:
         buildFile << """
 dependencies {
-    compile group: "org.test", name: "projectA", version: "3.+"
+    compile("org.test:projectA:3.+")
 }
 """
 
@@ -638,7 +755,7 @@ dependencies {
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "group", name: "projectA", version: "1.+"
+    compile("group:projectA:1.+")
 }
 if (project.hasProperty('noDynamicRevisionCache')) {
     configurations.all {
@@ -679,7 +796,7 @@ if (project.hasProperty('noDynamicRevisionCache')) {
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "group", name: "main", version: "1.0"
+    compile("group:main:1.0")
 }
 
 if (project.hasProperty('noDynamicRevisionCache')) {
@@ -809,18 +926,24 @@ dependencies {
 
         when:
         buildFile.text = """
-repositories {
-    maven { url '${mavenRepo.uri}' }
-}
+            plugins {
+                id("jvm-ecosystem")
+            }
 
-configurations { compile }
+            repositories {
+                maven { url = '${mavenRepo.uri}' }
+            }
 
-dependencies {
-    compile 'org.test:a:[1.0,2.0)'
-}
-"""
-        resolve.prepare()
-        resolve.addDefaultVariantDerivationStrategy()
+            configurations {
+                compile
+            }
+
+            ${resolve.configureProject("compile")}
+
+            dependencies {
+                compile 'org.test:a:[1.0,2.0)'
+            }
+        """
 
         and:
         mavenRepo.getModuleMetaData("org.test", "a").expectGet()
@@ -856,9 +979,9 @@ dependencies {
         buildFile << """
 repositories {
     ivy {
-        url "${repo1.uri}"
-        ivyPattern "${repo2.uri}/[organisation]/[module]/[revision]/ivy-[revision].xml"
-        artifactPattern "${repo2.uri}/[organisation]/[module]/[revision]/[artifact]-[revision].[ext]"
+        url = "${repo1.uri}"
+        ivyPattern("${repo2.uri}/[organisation]/[module]/[revision]/ivy-[revision].xml")
+        artifactPattern("${repo2.uri}/[organisation]/[module]/[revision]/[artifact]-[revision].[ext]")
     }
 }
 configurations { compile }
@@ -901,8 +1024,8 @@ dependencies {
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "group", name: "main", version: "1.0"
-    compile group: "group", name: "projectA", version: "latest.integration"
+    compile("group:main:1.0")
+    compile("group:projectA:latest.integration")
 }
 configurations.all {
     resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
@@ -963,7 +1086,7 @@ configurations.all {
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "group", name: "projectA", version: "2.+"
+    compile("group:projectA:2.+")
 }
 """
 
@@ -1050,7 +1173,7 @@ Required by:
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "group", name: "projectA", version: "2.+"
+    compile("group:projectA:2.+")
 }
 """
 
@@ -1094,7 +1217,7 @@ Required by:
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "group", name: "projectA", version: "2.+"
+    compile("group:projectA:2.+")
 }
 """
 
@@ -1117,7 +1240,7 @@ dependencies {
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "group", name: "projectA", version: "2.+"
+    compile("group:projectA:2.+")
 }
 """
 
@@ -1129,7 +1252,8 @@ dependencies {
         fails "checkDeps"
         failure.assertHasCause("Could not resolve group:projectA:2.+")
         failure.assertHasCause("Could not list versions using Ivy pattern '${ivyHttpRepo.ivyPattern}'.")
-        failure.assertHasCause("Could not GET '${directoryList.uri}'. Received status code 500 from server")
+        failure.assertHasCause("Could not GET '${directoryList.uri}'.")
+        failure.assertHasCause("Received status code 500 from server")
 
         when:
         def projectA2 = ivyHttpRepo.module("group", "projectA", "2.2").publish()
@@ -1148,7 +1272,7 @@ dependencies {
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "group", name: "projectA", version: "latest.release"
+    compile("group:projectA:latest.release")
 }
 """
 
@@ -1182,7 +1306,7 @@ Required by:
         buildFile << """
 configurations { compile }
 dependencies {
-    compile group: "group", name: "projectA", version: "latest.release"
+    compile("group:projectA:latest.release")
 }
 """
 
@@ -1195,7 +1319,8 @@ dependencies {
         then:
         fails "checkDeps"
         failure.assertHasCause("Could not resolve group:projectA:latest.release")
-        failure.assertHasCause("Could not GET '${projectA.ivy.uri}'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${projectA.ivy.uri}'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
 
         when:
         server.resetExpectations()
@@ -1205,7 +1330,8 @@ dependencies {
         then:
         fails "checkDeps"
         failure.assertHasCause("Could not download projectA-1.2.jar (group:projectA:1.2)")
-        failure.assertHasCause("Could not GET '${projectA.jar.uri}'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${projectA.jar.uri}'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
 
         when:
         server.resetExpectations()
@@ -1328,7 +1454,7 @@ dependencies {
 repositories {
 """
         repo.each {
-            buildFile << "ivy { url '${it.uri}' }\n"
+            buildFile << "ivy { url = '${it.uri}' }\n"
         }
         buildFile << """
 }

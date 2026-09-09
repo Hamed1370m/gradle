@@ -16,8 +16,10 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.projectmodule;
 
-import org.gradle.api.artifacts.component.BuildIdentifier;
 import org.gradle.api.internal.project.ProjectIdentity;
+import org.gradle.internal.build.BuildIdentity;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.util.Path;
 
 import javax.annotation.concurrent.ThreadSafe;
@@ -30,6 +32,7 @@ import java.util.Collection;
  *
  * The information is gathered from multiple sources ({@code publishing.publications} container, etc.).
  */
+@ServiceScope(Scope.BuildTree.class)
 @ThreadSafe
 public interface ProjectPublicationRegistry {
 
@@ -46,7 +49,7 @@ public interface ProjectPublicationRegistry {
     /**
      * Returns all known publications for the given build.
      */
-    <T extends ProjectPublication> Collection<PublicationForProject<T>> getPublicationsForBuild(Class<T> type, BuildIdentifier buildIdentity);
+    <T extends ProjectPublication> Collection<PublicationForProject<T>> getPublicationsForBuild(Class<T> type, BuildIdentity buildIdentity);
 
     interface PublicationForProject<T extends ProjectPublication> {
 

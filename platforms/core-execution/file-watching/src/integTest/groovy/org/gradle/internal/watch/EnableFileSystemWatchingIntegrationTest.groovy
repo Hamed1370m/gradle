@@ -16,7 +16,7 @@
 
 package org.gradle.internal.watch
 
-import com.gradle.develocity.testing.annotations.LocalOnly
+import org.gradle.testdistribution.LocalOnly
 import org.gradle.initialization.StartParameterBuildOptions
 import org.gradle.internal.watch.registry.WatchMode
 
@@ -132,16 +132,18 @@ class EnableFileSystemWatchingIntegrationTest extends AbstractFileSystemWatching
         watchMode << WatchMode.values()
     }
 
-    def "cannot define a custom build scope cache dir when watching is explicitly enabled"() {
+    def "watching can be explicitly enabled together with a custom project cache dir"() {
         buildFile << """
+            apply plugin: "java"
         """
-        file("buildSrc/build.gradle") << """
-        """
+        def cacheDir = file("custom-cache-dir")
 
         when:
-        fails("help", "--watch-fs", "--project-cache-dir=broken")
+        run("assemble", "--watch-fs", "--info", "--project-cache-dir", cacheDir.absolutePath)
 
         then:
-        failure.assertHasDescription("Enabling file system watching via --watch-fs (or via the org.gradle.vfs.watch property) with --project-cache-dir also specified is not supported; remove either option to fix this problem")
+        outputContains(ENABLED_MESSAGE)
+        outputContains(ACTIVE_MESSAGE)
+        cacheDir.assertIsDir()
     }
 }

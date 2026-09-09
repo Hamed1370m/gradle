@@ -20,11 +20,11 @@ import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
-import org.gradle.api.provider.Provider;
 import org.gradle.api.resources.TextResource;
+import org.gradle.internal.deprecation.DeprecationLogger;
 import org.gradle.internal.instrumentation.api.annotations.ToBeReplacedByLazyProperty;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.List;
 
@@ -32,7 +32,9 @@ import java.util.List;
  * Configuration options for the PMD plugin.
  *
  * @see PmdPlugin
+ * @since 1.0
  */
+@SuppressWarnings("deprecation") // The targetJdk property and TargetJdk type are themselves deprecated.
 public abstract class PmdExtension extends CodeQualityExtension {
 
     private final Project project;
@@ -41,45 +43,44 @@ public abstract class PmdExtension extends CodeQualityExtension {
     private TextResource ruleSetConfig;
     private ConfigurableFileCollection ruleSetFiles;
     private boolean consoleOutput;
-    private final ListProperty<String> ruleSets;
-    private final Property<Integer> rulesMinimumPriority;
-    private final Property<Integer> maxFailures;
-    private final Property<Boolean> incrementalAnalysis;
-    private final Property<Integer> threads;
-
-    public PmdExtension(Project project) {
-        this.project = project;
-        this.rulesMinimumPriority = project.getObjects().property(Integer.class);
-        this.incrementalAnalysis = project.getObjects().property(Boolean.class);
-        this.maxFailures = project.getObjects().property(Integer.class);
-        this.threads = project.getObjects().property(Integer.class);
-        this.ruleSets = project.getObjects().listProperty(String.class);
-    }
 
     /**
-     * The built-in rule sets to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_rules_java.html">official list</a> of built-in rule sets.
+     * Creates a new {@code PmdExtension}.
      *
-     * If not configured explicitly, the returned conventional value is "category/java/errorprone.xml", unless {@link #getRuleSetConfig()} returns.
-     * a non-null value or the return value of {@link #getRuleSetFiles()} is non-empty, in which case the conventional value is an empty list
+     * @since 1.0
+     */
+    public PmdExtension(Project project) {
+        this.project = project;
+    }
+
+    abstract ListProperty<String> getRuleSetsProperty();
+
+    /**
+     * The built-in rule sets to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_rules_java.html">official list</a> of built-in rule sets.
+     *
+     * If not configured explicitly, the returned conventional value is "category/java/errorprone.xml", unless {@link #getRuleSetConfig()} returns
+     * a non-null value or the return value of {@link #getRuleSetFiles()} is non-empty, in which case the conventional value is an empty list.
      *
      * <pre>
      *     ruleSets = ["category/java/errorprone.xml", "category/java/bestpractices.xml"]
      * </pre>
+     * @since 1.0
      */
     @ToBeReplacedByLazyProperty
     public List<String> getRuleSets() {
-        return ruleSets.get();
+        return getRuleSetsProperty().get();
     }
 
     /**
-     * The built-in rule sets to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_rules_java.html">official list</a> of built-in rule sets.
+     * The built-in rule sets to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_rules_java.html">official list</a> of built-in rule sets.
      *
      * <pre>
      *     ruleSets = ["category/java/errorprone.xml", "category/java/bestpractices.xml"]
      * </pre>
+     * @since 1.0
      */
     public void setRuleSets(List<String> ruleSets) {
-        this.ruleSets.set(ruleSets);
+        this.getRuleSetsProperty().set(ruleSets);
     }
 
     /**
@@ -90,16 +91,22 @@ public abstract class PmdExtension extends CodeQualityExtension {
      * </pre>
      *
      * @param ruleSets the rule sets to be added
+     * @since 1.0
      */
     public void ruleSets(String... ruleSets) {
-        this.ruleSets.addAll(Arrays.asList(ruleSets));
+        this.getRuleSetsProperty().addAll(Arrays.asList(ruleSets));
     }
 
     /**
      * The target jdk to use with pmd, 1.3, 1.4, 1.5, 1.6, 1.7 or jsp
+     *
+     * @deprecated This property has no effect for PMD 5.0 and later, which infer the language version from the rule sets.
+     *     Scheduled to be removed in Gradle 10.
+     * @since 1.5
      */
-    @ToBeReplacedByLazyProperty
+    @Deprecated
     public TargetJdk getTargetJdk() {
+        nagAboutTargetJdkDeprecation("getTargetJdk()");
         return targetJdk;
     }
 
@@ -108,29 +115,44 @@ public abstract class PmdExtension extends CodeQualityExtension {
      *
      * @param targetJdk The target jdk
      * @since 4.0
+     * @deprecated This property has no effect for PMD 5.0 and later, which infer the language version from the rule sets.
+     *     Scheduled to be removed in Gradle 10.
      */
+    @Deprecated
     public void setTargetJdk(TargetJdk targetJdk) {
+        nagAboutTargetJdkDeprecation("setTargetJdk(TargetJdk)");
         this.targetJdk = targetJdk;
+    }
+
+    private static void nagAboutTargetJdkDeprecation(String methodWithParams) {
+        DeprecationLogger.deprecateMethod(PmdExtension.class, methodWithParams)
+            .withAdvice("This property has no effect for PMD 5.0 and later, which infer the language version from the rule sets. Remove the targetJdk configuration from your build.")
+            .willBeRemovedInGradle10()
+            .withUpgradeGuideSection(9, "deprecated_pmd_target_jdk")
+            .nagUser();
     }
 
     /**
      * The maximum number of failures to allow before stopping the build.
      *
-     * If <pre>ignoreFailures</pre> is set, this is ignored and no limit is enforced.
+     * If {@code ignoreFailures} is set, this is ignored and no limit is enforced.
      *
      * @since 6.4
      */
-    public Property<Integer> getMaxFailures() {
-        return maxFailures;
-    }
+    public abstract Property<Integer> getMaxFailures();
 
     /**
      * Sets the target jdk used with pmd.
      *
      * @param value The value for the target jdk as defined by {@link TargetJdk#toVersion(Object)}
+     * @deprecated This property has no effect for PMD 5.0 and later, which infer the language version from the rule sets.
+     *     Scheduled to be removed in Gradle 10.
+     * @since 1.5
      */
+    @Deprecated
     public void setTargetJdk(Object value) {
-        targetJdk = TargetJdk.toVersion(value);
+        nagAboutTargetJdkDeprecation("setTargetJdk(Object)");
+        targetJdk = DeprecationLogger.whileDisabled(() -> TargetJdk.toVersion(value));
     }
 
     /**
@@ -138,7 +160,7 @@ public abstract class PmdExtension extends CodeQualityExtension {
      *
      * This is equivalent to PMD's Ant task minimumPriority property.
      *
-     * See the official documentation for the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_userdocs_configuring_rules.html">list of priorities</a>.
+     * See the official documentation for the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_userdocs_configuring_rules.html">list of priorities</a>.
      *
      * <pre>
      *     rulesMinimumPriority = 3
@@ -146,14 +168,12 @@ public abstract class PmdExtension extends CodeQualityExtension {
      *
      * @since 6.8
      */
-    public Property<Integer> getRulesMinimumPriority() {
-        return rulesMinimumPriority;
-    }
+    public abstract Property<Integer> getRulesMinimumPriority();
 
     /**
      * The custom rule set to be used (if any). Replaces {@code ruleSetFiles}, except that it does not currently support multiple rule sets.
      *
-     * See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set.
+     * See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set.
      *
      * <pre>
      *     ruleSetConfig = resources.text.fromFile("config/pmd/myRuleSet.xml")
@@ -170,7 +190,7 @@ public abstract class PmdExtension extends CodeQualityExtension {
     /**
      * The custom rule set to be used (if any). Replaces {@code ruleSetFiles}, except that it does not currently support multiple rule sets.
      *
-     * See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set.
+     * See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set.
      *
      * <pre>
      *     ruleSetConfig = resources.text.fromFile("config/pmd/myRuleSet.xml")
@@ -183,11 +203,12 @@ public abstract class PmdExtension extends CodeQualityExtension {
     }
 
     /**
-     * The custom rule set files to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set file.
+     * The custom rule set files to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set file.
      *
      * <pre>
      *     ruleSetFiles = files("config/pmd/myRuleSet.xml")
      * </pre>
+     * @since 1.0
      */
     @ToBeReplacedByLazyProperty
     public FileCollection getRuleSetFiles() {
@@ -195,12 +216,13 @@ public abstract class PmdExtension extends CodeQualityExtension {
     }
 
     /**
-     * The custom rule set files to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set file.
+     * The custom rule set files to be used. See the <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_userdocs_making_rulesets.html">official documentation</a> for how to author a rule set file.
      * This adds to the default rule sets defined by {@link #getRuleSets()}.
      *
      * <pre>
      *     ruleSetFiles = files("config/pmd/myRuleSets.xml")
      * </pre>
+     * @since 1.0
      */
     public void setRuleSetFiles(FileCollection ruleSetFiles) {
         this.ruleSetFiles = project.getObjects().fileCollection().from(ruleSetFiles);
@@ -214,13 +236,15 @@ public abstract class PmdExtension extends CodeQualityExtension {
      * </pre>
      *
      * @param ruleSetFiles the rule set files to be added
+     * @since 1.0
      */
-    public void ruleSetFiles(Object... ruleSetFiles) {
+    public void ruleSetFiles(@Nullable Object... ruleSetFiles) {
         this.ruleSetFiles.from(ruleSetFiles);
     }
 
     /**
      * Whether or not to write PMD results to {@code System.out}.
+     * @since 2.1
      */
     @ToBeReplacedByLazyProperty
     public boolean isConsoleOutput() {
@@ -229,6 +253,7 @@ public abstract class PmdExtension extends CodeQualityExtension {
 
     /**
      * Whether or not to write PMD results to {@code System.out}.
+     * @since 2.1
      */
     public void setConsoleOutput(boolean consoleOutput) {
         this.consoleOutput = consoleOutput;
@@ -237,24 +262,16 @@ public abstract class PmdExtension extends CodeQualityExtension {
     /**
      * Controls whether to use incremental analysis or not.
      *
-     * This is only supported for PMD 6.0.0 or better. See <a href="https://docs.pmd-code.org/pmd-doc-6.55.0/pmd_userdocs_incremental_analysis.html"></a> for more details.
+     * This is only supported for PMD 6.0.0 or better. See <a href="https://docs.pmd-code.org/pmd-doc-7.24.0/pmd_userdocs_incremental_analysis.html">official documentation</a> for more details.
      *
      * @since 5.6
      */
-    public Property<Boolean> getIncrementalAnalysis() {
-        return incrementalAnalysis;
-    }
+    public abstract Property<Boolean> getIncrementalAnalysis();
 
     /**
      * The number of threads used by PMD.
      *
      * @since 7.5
      */
-    public Property<Integer> getThreads() {
-        return threads;
-    }
-
-    void ruleSetsConvention(Provider<List<String>> provider) {
-        ruleSets.convention(provider);
-    }
+    public abstract Property<Integer> getThreads();
 }

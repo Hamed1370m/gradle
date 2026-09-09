@@ -17,6 +17,7 @@
 package org.gradle.api.internal.tasks.testing.testng;
 
 import org.gradle.api.internal.tasks.testing.DefaultTestClassDescriptor;
+import org.gradle.api.internal.tasks.testing.DefaultTestFailure;
 import org.gradle.api.internal.tasks.testing.DefaultTestMethodDescriptor;
 import org.gradle.api.internal.tasks.testing.DefaultTestSuiteDescriptor;
 import org.gradle.api.internal.tasks.testing.TestCompleteEvent;
@@ -265,6 +266,9 @@ public class TestNGTestResultProcessorAdapter implements ISuiteListener, ITestLi
         if (resultType == TestResult.ResultType.FAILURE) {
             Throwable rawFailure = iTestResult.getThrowable();
             reportTestFailure(testId, rawFailure);
+        } else if (resultType == TestResult.ResultType.SKIPPED && iTestResult.getThrowable()!=null) {
+            Throwable rawFailure = iTestResult.getThrowable();
+            resultProcessor.failure(testId, DefaultTestFailure.fromTestAssumptionFailure(rawFailure));
         }
         resultProcessor.completed(testId, new TestCompleteEvent(iTestResult.getEndMillis(), resultType));
     }
@@ -272,9 +276,14 @@ public class TestNGTestResultProcessorAdapter implements ISuiteListener, ITestLi
     private void reportTestFailure(Object testId, Throwable rawFailure) {
         // TestNG only uses java.lang.AssertionError to represent assertion failures
         if (rawFailure instanceof AssertionError) {
-            resultProcessor.failure(testId, TestFailure.fromTestAssertionFailure(rawFailure, null, null));
+            resultProcessor.failure(testId, DefaultTestFailure.fromTestAssertionFailure(rawFailure, null, null));
         } else {
-            resultProcessor.failure(testId, TestFailure.fromTestFrameworkFailure(rawFailure));
+            // This path runs for failures thrown from a TestNG @Test method body. The failure
+            // is per-method, so it must not bypass the test-logging granularity filter — route
+            // through fromTestMethodFailure to produce a plain (non-bypass-eligible) failure.
+            // Configuration-method failures (@BeforeClass/@AfterClass/etc.) go through
+            // onConfigurationFailure below and remain classified as framework failures.
+            resultProcessor.failure(testId, DefaultTestFailure.fromTestMethodFailure(rawFailure));
         }
     }
 

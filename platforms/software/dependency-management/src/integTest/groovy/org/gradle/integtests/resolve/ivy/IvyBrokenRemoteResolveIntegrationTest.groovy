@@ -16,7 +16,8 @@
 package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.hamcrest.CoreMatchers
 
 import static org.gradle.integtests.fixtures.SuggestionsMessages.GET_HELP
 import static org.gradle.integtests.fixtures.SuggestionsMessages.INFO_DEBUG
@@ -27,7 +28,12 @@ import static org.gradle.integtests.fixtures.SuggestionsMessages.repositoryHint
 class IvyBrokenRemoteResolveIntegrationTest extends AbstractHttpDependencyResolutionTest {
     public final static String REPOSITORY_HINT = repositoryHint("ivy.xml")
 
-    @ToBeFixedForConfigurationCache
+    def setup() {
+        settingsFile << """
+            rootProject.name = "root"
+        """
+    }
+
     void "reports and recovers from missing module"() {
         given:
         def repo = ivyHttpRepo("repo1")
@@ -35,13 +41,18 @@ class IvyBrokenRemoteResolveIntegrationTest extends AbstractHttpDependencyResolu
 
         buildFile << """
 repositories {
-    ivy { url "${repo.uri}"}
+    ivy { url = "${repo.uri}"}
 }
 configurations { missing }
 dependencies {
     missing 'group:projectA:1.2'
 }
-task showMissing { doLast { println configurations.missing.files } }
+task showMissing {
+    inputs.files(configurations.missing)
+    doLast {
+        println inputs.files
+    }
+}
 """
 
         when:
@@ -49,26 +60,34 @@ task showMissing { doLast { println configurations.missing.files } }
 
         then:
         fails("showMissing")
-        failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-            .assertResolutionFailure(':missing')
+        if (GradleContextualExecuter.isConfigCache()) {
+            failure.assertThatDescription(CoreMatchers.startsWith("Configuration cache state could not be cached"))
+        } else {
+            failure.assertHasDescription("Execution failed for task ':showMissing' (registered in build file 'build.gradle').")
+        }
+        failure.assertResolutionFailure(':missing')
             .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
   - ${module.ivy.uri}
 Required by:
-    root project :""")
+    root project 'root'""")
 
         when:
         module.ivy.expectGetMissing()
 
         then:
         fails("showMissing")
-        failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-            .assertResolutionFailure(':missing')
+        if (GradleContextualExecuter.isConfigCache()) {
+            failure.assertThatDescription(CoreMatchers.startsWith("Configuration cache state could not be cached"))
+        } else {
+            failure.assertHasDescription("Execution failed for task ':showMissing' (registered in build file 'build.gradle').")
+        }
+        failure.assertResolutionFailure(':missing')
             .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
   - ${module.ivy.uri}
 Required by:
-    root project :""")
+    root project 'root'""")
         failure.assertHasResolutions(REPOSITORY_HINT,
             STACKTRACE_MESSAGE,
             INFO_DEBUG,
@@ -91,7 +110,6 @@ Required by:
         succeeds('showMissing')
     }
 
-    @ToBeFixedForConfigurationCache
     void "reports and recovers from multiple missing modules"() {
         given:
         def repo = ivyHttpRepo("repo1")
@@ -100,14 +118,19 @@ Required by:
 
         buildFile << """
 repositories {
-    ivy { url "${repo.uri}"}
+    ivy { url = "${repo.uri}"}
 }
 configurations { missing }
 dependencies {
     missing 'group:projectA:1.2'
     missing 'group:projectB:1.0-milestone-9'
 }
-task showMissing { doLast { println configurations.missing.files } }
+task showMissing {
+    inputs.files(configurations.missing)
+    doLast {
+        println inputs.files
+    }
+}
 """
 
         when:
@@ -116,18 +139,22 @@ task showMissing { doLast { println configurations.missing.files } }
 
         then:
         fails("showMissing")
-        failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-            .assertResolutionFailure(':missing')
+        if (GradleContextualExecuter.isConfigCache()) {
+            failure.assertThatDescription(CoreMatchers.startsWith("Configuration cache state could not be cached"))
+        } else {
+            failure.assertHasDescription("Execution failed for task ':showMissing' (registered in build file 'build.gradle').")
+        }
+        failure.assertResolutionFailure(':missing')
             .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
   - ${moduleA.ivy.uri}
 Required by:
-    root project :""")
+    root project 'root'""")
             .assertHasCause("""Could not find group:projectB:1.0-milestone-9.
 Searched in the following locations:
   - ${moduleB.ivy.uri}
 Required by:
-    root project :""")
+    root project 'root'""")
         failure.assertHasResolutions(REPOSITORY_HINT,
             STACKTRACE_MESSAGE,
             INFO_DEBUG,
@@ -151,10 +178,10 @@ Required by:
         succeeds('showMissing')
     }
 
-    @ToBeFixedForConfigurationCache
     void "reports and recovers from multiple missing transitive modules"() {
-        createDirs("child1")
-        settingsFile << "include 'child1'"
+        settingsFile << """
+            include 'child1'
+        """
 
         given:
         def repo = ivyHttpRepo("repo1")
@@ -168,29 +195,44 @@ Required by:
             .dependsOn(moduleB)
             .publish()
 
+        settingsFile << """
+            dependencyResolutionManagement {
+                repositories {
+                    ivy { url = "${repo.uri}"}
+                }
+            }
+        """
+
         buildFile << """
-allprojects {
-    repositories {
-        ivy { url "${repo.uri}"}
-    }
-    configurations {
-        compile
-        'default' {
-            extendsFrom(compile)
-        }
-    }
-}
-dependencies {
-    compile 'group:projectC:0.99'
-    compile project(':child1')
-}
-project(':child1') {
-    dependencies {
-        compile 'group:projectD:1.0GA'
-    }
-}
-task showMissing { doLast { println configurations.compile.files } }
-"""
+            configurations {
+                compile
+                'default' {
+                    extendsFrom(compile)
+                }
+            }
+            dependencies {
+                compile 'group:projectC:0.99'
+                compile project(':child1')
+            }
+            task showMissing {
+                inputs.files(configurations.compile)
+                doLast {
+                    println inputs.files
+                }
+            }
+        """
+
+        file("child1/build.gradle") << """
+            configurations {
+                compile
+                'default' {
+                    extendsFrom(compile)
+                }
+            }
+            dependencies {
+                compile 'group:projectD:1.0GA'
+            }
+        """
 
         when:
         moduleA.ivy.expectGetMissing()
@@ -200,19 +242,23 @@ task showMissing { doLast { println configurations.compile.files } }
 
         then:
         fails("showMissing")
-        failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-            .assertResolutionFailure(':compile')
+        if (GradleContextualExecuter.isConfigCache()) {
+            failure.assertThatDescription(CoreMatchers.startsWith("Configuration cache state could not be cached"))
+        } else {
+            failure.assertHasDescription( "Execution failed for task ':showMissing' (registered in build file 'build.gradle').")
+        }
+        failure.assertResolutionFailure(':compile')
             .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
   - ${moduleA.ivy.uri}
 Required by:
-    root project : > group:projectC:0.99
-    root project : > project :child1 > group:projectD:1.0GA""")
+    root project 'root' > group:projectC:0.99
+    root project 'root' > project ':child1' > group:projectD:1.0GA""")
             .assertHasCause("""Could not find group:projectB:1.0-milestone-9.
 Searched in the following locations:
   - ${moduleB.ivy.uri}
 Required by:
-    root project : > project :child1 > group:projectD:1.0GA""")
+    root project 'root' > project ':child1' > group:projectD:1.0GA""")
         failure.assertHasResolutions(REPOSITORY_HINT,
             STACKTRACE_MESSAGE,
             INFO_DEBUG,
@@ -238,7 +284,6 @@ Required by:
         succeeds('showMissing')
     }
 
-    @ToBeFixedForConfigurationCache
     void "reports and recovers from missing module when dependency declaration references an artifact"() {
         given:
         def repo = ivyHttpRepo("repo1")
@@ -246,13 +291,18 @@ Required by:
 
         buildFile << """
 repositories {
-    ivy { url "${repo.uri}"}
+    ivy { url = "${repo.uri}"}
 }
 configurations { missing }
 dependencies {
     missing 'group:projectA:1.2:thing'
 }
-task showMissing { doLast { println configurations.missing.files } }
+task showMissing {
+    inputs.files(configurations.missing)
+    doLast {
+        println inputs.files
+    }
+}
 """
 
         when:
@@ -261,8 +311,12 @@ task showMissing { doLast { println configurations.missing.files } }
 
         then:
         fails("showMissing")
-        failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-            .assertHasCause('Could not resolve all files for configuration \':missing\'.')
+        if (GradleContextualExecuter.isConfigCache()) {
+            failure.assertThatDescription(CoreMatchers.startsWith("Configuration cache state could not be cached"))
+        } else {
+            failure.assertHasDescription("Execution failed for task ':showMissing' (registered in build file 'build.gradle').")
+        }
+        failure.assertHasCause('Could not resolve all files for configuration \':missing\'.')
             .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
   - ${module.ivy.uri}
@@ -289,7 +343,6 @@ Required by:
         succeeds('showMissing')
     }
 
-    @ToBeFixedForConfigurationCache
     void "reports and recovers from module missing from multiple repositories"() {
         given:
         def repo1 = ivyHttpRepo("repo1")
@@ -299,14 +352,19 @@ Required by:
 
         buildFile << """
 repositories {
-    ivy { url "${repo1.uri}"}
-    ivy { url "${repo2.uri}"}
+    ivy { url = "${repo1.uri}"}
+    ivy { url = "${repo2.uri}"}
 }
 configurations { missing }
 dependencies {
     missing 'group:projectA:1.2'
 }
-task showMissing { doLast { println configurations.missing.files } }
+task showMissing {
+    inputs.files(configurations.missing)
+    doLast {
+        println inputs.files
+    }
+}
 """
 
         when:
@@ -315,8 +373,12 @@ task showMissing { doLast { println configurations.missing.files } }
 
         then:
         fails("showMissing")
-        failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-            .assertHasCause('Could not resolve all files for configuration \':missing\'.')
+        if (GradleContextualExecuter.isConfigCache()) {
+            failure.assertThatDescription(CoreMatchers.startsWith("Configuration cache state could not be cached"))
+        } else {
+            failure.assertHasDescription("Execution failed for task ':showMissing' (registered in build file 'build.gradle').")
+        }
+        failure.assertHasCause('Could not resolve all files for configuration \':missing\'.')
             .assertHasCause("""Could not find group:projectA:1.2.
 Searched in the following locations:
   - ${moduleInRepo1.ivy.uri}
@@ -339,7 +401,6 @@ Required by:
         succeeds('showMissing')
     }
 
-    @ToBeFixedForConfigurationCache
     void "reports and recovers from missing module when no repositories defined"() {
         given:
         buildFile << """
@@ -347,20 +408,29 @@ configurations { missing }
 dependencies {
     missing 'group:projectA:1.2'
 }
-task showMissing { doLast { println configurations.missing.files } }
+task showMissing {
+    inputs.files(configurations.missing)
+    doLast {
+        println inputs.files
+    }
+}
 """
 
         expect:
         fails("showMissing")
-        failure.assertHasDescription('Execution failed for task \':showMissing\'.')
-            .assertResolutionFailure(':missing')
+        if (GradleContextualExecuter.isConfigCache()) {
+            failure.assertThatDescription(CoreMatchers.startsWith("Configuration cache state could not be cached"))
+        } else {
+            failure.assertHasDescription("Execution failed for task \':showMissing\' (registered in build file 'build.gradle').")
+        }
+        failure.assertResolutionFailure(':missing')
             .assertHasCause("Cannot resolve external dependency group:projectA:1.2 because no repositories are defined.")
 
         when:
         def module = ivyHttpRepo.module("group", "projectA", "1.2").publish()
 
         and:
-        buildFile << "repositories { ivy { url '${ivyHttpRepo.uri}' } }"
+        buildFile.text = "repositories { ivy { url = '${ivyHttpRepo.uri}' } }" + buildFile.text
 
         module.ivy.expectGet()
         module.jar.expectGet()
@@ -375,7 +445,6 @@ task showMissing { doLast { println configurations.missing.files } }
         succeeds('showMissing')
     }
 
-    @ToBeFixedForConfigurationCache
     void "reports and recovers from failed Ivy descriptor download"() {
         given:
         def module = ivyHttpRepo.module('group', 'projectA', '1.3').publish()
@@ -383,14 +452,19 @@ task showMissing { doLast { println configurations.missing.files } }
         buildFile << """
 repositories {
     ivy {
-        url "${ivyHttpRepo.uri}"
+        url = "${ivyHttpRepo.uri}"
     }
 }
 configurations { broken }
 dependencies {
     broken 'group:projectA:1.3'
 }
-task showBroken { doLast { println configurations.broken.files } }
+task showBroken {
+    inputs.files(configurations.broken)
+    doLast {
+        println inputs.files
+    }
+}
 """
 
         when:
@@ -398,11 +472,15 @@ task showBroken { doLast { println configurations.broken.files } }
         fails("showBroken")
 
         then:
-        failure
-            .assertHasDescription('Execution failed for task \':showBroken\'.')
-            .assertResolutionFailure(':broken')
+        if (GradleContextualExecuter.isConfigCache()) {
+            failure.assertThatDescription(CoreMatchers.startsWith("Configuration cache state could not be cached"))
+        } else {
+            failure.assertHasDescription("Execution failed for task ':showBroken' (registered in build file 'build.gradle').")
+        }
+        failure.assertResolutionFailure(':broken')
             .assertHasCause('Could not resolve group:projectA:1.3.')
-            .assertHasCause("Could not GET '${module.ivy.uri}'. Received status code 500 from server: broken")
+            .assertHasCause("Could not GET '${module.ivy.uri}'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
 
         when:
         server.resetExpectations()
@@ -424,7 +502,7 @@ task showBroken { doLast { println configurations.broken.files } }
         buildFile << """
 repositories {
     ivy {
-        url "${ivyHttpRepo.uri}"
+        url = "${ivyHttpRepo.uri}"
     }
 }
 configurations { compile }
@@ -467,7 +545,7 @@ Searched in the following locations:
         buildFile << """
 repositories {
     ivy {
-        url "${ivyHttpRepo.uri}"
+        url = "${ivyHttpRepo.uri}"
     }
 }
 configurations { compile }
@@ -490,7 +568,8 @@ task retrieve(type: Sync) {
         then:
         fails "retrieve"
         failure.assertHasCause("Could not download projectA-1.2.jar (group:projectA:1.2)")
-        failure.assertHasCause("Could not GET '${module.jar.uri}'. Received status code 500 from server: broken")
+        failure.assertHasCause("Could not GET '${module.jar.uri}'.")
+        failure.assertHasCause("Received status code 500 from server: Internal Server Error")
 
         when:
         server.resetExpectations()

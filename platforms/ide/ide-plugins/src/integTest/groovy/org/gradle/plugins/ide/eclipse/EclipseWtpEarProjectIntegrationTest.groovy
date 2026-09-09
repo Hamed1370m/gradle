@@ -17,7 +17,6 @@
 
 package org.gradle.plugins.ide.eclipse
 
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.test.fixtures.maven.MavenFileModule
 import org.gradle.test.fixtures.maven.MavenFileRepository
 
@@ -31,10 +30,9 @@ class EclipseWtpEarProjectIntegrationTest extends AbstractEclipseIntegrationSpec
         mavenRepo.module('org.example', 'lib1-impl', '1.0').dependsOn(lib1Api).publish()
         MavenFileModule lib2Api = mavenRepo.module('org.example', 'lib2-api', '2.0').publish()
         mavenRepo.module('org.example', 'lib2-impl', '2.0').dependsOn(lib2Api).publish()
-        localMaven = "maven { url '${mavenRepo.uri}' }"
+        localMaven = "maven { url = '${mavenRepo.uri}' }"
     }
 
-    @ToBeFixedForConfigurationCache
     def "generates configuration files for an non-java ear project"() {
         settingsFile << "rootProject.name = 'ear'"
 
@@ -51,6 +49,7 @@ class EclipseWtpEarProjectIntegrationTest extends AbstractEclipseIntegrationSpec
         """
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject", "eclipseWtp", "eclipseWtpComponent", "eclipseWtpFacet")
         run 'eclipse'
 
         then:
@@ -78,7 +77,6 @@ class EclipseWtpEarProjectIntegrationTest extends AbstractEclipseIntegrationSpec
         component.lib('lib2-impl-2.0.jar').assertDeployedAt('/')
     }
 
-    @ToBeFixedForConfigurationCache
     def "ear deployment location can be configured via libDirName"() {
         settingsFile << "rootProject.name = 'ear'"
 
@@ -100,6 +98,7 @@ class EclipseWtpEarProjectIntegrationTest extends AbstractEclipseIntegrationSpec
         """
 
         when:
+        expectTaskDeprecations("eclipse", "eclipseClasspath", "eclipseJdt", "eclipseProject", "eclipseWtp", "eclipseWtpComponent", "eclipseWtpFacet")
         run 'eclipse'
 
         then:

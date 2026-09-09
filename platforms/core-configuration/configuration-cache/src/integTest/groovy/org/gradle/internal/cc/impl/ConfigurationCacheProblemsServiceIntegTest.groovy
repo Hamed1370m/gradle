@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-package org.gradle.configurationcache
+package org.gradle.internal.cc.impl
+
 
 import org.gradle.api.problems.Severity
-import org.gradle.internal.cc.impl.AbstractConfigurationCacheIntegrationTest
+import org.gradle.initialization.StartParameterBuildOptions
 
 class ConfigurationCacheProblemsServiceIntegTest extends AbstractConfigurationCacheIntegrationTest {
 
@@ -41,39 +42,36 @@ class ConfigurationCacheProblemsServiceIntegTest extends AbstractConfigurationCa
 
         then:
         problems.assertResultHasProblems(result) {
-            withTotalProblemsCount(1)
+            totalProblemsCount = 1
             withUniqueProblems(
                 "Build file 'build.gradle': line 2: registration of listener on 'Gradle.buildFinished' is unsupported")
-            withProblemsWithStackTraceCount(1)
+            problemsWithStackTraceCount = 1
         }
 
         and:
-        verifyAll(receivedProblem(0)) {
-            fqid == REGISTRATION_UNSUPPORTED
+        verifyAll(findReceivedProblem { it.fqid == REGISTRATION_UNSUPPORTED }) {
             contextualLabel == "registration of listener on 'Gradle.buildFinished' is unsupported"
             definition.severity == Severity.WARNING
-            definition.documentationLink.url.endsWith("/userguide/configuration_cache.html#config_cache:requirements:build_listeners")
-            locations.size() == 2
-            locations[0].path == "build file 'build.gradle'"
-            locations[0].line == 2
-            locations[1].path == "build file '${buildFile.absolutePath}'"
-            locations[1].line == 2
+            definition.documentationLink.url.endsWith("/userguide/configuration_cache_requirements.html#config_cache:requirements:build_listeners")
+            originLocations.size() == 1
+            originLocations[0].path == "build file 'build.gradle'"
+            originLocations[0].line == 2
+            contextualLocations.empty
             additionalData.asMap.trace == "build file 'build.gradle': line 2"
         }
 
         when:
-        configurationCacheRunLenient '-Pdummy=true', 'run'
+        configurationCacheRunLenient 'run', "-D${StartParameterBuildOptions.ConfigurationCacheRecreateOption.PROPERTY_NAME}=true"
 
         then:
-        verifyAll(receivedProblem) {
+        verifyAll(findReceivedProblem { it.fqid == REGISTRATION_UNSUPPORTED }) {
             fqid == REGISTRATION_UNSUPPORTED
             contextualLabel == "registration of listener on 'Gradle.buildFinished' is unsupported"
             definition.severity == Severity.WARNING
-            definition.documentationLink.url.endsWith("/userguide/configuration_cache.html#config_cache:requirements:build_listeners")
-            locations[0].path == "build file 'build.gradle'"
-            locations[0].line == 2
-            locations[1].path == "build file '${buildFile.absolutePath}'"
-            locations[1].line == 2
+            definition.documentationLink.url.endsWith("/userguide/configuration_cache_requirements.html#config_cache:requirements:build_listeners")
+            originLocations[0].path == "build file 'build.gradle'"
+            originLocations[0].line == 2
+            contextualLocations.empty
             additionalData.asMap.trace == "build file 'build.gradle': line 2"
 
         }
@@ -89,16 +87,16 @@ class ConfigurationCacheProblemsServiceIntegTest extends AbstractConfigurationCa
 
         when:
         configurationCacheFails WARN_PROBLEMS_CLI_OPT, "-D$MAX_PROBLEMS_GRADLE_PROP=0", 'run'
+        consumeWarnModeProblem()
 
         then:
-        verifyAll(receivedProblem) {
-            fqid == REGISTRATION_UNSUPPORTED
+        verifyAll(findReceivedProblem { it.fqid == REGISTRATION_UNSUPPORTED }) {
             contextualLabel == "registration of listener on 'Gradle.buildFinished' is unsupported"
             definition.severity == Severity.WARNING
         }
     }
 
-    def "notCompatibleWithConfigurationCache task problems are reported as Advice"() {
+    def "notCompatibleWithConfigurationCache task problems are reported as Warning"() {
         given:
         buildFile """
             task run {
@@ -114,9 +112,9 @@ class ConfigurationCacheProblemsServiceIntegTest extends AbstractConfigurationCa
 
         then:
         verifyAll(receivedProblem) {
-            fqid == 'validation:configuration-cache:invocation-of-task-project-at-execution-time-is-unsupported'
-            contextualLabel == "invocation of 'Task.project' at execution time is unsupported."
-            definition.severity == Severity.ADVICE
+            fqid == 'validation:configuration-cache:invocation-of-task-project-at-execution-time-is-unsupported-with-the-configuration-cache'
+            contextualLabel == "invocation of 'Task.project' at execution time is unsupported with the configuration cache."
+            definition.severity == Severity.WARNING
         }
     }
 }

@@ -20,8 +20,8 @@ import org.gradle.integtests.fixtures.MultiVersionIntegrationSpec
 import org.gradle.integtests.fixtures.TargetCoverage
 import org.gradle.testing.fixture.TestNGCoverage
 
-@TargetCoverage({ TestNGCoverage.SUPPORTS_PRESERVE_ORDER })
-public class TestNGPreserveOrderIntegrationTest extends MultiVersionIntegrationSpec {
+@TargetCoverage({ TestNGCoverage.SUPPORTS_ICLASS_LISTENER })
+class TestNGPreserveOrderIntegrationTest extends MultiVersionIntegrationSpec {
 
     def "run tests using preserveOrder"() {
         buildFile << """
@@ -29,8 +29,8 @@ public class TestNGPreserveOrderIntegrationTest extends MultiVersionIntegrationS
             ${mavenCentralRepository()}
             dependencies { testImplementation 'org.testng:testng:$version' }
             test {
-                useTestNG { preserveOrder true }
-                onOutput { test, event -> print "\$event.message" }
+                useTestNG { preserveOrder = true }
+                addTestOutputListener { test, event -> print "\$event.message" }
             }
         """
 

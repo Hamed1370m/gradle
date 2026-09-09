@@ -21,9 +21,9 @@ import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import org.gradle.api.Action;
-import org.gradle.api.UncheckedIOException;
 import org.gradle.api.tasks.WorkResult;
-import org.gradle.internal.FileUtils;
+import org.gradle.internal.SafeFileLocationUtils;
+import org.gradle.internal.UncheckedException;
 import org.gradle.internal.operations.BuildOperationExecutor;
 import org.gradle.internal.operations.BuildOperationQueue;
 import org.gradle.internal.os.OperatingSystem;
@@ -86,7 +86,7 @@ class SwiftCompiler extends AbstractCompiler<SwiftCompileSpec> {
             .map(sourceFile);
         File outputDirectory = outputFile.getParentFile();
         GFileUtils.mkdirs(outputDirectory);
-        return windowsPathLimitation ? FileUtils.assertInWindowsPathLengthLimitation(outputFile) : outputFile;
+        return windowsPathLimitation ? SafeFileLocationUtils.assertInWindowsPathLengthLimitation(outputFile) : outputFile;
     }
 
     @Override
@@ -166,13 +166,15 @@ class SwiftCompiler extends AbstractCompiler<SwiftCompileSpec> {
         }
     }
 
-    private static class OutputFileMap {
+    static class OutputFileMap {
         private Map<String, Entry> entries = new HashMap<String, Entry>();
 
+        @SuppressWarnings("ExposedPrivateType")
         public Builder root() {
             return newEntry("");
         }
 
+        @SuppressWarnings("ExposedPrivateType")
         public Builder newEntry(String name) {
             Entry entry = new Entry();
             entries.put(name, entry);
@@ -188,11 +190,12 @@ class SwiftCompiler extends AbstractCompiler<SwiftCompileSpec> {
             gson.toJson(entries, writer);
         }
 
+        @SuppressWarnings("DefaultCharset") //TODO: evaluate errorprone suppression (https://github.com/gradle/gradle/issues/35864)
         public void writeToFile(File outputFile) {
             try (Writer writer = new PrintWriter(outputFile)) {
                 toJson(writer);
             } catch (IOException ex) {
-                throw new UncheckedIOException(ex);
+                throw UncheckedException.throwAsUncheckedException(ex);
             }
         }
 
@@ -228,6 +231,7 @@ class SwiftCompiler extends AbstractCompiler<SwiftCompileSpec> {
             }
         }
 
+        @SuppressWarnings("unused") // Used by Gson
         private static class Entry {
             private String dependencies;
             private String object;

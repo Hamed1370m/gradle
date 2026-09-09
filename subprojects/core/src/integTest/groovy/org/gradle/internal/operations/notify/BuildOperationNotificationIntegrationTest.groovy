@@ -32,30 +32,22 @@ import org.gradle.initialization.NotifyProjectsEvaluatedBuildOperationType
 import org.gradle.initialization.NotifyProjectsLoadedBuildOperationType
 import org.gradle.initialization.buildsrc.BuildBuildSrcBuildOperationType
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.internal.configurationcache.ConfigurationCacheLoadBuildOperationType
 import org.gradle.internal.taskgraph.CalculateTaskGraphBuildOperationType
 import org.gradle.internal.taskgraph.CalculateTreeTaskGraphBuildOperationType
 import org.gradle.launcher.exec.RunBuildBuildOperationType
 import org.gradle.operations.lifecycle.RunRequestedWorkBuildOperationType
 
-import static org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache.Skip.INVESTIGATE
-
 class BuildOperationNotificationIntegrationTest extends AbstractIntegrationSpec {
 
-    def notifications = new BuildOperationNotificationFixture(testDirectory)
-
-    void addSettingsListener() {
-        settingsFile << """
-            ${notifications.registerListener()}
-        """
-    }
+    def notifications = new BuildOperationNotificationFixture(executer, testDirectoryProvider)
 
     def "obtains notifications about init scripts"() {
         when:
         executer.requireOwnGradleUserHomeDir()
         def init = executer.gradleUserHomeDir.file("init.d/init.gradle") << """
         """
-        addSettingsListener()
         buildFile """
             task t
         """
@@ -75,13 +67,12 @@ class BuildOperationNotificationIntegrationTest extends AbstractIntegrationSpec 
 
     def "can emit notifications from start of build"() {
         when:
-        addSettingsListener()
         buildFile """
             task t
         """
 
 
-        succeeds "t", "-S"
+        succeeds "t"
 
         then:
         notifications.started(LoadBuildBuildOperationType.Details, [buildPath: ":", includedBy: null])
@@ -112,7 +103,6 @@ class BuildOperationNotificationIntegrationTest extends AbstractIntegrationSpec 
         notifications.finished(ExecuteTaskBuildOperationType.Result, [actionable: false, originExecutionTime: null, cachingDisabledReasonMessage: "Cacheability was not determined", upToDateMessages: [], cachingDisabledReasonCategory: "UNKNOWN", skipMessage: "UP-TO-DATE", originBuildInvocationId: null])
     }
 
-    @ToBeFixedForConfigurationCache(skip = INVESTIGATE)
     def "can emit notifications for nested builds"() {
         when:
         file("buildSrc/build.gradle") << ""
@@ -120,7 +110,6 @@ class BuildOperationNotificationIntegrationTest extends AbstractIntegrationSpec 
         file("a/build.gradle") << "task t"
         file("a/settings.gradle") << ""
         file("settings.gradle") << "includeBuild 'a'"
-        addSettingsListener()
         buildFile """
             task t {
                 dependsOn gradle.includedBuild("a").task(":t")
@@ -217,13 +206,18 @@ class BuildOperationNotificationIntegrationTest extends AbstractIntegrationSpec 
         notifications.op(NotifyProjectAfterEvaluatedBuildOperationType.Details, [buildPath: ":a:buildSrc", projectPath: ":"]).parentId == notifications.op(ConfigureProjectBuildOperationType.Details, [buildPath: ":a:buildSrc", projectPath: ":"]).id
 
         def treeGraphOps = notifications.ops(CalculateTreeTaskGraphBuildOperationType.Details)
-        treeGraphOps.size() == 3
+        treeGraphOps.size() == (GradleContextualExecuter.configCache ? 4 : 3)
         treeGraphOps[0].parentId == notifications.op(BuildBuildSrcBuildOperationType.Details, [buildPath: ':a']).id
         treeGraphOps[1].parentId == notifications.op(BuildBuildSrcBuildOperationType.Details, [buildPath: ':']).id
         treeGraphOps[2].parentId == notifications.op(RunBuildBuildOperationType.Details).id
+        def expectedParentIds = [treeGraphOps[2].id]
+        if (GradleContextualExecuter.configCache) {
+            treeGraphOps[3].parentId == notifications.op(ConfigurationCacheLoadBuildOperationType.Details).id
+            expectedParentIds = [treeGraphOps[2].id, treeGraphOps[3].id]
+        }
 
-        notifications.op(CalculateTaskGraphBuildOperationType.Details, [buildPath: ":"]).parentId == treeGraphOps[2].id
-        notifications.op(CalculateTaskGraphBuildOperationType.Details, [buildPath: ":a"]).parentId == treeGraphOps[2].id
+        notifications.ops(CalculateTaskGraphBuildOperationType.Details, [buildPath: ":"])*.parentId == expectedParentIds
+        notifications.ops(CalculateTaskGraphBuildOperationType.Details, [buildPath: ":a"])*.parentId == expectedParentIds
         notifications.op(CalculateTaskGraphBuildOperationType.Details, [buildPath: ":buildSrc"]).parentId == treeGraphOps[1].id
         notifications.op(CalculateTaskGraphBuildOperationType.Details, [buildPath: ":a:buildSrc"]).parentId == treeGraphOps[0].id
 
@@ -238,11 +232,6 @@ class BuildOperationNotificationIntegrationTest extends AbstractIntegrationSpec 
 
     def "emits for GradleBuild tasks"() {
         when:
-        def initScript = file("init.gradle") << """
-            if (parent == null) {
-                ${notifications.registerListener()}
-            }
-        """
         settingsFile << "rootProject.name = 'parent'"
         buildFile """
             task t(type: GradleBuild) {
@@ -251,7 +240,7 @@ class BuildOperationNotificationIntegrationTest extends AbstractIntegrationSpec 
             task o
         """
 
-        succeeds "t", "-I", initScript.absolutePath
+        succeeds "t"
 
         then:
         executed(":${testDirectory.name}:o")
@@ -265,29 +254,9 @@ class BuildOperationNotificationIntegrationTest extends AbstractIntegrationSpec 
         }
     }
 
-    def "listeners are deregistered after build"() {
-        when:
-        executer.requireDaemon().requireIsolatedDaemons()
-        addSettingsListener()
-        buildFile << "task t"
-        succeeds("t")
-
-        then:
-        notifications.finished(CalculateTaskGraphBuildOperationType.Result, [excludedTaskPaths: [], requestedTaskPaths: [":t"]])
-
-        when:
-        // remove listener
-        buildFile.text = "task x"
-        succeeds("x")
-
-        then:
-        notifications.recordedOps.findAll { it.detailsType == CalculateTaskGraphBuildOperationType.Result.name }.size() == 0
-    }
-
-    // This test simulates what the build scan plugin does.
+    // This test simulates what the Develocity plugin does.
     def "drains notifications for buildSrc build"() {
         given:
-        addSettingsListener()
         file("buildSrc/build.gradle") << ""
         file("build.gradle") << """
             task t
@@ -297,8 +266,8 @@ class BuildOperationNotificationIntegrationTest extends AbstractIntegrationSpec 
         succeeds "t"
 
         then:
-        result.assertTaskExecuted(":buildSrc:compileJava")
-        notifications.recordedOps.findAll { it.detailsType == ConfigureProjectBuildOperationType.Details.name }.size() == 2
-        notifications.recordedOps.findAll { it.detailsType == ExecuteTaskBuildOperationType.Details.name }.size() == 6 // including all buildSrc task execution events
+        result.assertTaskScheduled(":buildSrc:compileJava")
+        notifications.all(ConfigureProjectBuildOperationType).size() == 2
+        notifications.all(ExecuteTaskBuildOperationType).size() == 6 // including all buildSrc task execution events
     }
 }

@@ -147,7 +147,7 @@ ${result.error}
         errorOutputBuildMarker = 0
         executer.withStdinPipe()
             .withTasks(tasks)
-            .withForceInteractive(true)
+            .withForceInteractiveSession(true)
             .withArgument("--full-stacktrace")
         if (!withoutContinuousArg) {
             executer.withArgument("--continuous")
@@ -196,14 +196,15 @@ ${result.error}
             }
         }
         if (gradle.isRunning() && !endOfBuildReached) {
-            new JavaProcessStackTracesMonitor(temporaryFolder.getTestDirectory()).printAllStackTracesByJstack()
+            def dumpDir = temporaryFolder.getTestDirectory()
+            new JavaProcessStackTracesMonitor(dumpDir).printAllStackTracesByJstack()
             throw new RuntimeException("""Timeout waiting for build to complete. Output:
 $lastOutput
 
 Error:
 ${gradle.errorOutput}
 
-Look for additional thread dump files in the following folder: $temporaryFolder
+Look for additional thread dump files in the following folder: ${dumpDir.absolutePath}
 """)
         }
 

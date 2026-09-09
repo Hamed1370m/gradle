@@ -79,6 +79,28 @@ class DecoratedReportProblemJsonSource(private val problem: DecoratedReportProbl
                 }
             }
 
+            is PropertyTrace.CapturedLambdaArguments -> {
+                property("kind", "CapturedArguments")
+                property(
+                    "subkind",
+                    when (trace.subkind) {
+                        PropertyTrace.CapturedLambdaArguments.Subkind.LambdaBody -> "lambdaBody"
+                        PropertyTrace.CapturedLambdaArguments.Subkind.BoundReceiver -> "boundReceiver"
+                    }
+                )
+                property("class", trace.owningClass)
+                property("method", trace.owningMethod)
+            }
+
+            is PropertyTrace.VirtualProperty -> {
+                property("kind", "VirtualProperty")
+                property("name", trace.name)
+                property("owner", when (trace.owner) {
+                    is PropertyTrace.Task -> taskPathFrom(trace.owner)
+                    else -> firstTypeFrom(trace.owner).name
+                })
+            }
+
             is PropertyTrace.SystemProperty -> {
                 property("kind", "SystemProperty")
                 property("name", trace.name)
@@ -93,6 +115,12 @@ class DecoratedReportProblemJsonSource(private val problem: DecoratedReportProbl
             is PropertyTrace.Bean -> {
                 property("kind", "Bean")
                 property("type", trace.type.name)
+            }
+
+            is PropertyTrace.SerializedLambda -> {
+                property("kind", "SerializedLambda")
+                property("type", trace.functionalInterfaceClass)
+                property("returns", trace.instantiatedReturnType)
             }
 
             is PropertyTrace.Project -> {
@@ -165,9 +193,6 @@ data class StackTracePart(
 
 class FailureDecorator {
 
-    private
-    val stringBuilder = StringBuilder()
-
     fun decorate(failure: Failure): DecoratedFailure {
         return DecoratedFailure(
             exceptionSummaryFor(failure),
@@ -177,13 +202,10 @@ class FailureDecorator {
 
     private
     fun partitionedTraceFor(failure: Failure): List<StackTracePart> {
+        val stringBuilder = StringBuilder()
         val listener = PartitioningFailurePrinterListener(stringBuilder)
-        try {
-            FailurePrinter.print(stringBuilder, failure, listener)
-            return listener.parts
-        } finally {
-            stringBuilder.setLength(0)
-        }
+        FailurePrinter.print(stringBuilder, failure, listener)
+        return listener.parts
     }
 
     private

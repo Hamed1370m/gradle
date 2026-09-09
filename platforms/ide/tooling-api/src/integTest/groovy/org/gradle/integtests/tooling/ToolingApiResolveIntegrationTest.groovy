@@ -16,6 +16,7 @@
 package org.gradle.integtests.tooling
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import spock.lang.Issue
 
 class ToolingApiResolveIntegrationTest extends AbstractIntegrationSpec {
 
@@ -27,7 +28,7 @@ class ToolingApiResolveIntegrationTest extends AbstractIntegrationSpec {
                 id 'java-library'
             }
             repositories {
-                maven { url '${buildContext.localRepository.toURI().toURL()}' }
+                maven { url = '${buildContext.localRepository.toURI()}' }
                 ${mavenCentralRepository()}
             }
 
@@ -56,10 +57,45 @@ class ToolingApiResolveIntegrationTest extends AbstractIntegrationSpec {
         succeeds 'resolve'
 
         then:
-        outputContains("[gradle-tooling-api-${tapiVersion}.jar, slf4j-api-1.7.36.jar]")
+        outputContains("[gradle-tooling-api-${tapiVersion}.jar, slf4j-api-2.0.17.jar]")
 
         where:
         configuration << ['compileClasspath', 'runtimeClasspath', 'customConf']
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/37947")
+    def "tooling API slf4j-api dependency does not strictly pin the version"() {
+        given:
+        def tapiVersion = distribution.getVersion().baseVersion.version
+        buildFile << """
+            plugins {
+                id 'java-library'
+            }
+            repositories {
+                maven { url = '${buildContext.localRepository.toURI()}' }
+                ${mavenCentralRepository()}
+            }
+
+            dependencies {
+                implementation 'org.gradle:gradle-tooling-api:${tapiVersion}'
+                implementation('org.slf4j:slf4j-api') {
+                    version { strictly '2.0.18' }
+                }
+            }
+
+            tasks.register('resolve') {
+                def runtimeClasspath = configurations.runtimeClasspath
+                doLast {
+                    println runtimeClasspath.files.collect { it.name }
+                }
+            }
+        """
+
+        when:
+        succeeds 'resolve'
+
+        then:
+        outputContains("[gradle-tooling-api-${tapiVersion}.jar, slf4j-api-2.0.18.jar]")
     }
 
     def "can resolve sources variant of tooling API"() {
@@ -70,7 +106,7 @@ class ToolingApiResolveIntegrationTest extends AbstractIntegrationSpec {
                 id 'java-library'
             }
             repositories {
-                maven { url '${buildContext.localRepository.toURI().toURL()}' }
+                maven { url = '${buildContext.localRepository.toURI()}' }
                 ${mavenCentralRepository()}
             }
 
@@ -78,7 +114,6 @@ class ToolingApiResolveIntegrationTest extends AbstractIntegrationSpec {
                 sources {
                     extendsFrom runtimeClasspath
                     canBeConsumed = false
-                    visible = false
                     attributes {
                         attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.DOCUMENTATION))
                         attribute(DocsType.DOCS_TYPE_ATTRIBUTE, objects.named(DocsType, DocsType.SOURCES))

@@ -17,21 +17,21 @@ package org.gradle.integtests
 
 import groovy.io.FileType
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 
 import java.nio.file.Files
 
-@Requires(value = IntegTestPreconditions.NotEmbeddedExecutor, reason = NOT_EMBEDDED_REASON)
+@Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = NOT_EMBEDDED_REASON)
 class WrapperIntegrationTest extends AbstractWrapperIntegrationSpec {
     def "can recover from a broken distribution"() {
         buildFile << "task hello"
-        prepareWrapper()
+        prepareWrapper().run()
         def gradleUserHome = testDirectory.file('some-custom-user-home')
         when:
         def executer = wrapperExecuter.withGradleUserHomeDir(gradleUserHome)
         result = executer.withTasks("hello").run()
         then:
-        result.assertTaskExecuted(":hello")
+        result.assertTaskScheduled(":hello")
         executer.stop()
 
         when:
@@ -49,6 +49,6 @@ class WrapperIntegrationTest extends AbstractWrapperIntegrationSpec {
         then:
         deletedSomething
         result.assertHasErrorOutput("does not appear to contain a Gradle distribution.")
-        result.assertTaskExecuted(":hello")
+        result.assertTaskScheduled(":hello")
     }
 }

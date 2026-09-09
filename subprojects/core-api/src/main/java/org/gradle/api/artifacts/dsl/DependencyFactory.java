@@ -16,7 +16,6 @@
 
 package org.gradle.api.artifacts.dsl;
 
-import org.gradle.api.Incubating;
 import org.gradle.api.NonExtensible;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Dependency;
@@ -25,8 +24,7 @@ import org.gradle.api.artifacts.FileCollectionDependency;
 import org.gradle.api.artifacts.ProjectDependency;
 import org.gradle.api.file.FileCollection;
 import org.gradle.internal.HasInternalProtocol;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Factory class for creating {@link Dependency} instances, with strong typing.
@@ -44,7 +42,6 @@ import javax.annotation.Nullable;
  */
 @HasInternalProtocol
 @NonExtensible
-@Incubating
 public interface DependencyFactory {
     /**
      * Create an {@link ExternalModuleDependency} from the <code>"<i>group</i>:<i>name</i>:<i>version</i>:<i>classifier</i>@<i>extension</i>"</code> notation.
@@ -55,6 +52,7 @@ public interface DependencyFactory {
      *
      * @param dependencyNotation the dependency notation
      * @return the new dependency
+     * @since 7.6
      */
     ExternalModuleDependency create(CharSequence dependencyNotation);
 
@@ -65,6 +63,7 @@ public interface DependencyFactory {
      * @param name the name
      * @param version the version (optional)
      * @return the new dependency
+     * @since 7.6
      */
     ExternalModuleDependency create(@Nullable String group, String name, @Nullable String version);
 
@@ -77,6 +76,7 @@ public interface DependencyFactory {
      * @param classifier the classifier (optional)
      * @param extension the extension (optional)
      * @return the new dependency
+     * @since 7.6
      */
     ExternalModuleDependency create(@Nullable String group, String name, @Nullable String version, @Nullable String classifier, @Nullable String extension);
 
@@ -85,6 +85,7 @@ public interface DependencyFactory {
      *
      * @param fileCollection the file collection
      * @return the new dependency
+     * @since 7.6
      */
     FileCollectionDependency create(FileCollection fileCollection);
 
@@ -93,8 +94,30 @@ public interface DependencyFactory {
      *
      * @param project the project
      * @return the new dependency
+     * @deprecated Use {@link #createProjectDependency(String)} instead. This method will be removed in Gradle 10.0.
+     * @since 7.6
      */
+    @Deprecated
     ProjectDependency create(Project project);
+
+    /**
+     * Create a {@link ProjectDependency} from a {@link Project} path.
+     *
+     * @param projectPath the project
+     * @return the new dependency
+     *
+     * @since 9.5.0
+     */
+    ProjectDependency createProjectDependency(String projectPath);
+
+    /**
+     * Create a {@link ProjectDependency} for the current project.
+     *
+     * @return the new dependency
+     *
+     * @since 9.5.0
+     */
+    ProjectDependency createProjectDependency();
 
     /**
      * Creates a dependency on the API of the current version of Gradle.

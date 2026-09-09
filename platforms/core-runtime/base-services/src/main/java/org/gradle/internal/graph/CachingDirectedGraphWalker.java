@@ -16,6 +16,7 @@
 
 package org.gradle.internal.graph;
 
+import com.google.common.collect.ImmutableSet;
 import org.gradle.util.internal.GUtil;
 
 import java.util.ArrayDeque;
@@ -27,6 +28,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -39,7 +41,12 @@ public class CachingDirectedGraphWalker<N, T> {
     private final DirectedGraphWithEdgeValues<N, T> graph;
     private List<N> startNodes = new ArrayList<N>();
     private Set<NodeDetails<N, T>> strongComponents = new LinkedHashSet<NodeDetails<N, T>>();
-    private final Map<N, Set<T>> cachedNodeValues = new HashMap<N, Set<T>>();
+
+    /**
+     * We use an immutable set for cached node values since the cache can become quite large
+     * for very large graphs, and immutable sets are much more memory efficient than LinkedHashSets.
+     */
+    private final Map<N, ImmutableSet<T>> cachedNodeValues = new HashMap<N, ImmutableSet<T>>();
 
     public CachingDirectedGraphWalker(DirectedGraph<N, T> graph) {
         this.graph = new GraphWithEmptyEdges<N, T>(graph);
@@ -52,6 +59,7 @@ public class CachingDirectedGraphWalker<N, T> {
     /**
      * Adds some start nodes.
      */
+    @SuppressWarnings("unchecked")
     public CachingDirectedGraphWalker<N, T> add(N... values) {
         add(Arrays.asList(values));
         return this;
@@ -139,7 +147,7 @@ public class CachingDirectedGraphWalker<N, T> {
                 }
 
                 for (N connectedNode : details.successors) {
-                    NodeDetails<N, T> connectedNodeDetails = seenNodes.get(connectedNode);
+                    NodeDetails<N, T> connectedNodeDetails = Objects.requireNonNull(seenNodes.get(connectedNode));
                     if (!connectedNodeDetails.finished) {
                         // part of a cycle : use the 'minimum' component as the root of the cycle
                         int minSeen = Math.min(details.minSeen, connectedNodeDetails.minSeen);
@@ -154,14 +162,14 @@ public class CachingDirectedGraphWalker<N, T> {
                 if (details.minSeen != details.component) {
                     // Part of a strongly connected component (ie cycle) - move values to root of the component
                     // The root is the first node of the component we encountered
-                    NodeDetails<N, T> rootDetails = components.get(details.minSeen);
+                    NodeDetails<N, T> rootDetails = Objects.requireNonNull(components.get(details.minSeen));
                     rootDetails.values.addAll(details.values);
                     details.values.clear();
                     rootDetails.componentMembers.addAll(details.componentMembers);
                 } else {
                     // Not part of a strongly connected component or the root of a strongly connected component
                     for (NodeDetails<N, T> componentMember : details.componentMembers) {
-                        cachedNodeValues.put(componentMember.node, details.values);
+                        cachedNodeValues.put(componentMember.node, ImmutableSet.copyOf(details.values));
                         componentMember.finished = true;
                         components.remove(componentMember.component);
                     }

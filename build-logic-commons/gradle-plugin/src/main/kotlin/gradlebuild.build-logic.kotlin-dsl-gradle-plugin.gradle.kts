@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import gradlebuild.commons.configureJavaToolChain
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     id("java-library")
     id("org.gradle.kotlin.kotlin-dsl") // this is 'kotlin-dsl' without version
+    id("gradlebuild.build-platform")
     id("gradlebuild.code-quality")
     id("gradlebuild.detekt")
     id("gradlebuild.ci-reporting")
@@ -26,13 +26,35 @@ plugins {
     id("gradlebuild.private-javadoc")
 }
 
-java.configureJavaToolChain()
+val buildLibs = project.versionCatalogs.named("buildLibs")
 
 dependencies {
-    api(platform("gradlebuild:build-platform"))
     implementation("gradlebuild:gradle-plugin")
+}
 
-    testImplementation("org.junit.vintage:junit-vintage-engine")
+@Suppress("UnstableApiUsage")
+testing {
+    suites {
+        named<JvmTestSuite>("test") {
+            useJUnitJupiter(buildLibs.findVersion("junit").get().requiredVersion)
+        }
+    }
+}
+
+// When groovy-dsl is also applied, switch to Spock (which runs Jupiter tests too).
+// Also add Jupiter API so mixed Kotlin/Jupiter + Groovy/Spock projects compile.
+pluginManager.withPlugin("groovy-gradle-plugin") {
+    @Suppress("UnstableApiUsage")
+    testing {
+        suites {
+            named<JvmTestSuite>("test") {
+                useSpock(buildLibs.findVersion("spock").get().requiredVersion)
+                dependencies {
+                    implementation(buildLibs.findLibrary("junitJupiter").get())
+                }
+            }
+        }
+    }
 }
 
 tasks.withType<KotlinCompile>().configureEach {
@@ -53,8 +75,4 @@ tasks.named("codeQuality") {
 tasks.validatePlugins {
     failOnWarning = true
     enableStricterValidation = true
-}
-
-tasks.withType<Test>().configureEach {
-    useJUnitPlatform()
 }

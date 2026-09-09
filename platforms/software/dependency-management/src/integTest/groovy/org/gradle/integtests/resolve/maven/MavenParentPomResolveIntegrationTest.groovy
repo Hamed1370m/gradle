@@ -16,7 +16,6 @@
 package org.gradle.integtests.resolve.maven
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import spock.lang.Issue
 
 class MavenParentPomResolveIntegrationTest extends AbstractHttpDependencyResolutionTest {
@@ -38,7 +37,7 @@ class MavenParentPomResolveIntegrationTest extends AbstractHttpDependencyResolut
 
         buildFile << """
 repositories {
-    maven { url '${mavenHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations { compile }
 dependencies { compile 'org:child:1.0' }
@@ -76,7 +75,6 @@ task retrieve(type: Sync) {
         file('libs').assertHasDescendants('child-1.0.jar', 'parent_dep-1.2.jar', 'child_dep-1.7.jar')
     }
 
-    @ToBeFixedForConfigurationCache
     def "uses dependencyManagement from parent pom"() {
         given:
         mavenRepo.module("org", "child_dep", "1.7").publish()
@@ -115,16 +113,21 @@ task retrieve(type: Sync) {
 
         buildFile << """
 repositories {
-    maven { url '${mavenRepo.uri}' }
+    maven { url = '${mavenRepo.uri}' }
 }
 configurations { compile }
 dependencies { compile 'org:child:1.0' }
-task libs { doLast { assert configurations.compile.files*.name == ['child-1.0.jar', 'child_dep-1.7.jar', 'typed_dep-1.8.bar', 'classified_dep-1.9-classy.jar', 'fq_dep-2.1-classy.bar'] } }
+task libs {
+    inputs.files(configurations.compile)
+    doLast { println inputs.files*.name }
+}
 """
 
         expect:
         succeeds 'libs'
+        outputContains("[child-1.0.jar, child_dep-1.7.jar, typed_dep-1.8.bar, classified_dep-1.9-classy.jar, fq_dep-2.1-classy.bar]")
         succeeds 'libs'
+        outputContains("[child-1.0.jar, child_dep-1.7.jar, typed_dep-1.8.bar, classified_dep-1.9-classy.jar, fq_dep-2.1-classy.bar]")
     }
 
     @Issue("GRADLE-2641")
@@ -140,7 +143,7 @@ task libs { doLast { assert configurations.compile.files*.name == ['child-1.0.ja
 
         buildFile << """
 repositories {
-    maven { url '${mavenHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations { compile }
 dependencies { compile 'org:child:1.0' }
@@ -181,8 +184,8 @@ task retrieve(type: Sync) {
 
         buildFile << """
 repositories {
-    maven { url '${repo1.uri}' }
-    maven { url '${repo2.uri}' }
+    maven { url = '${repo1.uri}' }
+    maven { url = '${repo2.uri}' }
 }
 configurations { compile }
 dependencies { compile 'org:child:1.0' }
@@ -218,8 +221,8 @@ task retrieve(type: Sync) {
 
         buildFile << """
 repositories {
-    ivy { url '${ivyHttpRepo.uri}' }
-    maven { url '${mavenHttpRepo.uri}' }
+    ivy { url = '${ivyHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations { compile }
 dependencies { compile 'org:child:1.0' }
@@ -263,8 +266,8 @@ task retrieve(type: Sync) {
 
         buildFile << """
 repositories {
-    maven { url '${repo1.uri}' }
-    maven { url '${repo2.uri}' }
+    maven { url = '${repo1.uri}' }
+    maven { url = '${repo2.uri}' }
 }
 configurations {
     child1
@@ -329,7 +332,7 @@ task retrieveChild2(type: Sync) {
 
         buildFile << """
 repositories {
-    maven { url '${mavenHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations { compile }
 dependencies {
@@ -375,7 +378,7 @@ task retrieve(type: Sync) {
 
         buildFile << """
 repositories {
-    maven { url '${mavenHttpRepo.uri}' }
+    maven { url = '${mavenHttpRepo.uri}' }
 }
 configurations { compile }
 dependencies {
@@ -401,7 +404,6 @@ task retrieve(type: Sync) {
         file('libs').assertHasDescendants('child-1.0.jar')
     }
 
-    @ToBeFixedForConfigurationCache
     def "parent pom parsing with custom properties for dependency coordinates"() {
         given:
         def parent = mavenHttpRepo.module('group', 'parent', '1.0').publish()
@@ -427,13 +429,16 @@ task retrieve(type: Sync) {
         and:
         buildFile << """
             repositories {
-                maven { url "${mavenHttpRepo.uri}" }
+                maven { url = "${mavenHttpRepo.uri}" }
             }
             configurations { compile }
             dependencies {
                 compile "group:artifact:1.0"
             }
-            task libs { doLast { assert configurations.compile.files.collect {it.name} == ['artifact-1.0.jar', 'myartifact-1.1.jar'] } }
+            task libs {
+                inputs.files(configurations.compile)
+                doLast { println inputs.files.collect { it.name } }
+            }
         """
 
         and:
@@ -446,10 +451,11 @@ task retrieve(type: Sync) {
         expect:
         // have to run twice to trigger the failure, to parse the descriptor from the cache
         succeeds ":libs"
+        outputContains("[artifact-1.0.jar, myartifact-1.1.jar]")
         succeeds ":libs"
+        outputContains("[artifact-1.0.jar, myartifact-1.1.jar]")
     }
 
-    @ToBeFixedForConfigurationCache
     def "dependency with same group ID and artifact ID defined in child and parent is used from child"() {
         given:
         def parent = mavenHttpRepo.module('group', 'parent', '1.0').dependsOn('my.group', 'myartifact', '1.1').publish()
@@ -460,13 +466,16 @@ task retrieve(type: Sync) {
         and:
         buildFile << """
             repositories {
-                maven { url "${mavenHttpRepo.uri}" }
+                maven { url = "${mavenHttpRepo.uri}" }
             }
             configurations { compile }
             dependencies {
                 compile "group:artifact:1.0"
             }
-            task libs { doLast { assert configurations.compile.files.collect {it.name} == ['artifact-1.0.jar', 'myartifact-1.3.jar'] } }
+            task libs {
+                inputs.files(configurations.compile)
+                doLast { println inputs.files.collect { it.name } }
+            }
         """
 
         and:
@@ -479,6 +488,8 @@ task retrieve(type: Sync) {
         expect:
         // have to run twice to trigger the failure, to parse the descriptor from the cache
         succeeds ":libs"
+        outputContains("[artifact-1.0.jar, myartifact-1.3.jar]")
         succeeds ":libs"
+        outputContains("[artifact-1.0.jar, myartifact-1.3.jar]")
     }
 }

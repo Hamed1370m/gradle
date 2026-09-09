@@ -19,14 +19,15 @@ package org.gradle.plugins.ear
 import groovy.xml.XmlSlurper
 import org.gradle.api.JavaVersion
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.archives.TestReproducibleArchives
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import org.gradle.integtests.fixtures.archives.TestFileSystemSensitiveArchives
 import org.gradle.test.fixtures.archive.JarTestFixture
 import org.hamcrest.CoreMatchers
 import spock.lang.Issue
 
 import static org.gradle.util.internal.TextUtil.toPlatformLineSeparators
 
-@TestReproducibleArchives
+@TestFileSystemSensitiveArchives
 class EarPluginIntegrationTest extends AbstractIntegrationSpec {
 
     def "setup"() {
@@ -50,6 +51,7 @@ dependencies {
         run 'assemble'
 
         then:
+        executed(":ear")
         def ear = new JarTestFixture(file('build/libs/root.ear'))
         ear.assertContainsFile("META-INF/MANIFEST.MF")
         ear.assertContainsFile("META-INF/application.xml")
@@ -66,7 +68,7 @@ dependencies {
 }
 
 ear {
-    libDirName 'CUSTOM/lib'
+    libDirName = 'CUSTOM/lib'
 
     deploymentDescriptor {
         applicationName = "cool ear"
@@ -458,6 +460,7 @@ ear {
         ear.assertContainsFile("META-INF/application.xml")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "configure projects from root")
     def "ear contains runtime classpath of upstream java project"() {
         given:
         createDirs("a", "b", "c", "d", "e")
@@ -505,6 +508,7 @@ ear {
         ear.assertNotContainsFile("lib/e.jar")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "ear plugin cross-project configuration")
     def "ear contains runtime classpath of upstream java-library project"() {
         given:
         createDirs("a", "b", "c", "d", "e")

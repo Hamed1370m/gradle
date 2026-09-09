@@ -17,53 +17,10 @@
 package org.gradle.integtests.resolve
 
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
-import org.gradle.test.fixtures.file.LeaksFileHandles
 import spock.lang.Issue
 
+// TODO: Merge with BuildscriptResolutionIntegrationTest
 class ScriptDependencyResolveIntegrationTest extends AbstractDependencyResolutionTest {
-
-    @LeaksFileHandles("Puts gradle user home in integration test dir")
-    @ToBeFixedForConfigurationCache(because = "task uses Configuration API")
-    def "root component identifier has the correct type when resolving a script classpath"() {
-        given:
-        def module = mavenRepo().module("org.gradle", "test", "1.45")
-        module.dependsOn("org.gradle", "other", "preview-1")
-        module.artifact(classifier: 'classifier')
-        module.publish()
-        mavenRepo().module("org.gradle", "other", "preview-1").publish()
-
-        and:
-        settingsFile << """
-rootProject.name = 'testproject'
-"""
-
-        buildFile << """
-group = 'org.gradle'
-version = '1.0'
-
-buildscript {
-    repositories { maven { url "${mavenRepo().uri}" } }
-    dependencies {
-        classpath "org.gradle:test:1.45"
-    }
-}
-
-task check {
-    doLast {
-        assert buildscript.configurations.classpath.collect { it.name } == ['test-1.45.jar', 'other-preview-1.jar']
-        def result = buildscript.configurations.classpath.incoming.resolutionResult
-
-        // Check root component
-        def rootId = result.root.id
-        assert rootId instanceof ProjectComponentIdentifier
-    }
-}
-"""
-
-        expect:
-        succeeds "check"
-    }
 
     @Issue("gradle/gradle#15378")
     def "strict resolution strategy can be used when resolving a script classpath from settings"() {
@@ -74,7 +31,7 @@ task check {
         and:
         settingsFile << """
 buildscript {
-    repositories { maven { url "${mavenRepo().uri}" } }
+    repositories { maven { url = "${mavenRepo().uri}" } }
     configurations.classpath {
         resolutionStrategy {
             failOnVersionConflict()
@@ -90,7 +47,7 @@ rootProject.name = 'testproject'
 """
         expect:
         fails "help"
-        failureHasCause("Conflict found for the following module:")
+        failureHasCause("Conflict found for module 'org.gradle:test': between versions 1.46 and 1.45")
     }
 
     @Issue("gradle/gradle#19300")
@@ -101,7 +58,7 @@ rootProject.name = 'testproject'
         and:
         settingsFile << """
             buildscript {
-                repositories { maven { url "${mavenRepo().uri}" } }
+                repositories { maven { url = "${mavenRepo().uri}" } }
                 dependencies {
                     classpath "org.apache.logging.log4j:log4j-core"
                 }
@@ -112,7 +69,7 @@ rootProject.name = 'testproject'
 
         buildFile << """
             buildscript {
-                repositories { maven { url "${mavenRepo().uri}" } }
+                repositories { maven { url = "${mavenRepo().uri}" } }
                 dependencies {
                     classpath "org.apache.logging.log4j:log4j-core"
                 }
@@ -133,7 +90,7 @@ rootProject.name = 'testproject'
 
         buildFile << """
             buildscript {
-                repositories { maven { url "${mavenRepo().uri}" } }
+                repositories { maven { url = "${mavenRepo().uri}" } }
                 dependencies {
                     classpath "org.apache.logging.log4j:log4j-core:2.14.1!!"
                 }
@@ -151,7 +108,7 @@ rootProject.name = 'testproject'
         mavenRepo().module('org.apache.logging.log4j', 'log4j-core', '3.1.0').publish()
         buildFile << """
             buildscript {
-                repositories { maven { url "${mavenRepo().uri}" } }
+                repositories { maven { url = "${mavenRepo().uri}" } }
                 dependencies {
                     classpath "org.apache.logging.log4j:log4j-core:3.1.0"
                 }

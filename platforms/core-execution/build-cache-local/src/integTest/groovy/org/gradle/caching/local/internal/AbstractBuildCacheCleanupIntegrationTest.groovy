@@ -21,13 +21,14 @@ import org.gradle.cache.internal.GradleUserHomeCleanupFixture
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.BuildOperationsFixture
 import org.gradle.integtests.fixtures.DirectoryBuildCacheFixture
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
 import org.gradle.integtests.fixtures.cache.FileAccessTimeJournalFixture
 import org.gradle.integtests.fixtures.executer.ExecutionResult
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.internal.hash.Hashing
 import org.gradle.test.fixtures.file.TestFile
 
 import java.util.concurrent.TimeUnit
+import java.util.regex.Pattern
 
 abstract class AbstractBuildCacheCleanupIntegrationTest extends AbstractIntegrationSpec implements DirectoryBuildCacheFixture, FileAccessTimeJournalFixture, GradleUserHomeCleanupFixture {
     private final static int DEFAULT_RETENTION_PERIOD_DAYS = 7
@@ -65,27 +66,9 @@ abstract class AbstractBuildCacheCleanupIntegrationTest extends AbstractIntegrat
                 description = "Generates a 1MB file"
             }
         """
+        requireOwnGradleUserHomeDir("Modifying cache settings in Gradle user home")
     }
 
-    def withDeprecatedBuildCacheRetentionInDays(long period) {
-        settingsFile << """
-            buildCache {
-                local {
-                    removeUnusedEntriesAfterDays = ${period}
-                }
-            }
-        """
-    }
-
-    def expectRetentionMethodDeprecationWarning() {
-        executer.expectDocumentedDeprecationWarning(
-            "The DirectoryBuildCache.removeEntriesAfterDays property has been deprecated. " +
-                "This is scheduled to be removed in Gradle 9.0. " +
-                "Consult the upgrading guide for further information: https://docs.gradle.org/current/userguide/upgrading_version_8.html#directory_build_cache_retention_deprecated"
-        )
-    }
-
-    @ToBeFixedForConfigurationCache(because = "Cache is cleaned twice on load after store")
     def "cleans up entries when #cleanupTrigger"() {
         long lastCleanupCheck = initializeHome()
 
@@ -112,7 +95,8 @@ abstract class AbstractBuildCacheCleanupIntegrationTest extends AbstractIntegrat
         then:
         existsBuildCacheEntry("0" * hashStringLength)
         !existsBuildCacheEntry("1" * hashStringLength)
-        assertCacheWasCleanedUpSince(lastCleanupCheck)
+        // With CC, cache is cleared twice, see https://github.com/gradle/gradle/issues/36688
+        assertCacheWasCleanedUpSince(lastCleanupCheck, !alwaysCleanup || GradleContextualExecuter.notConfigCache)
 
         where:
         cleanupTrigger              | alwaysCleanup
@@ -120,17 +104,16 @@ abstract class AbstractBuildCacheCleanupIntegrationTest extends AbstractIntegrat
         "explicitly enabled"        | true
     }
 
-    def "cleans up entries even if gradle user home cache cleanup is disabled via #cleanupMethod"() {
+    def "cleans up entries even if gradle user home cache cleanup is disabled"() {
         def lastCleanupCheck = initializeHome()
 
-        disableCacheCleanup(cleanupMethod)
+        disableCacheCleanupViaDsl()
 
         when:
         def newTrashFile = temporaryFolder.file("0" * hashStringLength).createFile()
         def oldTrashFile = temporaryFolder.file("1" * hashStringLength).createFile()
         createBuildCacheEntry("0" * hashStringLength, newTrashFile, System.currentTimeMillis())
         createBuildCacheEntry("1" * hashStringLength, oldTrashFile, daysAgo(DEFAULT_RETENTION_PERIOD_DAYS + 1))
-        cleanupMethod.maybeExpectDeprecationWarning(executer)
         run()
 
         then:
@@ -147,9 +130,6 @@ abstract class AbstractBuildCacheCleanupIntegrationTest extends AbstractIntegrat
         existsBuildCacheEntry("0" * hashStringLength)
         existsBuildCacheEntry("1" * hashStringLength)
         assertCacheWasNotCleanedUpSince(lastCleanupCheck)
-
-        where:
-        cleanupMethod << CleanupMethod.values()
     }
 
     def "cleans up entries after #scenario"() {
@@ -158,9 +138,6 @@ abstract class AbstractBuildCacheCleanupIntegrationTest extends AbstractIntegrat
         if (buildCacheCleanup != null) {
             withBuildCacheRetentionInDays(buildCacheCleanup)
         }
-        if (deprecatedCacheCleanup != null) {
-            withDeprecatedBuildCacheRetentionInDays(deprecatedCacheCleanup)
-        }
 
         when:
         def newTrashFile = temporaryFolder.file("0" * hashStringLength).createFile()
@@ -168,9 +145,6 @@ abstract class AbstractBuildCacheCleanupIntegrationTest extends AbstractIntegrat
         createBuildCacheEntry("0" * hashStringLength, newTrashFile, System.currentTimeMillis())
         createBuildCacheEntry("1" * hashStringLength, oldTrashFile, daysAgo(effectiveCleanup - 1))
         createBuildCacheEntry("2" * hashStringLength, oldTrashFile, daysAgo(effectiveCleanup + 1))
-        if (deprecatedCacheCleanup != null) {
-            expectRetentionMethodDeprecationWarning()
-        }
         run()
 
         then:
@@ -191,25 +165,18 @@ abstract class AbstractBuildCacheCleanupIntegrationTest extends AbstractIntegrat
         assertCacheWasCleanedUpSince(lastCleanupCheck)
 
         where:
-        buildCacheCleanup | deprecatedCacheCleanup | effectiveCleanup | scenario
-        null              | null                   | 7                | "default period when not explicitly configured"
-        2                 | null                   | 2                | "configured period for build cache cleanup"
-        null              | 2                      | 2                | "configured period for deprecated build cache cleanup"
-        1                 | 10                     | 10               | "configured period for deprecated build cache cleanup when both are configured"
+        buildCacheCleanup | effectiveCleanup | scenario
+        null              | 7                | "default period when not explicitly configured"
+        2                 | 2                | "configured period for build cache cleanup"
     }
 
     def "produces reasonable message when cache retention is too short (#days days)"() {
-        settingsFile << """
-            buildCache {
-                local {
-                    removeUnusedEntriesAfterDays = ${days}
-                }
-            }
-        """
+        initializeHome()
+        withBuildCacheRetentionInDays(days)
+
         expect:
         runAndFail()
-        // TODO: Change name to Build cache, since Directory build cache is not the only cache now
-        failure.assertHasCause("Directory build cache needs to retain entries for at least a day.")
+        failure.assertHasDescription("Cache 'buildCache' cannot be set to retain entries for $days days.")
 
         where:
         days << [-1, 0]
@@ -316,8 +283,14 @@ abstract class AbstractBuildCacheCleanupIntegrationTest extends AbstractIntegrat
         withEnabledBuildCache().fails("cacheable")
     }
 
-    void assertCacheWasCleanedUpSince(long lastCleanupCheck) {
-        def buildOp = operations.only("Clean up ${getBuildCacheName()} ($cacheDir)")
+    void assertCacheWasCleanedUpSince(long lastCleanupCheck, boolean exactlyOnce = true) {
+        def buildOperations = operations.matchingRegex(Pattern.quote("Clean up ${getBuildCacheName()} ($cacheDir)"))
+        if (exactlyOnce) {
+            assert buildOperations.size() == 1
+        } else {
+            assert buildOperations.size() > 1
+        }
+        def buildOp = buildOperations.last()
         buildOp.details.cacheLocation == cacheDir
         assert gcFile().lastModified() > lastCleanupCheck
     }

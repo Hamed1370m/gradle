@@ -17,9 +17,10 @@
 package org.gradle.integtests.resolve.caching
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.fixtures.ToBeFixedForConfigurationCache
+import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 
 class CachedMissingModulesIntegrationTest extends AbstractHttpDependencyResolutionTest {
 
@@ -32,8 +33,8 @@ class CachedMissingModulesIntegrationTest extends AbstractHttpDependencyResoluti
 
         buildFile << """
 repositories {
-    ivy { url "${repo1.uri}"}
-    ivy { url "${repo2.uri}"}
+    ivy { url = "${repo1.uri}"}
+    ivy { url = "${repo2.uri}"}
 }
 configurations { missing }
 dependencies {
@@ -69,8 +70,8 @@ task showMissing {
 
         buildFile << """
 repositories {
-    ivy { url "${repo1.uri}"}
-    ivy { url "${repo2.uri}"}
+    ivy { url = "${repo1.uri}"}
+    ivy { url = "${repo2.uri}"}
 }
 configurations {
     missing
@@ -79,7 +80,9 @@ configurations {
     }
 }
 dependencies {
-    missing group: 'group', name: 'projectA', version: '1.2', changing: true
+    missing("group:projectA:1.2") {
+        changing = true
+    }
 }
 task showMissing {
     def missing = configurations.missing
@@ -113,8 +116,8 @@ task showMissing {
 
         buildFile << """
 repositories {
-    ivy { url "${repo1.uri}"}
-    ivy { url "${repo2.uri}"}
+    ivy { url = "${repo1.uri}"}
+    ivy { url = "${repo2.uri}"}
 }
 configurations { missing }
 dependencies {
@@ -159,12 +162,12 @@ task showMissing {
         buildFile << """
             repositories {
                 maven {
-                    name 'repo1'
-                    url '${repo1.uri}'
+                    name = 'repo1'
+                    url = "${repo1.uri}"
                 }
                 maven {
-                    name 'repo2'
-                    url '${repo2.uri}'
+                    name = 'repo2'
+                    url = "${repo2.uri}"
                     metadataSources {
                         mavenPom()
                         artifact()
@@ -249,12 +252,12 @@ Required by:
         buildFile << """
             repositories {
                 maven {
-                    name 'repo1'
-                    url '${repo1.uri}'
+                    name = 'repo1'
+                    url = "${repo1.uri}"
                 }
                 maven {
-                    name 'repo2'
-                    url '${repo2.uri}'
+                    name = 'repo2'
+                    url = "${repo2.uri}"
                 }
             }
             configurations {
@@ -306,12 +309,12 @@ Required by:
         buildFile << """
             repositories {
                 maven {
-                    name 'repo1'
-                    url '${repo1.uri}'
+                    name = 'repo1'
+                    url = "${repo1.uri}"
                 }
                 maven {
-                    name 'repo2'
-                    url '${repo2.uri}'
+                    name = 'repo2'
+                    url = "${repo2.uri}"
                 }
             }
             configurations {
@@ -383,12 +386,12 @@ Required by:
         buildFile << """
     repositories {
         maven {
-            name 'repo1'
-            url '${repo1.uri}'
+            name = 'repo1'
+            url = "${repo1.uri}"
         }
         maven {
-            name 'repo2'
-            url '${repo2.uri}'
+            name = 'repo2'
+            url = "${repo2.uri}"
         }
     }
     configurations { compile }
@@ -448,7 +451,6 @@ Required by:
         run 'retrieve'
     }
 
-    @ToBeFixedForConfigurationCache(because = "HTTP server interactions are different when CC is enabled")
     def "cached missing module is ignored when no module for dynamic version is available in any repo"() {
         given:
         def repo1 = mavenHttpRepo("repo1")
@@ -459,12 +461,12 @@ Required by:
         buildFile << """
     repositories {
         maven {
-            name 'repo1'
-            url '${repo1.uri}'
+            name = 'repo1'
+            url = "${repo1.uri}"
         }
         maven {
-            name 'repo2'
-            url '${repo2.uri}'
+            name = 'repo2'
+            url = "${repo2.uri}"
         }
     }
     configurations { conf1; conf2 }
@@ -479,20 +481,23 @@ Required by:
     }
     task retrieve(type: Sync) {
         into 'libs'
-        from configurations.conf2
+        from configurations.conf2.files
     }
     """
 
         and:
+        repo1Module.rootMetaData.expectGet()
+        repo2Module.rootMetaData.expectGet()
         repo1Module.pom.expectGetMissing()
         repo2Module.pom.expectGetMissing()
         fails 'cache'
-        failure.assertHasCause("Could not find group:projectA:1.0.")
+        failure.assertHasCause("Could not resolve all files for configuration ':conf2'.")
+        failure.assertHasCause("Could not find any matches for group:projectA:1.+ as no versions of group:projectA are available.")
 
         when:
         server.resetExpectations()
-        repo1Module.rootMetaData.expectGet()
-        repo2Module.rootMetaData.expectGet()
+        repo1Module.rootMetaData.expectHead()
+        repo2Module.rootMetaData.expectHead()
         repo1Module.pom.expectGetMissing()
         repo2Module.pom.expectGetMissing()
 
@@ -536,15 +541,17 @@ Required by:
 
         when:
         server.resetExpectations()
-        // TODO - should not need to do this
-        repo1Module.pom.expectHeadMissing()
+        if (!GradleContextualExecuter.configCache) {
+            // We should not need to do this.  When vintage (non-CC) mode is deprecated and removed, this condition will no longer be necessary
+            repo1Module.pom.expectHeadMissing()
+        }
 
         then:
         run 'retrieve'
     }
 
-    @Requires(IntegTestPreconditions.NotParallelExecutor)
-    @ToBeFixedForConfigurationCache(because = "task uses Configuration API")
+    @Requires(TestExecutionPreconditions.NotParallelExecutor)
+    @ToBeFixedForIsolatedProjects(because = "Needs further investigation on IP incompatibility: https://github.com/gradle/gradle/issues/38006")
     def "hit each remote repo only once per build and missing module"() {
         given:
         def repo1 = mavenHttpRepo("repo1")
@@ -552,21 +559,22 @@ Required by:
         def repo2 = mavenHttpRepo("repo2")
         def repo2Module = repo2.module("group", "projectA", "1.0")
 
-        createDirs("subproject")
-        settingsFile << "include 'subproject'"
-        buildFile << """
-            allprojects{
+        settingsFile << """
+            include 'subproject'
+            dependencyResolutionManagement {
                 repositories {
                     maven {
-                        name 'repo1'
-                        url '${repo1.uri}'
+                        name = 'repo1'
+                        url = "${repo1.uri}"
                     }
                     maven {
-                        name 'repo2'
-                        url '${repo2.uri}'
+                        name = 'repo2'
+                        url = "${repo2.uri}"
                     }
                 }
             }
+        """
+        buildFile << """
             configurations {
                 config1
             }
@@ -575,29 +583,32 @@ Required by:
             }
 
             task resolveConfig1 {
+                def result = provider {
+                    configurations.config1.incoming.resolutionResult.allDependencies
+                }
                 doLast {
-                   configurations.config1.incoming.resolutionResult.allDependencies{
-                        assert it instanceof UnresolvedDependencyResult
-                   }
-               }
-            }
-
-            project(":subproject"){
-                configurations{
-                    config2
-                }
-                dependencies{
-                    config2 'group:projectA:1.0'
-                }
-                task resolveConfig2 {
-                    doLast {
-                        configurations.config2.incoming.resolutionResult.allDependencies{
-                            assert it instanceof UnresolvedDependencyResult
-                        }
-                    }
+                    assert result.get().every { it instanceof UnresolvedDependencyResult }
                 }
             }
         """
+
+        file("subproject/build.gradle") << """
+            configurations{
+                config2
+            }
+            dependencies{
+                config2 'group:projectA:1.0'
+            }
+            task resolveConfig2 {
+                def result = provider {
+                    configurations.config2.incoming.resolutionResult.allDependencies
+                }
+                doLast {
+                    assert result.get().every { it instanceof UnresolvedDependencyResult }
+                }
+            }
+        """
+
         when:
         repo1Module.pom.expectGetMissing()
         repo2Module.pom.expectGetMissing()
@@ -624,12 +635,12 @@ Required by:
         buildFile << """
         repositories {
            maven {
-               name 'repo1'
-               url '${repo1.uri}'
+               name = 'repo1'
+               url = "${repo1.uri}"
            }
            maven {
-               name 'repo2'
-               url '${repo2.uri}'
+               name = 'repo2'
+               url = "${repo2.uri}"
            }
        }
        configurations { compile }

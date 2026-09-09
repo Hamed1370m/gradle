@@ -18,37 +18,36 @@ package org.gradle.internal.component.model;
 
 import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableList;
-import org.gradle.api.artifacts.capability.CapabilitySelector;
 import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.internal.attributes.ImmutableAttributes;
 import org.gradle.api.internal.attributes.immutable.ImmutableAttributesSchema;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Information about a locally resolved dependency.
  */
 public class LocalComponentDependencyMetadata implements LocalOriginDependencyMetadata {
+
     private final ComponentSelector selector;
-    private final String dependencyConfiguration;
-    private final List<ExcludeMetadata> excludes;
-    private final List<IvyArtifactName> artifactNames;
+    private final @Nullable String dependencyConfiguration;
+    private final ImmutableList<ExcludeMetadata> excludes;
+    private final ImmutableList<IvyArtifactName> artifactNames;
     private final boolean force;
     private final boolean changing;
     private final boolean transitive;
     private final boolean constraint;
     private final boolean endorsing;
     private final boolean fromLock;
-    private final String reason;
+    private final @Nullable String reason;
 
     public LocalComponentDependencyMetadata(
         ComponentSelector selector,
         @Nullable String dependencyConfiguration,
-        List<IvyArtifactName> artifactNames,
-        List<ExcludeMetadata> excludes,
+        ImmutableList<IvyArtifactName> artifactNames,
+        ImmutableList<ExcludeMetadata> excludes,
         boolean force, boolean changing, boolean transitive, boolean constraint, boolean endorsing,
         @Nullable String reason
     ) {
@@ -58,15 +57,15 @@ public class LocalComponentDependencyMetadata implements LocalOriginDependencyMe
     public LocalComponentDependencyMetadata(
         ComponentSelector selector,
         @Nullable String dependencyConfiguration,
-        List<IvyArtifactName> artifactNames,
-        List<ExcludeMetadata> excludes,
+        ImmutableList<IvyArtifactName> artifactNames,
+        ImmutableList<ExcludeMetadata> excludes,
         boolean force, boolean changing, boolean transitive,
         boolean constraint, boolean endorsing, boolean fromLock,
         @Nullable String reason
     ) {
         this.selector = selector;
         this.dependencyConfiguration = dependencyConfiguration;
-        this.artifactNames = asImmutable(artifactNames);
+        this.artifactNames = artifactNames;
         this.excludes = excludes;
         this.force = force;
         this.changing = changing;
@@ -77,13 +76,9 @@ public class LocalComponentDependencyMetadata implements LocalOriginDependencyMe
         this.reason = reason;
     }
 
-    private static List<IvyArtifactName> asImmutable(List<IvyArtifactName> artifactNames) {
-        return artifactNames.isEmpty() ? Collections.emptyList() : artifactNames instanceof ImmutableList ? artifactNames : ImmutableList.copyOf(artifactNames);
-    }
-
     @Override
     public String toString() {
-        return "dependency: " + selector + " to-conf: " + dependencyConfiguration;
+        return selector.toString();
     }
 
     @Override
@@ -92,38 +87,28 @@ public class LocalComponentDependencyMetadata implements LocalOriginDependencyMe
     }
 
     @Override
-    public GraphVariantSelectionResult selectVariants(
+    public @Nullable List<? extends VariantGraphResolveState> overrideVariantSelection(
         GraphVariantSelector variantSelector,
         ImmutableAttributes consumerAttributes,
         ComponentGraphResolveState targetComponentState,
-        ImmutableAttributesSchema consumerSchema,
-        Set<CapabilitySelector> explicitRequestedCapabilities
+        ImmutableAttributesSchema consumerSchema
     ) {
-        // If a specific variant is requested by name, select it.
         if (dependencyConfiguration != null) {
-            VariantGraphResolveState selected = variantSelector.selectVariantByConfigurationName(dependencyConfiguration, consumerAttributes, targetComponentState, consumerSchema);
-            return new GraphVariantSelectionResult(Collections.singletonList(selected), false);
-        }
-
-        // Use attribute matching if it is supported.
-        if (!targetComponentState.getCandidatesForGraphVariantSelection().getVariantsForAttributeMatching().isEmpty()) {
-            VariantGraphResolveState selected = variantSelector.selectByAttributeMatching(
+            VariantGraphResolveState selected = variantSelector.selectVariantByConfigurationName(
+                dependencyConfiguration,
                 consumerAttributes,
-                explicitRequestedCapabilities,
                 targetComponentState,
-                consumerSchema,
-                getArtifacts()
+                consumerSchema
             );
-            return new GraphVariantSelectionResult(Collections.singletonList(selected), true);
+
+            return Collections.singletonList(selected);
         }
 
-        // Otherwise, select the legacy configuration.
-        VariantGraphResolveState selected = variantSelector.selectLegacyVariant(consumerAttributes, targetComponentState, consumerSchema, variantSelector.getFailureHandler());
-        return new GraphVariantSelectionResult(Collections.singletonList(selected), false);
+        return null;
     }
 
     @Override
-    public List<ExcludeMetadata> getExcludes() {
+    public ImmutableList<ExcludeMetadata> getExcludes() {
         return excludes;
     }
 
@@ -153,12 +138,12 @@ public class LocalComponentDependencyMetadata implements LocalOriginDependencyMe
     }
 
     @Override
-    public String getReason() {
+    public @Nullable String getReason() {
         return reason;
     }
 
     @Override
-    public List<IvyArtifactName> getArtifacts() {
+    public ImmutableList<IvyArtifactName> getArtifacts() {
         return artifactNames;
     }
 
@@ -171,7 +156,7 @@ public class LocalComponentDependencyMetadata implements LocalOriginDependencyMe
     }
 
     @Override
-    public LocalOriginDependencyMetadata withTargetAndArtifacts(ComponentSelector target, List<IvyArtifactName> artifacts) {
+    public LocalOriginDependencyMetadata withTargetAndArtifacts(ComponentSelector target, ImmutableList<IvyArtifactName> artifacts) {
         if (selector.equals(target) && artifacts.equals(getArtifacts())) {
             return this;
         }
@@ -203,7 +188,7 @@ public class LocalComponentDependencyMetadata implements LocalOriginDependencyMe
         return new LocalComponentDependencyMetadata(selector, dependencyConfiguration, artifactNames, excludes, force, changing, transitive, constraint, endorsing, fromLock, reason);
     }
 
-    private LocalOriginDependencyMetadata copyWithTargetAndArtifacts(ComponentSelector selector, List<IvyArtifactName> artifactNames) {
+    private LocalOriginDependencyMetadata copyWithTargetAndArtifacts(ComponentSelector selector, ImmutableList<IvyArtifactName> artifactNames) {
         return new LocalComponentDependencyMetadata(selector, dependencyConfiguration, artifactNames, excludes, force, changing, transitive, constraint, endorsing, fromLock, reason);
     }
 

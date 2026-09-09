@@ -18,11 +18,13 @@ package org.gradle.internal.cc.impl.isolated
 
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.test.fixtures.Flaky
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.server.http.BlockingHttpServer
 import org.gradle.tooling.model.GradleProject
 import org.junit.Rule
 
+@Flaky(because = "https://github.com/gradle/gradle-private/issues/5248")
 class IsolatedProjectsToolingApiParallelConfigurationIntegrationTest extends AbstractIsolatedProjectsToolingApiIntegrationTest {
     @Rule
     BlockingHttpServer server = new BlockingHttpServer()
@@ -66,7 +68,7 @@ class IsolatedProjectsToolingApiParallelConfigurationIntegrationTest extends Abs
         model[2].message == "It works from project :b"
 
         and:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             projectConfigured(":buildSrc")
             buildModelCreated()
             modelsCreated(":", ":a", ":b")
@@ -83,7 +85,7 @@ class IsolatedProjectsToolingApiParallelConfigurationIntegrationTest extends Abs
         model2[2].message == "It works from project :b"
 
         and:
-        fixture.assertStateLoaded()
+        fixture.assertModelLoaded()
 
         when:
         file("a/build.gradle") << """
@@ -107,7 +109,7 @@ class IsolatedProjectsToolingApiParallelConfigurationIntegrationTest extends Abs
         model3[2].message == "this is project b"
 
         and:
-        fixture.assertStateUpdated {
+        fixture.assertModelUpdated {
             fileChanged("a/build.gradle")
             fileChanged("b/build.gradle")
             projectConfigured(":buildSrc")
@@ -127,7 +129,7 @@ class IsolatedProjectsToolingApiParallelConfigurationIntegrationTest extends Abs
         model4[2].message == "this is project b"
 
         and:
-        fixture.assertStateLoaded()
+        fixture.assertModelLoaded()
     }
 
     def "projects are configured in parallel when projects use plugins from included build and project scoped model is queried concurrently"() {
@@ -164,7 +166,7 @@ class IsolatedProjectsToolingApiParallelConfigurationIntegrationTest extends Abs
         model[2].message == "It works from project :b"
 
         and:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             projectsConfigured(":plugins", ":", ":a", ":b")
             buildModelCreated()
             modelsCreated(":a", ":b")
@@ -272,7 +274,7 @@ class IsolatedProjectsToolingApiParallelConfigurationIntegrationTest extends Abs
         model[2].message == "It works from project :b"
 
         and:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             projectsConfigured(':plugin-0', ':plugin-1', ':plugin-2', ':plugins', ':', ':a', ':b')
             buildModelCreated()
             modelsCreated(':a', ':b')
@@ -302,7 +304,7 @@ class IsolatedProjectsToolingApiParallelConfigurationIntegrationTest extends Abs
         model.children.name == ["a", "b"]
 
         and:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             projectsConfigured(":", ":a", ":b")
             modelsCreated(":", 2)
             modelsCreated(":a", ":b")

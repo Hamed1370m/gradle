@@ -16,72 +16,60 @@
 
 package org.gradle.api.plugins.internal;
 
+import org.gradle.api.Project;
 import org.gradle.api.file.CopySpec;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.plugins.JavaApplication;
-import org.gradle.api.provider.Property;
-import org.gradle.api.provider.ProviderFactory;
-import org.gradle.internal.deprecation.DeprecationLogger;
 
-public class DefaultJavaApplication implements JavaApplication {
-    @SuppressWarnings("deprecation")
-    private final org.gradle.api.plugins.ApplicationPluginConvention convention;
-    private final Property<String> mainModule;
-    private final Property<String> mainClass;
+import java.util.ArrayList;
 
-    public DefaultJavaApplication(@SuppressWarnings("deprecation") org.gradle.api.plugins.ApplicationPluginConvention convention, ObjectFactory objectFactory, ProviderFactory providerFactory) {
-        this.convention = convention;
-        this.mainModule = objectFactory.property(String.class);
-        this.mainClass = objectFactory.property(String.class).convention(providerFactory.provider(() -> DeprecationLogger.whileDisabled(convention::getMainClassName)));
+public abstract class DefaultJavaApplication implements JavaApplication {
+    private String applicationName;
+    private Iterable<String> applicationDefaultJvmArgs = new ArrayList<String>();
+    private String executableDirectory = "bin";
+    private CopySpec applicationDistribution;
+
+    public DefaultJavaApplication(ObjectFactory objectFactory, Project project) {
+        this.applicationDistribution = project.copySpec();
     }
 
     @Override
     public String getApplicationName() {
-        return DeprecationLogger.whileDisabled(convention::getApplicationName);
+        return applicationName;
     }
 
     @Override
     public void setApplicationName(String applicationName) {
-        DeprecationLogger.whileDisabled(() -> convention.setApplicationName(applicationName));
-    }
-
-    @Override
-    public Property<String> getMainModule() {
-        return mainModule;
-    }
-
-    @Override
-    public Property<String> getMainClass() {
-        return mainClass;
+        this.applicationName = applicationName;
     }
 
     @Override
     public Iterable<String> getApplicationDefaultJvmArgs() {
-        return DeprecationLogger.whileDisabled(convention::getApplicationDefaultJvmArgs);
+        return applicationDefaultJvmArgs;
     }
 
     @Override
     public void setApplicationDefaultJvmArgs(Iterable<String> applicationDefaultJvmArgs) {
-        DeprecationLogger.whileDisabled(() -> convention.setApplicationDefaultJvmArgs(applicationDefaultJvmArgs));
+        this.applicationDefaultJvmArgs = applicationDefaultJvmArgs;
     }
 
     @Override
     public String getExecutableDir() {
-        return DeprecationLogger.whileDisabled(convention::getExecutableDir);
+        return executableDirectory;
     }
 
     @Override
     public void setExecutableDir(String executableDir) {
-        DeprecationLogger.whileDisabled(() -> convention.setExecutableDir(executableDir));
+        this.executableDirectory = executableDir;
     }
 
     @Override
     public CopySpec getApplicationDistribution() {
-        return DeprecationLogger.whileDisabled(convention::getApplicationDistribution);
+        return applicationDistribution;
     }
 
     @Override
     public void setApplicationDistribution(CopySpec applicationDistribution) {
-        DeprecationLogger.whileDisabled(() -> convention.setApplicationDistribution(applicationDistribution));
+        this.applicationDistribution = applicationDistribution;
     }
 }

@@ -16,15 +16,15 @@
 
 package org.gradle.performance.results.report;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.gradle.api.GradleException;
+import org.gradle.internal.UncheckedException;
 import org.gradle.performance.results.FileRenderer;
 import org.gradle.performance.results.NoResultsStore;
 import org.gradle.performance.results.PerformanceDatabase;
 import org.gradle.performance.results.PerformanceExperiment;
 import org.gradle.performance.results.PerformanceFlakinessDataProvider;
 import org.gradle.performance.results.PerformanceReportScenario;
-import org.gradle.performance.results.PerformanceTestExecutionResult;
 import org.gradle.performance.results.PerformanceTestHistory;
 import org.gradle.performance.results.ResultsStore;
 import org.gradle.performance.results.ResultsStoreHelper;
@@ -32,7 +32,6 @@ import org.gradle.util.internal.GFileUtils;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.net.URL;
@@ -47,7 +46,10 @@ import static org.gradle.performance.results.PerformanceFlakinessDataProvider.Em
 
 public abstract class AbstractReportGenerator<R extends ResultsStore> {
     public static Set<String> getDependencyPerformanceTestTeamCityBuildIds() {
-        return new HashSet<>(Arrays.asList(System.getProperty("org.gradle.performance.dependencyBuildIds", "").split(",")));
+        return Arrays.stream(System.getProperty("org.gradle.performance.dependencyBuildIds", "").split(","))
+            .map(String::trim)
+            .filter(id -> !id.isEmpty())
+            .collect(Collectors.toCollection(HashSet::new));
     }
 
     protected void generateReport(String... args) {
@@ -78,9 +80,9 @@ public abstract class AbstractReportGenerator<R extends ResultsStore> {
 
     protected void generateReport(ResultsStore store, PerformanceFlakinessDataProvider flakinessDataProvider, PerformanceExecutionDataProvider executionDataProvider, File outputDirectory, String projectName) throws IOException {
         renderIndexPage(flakinessDataProvider, executionDataProvider, new File(outputDirectory, "index.html"));
-        List<String> executedBuildIds = executionDataProvider.getReportScenarios().stream()
-            .flatMap(scenario -> scenario.getTeamCityExecutions().stream().map(PerformanceTestExecutionResult::getTeamCityBuildId))
-            .collect(Collectors.toList());
+        // The result JSONs no longer carry build IDs; use this pipeline's authoritative bucket build IDs so the
+        // per-scenario history graphs highlight the executions produced by this run.
+        List<String> executedBuildIds = new ArrayList<>(getDependencyPerformanceTestTeamCityBuildIds());
 
         executionDataProvider.getReportScenarios().stream()
             .map(PerformanceReportScenario::getPerformanceExperiment)
@@ -90,7 +92,7 @@ public abstract class AbstractReportGenerator<R extends ResultsStore> {
                 renderScenarioPage(projectName, outputDirectory, testResults);
             });
 
-        copyResource("jquery.min-3.5.1.js", outputDirectory);
+        copyResource("jquery.min-3.7.1.js", outputDirectory);
         copyResource("flot-0.8.1-min.js", outputDirectory);
         copyResource("flot.selection.min.js", outputDirectory);
         copyResource("style.css", outputDirectory);
@@ -174,7 +176,7 @@ public abstract class AbstractReportGenerator<R extends ResultsStore> {
             fileRenderer.render(testResults, testHtmlRenderer, new File(outputDirectory, "tests/" + testResults.getId() + ".html"));
             fileRenderer.render(testResults, testDataRenderer, new File(outputDirectory, "tests/" + testResults.getId() + ".json"));
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     }
 

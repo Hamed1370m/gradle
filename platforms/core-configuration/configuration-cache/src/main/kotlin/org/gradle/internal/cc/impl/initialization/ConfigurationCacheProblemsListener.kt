@@ -26,8 +26,9 @@ import org.gradle.api.internal.TaskInternal
 import org.gradle.api.internal.provider.ConfigurationTimeBarrier
 import org.gradle.api.internal.tasks.execution.TaskExecutionAccessListener
 import org.gradle.execution.ExecutionAccessListener
+import org.gradle.internal.buildtree.BuildModelParameters
 import org.gradle.internal.cc.impl.InputTrackingState
-import org.gradle.internal.cc.impl.Workarounds.canAccessConventions
+import org.gradle.internal.cc.impl.Workarounds.canAccessTaskExtensions
 import org.gradle.internal.cc.impl.isSupportedListener
 import org.gradle.internal.configuration.problems.DocumentationSection
 import org.gradle.internal.configuration.problems.DocumentationSection.RequirementsBuildListeners
@@ -37,6 +38,7 @@ import org.gradle.internal.configuration.problems.ProblemFactory
 import org.gradle.internal.configuration.problems.ProblemsListener
 import org.gradle.internal.configuration.problems.PropertyTrace
 import org.gradle.internal.configuration.problems.StructuredMessage
+import org.gradle.internal.deprecation.DeprecationLogger
 import org.gradle.internal.execution.WorkExecutionTracker
 import org.gradle.internal.service.scopes.ListenerService
 import org.gradle.internal.service.scopes.Scope
@@ -44,16 +46,17 @@ import org.gradle.internal.service.scopes.ServiceScope
 
 
 @ServiceScope(Scope.BuildTree::class)
+@ListenerService
 interface ConfigurationCacheProblemsListener : ExecutionAccessListener, TaskExecutionAccessListener, BuildScopeListenerRegistrationListener, ExternalProcessStartedListener
 
 
-@ListenerService
 class DefaultConfigurationCacheProblemsListener internal constructor(
     private val problems: ProblemsListener,
     private val problemFactory: ProblemFactory,
     private val configurationTimeBarrier: ConfigurationTimeBarrier,
     private val workExecutionTracker: WorkExecutionTracker,
-    private val inputTrackingState: InputTrackingState
+    private val inputTrackingState: InputTrackingState,
+    private val buildModelParameters: BuildModelParameters
 ) : ConfigurationCacheProblemsListener {
 
     override fun disallowedAtExecutionInjectedServiceAccessed(injectedServiceType: Class<*>, getterName: String, consumer: String) {
@@ -66,15 +69,15 @@ class DefaultConfigurationCacheProblemsListener internal constructor(
             .exception("Accessing non-serializable type '$injectedServiceType' during execution time is unsupported.")
             .documentationSection(DocumentationSection.RequirementsDisallowedTypes)
             .build()
-        problems.onProblem(problem)
+        problems.onExecutionTimeProblem(problem)
     }
 
     override fun onProjectAccess(invocationDescription: String, task: TaskInternal, runningTask: TaskInternal?) {
         onTaskExecutionAccessProblem(invocationDescription, task, runningTask)
     }
 
-    override fun onConventionAccess(invocationDescription: String, task: TaskInternal, runningTask: TaskInternal?) {
-        if (canAccessConventions(task.javaClass.name, invocationDescription)) {
+    override fun onTaskExtensionAccess(invocationDescription: String, task: TaskInternal, runningTask: TaskInternal?) {
+        if (canAccessTaskExtensions(task.javaClass.name, invocationDescription)) {
             return
         }
         onTaskExecutionAccessProblem(invocationDescription, task, runningTask)
@@ -96,6 +99,16 @@ class DefaultConfigurationCacheProblemsListener internal constructor(
             .documentationSection(RequirementsExternalProcess)
             .build()
         problems.onProblem(problem)
+
+        // The configuration cache (implied by Isolated Projects) already reports the problem above as an
+        // error. When it is off the process runs silently, so deprecate it here to warn ahead of time.
+        if (!buildModelParameters.isConfigurationCache) {
+            DeprecationLogger.deprecateAction("Starting an external process at configuration time")
+                .withAdvice("Use ProviderFactory.exec/javaexec or a ValueSource to obtain the process output, or move the process execution into a task.")
+                .willBecomeAnErrorInGradle11()
+                .withUpgradeGuideSection(9, "config_time_external_processes")
+                .nagUser()
+        }
     }
 
     private
@@ -107,25 +120,25 @@ class DefaultConfigurationCacheProblemsListener internal constructor(
         // the build to fail when it really shouldn't.
         val contextTask = runningTask ?: task
         val isExecutingOtherTask = contextTask != task
-        problemsListenerFor(contextTask).onProblem(
+        problemsListenerFor(contextTask).onExecutionTimeProblem(
             problemFactory.problem {
                 if (isExecutingOtherTask) {
                     text("execution of task ")
                     reference(contextTask.path)
                     text(" caused invocation of ")
                     reference(invocationDescription)
-                    text(" in other task at execution time which is unsupported.")
+                    text(" in other task at execution time which is unsupported with the configuration cache.")
                 } else {
                     text("invocation of ")
                     reference(invocationDescription)
-                    text(" at execution time is unsupported.")
+                    text(" at execution time is unsupported with the configuration cache.")
                 }
             }
                 .exception(
                     if (isExecutingOtherTask) {
-                        "Execution of $runningTask caused invocation of '$invocationDescription' by $task at execution time which is unsupported."
+                        "Execution of $runningTask caused invocation of '$invocationDescription' by $task at execution time which is unsupported with the configuration cache."
                     } else {
-                        "Invocation of '$invocationDescription' by $task at execution time is unsupported."
+                        "Invocation of '$invocationDescription' by $task at execution time is unsupported with the configuration cache."
                     }
                 )
                 .documentationSection(RequirementsUseProjectDuringExecution)
@@ -143,12 +156,15 @@ class DefaultConfigurationCacheProblemsListener internal constructor(
         }
 
     private
-    fun locationForTask(task: TaskInternal) = PropertyTrace.Task(GeneratedSubclasses.unpackType(task), task.identityPath.path)
+    fun locationForTask(task: TaskInternal) = PropertyTrace.Task(GeneratedSubclasses.unpackType(task), task.identityPath.asString())
 
     private
-    fun problemsListenerFor(task: TaskInternal): ProblemsListener = when {
-        task.isCompatibleWithConfigurationCache -> problems
-        else -> problems.forIncompatibleTask(locationForTask(task), task.reasonTaskIsIncompatibleWithConfigurationCache.get())
+    fun problemsListenerFor(task: TaskInternal): ProblemsListener {
+        val trace = locationForTask(task)
+        return when {
+            !task.isCompatibleWithConfigurationCache -> problems.forIncompatibleTask(trace, task.reasonTaskIsIncompatibleWithConfigurationCache.get())
+            else -> problems.forTask(task)
+        }
     }
 
     override fun onBuildScopeListenerRegistration(listener: Any, invocationDescription: String, invocationSource: Any) {
@@ -192,5 +208,5 @@ class DefaultConfigurationCacheProblemsListener internal constructor(
     fun isInputTrackingDisabled() = !inputTrackingState.isEnabledForCurrentThread()
 
     private
-    fun isExecutingWork() = workExecutionTracker.currentTask.isPresent || workExecutionTracker.isExecutingTransformAction
+    fun isExecutingWork() = workExecutionTracker.isExecutingTaskOrTransformAction
 }

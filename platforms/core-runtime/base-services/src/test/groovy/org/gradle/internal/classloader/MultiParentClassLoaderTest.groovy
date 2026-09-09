@@ -16,7 +16,8 @@
 package org.gradle.internal.classloader
 
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.UnitTestPreconditions
+import org.gradle.test.preconditions.JdkVersionTestPreconditions
+
 import spock.lang.Specification
 
 class MultiParentClassLoaderTest extends Specification {
@@ -55,7 +56,7 @@ class MultiParentClassLoaderTest extends Specification {
         e.message == 'string not found.'
     }
 
-    @Requires(UnitTestPreconditions.Jdk8OrEarlier)
+    @Requires(JdkVersionTestPreconditions.Jdk8OrEarlier)
     // todo: find a way to mock this in JDK 9+, where `getDefinedPackage` is final
     public void loadsPackageFromParentsInOrderSpecified() {
         def stringPackage = String.class.getPackage()
@@ -71,7 +72,7 @@ class MultiParentClassLoaderTest extends Specification {
         loader.getPackage('list') == listPackage
     }
 
-    @Requires(UnitTestPreconditions.Jdk8OrEarlier)
+    @Requires(JdkVersionTestPreconditions.Jdk8OrEarlier)
     // todo: find a way to mock this in JDK 9+, where `getDefinedPackages` is final
     public void containsUnionOfPackagesFromAllParents() {
         def package1 = Stub(Package)
@@ -151,5 +152,14 @@ class MultiParentClassLoaderTest extends Specification {
         expect:
         loader1 == loader1
         loader2 != loader1
+    }
+
+    def "has meaningful toString"() {
+        given:
+        _ * parent1.toString() >> { "parent1" }
+        _ * parent2.toString() >> { "parent2" }
+
+        expect:
+        loader.toString() == "MultiParentClassLoader(parent1, parent2)"
     }
 }

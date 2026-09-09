@@ -19,31 +19,33 @@ package org.gradle.api.tasks.wrapper.internal;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.ByteStreams;
 import org.gradle.api.GradleException;
-import org.gradle.api.NonNullApi;
-import org.gradle.api.UncheckedIOException;
+import org.gradle.api.internal.plugins.ExecutableJar;
 import org.gradle.api.internal.plugins.StartScriptGenerator;
 import org.gradle.api.tasks.wrapper.Wrapper;
 import org.gradle.api.tasks.wrapper.Wrapper.PathBase;
+import org.gradle.internal.UncheckedException;
 import org.gradle.internal.util.PropertiesUtils;
 import org.gradle.util.GradleVersion;
+import org.gradle.util.internal.DefaultGradleVersion;
 import org.gradle.util.internal.DistributionLocator;
 import org.gradle.util.internal.GFileUtils;
-import org.gradle.wrapper.GradleWrapperMain;
 import org.gradle.wrapper.WrapperExecutor;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Collections;
 import java.util.Locale;
 import java.util.Properties;
 
-import static java.util.Collections.singletonList;
-
-@NonNullApi
+@NullMarked
 public class WrapperGenerator {
 
     public static File getPropertiesFile(File jarFileDestination) {
@@ -68,9 +70,11 @@ public class WrapperGenerator {
         File unixScript, File batchScript,
         @Nullable String distributionUrl,
         boolean validateDistributionUrl,
-        @Nullable Integer networkTimeout
+        @Nullable Integer networkTimeout,
+        @Nullable Integer retries,
+        @Nullable Integer retryBackOffMs
     ) {
-        writeProperties(wrapperPropertiesOutputFile, distributionUrl, distributionSha256Sum, distributionBase, distributionPath, archiveBase, archivePath, networkTimeout, validateDistributionUrl);
+        writeProperties(wrapperPropertiesOutputFile, distributionUrl, distributionSha256Sum, distributionBase, distributionPath, archiveBase, archivePath, networkTimeout, validateDistributionUrl, retries, retryBackOffMs);
         writeWrapperJar(wrapperJarOutputFile);
         writeScripts(jarFileRelativePath, unixScript, batchScript);
     }
@@ -84,7 +88,9 @@ public class WrapperGenerator {
         PathBase archiveBase,
         String archivePath,
         @Nullable Integer networkTimeout,
-        boolean validateDistributionUrl
+        boolean validateDistributionUrl,
+        @Nullable Integer retries,
+        @Nullable Integer retryBackOffMs
     ) {
         Properties wrapperProperties = new Properties();
         wrapperProperties.put(WrapperExecutor.DISTRIBUTION_URL_PROPERTY, distributionUrl);
@@ -99,12 +105,17 @@ public class WrapperGenerator {
             wrapperProperties.put(WrapperExecutor.NETWORK_TIMEOUT_PROPERTY, String.valueOf(networkTimeout));
         }
         wrapperProperties.put(WrapperExecutor.VALIDATE_DISTRIBUTION_URL, String.valueOf(validateDistributionUrl));
-
+        if (retries != null) {
+            wrapperProperties.put(WrapperExecutor.RETRIES_PROPERTY, String.valueOf(retries));
+        }
+        if (retryBackOffMs != null) {
+            wrapperProperties.put(WrapperExecutor.RETRY_BACK_OFF_PROPERTY, String.valueOf(retryBackOffMs));
+        }
         GFileUtils.parentMkdirs(propertiesFileDestination);
         try {
             PropertiesUtils.store(wrapperProperties, propertiesFileDestination);
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     }
 
@@ -122,16 +133,47 @@ public class WrapperGenerator {
 
     private static void writeScripts(String jarFileRelativePath, File unixScript, File batchScript) {
         StartScriptGenerator generator = new StartScriptGenerator();
-        generator.setApplicationName("Gradle");
-        generator.setMainClassName(GradleWrapperMain.class.getName());
-        generator.setClasspath(singletonList(jarFileRelativePath));
+        generator.setApplicationName("gradlew");
+        generator.setGitRef(DefaultGradleVersion.current().getScriptTemplateGitRevision());
+        generator.setEntryPoint(new ExecutableJar(jarFileRelativePath));
+        generator.setClasspath(Collections.emptyList());
         generator.setOptsEnvironmentVar("GRADLE_OPTS");
-        generator.setExitEnvironmentVar("GRADLE_EXIT_CONSOLE");
         generator.setAppNameSystemProperty("org.gradle.appname");
         generator.setScriptRelPath(unixScript.getName());
         generator.setDefaultJvmOpts(ImmutableList.of("-Xmx64m", "-Xms64m"));
+
         generator.generateUnixScript(unixScript);
         generator.generateWindowsScript(batchScript);
+        insertSafetyNet(batchScript);
+    }
+
+    private static final String SAFETY_NET_ANCHOR = "setlocal EnableExtensions\r\n\r\n";
+    private static final String SAFETY_NET =
+        "@rem Catch executions from older scripts and ensure they exit cleanly.\r\n" +
+            "@rem This can be removed once we can be reasonably confident that few people\r\n" +
+            "@rem will be migrating directly to this new wrapper.\r\n" +
+            "goto afterSafetyNet\r\n" +
+            (":".repeat(78) + "\r\n").repeat(20) +
+            "goto exitWithErrorLevel\r\n" +
+            ":afterSafetyNet\r\n" +
+            "\r\n";
+
+    private static void insertSafetyNet(File batchScript) {
+        try {
+            String script = new String(Files.readAllBytes(batchScript.toPath()), StandardCharsets.ISO_8859_1);
+            int anchorIndex = script.indexOf(SAFETY_NET_ANCHOR);
+            if (anchorIndex < 0 || script.indexOf(SAFETY_NET_ANCHOR, anchorIndex + 1) >= 0) {
+                throw new GradleException(
+                    "Cannot insert the overwrite safety net into " + batchScript
+                        + ": expected exactly one occurrence of " + SAFETY_NET_ANCHOR.trim()
+                );
+            }
+            int insertionPoint = anchorIndex + SAFETY_NET_ANCHOR.length();
+            String protectedScript = script.substring(0, insertionPoint) + SAFETY_NET + script.substring(insertionPoint);
+            Files.write(batchScript.toPath(), protectedScript.getBytes(StandardCharsets.ISO_8859_1));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to insert the overwrite safety net into " + batchScript, e);
+        }
     }
 
 }

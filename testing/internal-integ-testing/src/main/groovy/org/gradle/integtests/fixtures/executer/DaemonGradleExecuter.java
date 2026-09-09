@@ -65,4 +65,10 @@ public class DaemonGradleExecuter extends NoDaemonGradleExecuter {
             invocation.environmentVars.put(NativeServices.NATIVE_DIR_OVERRIDE, buildContext.getNativeServicesDir().getAbsolutePath());
         }
     }
+
+    @Override
+    public GradleExecuter reset() {
+        super.reset();
+        return this;
+    }
 }

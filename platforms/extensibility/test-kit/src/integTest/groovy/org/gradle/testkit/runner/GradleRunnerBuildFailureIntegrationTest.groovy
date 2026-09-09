@@ -26,6 +26,7 @@ import org.gradle.util.GradleVersion
 import static org.gradle.testkit.runner.TaskOutcome.FAILED
 import static org.gradle.testkit.runner.TaskOutcome.SUCCESS
 import static org.gradle.util.internal.TextUtil.normaliseLineSeparators
+import static org.hamcrest.CoreMatchers.startsWith
 
 @SuppressWarnings('IntegrationTestFixtures')
 class GradleRunnerBuildFailureIntegrationTest extends BaseGradleRunnerIntegrationTest {
@@ -103,7 +104,7 @@ Output:
 $t.buildResult.output"""
 
         def buildOutput = OutputScrapingExecutionResult.from(t.buildResult.output, "")
-        buildOutput.assertTasksExecuted(":helloWorld")
+        buildOutput.assertTasksScheduled(":helloWorld")
         buildOutput.groupedOutput.task(":helloWorld").output == "Hello world!"
 
         normaliseLineSeparators(t.message).startsWith(normaliseLineSeparators(expectedMessage))
@@ -163,8 +164,8 @@ Output:
 $t.buildResult.output"""
 
         def failure = OutputScrapingExecutionFailure.from(t.buildResult.output, "")
-        failure.assertTasksExecuted(':helloWorld')
-        failure.assertHasDescription("Execution failed for task ':helloWorld'.")
+        failure.assertTasksScheduled(':helloWorld')
+        failure.assertThatDescription(startsWith("Execution failed for task ':helloWorld'"))
         failure.assertHasCause('Unexpected exception')
 
         normaliseLineSeparators(t.message).startsWith(normaliseLineSeparators(expectedMessage))

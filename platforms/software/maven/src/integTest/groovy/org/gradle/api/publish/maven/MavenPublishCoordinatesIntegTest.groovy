@@ -18,6 +18,7 @@ package org.gradle.api.publish.maven
 
 
 import org.gradle.integtests.fixtures.publish.maven.AbstractMavenPublishIntegTest
+import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
 
 class MavenPublishCoordinatesIntegTest extends AbstractMavenPublishIntegTest {
 
@@ -39,14 +40,14 @@ class MavenPublishCoordinatesIntegTest extends AbstractMavenPublishIntegTest {
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 publications {
                     maven(MavenPublication) {
                         from components.java
-                        groupId 'org.custom'
-                        artifactId 'custom'
-                        version '2.2'
+                        groupId = 'org.custom'
+                        artifactId = 'custom'
+                        version = '2.2'
                     }
                 }
             }
@@ -96,19 +97,19 @@ class MavenPublishCoordinatesIntegTest extends AbstractMavenPublishIntegTest {
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 publications {
                     impl(MavenPublication) {
-                        groupId "org.custom"
-                        artifactId "custom"
-                        version "2.2"
+                        groupId = "org.custom"
+                        artifactId = "custom"
+                        version = "2.2"
                         from components.java
                     }
                     api(MavenPublication) {
-                        groupId "org.custom"
-                        artifactId "custom-api"
-                        version "2"
+                        groupId = "org.custom"
+                        artifactId = "custom-api"
+                        version = "2"
                         artifact(apiJar)
                     }
                 }
@@ -160,7 +161,7 @@ class MavenPublishCoordinatesIntegTest extends AbstractMavenPublishIntegTest {
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 publications {
                     main(MavenPublication) {
@@ -195,6 +196,7 @@ class MavenPublishCoordinatesIntegTest extends AbstractMavenPublishIntegTest {
         outputContains("Multiple publications with coordinates 'org.example:duplicate-publications:1.0' are published to repository 'mavenLocal'. The publications 'main' in root project 'duplicate-publications' and 'other' in root project 'duplicate-publications' will overwrite each other!")
     }
 
+    @ToBeFixedForIsolatedProjects(because = "publishing plugin accesses subproject state at config time")
     def "warns when publications in different projects share the same coordinates"() {
         given:
         createDirs("projectA", "projectB")
@@ -212,12 +214,12 @@ include 'projectB'
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 publications {
                     main(MavenPublication) {
                         from components.java
-                        artifactId "duplicate"
+                        artifactId = "duplicate"
                     }
                 }
             }
@@ -243,8 +245,8 @@ include 'projectB'
 
             publishing {
                 repositories {
-                    maven { url "${mavenRepo.uri}" }
-                    maven { url "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
+                    maven { url = "${mavenRepo.uri}" }
                 }
                 publications {
                     main(MavenPublication) {

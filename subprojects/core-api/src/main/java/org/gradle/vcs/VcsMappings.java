@@ -17,6 +17,8 @@
 package org.gradle.vcs;
 
 import org.gradle.api.Action;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 
 /**
  * Allows VCS mapping rules to be specified for a build. A VCS mapping rule is responsible for calculating the VCS information for a particular dependency.
@@ -41,8 +43,9 @@ import org.gradle.api.Action;
  * }
  * </pre>
  *
- * @since 4.4
+ * @since 4.3
  */
+@ServiceScope(Scope.Settings.class)
 public interface VcsMappings {
     /**
      * Adds a mapping rule that may define VCS information for any dependency. The supplied action is executed for all components.
@@ -55,6 +58,7 @@ public interface VcsMappings {
      * Adds a mapping rule that may define VCS information for the given module. The supplied action is executed when the given module is required.
      *
      * @param module The module to apply the rule to, in the form "group:module".
+     * @since 4.3
      */
     VcsMappings withModule(String module, Action<? super VcsMapping> rule);
 }

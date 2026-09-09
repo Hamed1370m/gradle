@@ -74,6 +74,23 @@ class FailurePrinterTest extends Specification {
         actual.contains("Cause 2: java.lang.RuntimeException: two")
     }
 
+    def "printNodeToString prints only the node header and its own frames"() {
+        def cause = SimulatedJavaException.simulateDeeperException()
+        def e = new RuntimeException("BOOM", cause)
+        def f = toFailure(e)
+
+        when:
+        def node = FailurePrinter.printNodeToString(f)
+
+        then:
+        node.contains("java.lang.RuntimeException: BOOM")
+        node.contains("\tat " + e.stackTrace[0].toString())
+
+        and:
+        !node.contains("Caused by:")
+        !node.contains(cause.stackTrace[0].toString())
+    }
+
     def "notifies the listener"() {
         def e = new RuntimeException("BOOM")
         def firstFrame = e.stackTrace[0]
@@ -100,7 +117,7 @@ class FailurePrinterTest extends Specification {
         def relevances = Collections.nCopies(stack.size(), USER_CODE)
         def causes = getCauses(t).collect { toFailure(it) }
         def suppressed = t.getSuppressed().collect { toFailure(it) }
-        new DefaultFailure(t, stack, relevances, suppressed, causes)
+        new DefaultFailure(t, stack, relevances, suppressed, causes, Collections.emptyList())
     }
 
     private static List<Throwable> getCauses(Throwable t) {

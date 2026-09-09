@@ -28,12 +28,13 @@ import org.gradle.test.fixtures.concurrent.ConcurrentSpec
 import java.beans.Introspector
 import java.util.concurrent.CopyOnWriteArraySet
 
+@SuppressWarnings("deprecation")
 class DefaultModelSchemaStoreTest extends ConcurrentSpec {
     def extractor = DefaultModelSchemaExtractor.withDefaultStrategies()
     def store = new DefaultModelSchemaStore(extractor)
 
     def "caches schema for a type"() {
-        // intentionally use two different “instances” of the same type
+        // intentionally use two different "instances" of the same type
         def type1 = ModelType.of(SimpleManagedType)
         def type2 = ModelType.of(SimpleManagedType)
 

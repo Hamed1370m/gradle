@@ -16,37 +16,76 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.results;
 
-import org.gradle.api.artifacts.ResolveException;
 import org.gradle.api.artifacts.UnresolvedDependency;
-import org.gradle.api.internal.artifacts.result.MinimalResolutionResult;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.GraphStructure;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.ResolvedDependencyGraph;
+import org.gradle.api.internal.artifacts.result.ResolvedGraphResult;
+import org.gradle.api.internal.attributes.ImmutableAttributes;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
-import java.util.Optional;
+import java.lang.ref.SoftReference;
 import java.util.Set;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Default implementation of {@link VisitedGraphResults}.
  */
 public class DefaultVisitedGraphResults implements VisitedGraphResults {
 
-    private final MinimalResolutionResult resolutionResult;
+    private final ImmutableAttributes requestAttributes;
+    private final Supplier<GraphStructure> graphStructureSource;
     private final Set<UnresolvedDependency> unresolvedDependencies;
-    private final ResolveException resolutionFailure;
+
+    /**
+     * ResolvedGraphResult is a wrapper over the underlying GraphStructure and provides
+     * no additional context. Only hold a soft reference to it to avoid retained memory
+     * if no other references to the wrapper graph exist.
+     */
+    private final Lock lock = new ReentrantLock();
+    private @Nullable SoftReference<ResolvedGraphResult> resolvedGraphResult = null;
+    private final Supplier<ResolvedGraphResult> resolvedGraphResultSource;
 
     public DefaultVisitedGraphResults(
-        MinimalResolutionResult resolutionResult,
-        Set<UnresolvedDependency> unresolvedDependencies,
-        @Nullable ResolveException resolutionFailure
+        ResolvedDependencyGraph resolvedDependencyGraph,
+        Set<UnresolvedDependency> unresolvedDependencies
     ) {
-        this.resolutionResult = resolutionResult;
+        this.requestAttributes = resolvedDependencyGraph.requestAttributes();
+        this.graphStructureSource = resolvedDependencyGraph.graphSource();
         this.unresolvedDependencies = unresolvedDependencies;
-        this.resolutionFailure = resolutionFailure;
+
+        this.resolvedGraphResultSource = () -> {
+            lock.lock();
+            try {
+                if (resolvedGraphResult != null) {
+                    ResolvedGraphResult value = resolvedGraphResult.get();
+                    if (value != null) {
+                        return value;
+                    }
+                }
+
+                ResolvedGraphResult value = new ResolvedGraphResult(
+                    graphStructureSource.get(),
+                    resolvedDependencyGraph.availableVariantsByComponent()
+                );
+                this.resolvedGraphResult = new SoftReference<>(value);
+                return value;
+            } finally {
+                lock.unlock();
+            }
+        };
+    }
+
+    @Override
+    public ImmutableAttributes getRequestedAttributes() {
+        return requestAttributes;
     }
 
     @Override
     public boolean hasAnyFailure() {
-        return !unresolvedDependencies.isEmpty() || resolutionFailure != null;
+        return !unresolvedDependencies.isEmpty();
     }
 
     @Override
@@ -54,14 +93,6 @@ public class DefaultVisitedGraphResults implements VisitedGraphResults {
         for (UnresolvedDependency unresolvedDependency : unresolvedDependencies) {
             visitor.accept(unresolvedDependency.getProblem());
         }
-        if (resolutionFailure != null) {
-            visitor.accept(resolutionFailure);
-        }
-    }
-
-    @Override
-    public MinimalResolutionResult getResolutionResult() {
-        return resolutionResult;
     }
 
     @Override
@@ -70,7 +101,13 @@ public class DefaultVisitedGraphResults implements VisitedGraphResults {
     }
 
     @Override
-    public Optional<ResolveException> getResolutionFailure() {
-        return Optional.ofNullable(resolutionFailure);
+    public Supplier<GraphStructure> getGraphStructureSource() {
+        return graphStructureSource;
     }
+
+    @Override
+    public Supplier<ResolvedGraphResult> getResolvedGraphResultSource() {
+        return resolvedGraphResultSource;
+    }
+
 }

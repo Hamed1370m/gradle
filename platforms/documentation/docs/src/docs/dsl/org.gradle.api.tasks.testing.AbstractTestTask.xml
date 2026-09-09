@@ -33,6 +33,10 @@
                 <td/>
             </tr>
             <tr>
+                <td>failOnNoDiscoveredTests</td>
+                <td/>
+            </tr>
+            <tr>
                 <td>reports</td>
                 <td/>
             </tr>
@@ -51,6 +55,9 @@
             </tr>
             <tr>
                 <td>removeTestListener</td>
+            </tr>
+            <tr>
+                <td>addTestMetadataListener</td>
             </tr>
             <tr>
                 <td>addTestOutputListener</td>

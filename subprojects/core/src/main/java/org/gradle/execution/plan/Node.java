@@ -19,17 +19,17 @@ package org.gradle.execution.plan;
 import com.google.common.annotations.VisibleForTesting;
 import org.gradle.api.Action;
 import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.api.internal.tasks.NodeExecutionContext;
 import org.gradle.api.tasks.VerificationException;
 import org.gradle.execution.plan.edges.DependencyNodesSet;
 import org.gradle.execution.plan.edges.DependentNodesSet;
 import org.gradle.internal.resources.ResourceLock;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import javax.annotation.OverridingMethodsMustInvokeSuper;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
-import java.util.SortedSet;
 import java.util.function.Consumer;
 
 /**
@@ -70,7 +70,8 @@ public abstract class Node {
     private int index;
     private DependencyNodesSet dependencyNodes = DependencyNodesSet.EMPTY;
     private DependentNodesSet dependentNodes = DependentNodesSet.EMPTY;
-    private final MutationInfo mutationInfo = new MutationInfo();
+    private MutationInfo mutationInfo = MutationInfo.EMPTY;
+    private final ConsumerState consumerState = new ConsumerState();
     private NodeGroup group = NodeGroup.DEFAULT_GROUP;
 
     @VisibleForTesting
@@ -282,6 +283,8 @@ public abstract class Node {
     @Nullable
     public abstract Throwable getNodeFailure();
 
+    public abstract void execute(NodeExecutionContext context);
+
     public void startExecution(Consumer<Node> nodeStartAction) {
         assert state == ExecutionState.SHOULD_RUN && allDependenciesComplete() && allDependenciesSuccessful();
         state = ExecutionState.EXECUTING;
@@ -372,7 +375,7 @@ public abstract class Node {
         return this.executionFailure;
     }
 
-    public SortedSet<Node> getDependencyPredecessors() {
+    public Set<Node> getDependencyPredecessors() {
         return dependentNodes.getDependencyPredecessors();
     }
 
@@ -387,7 +390,7 @@ public abstract class Node {
 
     void addDependencyPredecessor(Node fromNode) {
         dependentNodes = dependentNodes.addDependencyPredecessors(fromNode);
-        mutationInfo.addConsumer(fromNode);
+        consumerState.addConsumer(fromNode);
     }
 
     void addMustPredecessor(TaskNode fromNode) {
@@ -498,8 +501,7 @@ public abstract class Node {
         }
     }
 
-    @Nullable
-    protected Node.ExecutionState getInitialState() {
+    protected Node.@Nullable ExecutionState getInitialState() {
         return null;
     }
 
@@ -547,7 +549,7 @@ public abstract class Node {
         dependencyNodes.getDependencySuccessors().forEach(visitor);
     }
 
-    public SortedSet<Node> getFinalizers() {
+    public Set<Node> getFinalizers() {
         return dependentNodes.getFinalizers();
     }
 
@@ -589,8 +591,16 @@ public abstract class Node {
     public void visitPostExecutionNodes(Consumer<? super Node> visitor) {
     }
 
+    public void mutationsResolved(MutationInfo mutationInfo) {
+        this.mutationInfo = mutationInfo;
+    }
+
     public MutationInfo getMutationInfo() {
         return mutationInfo;
+    }
+
+    public ConsumerState getConsumerState() {
+        return consumerState;
     }
 
     public boolean isPublicNode() {

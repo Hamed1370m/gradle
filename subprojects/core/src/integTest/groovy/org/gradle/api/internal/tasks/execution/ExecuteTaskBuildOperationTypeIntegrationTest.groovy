@@ -19,7 +19,7 @@ package org.gradle.api.internal.tasks.execution
 import org.gradle.api.DefaultTask
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.BuildOperationsFixture
-import org.gradle.integtests.fixtures.UnsupportedWithConfigurationCache
+import org.gradle.integtests.fixtures.modes.UnsupportedWithConfigurationCache
 
 class ExecuteTaskBuildOperationTypeIntegrationTest extends AbstractIntegrationSpec {
 
@@ -65,7 +65,7 @@ class ExecuteTaskBuildOperationTypeIntegrationTest extends AbstractIntegrationSp
         }
 
         op.result.upToDateMessages == ["Task has not declared any outputs despite executing actions."]
-        op.failure == "org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':t'."
+        op.failure == "org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':t' (registered in build file 'build.gradle')."
     }
 
     @UnsupportedWithConfigurationCache
@@ -88,7 +88,7 @@ class ExecuteTaskBuildOperationTypeIntegrationTest extends AbstractIntegrationSp
         }
 
         op.result == null
-        op.failure == "org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':t'."
+        op.failure == "org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':t' (registered in build file 'build.gradle')."
     }
 
     @UnsupportedWithConfigurationCache
@@ -111,7 +111,7 @@ class ExecuteTaskBuildOperationTypeIntegrationTest extends AbstractIntegrationSp
         }
 
         op.result != null
-        op.failure == "org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':t'."
+        op.failure == "org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':t' (registered in build file 'build.gradle')."
     }
 
     @UnsupportedWithConfigurationCache
@@ -136,7 +136,7 @@ class ExecuteTaskBuildOperationTypeIntegrationTest extends AbstractIntegrationSp
         }
 
         op.result != null
-        op.failure == "org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':t'."
+        op.failure == "org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':t' (registered in build file 'build.gradle')."
     }
 
 }

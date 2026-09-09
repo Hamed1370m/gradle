@@ -17,16 +17,13 @@
 package org.gradle.composite.internal;
 
 import org.gradle.BuildResult;
-import org.gradle.api.artifacts.component.BuildIdentifier;
 import org.gradle.api.internal.BuildDefinition;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.StartParameterInternal;
-import org.gradle.api.internal.artifacts.DefaultBuildIdentifier;
+import org.gradle.api.internal.tasks.TaskDependencyFactory;
 import org.gradle.deployment.internal.DefaultDeploymentRegistry;
 import org.gradle.initialization.IncludedBuildSpec;
 import org.gradle.initialization.RootBuildLifecycleListener;
-import org.gradle.initialization.exception.ExceptionAnalyser;
-import org.gradle.initialization.layout.BuildLayout;
 import org.gradle.internal.InternalBuildAdapter;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.build.BuildLifecycleController;
@@ -36,7 +33,7 @@ import org.gradle.internal.buildtree.BuildOperationFiringBuildTreeWorkExecutor;
 import org.gradle.internal.buildtree.BuildTreeFinishExecutor;
 import org.gradle.internal.buildtree.BuildTreeLifecycleController;
 import org.gradle.internal.buildtree.BuildTreeLifecycleControllerFactory;
-import org.gradle.internal.buildtree.BuildTreeState;
+import org.gradle.internal.buildtree.BuildTreeServices;
 import org.gradle.internal.buildtree.BuildTreeWorkExecutor;
 import org.gradle.internal.buildtree.DefaultBuildTreeFinishExecutor;
 import org.gradle.internal.buildtree.DefaultBuildTreeWorkExecutor;
@@ -44,11 +41,11 @@ import org.gradle.internal.composite.IncludedBuildInternal;
 import org.gradle.internal.composite.IncludedRootBuild;
 import org.gradle.internal.concurrent.CompositeStoppable;
 import org.gradle.internal.event.ListenerManager;
+import org.gradle.internal.exception.ExceptionAnalyser;
 import org.gradle.internal.operations.BuildOperationRunner;
 import org.gradle.internal.service.CloseableServiceRegistry;
 import org.gradle.util.Path;
 
-import java.io.File;
 import java.util.function.Function;
 
 class DefaultRootBuildState extends AbstractCompositeParticipantBuildState implements RootBuildState {
@@ -58,10 +55,10 @@ class DefaultRootBuildState extends AbstractCompositeParticipantBuildState imple
 
     DefaultRootBuildState(
         BuildDefinition buildDefinition,
-        BuildTreeState buildTree,
+        BuildTreeServices buildTreeServices,
         ListenerManager listenerManager
     ) {
-        super(buildTree, buildDefinition, null);
+        super(buildTreeServices, buildDefinition, Path.ROOT, null);
         this.listenerManager = listenerManager;
 
         CloseableServiceRegistry buildScopeServices = getBuildServices();
@@ -82,16 +79,6 @@ class DefaultRootBuildState extends AbstractCompositeParticipantBuildState imple
     }
 
     @Override
-    public BuildIdentifier getBuildIdentifier() {
-        return DefaultBuildIdentifier.ROOT;
-    }
-
-    @Override
-    public Path getIdentityPath() {
-        return Path.ROOT;
-    }
-
-    @Override
     public boolean isImplicitBuild() {
         return false;
     }
@@ -101,13 +88,9 @@ class DefaultRootBuildState extends AbstractCompositeParticipantBuildState imple
     }
 
     @Override
-    public File getBuildRootDir() {
-        return getBuildController().getGradle().getServices().get(BuildLayout.class).getRootDirectory();
-    }
-
-    @Override
     public IncludedBuildInternal getModel() {
-        return new IncludedRootBuild(this);
+        TaskDependencyFactory taskDependencyFactory = getBuildServices().get(TaskDependencyFactory.class);
+        return new IncludedRootBuild(this, taskDependencyFactory);
     }
 
     @Override
@@ -118,6 +101,7 @@ class DefaultRootBuildState extends AbstractCompositeParticipantBuildState imple
         try {
             RootBuildLifecycleListener buildLifecycleListener = listenerManager.getBroadcaster(RootBuildLifecycleListener.class);
             buildLifecycleListener.afterStart();
+            Throwable failure = null;
             try {
                 GradleInternal gradle = getBuildController().getGradle();
                 DefaultDeploymentRegistry deploymentRegistry = gradle.getServices().get(DefaultDeploymentRegistry.class);
@@ -128,8 +112,11 @@ class DefaultRootBuildState extends AbstractCompositeParticipantBuildState imple
                     }
                 });
                 return action.apply(buildTreeLifecycleController);
+            } catch (RuntimeException | Error e) {
+                failure = e;
+                throw e;
             } finally {
-                buildLifecycleListener.beforeComplete();
+                buildLifecycleListener.beforeComplete(failure);
             }
         } finally {
             completed = true;
@@ -139,11 +126,6 @@ class DefaultRootBuildState extends AbstractCompositeParticipantBuildState imple
     @Override
     public StartParameterInternal getStartParameter() {
         return getBuildController().getGradle().getStartParameter();
-    }
-
-    @Override
-    public Path calculateIdentityPathForProject(Path path) {
-        return path;
     }
 
     @Override

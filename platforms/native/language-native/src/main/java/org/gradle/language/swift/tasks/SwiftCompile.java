@@ -74,23 +74,13 @@ import java.util.Set;
  *
  * @since 4.1
  */
+@SuppressWarnings("this-escape")
 @CacheableTask
 public abstract class SwiftCompile extends DefaultTask {
-    private final Property<String> moduleName;
-    private final RegularFileProperty moduleFile;
-    private final ConfigurableFileCollection modules;
-    private final ListProperty<String> compilerArgs;
-    private final DirectoryProperty objectFileDir;
-    private final ConfigurableFileCollection source;
-    private final Property<SwiftVersion> sourceCompatibility;
-    private final ListProperty<String> macros;
-    private final Property<Boolean> debuggable;
-    private final Property<Boolean> optimize;
-    private final Property<NativePlatform> targetPlatform;
-    private final Property<NativeToolChain> toolChain;
-
     private final CompilerOutputFileNamingSchemeFactory compilerOutputFileNamingSchemeFactory;
     private final Deleter deleter;
+    private final Property<Boolean> debuggable;
+    private final Property<Boolean> optimize;
 
     @Inject
     public SwiftCompile(
@@ -99,20 +89,11 @@ public abstract class SwiftCompile extends DefaultTask {
     ) {
         this.compilerOutputFileNamingSchemeFactory = compilerOutputFileNamingSchemeFactory;
         this.deleter = deleter;
-
         ObjectFactory objectFactory = getProject().getObjects();
-        this.moduleName = objectFactory.property(String.class);
-        this.moduleFile = objectFactory.fileProperty();
-        this.modules = getProject().files();
-        this.compilerArgs = objectFactory.listProperty(String.class);
-        this.objectFileDir = objectFactory.directoryProperty();
-        this.source = getProject().files();
-        this.sourceCompatibility = objectFactory.property(SwiftVersion.class);
-        this.macros = objectFactory.listProperty(String.class);
+        // TODO: There is something wrong in the ASM class generator that does not allow us to create
+        // this as a managed property as long as we have isDebuggable.
         this.debuggable = objectFactory.property(Boolean.class).value(false);
         this.optimize = objectFactory.property(Boolean.class).value(false);
-        this.targetPlatform = objectFactory.property(NativePlatform.class);
-        this.toolChain = objectFactory.property(NativeToolChain.class);
     }
 
     /**
@@ -121,9 +102,7 @@ public abstract class SwiftCompile extends DefaultTask {
      * @since 4.7
      */
     @Internal
-    public Property<NativeToolChain> getToolChain() {
-        return toolChain;
-    }
+    public abstract Property<NativeToolChain> getToolChain();
 
     /**
      * The platform being compiled for.
@@ -131,9 +110,7 @@ public abstract class SwiftCompile extends DefaultTask {
      * @since 4.7
      */
     @Nested
-    public Property<NativePlatform> getTargetPlatform() {
-        return targetPlatform;
-    }
+    public abstract Property<NativePlatform> getTargetPlatform();
 
     /**
      * Returns the source files to be compiled.
@@ -144,9 +121,7 @@ public abstract class SwiftCompile extends DefaultTask {
     @SkipWhenEmpty
     @IgnoreEmptyDirectories
     @PathSensitive(PathSensitivity.RELATIVE)
-    public ConfigurableFileCollection getSource() {
-        return source;
-    }
+    public abstract ConfigurableFileCollection getSource();
 
     /**
      * Macros that should be defined for the compiler.
@@ -156,18 +131,16 @@ public abstract class SwiftCompile extends DefaultTask {
      * @since 4.7
      */
     @Input
-    public ListProperty<String> getMacros() {
-        return macros;
-    }
+    public abstract ListProperty<String> getMacros();
 
     /**
      * Should the compiler generate debuggable code?
      *
-     * @since 4.7
+     * @since 4.4
      */
     @Internal
     public boolean isDebuggable() {
-        return debuggable.get();
+        return getDebuggable().get();
     }
 
     /**
@@ -183,11 +156,11 @@ public abstract class SwiftCompile extends DefaultTask {
     /**
      * Should the compiler generate debuggable code?
      *
-     * @since 4.7
+     * @since 4.4
      */
     @Internal
     public boolean isOptimized() {
-        return optimize.get();
+        return getOptimized().get();
     }
 
     /**
@@ -198,7 +171,7 @@ public abstract class SwiftCompile extends DefaultTask {
     @Input
     public Property<Boolean> getOptimized() {
         return optimize;
-    }
+}
 
     /**
      * <em>Additional</em> arguments to provide to the compiler.
@@ -206,9 +179,7 @@ public abstract class SwiftCompile extends DefaultTask {
      * @since 4.4
      */
     @Input
-    public ListProperty<String> getCompilerArgs() {
-        return compilerArgs;
-    }
+    public abstract ListProperty<String> getCompilerArgs();
 
     /**
      * The directory where object files will be generated.
@@ -216,9 +187,7 @@ public abstract class SwiftCompile extends DefaultTask {
      * @since 4.4
      */
     @OutputDirectory
-    public DirectoryProperty getObjectFileDir() {
-        return objectFileDir;
-    }
+    public abstract DirectoryProperty getObjectFileDir();
 
     /**
      * The location to write the Swift module file to.
@@ -226,18 +195,15 @@ public abstract class SwiftCompile extends DefaultTask {
      * @since 4.4
      */
     @OutputFile
-    public RegularFileProperty getModuleFile() {
-        return moduleFile;
-    }
+    public abstract RegularFileProperty getModuleFile();
 
     /**
      * The name of the module to produce.
+     * @since 4.1
      */
     @Optional
     @Input
-    public Property<String> getModuleName() {
-        return moduleName;
-    }
+    public abstract Property<String> getModuleName();
 
     /**
      * The modules required to compile the source.
@@ -246,9 +212,7 @@ public abstract class SwiftCompile extends DefaultTask {
      */
     @InputFiles
     @PathSensitive(PathSensitivity.NAME_ONLY)
-    public ConfigurableFileCollection getModules() {
-        return modules;
-    }
+    public abstract ConfigurableFileCollection getModules();
 
     /**
      * Returns the Swift language level to use to compile the source files.
@@ -256,9 +220,7 @@ public abstract class SwiftCompile extends DefaultTask {
      * @since 4.6
      */
     @Input
-    public Property<SwiftVersion> getSourceCompatibility() {
-        return sourceCompatibility;
-    }
+    public abstract Property<SwiftVersion> getSourceCompatibility();
 
     /**
      * The compiler used, including the type and the version.
@@ -271,12 +233,17 @@ public abstract class SwiftCompile extends DefaultTask {
     }
 
     private Compiler<SwiftCompileSpec> createCompiler() {
-        NativePlatformInternal targetPlatform = Cast.cast(NativePlatformInternal.class, this.targetPlatform.get());
+        NativePlatformInternal targetPlatform = Cast.cast(NativePlatformInternal.class, this.getTargetPlatform().get());
         NativeToolChainInternal toolChain = Cast.cast(NativeToolChainInternal.class, getToolChain().get());
         PlatformToolProvider toolProvider = toolChain.select(targetPlatform);
         return toolProvider.newCompiler(SwiftCompileSpec.class);
     }
 
+    /**
+     * Compile.
+     *
+     * @since 6.0
+     */
     @TaskAction
     protected void compile(InputChanges inputs) {
         final List<File> removedFiles = new ArrayList<>();
@@ -299,7 +266,7 @@ public abstract class SwiftCompile extends DefaultTask {
 
         BuildOperationLogger operationLogger = getServices().get(BuildOperationLoggerFactory.class).newOperationLogger(getName(), getTemporaryDir());
 
-        NativePlatformInternal targetPlatform = Cast.cast(NativePlatformInternal.class, this.targetPlatform.get());
+        NativePlatformInternal targetPlatform = Cast.cast(NativePlatformInternal.class, this.getTargetPlatform().get());
         SwiftCompileSpec spec = createSpec(operationLogger, isIncremental, changedFiles, removedFiles, targetPlatform);
         Compiler<SwiftCompileSpec> baseCompiler = new IncrementalSwiftCompiler(
             createCompiler(),
@@ -314,9 +281,9 @@ public abstract class SwiftCompile extends DefaultTask {
 
     private SwiftCompileSpec createSpec(BuildOperationLogger operationLogger, boolean isIncremental, Collection<File> changedFiles, Collection<File> removedFiles, NativePlatformInternal targetPlatform) {
         SwiftCompileSpec spec = new DefaultSwiftCompileSpec();
-        spec.setModuleName(moduleName.getOrNull());
-        spec.setModuleFile(moduleFile.get().getAsFile());
-        for (File file : modules.getFiles()) {
+        spec.setModuleName(getModuleName().getOrNull());
+        spec.setModuleFile(getModuleFile().get().getAsFile());
+        for (File file : getModules().getFiles()) {
             if (file.isFile()) {
                 spec.include(file.getParentFile());
             } else {
@@ -326,7 +293,7 @@ public abstract class SwiftCompile extends DefaultTask {
 
         spec.setTargetPlatform(targetPlatform);
         spec.setTempDir(getTemporaryDir());
-        spec.setObjectFileDir(objectFileDir.get().getAsFile());
+        spec.setObjectFileDir(getObjectFileDir().get().getAsFile());
         spec.source(getSource());
         spec.setRemovedSourceFiles(removedFiles);
         spec.setChangedFiles(changedFiles);
@@ -342,7 +309,7 @@ public abstract class SwiftCompile extends DefaultTask {
         spec.setOptimized(getOptimized().get());
         spec.setIncrementalCompile(isIncremental);
         spec.setOperationLogger(operationLogger);
-        spec.setSourceCompatibility(sourceCompatibility.get());
+        spec.setSourceCompatibility(getSourceCompatibility().get());
         return spec;
     }
 }

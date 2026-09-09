@@ -36,11 +36,7 @@ import org.gradle.api.artifacts.dsl.DependencyLockingHandler
 import org.gradle.api.artifacts.dsl.RepositoryHandler
 import org.gradle.api.artifacts.query.ArtifactResolutionQuery
 import org.gradle.api.artifacts.repositories.ArtifactRepository
-import org.gradle.api.artifacts.result.ArtifactResolutionResult
-import org.gradle.api.artifacts.result.ArtifactResult
-import org.gradle.api.artifacts.result.ComponentArtifactsResult
 import org.gradle.api.artifacts.result.ResolutionResult
-import org.gradle.api.artifacts.result.UnresolvedComponentResult
 import org.gradle.api.artifacts.type.ArtifactTypeContainer
 import org.gradle.api.attributes.AttributeMatchingStrategy
 import org.gradle.api.attributes.AttributesSchema
@@ -75,6 +71,14 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.Executor
 import java.util.concurrent.ThreadFactory
+import java.util.concurrent.locks.Lock
+import java.util.concurrent.locks.ReadWriteLock
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Phaser
+import java.util.concurrent.Semaphore
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.Exchanger
 
 
 fun BindingsBuilder.unsupportedTypes() {
@@ -88,6 +92,14 @@ fun BindingsBuilder.unsupportedTypes() {
     bind(unsupported<RandomAccessFile>())
     bind(unsupported<Socket>())
     bind(unsupported<ServerSocket>())
+    bind(unsupported<Lock>())
+    bind(unsupported<ReadWriteLock>())
+    bind(unsupported<CountDownLatch>())
+    bind(unsupported<CyclicBarrier>())
+    bind(unsupported<Phaser>())
+    bind(unsupported<Semaphore>())
+    bind(unsupported<Exchanger<*>>())
+    bind(unsupported<SynchronousQueue<*>>())
 
     // Gradle Scripts
     bind(unsupported<GradleScript>(" Gradle script object references"))
@@ -108,7 +120,6 @@ fun BindingsBuilder.unsupportedTypes() {
     bind(unsupported<ResolvedConfiguration>())
     bind(unsupported<LenientConfiguration>())
     bind(unsupported<ResolvableDependencies>())
-    bind(unsupported<ResolutionResult>())
     bind(unsupported<DependencyConstraintSet>())
     bind(unsupported<RepositoryHandler>())
     bind(unsupported<ArtifactRepository>())
@@ -128,10 +139,6 @@ fun BindingsBuilder.unsupportedTypes() {
     bind(unsupported<ResolvedDependency>())
     bind(unsupported<ResolvedArtifact>())
     bind(unsupported<ArtifactView>())
-    bind(unsupported<ArtifactResolutionResult>())
-    bind(unsupported<ComponentArtifactsResult>())
-    bind(unsupported<UnresolvedComponentResult>())
-    bind(unsupported<ArtifactResult>())
 
     // Publishing types
     bind(unsupported<Publication>())

@@ -29,6 +29,7 @@ import java.util.Arrays;
  * here: https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format
  */
 public class SymbolHider {
+    @SuppressWarnings("ExposedPrivateType")
     DataReader data;
     private byte[] objectBytes;
 
@@ -67,6 +68,7 @@ public class SymbolHider {
         }
     }
 
+    @SuppressWarnings("unused") // members are used for dummy reads, might come in handy for debugging
     private static class COFFHeader {
         public int machine;
         public int numberOfSections;
@@ -87,6 +89,7 @@ public class SymbolHider {
         }
     }
 
+    @SuppressWarnings("unused") // members are used for dummy reads, might come in handy for debugging
     private static class SymbolRecord {
         private int storageClass;
         private byte[] name;

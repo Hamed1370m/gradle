@@ -22,15 +22,22 @@ import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import spock.lang.Issue
 
 class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
-    private ResolveTestFixture resolve
 
     def setup() {
         settingsFile << 'rootProject.name = "test"'
         buildFile << """
-            configurations { conf }
-            repositories {
-                maven { url "${mavenRepo.uri}" }
+            plugins {
+                id("jvm-ecosystem")
             }
+
+            configurations {
+                conf
+            }
+
+            repositories {
+                maven { url = "${mavenRepo.uri}" }
+            }
+
             task resolvedFiles {
                 dependsOn 'dependencies'
                 def files = configurations.conf
@@ -40,8 +47,6 @@ class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
                 }
             }
         """
-        resolve = new ResolveTestFixture(buildFile)
-        resolve.addDefaultVariantDerivationStrategy()
     }
 
     //publishes and declares the dependencies
@@ -417,6 +422,12 @@ class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
     }
 
     def "can provide custom replacement reason"() {
+        ResolveTestFixture resolve = new ResolveTestFixture(testDirectory)
+
+        buildFile << """
+            ${resolve.configureProject("conf")}
+        """
+
         declaredDependencies 'a', 'b'
         if (custom) {
             declaredReplacementWithReason('a->b', 'A replaced with B')
@@ -438,11 +449,9 @@ class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
 org:a:1 -> org:b:1""")
 
         when:
-        resolve.prepare("conf")
         run "checkDeps"
 
         then:
-        resolve.expectDefaultConfiguration("runtime")
         resolve.expectGraph {
             root(":", ":test:") {
                 edge("org:a:1", "org:b:1") {
@@ -456,6 +465,54 @@ org:a:1 -> org:b:1""")
         custom | expected
         false  | "org:a replaced with org:b"
         true   | "A replaced with B"
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/38049")
+    def "does not fail when module replacement causes constraints to be removed from a pending module"() {
+        def lifecycleCommonJvm = mavenRepo.module("androidx.lifecycle", "lifecycle-common-jvm", "2.10.0")
+            .dependencyConstraint(mavenRepo.module("androidx.lifecycle", "lifecycle-livedata", "2.10.0").publish())
+            .dependencyConstraint(mavenRepo.module("androidx.lifecycle", "lifecycle-livedata-core", "2.10.0").publish())
+            .withModuleMetadata()
+            .publish()
+
+        def lifecycleCoreKtx = mavenRepo.module("androidx.lifecycle", "lifecycle-livedata-core-ktx", "2.6.1").publish()
+
+        def livedataCore262 = mavenRepo.module("androidx.lifecycle", "lifecycle-livedata-core", "2.6.2").publish()
+
+        def livedata262 = mavenRepo.module("androidx.lifecycle", "lifecycle-livedata", "2.6.2")
+            .dependsOn(lifecycleCommonJvm)
+            .dependsOn(lifecycleCoreKtx)
+            .dependsOn(livedataCore262)
+            .dependencyConstraint(livedataCore262)
+            .withModuleMetadata()
+            .publish()
+        ResolveTestFixture resolve = new ResolveTestFixture(testDirectory)
+
+        buildFile << """
+            dependencies {
+                modules {
+                    module("androidx.lifecycle:lifecycle-livedata-core-ktx") {
+                        replacedBy("androidx.lifecycle:lifecycle-livedata-core", "reason")
+                    }
+                }
+
+                conf(${livedata262})
+            }
+
+            ${resolve.configureProject("conf")}
+        """
+
+        when:
+        succeeds("checkDeps")
+
+        then:
+        resolve.expectGraph {
+            root(":", ":test:") {
+                edge("androidx.lifecycle:lifecycle-livedata:2.6.2", "androidx.lifecycle:lifecycle-livedata:2.10.0") {
+                    byConflictResolution("between versions 2.10.0 and 2.6.2")
+                }
+            }
+        }
     }
 
 }

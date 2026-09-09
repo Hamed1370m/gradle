@@ -15,12 +15,13 @@
  */
 package org.gradle.integtests.fixtures
 
-import org.apache.commons.lang.StringEscapeUtils
-import org.eclipse.jgit.api.Git
-import org.eclipse.jgit.lib.Config
+import org.apache.commons.lang3.StringEscapeUtils
 import org.gradle.api.Action
 import org.gradle.api.internal.DocumentationRegistry
+import org.gradle.api.problems.Severity
 import org.gradle.api.problems.internal.DefaultProblemProgressDetails
+import org.gradle.api.problems.internal.DefaultProblemsSummaryProgressDetails
+import org.gradle.api.problems.internal.ProblemSummaryData
 import org.gradle.integtests.fixtures.build.BuildTestFile
 import org.gradle.integtests.fixtures.build.BuildTestFixture
 import org.gradle.integtests.fixtures.configurationcache.ConfigurationCacheBuildOperationsFixture
@@ -47,7 +48,6 @@ import org.gradle.test.fixtures.maven.M2Installation
 import org.gradle.test.fixtures.maven.MavenFileRepository
 import org.gradle.test.fixtures.maven.MavenLocalRepository
 import org.gradle.util.Matchers
-import org.gradle.util.internal.VersionNumber
 import org.hamcrest.Matcher
 import org.intellij.lang.annotations.Language
 import org.junit.Rule
@@ -55,10 +55,12 @@ import org.opentest4j.AssertionFailedError
 import spock.lang.Specification
 
 import java.nio.file.Files
+import java.util.function.Predicate
 import java.util.regex.Pattern
 
 import static org.gradle.integtests.fixtures.timeout.IntegrationTestTimeout.DEFAULT_TIMEOUT_SECONDS
 import static org.gradle.test.fixtures.dsl.GradleDsl.GROOVY
+import static org.gradle.test.fixtures.dsl.GradleDsl.KOTLIN
 import static org.gradle.util.Matchers.matchesRegexp
 
 /**
@@ -69,7 +71,7 @@ import static org.gradle.util.Matchers.matchesRegexp
 @CleanupTestDirectory
 @SuppressWarnings("IntegrationTestFixtures")
 @IntegrationTestTimeout(DEFAULT_TIMEOUT_SECONDS)
-abstract class AbstractIntegrationSpec extends Specification implements LanguageSpecificTestFileFixture {
+abstract class AbstractIntegrationSpec extends Specification implements CommonTestFilesFixture, LanguageSpecificTestFileFixture, HasGradleExecutor {
 
     @Rule
     public final TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider(getClass())
@@ -82,16 +84,25 @@ abstract class AbstractIntegrationSpec extends Specification implements Language
     boolean ignoreCleanupAssertions
 
     private boolean enableProblemsApiCheck = false
-    private BuildOperationsFixture buildOperationsFixture = null
+    protected BuildOperationsFixture buildOperationsFixture = null
 
     GradleExecuter getExecuter() {
         if (executor == null) {
             executor = createExecuter()
-            if (ignoreCleanupAssertions) {
-                executor.ignoreCleanupAssertions()
-            }
         }
         return executor
+    }
+
+    /**
+     * Applies configuration that needs to be applied
+     * every time an executer runs.
+     *
+     * May be overwritten. In most cases, the overrides should ensure to invoke the base implementation.
+     */
+    protected void setupExecuter() {
+        if (ignoreCleanupAssertions) {
+            executor.ignoreCleanupAssertions()
+        }
     }
 
     BuildTestFixture buildTestFixture = new BuildTestFixture(temporaryFolder)
@@ -109,9 +120,6 @@ abstract class AbstractIntegrationSpec extends Specification implements Language
 
     protected int maxHttpRetries = 1
     protected Integer maxUploadAttempts
-
-    @Lazy
-    private isAtLeastGroovy4 = VersionNumber.parse(GroovySystem.version).major >= 4
 
     def setup() {
         // Verify that the previous test (or fixtures) has cleaned up state correctly
@@ -174,28 +182,9 @@ abstract class AbstractIntegrationSpec extends Specification implements Language
         new GradleContextualExecuter(distribution, temporaryFolder, getBuildContext())
     }
 
-    /**
-     * Some integration tests need to run git commands in test directory,
-     * but distributed-test-remote-executor has no .git directory so we init a "dummy .git dir".
-     */
-    void initGitDir() {
-        Git.init().setDirectory(testDirectory).call().withCloseable { Git git ->
-            // Clear config hierarchy to avoid global configuration loaded from user home
-            for (Config config = git.repository.config; config != null; config = config.getBaseConfig()) {
-                //noinspection GroovyAccessibility
-                config.clear()
-            }
-            testDirectory.file('initial-commit').createNewFile()
-            git.add().addFilepattern("initial-commit").call()
-            git.commit().setMessage("Initial commit").call()
-        }
-    }
-
-    /**
-     * Want syntax highlighting inside of IntelliJ? Consider using {@link AbstractIntegrationSpec#buildFile(String)}
-     */
-    TestFile getBuildFile() {
-        testDirectory.file(getDefaultBuildFileName())
+    @Override
+    TestFile getUserActionRootDir() {
+        testDirectory
     }
 
     String getTestJunitCoordinates() {
@@ -203,48 +192,31 @@ abstract class AbstractIntegrationSpec extends Specification implements Language
     }
 
     TestFile getBuildKotlinFile() {
-        testDirectory.file(defaultBuildKotlinFileName)
+        getBuildFile(KOTLIN)
     }
 
-    protected String getDefaultBuildFileName() {
-        'build.gradle'
+    TestFile buildKotlinFile(@Language(value = "kotlin") String script) {
+        buildKotlinFile << script
     }
 
-    protected String getDefaultBuildKotlinFileName() {
-        'build.gradle.kts'
+    TestFile getBuildFile(GradleDsl dsl, Object... path) {
+        testDirectory.file(*path, dsl.fileNameFor("build"))
     }
-
-    protected TestFile getSettingsFile() {
-        testDirectory.file(settingsFileName)
-    }
-
-    protected TestFile getInitScriptFile() {
-        testDirectory.file(initScriptFileName)
-    }
-
 
     protected TestFile getSettingsKotlinFile() {
-        testDirectory.file(settingsKotlinFileName)
+        getSettingsFile(KOTLIN)
     }
 
-    protected TestFile getPropertiesFile() {
-        testDirectory.file('gradle.properties')
+    TestFile settingsKotlinFile(@Language(value = "kotlin") String script) {
+        settingsKotlinFile << script
     }
 
-    protected TestFile getVersionCatalogFile() {
-        testDirectory.file('gradle/libs.versions.toml')
+    protected TestFile getSettingsFile(GradleDsl dsl) {
+        testDirectory.file(dsl.fileNameFor("settings"))
     }
 
-    protected static String getSettingsFileName() {
-        return 'settings.gradle'
-    }
-
-    protected static String getSettingsKotlinFileName() {
-        return 'settings.gradle.kts'
-    }
-
-    protected static String getInitScriptFileName() {
-        return 'init.gradle'
+    private static String getSettingsFileName(GradleDsl dsl) {
+        return dsl.fileNameFor("settings")
     }
 
     def singleProjectBuild(String projectName, @DelegatesTo(value = BuildTestFile, strategy = Closure.DELEGATE_FIRST) Closure cl = {}) {
@@ -402,11 +374,11 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
         }
         def currentDirectory = testDirectory
         for (; ;) {
-            def settingsFile = currentDirectory.file(settingsFileName)
+            def settingsFile = currentDirectory.file(getSettingsFileName(GROOVY))
             if (settingsFile.exists()) {
                 return settingsFile
             }
-            settingsFile = currentDirectory.file(settingsKotlinFileName)
+            settingsFile = currentDirectory.file(getSettingsFileName(KOTLIN))
             if (settingsFile.exists()) {
                 return settingsFile
             }
@@ -443,6 +415,7 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
     }
 
     protected ExecutionResult succeeds(String... tasks) {
+        setupExecuter()
         resetProblemApiCheck()
 
         result = executer.withTasks(*tasks).run()
@@ -491,6 +464,7 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
     }
 
     protected ExecutionFailure fails(List<String> tasks) {
+        setupExecuter()
         resetProblemApiCheck()
 
         failure = executer.withTasks(tasks).runWithFailure()
@@ -505,7 +479,7 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
     protected void executedAndNotSkipped(String... tasks) {
         assertHasResult()
         tasks.each {
-            result.assertTaskNotSkipped(it)
+            result.assertTaskExecuted(it)
         }
     }
 
@@ -516,7 +490,7 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
 
     protected void allSkipped() {
         assertHasResult()
-        result.assertTasksNotSkipped()
+        result.assertAllTasksSkipped()
     }
 
     protected void skipped(String... tasks) {
@@ -529,14 +503,14 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
     protected void notExecuted(String... tasks) {
         assertHasResult()
         tasks.each {
-            result.assertTaskNotExecuted(it)
+            result.assertTasksNotScheduled(it)
         }
     }
 
     protected void executed(String... tasks) {
         assertHasResult()
         tasks.each {
-            result.assertTaskExecuted(it)
+            result.assertTaskScheduled(it)
         }
     }
 
@@ -678,15 +652,6 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
     }
 
     /**
-     * Replaces the given text in the build script with new value, asserting that the change was actually applied (ie the text was present).
-     */
-    void editBuildFile(String oldText, String newText) {
-        def newContent = buildFile.text.replace(oldText, newText)
-        assert newContent != buildFile.text
-        buildFile.text = newContent
-    }
-
-    /**
      * Creates a JAR that is unique to the test. The uniqueness is achieved via a properties file with a value containing the path to the test itself.
      */
     def createJarWithProperties(String path, Map<String, ?> properties = [source: 1]) {
@@ -730,7 +695,7 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
     }
 
     /**
-     * Called by {@link ToBeFixedSpecInterceptor} when a test fails as expected so no further checks are applied.
+     * Called by {@link org.gradle.integtests.fixtures.modes.GradleModeTestingExtension} when a test fails as expected so no further checks are applied.
      */
     void ignoreCleanupAssertions() {
         this.ignoreCleanupAssertions = true
@@ -745,6 +710,10 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
     void resetExecuter() {
         this.ignoreCleanupAssertions = false
         recreateExecuter()
+    }
+
+    BuildOperationsFixture newBuildOperationsFixture() {
+        new BuildOperationsFixture(executer, temporaryFolder)
     }
 
     def resetProblemApiCheck() {
@@ -775,19 +744,38 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
         if (!enableProblemsApiCheck) {
             throw new IllegalStateException('Problems API check is not enabled')
         }
-        return buildOperationsFixture.all().collectMany { operation ->
+        return buildOperationsFixture.getRecords().collectMany { operation ->
             operation.progress(DefaultProblemProgressDetails.class).collect {
                 def problemDetails = it.details.get("problem") as Map<String, Object>
                 return new ReceivedProblem(operation.id, problemDetails)
-            }.findAll {
-                // Filter out all java version deprecation problems
-                // TODO: The problems API infrastructure should be built-into the executor.
-                // However, since it isn't we do not know if the test has disabled the filtering of
-                // these deprecation logs from the normal deprecation checks.
-                // So, just ignore them all the time, even if the test has requested to not ignore these warnings.
-                it.fqid != 'deprecation:executing-gradle-on-jvm-versions-and-lower'
-            }
+            }.findAll { isRealProblem(it) }
         }
+    }
+
+    static boolean isRealProblem(ReceivedProblem problem) {
+        // Filter out all java version deprecation problems
+        // TODO: The problems API infrastructure should be built-into the executor.
+        // However, since it isn't we do not know if the test has disabled the filtering of
+        // these deprecation logs from the normal deprecation checks.
+        // So, just ignore them all the time, even if the test has requested to not ignore these warnings.
+        if (problem.fqid == 'deprecation:executing-gradle-on-jvm-versions-and-lower') {
+            return false
+        }
+        // Filter out Kotlin DSL JDK incompatibility warnings that don't matter in practice
+        // These occur when we try to run Gradle on newer JDKs when KGP hasn't updated their target compatibility.
+        if (problem.fqid == 'KOTLIN:KGP:MISCONFIGURATION:InconsistentTargetCompatibilityForKotlinAndJavaTasks'
+            && problem.severity == Severity.WARNING) {
+            return false
+        }
+        return true
+    }
+
+    List<List<ProblemSummaryData>> getProblemSummaries() {
+        if (!enableProblemsApiCheck) {
+            throw new IllegalStateException('Problems API check is not enabled')
+        }
+
+        return buildOperationsFixture.progress(DefaultProblemsSummaryProgressDetails).collect { it.details.get("problemIdCounts") }
     }
 
     static void printCollectedProblems(ReceivedProblem problem, int index) {
@@ -823,7 +811,7 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
 
     private List<ReceivedProblem> receivedProblems
 
-    private List<ReceivedProblem> getReceivedProblems() {
+    protected List<ReceivedProblem> getReceivedProblems() {
         if (receivedProblems == null) {
             receivedProblems = getCollectedProblems()
             // sometimes we receive problems in a non-deterministic order. To make the tests stable we sort them before performing the assertions.
@@ -869,6 +857,19 @@ tmpdir is currently ${System.getProperty("java.io.tmpdir")}""")
         assert result != null: "Problem already validated"
         problems.set(index, null)
         return result
+    }
+
+    /**
+     * Returns the first received problem that matches the given criteria and marks it as validated.
+     * The validation should only verify the contextual attributes of the received problem, as the problem definition is checked at the end of each test (see {@see KnownProblemIds}).
+     * Fails if no problem matches the condition.
+     *
+     * @see #receivedProblem(int)
+     */
+    protected ReceivedProblem findReceivedProblem(Predicate<ReceivedProblem> criteria) {
+        def index = getReceivedProblems().findIndexOf { it && criteria.test(it) }
+        assert index >= 0: "No received problem matches the given criteria"
+        return receivedProblem(index)
     }
 
     /**

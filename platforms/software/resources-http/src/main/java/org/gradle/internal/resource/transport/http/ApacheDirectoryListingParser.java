@@ -16,12 +16,9 @@
 
 package org.gradle.internal.resource.transport.http;
 
-import com.google.common.base.Charsets;
+import org.apache.commons.io.IOUtils;
 import org.gradle.api.resources.ResourceException;
 import org.gradle.internal.resource.UriTextResource;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,25 +28,23 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 public class ApacheDirectoryListingParser {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ApacheDirectoryListingParser.class);
+
+    private final HtmlAnchorHrefScanner anchorScanner = new HtmlAnchorHrefScanner();
 
     public List<String> parse(URI baseURI, InputStream content, String contentType) throws Exception {
         baseURI = addTrailingSlashes(baseURI);
         if (contentType == null || !contentType.startsWith("text/html")) {
             throw new ResourceException(baseURI, String.format("Unsupported ContentType %s for directory listing '%s'", contentType, baseURI));
         }
-        Charset contentEncoding = UriTextResource.extractCharacterEncoding(contentType, Charsets.UTF_8);
-        Document document = Jsoup.parse(content, contentEncoding.name(), baseURI.toString());
-        Elements elements = document.select("a[href]");
-        List<String> hrefs = elements.stream()
-            .map(it -> it.attr("href"))
-            .collect(Collectors.toList());
+        Charset contentEncoding = UriTextResource.extractCharacterEncoding(contentType, StandardCharsets.UTF_8);
+        List<String> hrefs = anchorScanner.scan(IOUtils.toString(content, contentEncoding));
         List<URI> uris = resolveURIs(baseURI, hrefs);
         return filterNonDirectChilds(baseURI, uris);
     }

@@ -21,10 +21,7 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
     def "invalidates cached state when plugin in buildSrc changes"() {
         given:
         withSomeToolingModelBuilderPluginInBuildSrc()
-        settingsFile << """
-            include("a")
-            include("b")
-        """
+        includeProjects("a", "b")
         buildFile << """
             plugins.apply(my.MyPlugin)
         """
@@ -42,7 +39,7 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
         model[1].message == "It works from project :a"
 
         and:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             projectConfigured(":buildSrc")
             projectConfigured(":b")
             buildModelCreated()
@@ -59,7 +56,7 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
         model2[1].message == "It works from project :a"
 
         and:
-        fixture.assertStateLoaded()
+        fixture.assertModelLoaded()
 
         when:
         file("buildSrc/src/main/groovy/Thing.java") << """
@@ -76,7 +73,7 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
         model3[1].message == "It works from project :a"
 
         and:
-        fixture.assertStateRecreated {
+        fixture.assertModelRecreated {
             taskInputChanged(":buildSrc:compileGroovy")
             projectConfigured(":buildSrc")
             projectConfigured(":b")
@@ -90,9 +87,8 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
         withSomeToolingModelBuilderPluginInChildBuild("plugins")
         settingsFile << """
             includeBuild("plugins")
-            include("a")
-            include("b")
         """
+        includeProjects("a", "b")
         buildFile << """
             plugins {
                 id("my.plugin")
@@ -114,7 +110,7 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
         model[1].message == "It works from project :a"
 
         and:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             projectConfigured(":plugins")
             projectConfigured(":b")
             buildModelCreated()
@@ -131,7 +127,7 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
         model2[1].message == "It works from project :a"
 
         and:
-        fixture.assertStateLoaded()
+        fixture.assertModelLoaded()
 
         when:
         file("plugins/src/main/groovy/Thing.java") << """
@@ -148,7 +144,7 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
         model3[1].message == "It works from project :a"
 
         and:
-        fixture.assertStateRecreated {
+        fixture.assertModelRecreated {
             taskInputChanged(":plugins:compileGroovy")
             projectConfigured(":plugins")
             projectConfigured(":b")
@@ -164,6 +160,7 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
             includeBuild("plugins")
             includeBuild("libs")
         """
+        createProjectSubDirs("libs/a", "libs/b")
         file("libs/settings.gradle") << """
             include("a")
             include("b")
@@ -189,7 +186,7 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
         model[1].message == "It works from project :libs:a"
 
         and:
-        fixture.assertStateStored {
+        fixture.assertModelStored {
             projectConfigured(":plugins")
             projectsConfigured(":", ":libs:b")
             buildModelCreated()
@@ -206,7 +203,7 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
         model2[1].message == "It works from project :libs:a"
 
         and:
-        fixture.assertStateLoaded()
+        fixture.assertModelLoaded()
 
         when:
         file("libs/build.gradle") << """
@@ -222,7 +219,7 @@ class IsolatedProjectsToolingApiCompositeBuildsIntegrationTest extends AbstractI
         model3[1].message == "It works from project :libs:a"
 
         and:
-        fixture.assertStateUpdated {
+        fixture.assertModelUpdated {
             fileChanged("libs/build.gradle")
             projectConfigured(":plugins")
             projectsConfigured(":libs:a", ":libs:b") // TODO - should not be configured, but this currently happens to calculate the dependency substitutions

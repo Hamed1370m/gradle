@@ -19,7 +19,7 @@ package org.gradle.internal.enterprise
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.plugin.management.internal.autoapply.AutoAppliedDevelocityPlugin
 import org.gradle.test.precondition.Requires
-import org.gradle.test.preconditions.IntegTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.gradle.util.internal.ToBeImplemented
 import spock.lang.Issue
 
@@ -88,7 +88,7 @@ class DevelocityPluginConfigIntegrationTest extends AbstractIntegrationSpec {
         settingsFile << """
             buildscript {
                 repositories {
-                    maven { url '${mavenRepo.uri}' }
+                    maven { url = '${mavenRepo.uri}' }
                 }
                 dependencies {
                     classpath("${coordinates}")
@@ -116,7 +116,7 @@ class DevelocityPluginConfigIntegrationTest extends AbstractIntegrationSpec {
         def initScript = file("build-scan-init.gradle") << """
             initscript {
                 repositories {
-                    maven { url '${mavenRepo.uri}' }
+                    maven { url = '${mavenRepo.uri}' }
                 }
                 dependencies {
                     classpath("${pluginArtifactId}")
@@ -147,14 +147,14 @@ class DevelocityPluginConfigIntegrationTest extends AbstractIntegrationSpec {
         def initScript = file("build-scan-init.gradle") << """
             initscript {
                 repositories {
-                    maven { url '${mavenRepo.uri}' }
+                    maven { url = '${mavenRepo.uri}' }
                 }
                 dependencies {
                     classpath("${pluginArtifactId}")
                 }
             }
             gradle.beforeSettings { settings ->
-                settings.buildscript.repositories { maven { url '${mavenRepo.uri}' } }
+                settings.buildscript.repositories { maven { url = '${mavenRepo.uri}' } }
                 settings.buildscript.dependencies.classpath("com.gradle:develocity-gradle-plugin:${plugin.runtimeVersion}")
             }
             gradle.settingsEvaluated { settings ->
@@ -178,7 +178,7 @@ class DevelocityPluginConfigIntegrationTest extends AbstractIntegrationSpec {
     }
 
     @Issue('https://github.com/gradle/gradle/issues/24023')
-    @Requires(IntegTestPreconditions.IsConfigCached)
+    @Requires(TestExecutionPreconditions.IsConfigCached)
     def 'is correctly requested by the configuration cache'() {
         when:
         succeeds('t', *firstBuildArgs)

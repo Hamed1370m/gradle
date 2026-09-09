@@ -25,10 +25,10 @@ class IvySftpRepoDynamicRevisionIntegrationTest extends AbstractSftpDependencyRe
         buildFile << """
             repositories {
                 ivy {
-                    url "${ivySftpRepo.uri}"
+                    url = "${ivySftpRepo.uri}"
                     credentials {
-                        username 'sftp'
-                        password 'sftp'
+                        username = 'sftp'
+                        password = 'sftp'
                     }
                 }
             }
@@ -36,8 +36,8 @@ class IvySftpRepoDynamicRevisionIntegrationTest extends AbstractSftpDependencyRe
             configurations { compile }
 
             dependencies {
-                compile group: "group", name: "projectA", version: "1.+"
-                compile group: "group", name: "projectB", version: "latest.integration"
+                compile("group:projectA:1.+")
+                compile("group:projectB:latest.integration")
             }
 
             configurations.all {
