@@ -49,10 +49,10 @@ public class StartParameterMutationReportingSettingsProcessor implements Setting
         SettingsState state = delegate.process(gradle, settingsLocation, buildRootClassLoaderScope, startParameter);
         startParameter.setMutationListener(methodSignature ->
             problems.report(factory ->
-                factory.problem(message -> message
+                factory.problem("Start parameter mutated after settings evaluation", message -> message
                     .text("The start parameter cannot be mutated after settings have been evaluated when Isolated Projects is enabled. ")
                     .text("The mutation occurred via ").reference(methodSignature).text(" call.")
-                ).exception().build()
+                ).build()
             )
         );
         return state;

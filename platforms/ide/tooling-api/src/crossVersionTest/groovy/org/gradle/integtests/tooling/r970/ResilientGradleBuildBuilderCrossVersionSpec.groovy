@@ -17,6 +17,8 @@
 package org.gradle.integtests.tooling.r970
 
 import org.gradle.integtests.tooling.fixture.TargetGradleVersion
+import org.gradle.test.fixtures.dsl.GradleDsl
+import org.gradle.integtests.fixtures.RepoScriptBlockUtil
 import org.gradle.integtests.tooling.fixture.ToolingApiVersion
 import org.gradle.integtests.tooling.r930.KotlinDslPluginRelatedToolingApiSpecification
 import org.gradle.integtests.tooling.r930.ResilientGradleBuildBuilderCrossVersionSpec.BuildActionResult
@@ -144,10 +146,7 @@ class ResilientGradleBuildBuilderCrossVersionSpec extends KotlinDslPluginRelated
             plugins {
                 `kotlin-dsl`
             }
-            repositories {
-                mavenCentral()
-                gradlePluginPortal()
-            }
+            ${RepoScriptBlockUtil.gradlePluginAndMavenCentralRepositories(GradleDsl.KOTLIN)}
         """
         included.file("src/main/kotlin/build-logic.settings.gradle.kts") << """
             broken !!!

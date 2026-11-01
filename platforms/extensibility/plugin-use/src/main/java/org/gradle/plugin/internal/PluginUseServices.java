@@ -115,7 +115,7 @@ public class PluginUseServices extends AbstractGradleModuleServices {
 
         @Provides
         void configure(ServiceRegistration registration, PluginScheme pluginScheme, InstantiatorFactory instantiatorFactory, ProblemsInternal problemsService) {
-            DefaultProjectFeatureDeclarations projectFeatureRegistry = new DefaultProjectFeatureDeclarations(pluginScheme.getInspectionScheme(), instantiatorFactory.injectScheme().instantiator(), problemsService.getInternalReporter());
+            DefaultProjectFeatureDeclarations projectFeatureRegistry = new DefaultProjectFeatureDeclarations(pluginScheme.getInspectionScheme(), instantiatorFactory.injectScheme().instantiator(), problemsService);
             registration.add(ProjectFeatureDeclarations.class, projectFeatureRegistry);
         }
 
@@ -158,7 +158,7 @@ public class PluginUseServices extends AbstractGradleModuleServices {
             }
 
             Factory<DependencyResolutionServices> dependencyResolutionServicesFactory =
-                () -> dependencyManagementServices.newDetachedResolver(new DependencyManagementParameters(Describables.of("plugin resolution"), null, true, true, true));
+                () -> dependencyManagementServices.newDetachedResolver(DependencyManagementParameters.forDetachedJvmEnvironment(Describables.of("plugin resolution")));
 
             return new DefaultInjectedClasspathPluginResolver(
                 classLoaderScopeRegistry.getCoreAndPluginsScope(),
@@ -181,7 +181,7 @@ public class PluginUseServices extends AbstractGradleModuleServices {
             DependencyManagementServices dependencyManagementServices
         ) {
             return new PluginDependencyResolutionServices(() ->
-                dependencyManagementServices.newDetachedResolver(new DependencyManagementParameters(Describables.of("plugin resolution"), null, true, true, true))
+                dependencyManagementServices.newDetachedResolver(DependencyManagementParameters.forDetachedJvmEnvironment(Describables.of("plugin resolution")))
             );
         }
 
@@ -199,7 +199,7 @@ public class PluginUseServices extends AbstractGradleModuleServices {
             return instantiatorFactory.inject(services).newInstance(DefaultProjectFeatureApplicator.class,
                 project.getClassLoaderScope(),
                 project.getObjects(),
-                problems.getInternalReporter(),
+                problems,
                 services
             );
         }

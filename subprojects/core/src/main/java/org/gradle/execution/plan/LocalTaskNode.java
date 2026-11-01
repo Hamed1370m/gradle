@@ -69,7 +69,7 @@ public class LocalTaskNode extends TaskNode {
 
     @Nullable
     @Override
-    public ResourceLock getProjectToLock() {
+    public ResourceLock getResourceToLock() {
         if (isolated) {
             return null;
         } else {
@@ -166,7 +166,7 @@ public class LocalTaskNode extends TaskNode {
     }
 
     @Override
-    public String toString() {
+    public String getDisplayName() {
         return task.getIdentityPath().toString();
     }
 

@@ -64,18 +64,18 @@ public class ActionNode extends Node {
     }
 
     @Override
-    public String toString() {
+    public String getDisplayName() {
         return "work action " + action;
     }
 
     @Override
     public boolean isPriority() {
-        return getProjectToLock() != null;
+        return getResourceToLock() != null;
     }
 
     @Nullable
     @Override
-    public ResourceLock getProjectToLock() {
+    public ResourceLock getResourceToLock() {
         if (projectToLock != null) {
             return projectToLock.getOwner().getAccessLock();
         }

@@ -162,6 +162,7 @@ abstract class AbstractSmokeTest extends Specification {
         def args = tasks.toList() +
             outputParameters() +
             repoMirrorParameters() +
+            extraRepositoriesParameters() +
             configurationCacheParameters() +
             isolatedProjectsParameters() +
             toolchainParameters()
@@ -214,6 +215,11 @@ abstract class AbstractSmokeTest extends Specification {
             '--warning-mode=all',
             "-D${LoggingDeprecatedFeatureHandler.ORG_GRADLE_DEPRECATION_TRACE_PROPERTY_NAME}=false" as String,
         ]
+    }
+
+    private static List<String> extraRepositoriesParameters() {
+        def initScript = RepoScriptBlockUtil.extraRepositoriesInitScriptFile()
+        return initScript == null ? [] : ['--init-script', initScript.absolutePath]
     }
 
     private static List<String> repoMirrorParameters() {
@@ -274,6 +280,18 @@ abstract class AbstractSmokeTest extends Specification {
 
     protected static String googleRepository(GradleDsl dsl = GROOVY) {
         RepoScriptBlockUtil.googleRepository(dsl)
+    }
+
+    protected static String mavenCentralRepositoryDefinition(GradleDsl dsl = GROOVY) {
+        RepoScriptBlockUtil.mavenCentralRepositoryDefinition(dsl)
+    }
+
+    protected static String googleRepositoryDefinition(GradleDsl dsl = GROOVY) {
+        RepoScriptBlockUtil.googleRepositoryDefinition(dsl)
+    }
+
+    protected static String gradlePluginRepositoryDefinition(GradleDsl dsl = GROOVY) {
+        RepoScriptBlockUtil.gradlePluginRepositoryDefinition(dsl)
     }
 
     void copyRemoteProject(String remoteProject, File targetDir) {

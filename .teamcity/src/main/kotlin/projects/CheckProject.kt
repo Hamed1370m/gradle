@@ -34,7 +34,6 @@ class CheckProject(
             param("teamcity.ui.settings.readOnly", "true")
             // Avoid rebuilding same revision if it's already built on another branch
             param("teamcity.vcsTrigger.runBuildOnSameRevisionInEveryBranch", "false")
-            param("env.DEVELOCITY_SERVER_URL", "%gbt.public.develocity.server.url%")
             param("env.CHROME_BIN", "%linux.chrome.bin.path%")
 
             text(
@@ -98,7 +97,7 @@ class CheckProject(
             artifactsPatterns =
                 """
                 +:**/*
-                +:$HIDDEN_ARTIFACT_DESTINATION/**/*"
+                +:$HIDDEN_ARTIFACT_DESTINATION/**/*
                 """.trimIndent(),
         )
     })

@@ -18,12 +18,13 @@ package org.gradle.execution.plan;
 
 import org.gradle.api.file.FileTreeElement;
 import org.gradle.api.internal.TaskInternal;
-import org.gradle.api.problems.internal.GradleCoreProblemGroup;
 import org.gradle.api.specs.Spec;
 import org.gradle.internal.deprecation.DeprecationLogger;
+import org.gradle.internal.reflect.validation.DefaultTypeAwareProblemBuilder;
 import org.gradle.internal.reflect.validation.TypeValidationContext;
+import org.gradle.internal.service.scopes.Scope;
+import org.gradle.internal.service.scopes.ServiceScope;
 import org.gradle.util.Path;
-import org.gradle.util.internal.TextUtil;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayDeque;
@@ -51,6 +52,7 @@ import static org.gradle.internal.deprecation.Documentation.userManual;
  * consuming a parent directory of the produced output.
  * </p>
  */
+@ServiceScope(Scope.ProjectExecution.class)
 public class MissingTaskDependencyDetector {
     private final ExecutionNodeAccessHierarchy outputHierarchy;
     private final ExecutionNodeAccessHierarchies.InputNodeAccessHierarchy inputHierarchy;
@@ -198,15 +200,14 @@ public class MissingTaskDependencyDetector {
                     consumer,
                     producer
                 ))
-                .withProblemIdDisplayName("Implicit dependency between tasks in different builds")
-                .withProblemId("implicit-dependency-between-tasks-in-different-builds")
+                .withProblemName("Implicit dependency between tasks in different builds")
                 .willBecomeAnErrorInGradle10()
                 .withUserManual("validation_problems", IMPLICIT_DEPENDENCY.toLowerCase(Locale.ROOT))
                 .nagUser();
             return;
         }
         validationContext.visitPropertyError(problem ->
-            problem.id(TextUtil.screamingSnakeToKebabCase(IMPLICIT_DEPENDENCY), "Property has implicit dependency", GradleCoreProblemGroup.validation().property()) // TODO (donat) missing test coverage
+            problem.id(problem.getGradleGroup().getBuildLogic().problemId(DefaultTypeAwareProblemBuilder.IMPLICIT_DEPENDENCY)) // TODO (donat) missing test coverage
                 .contextualLabel("Gradle detected a problem with the following location: '" + consumerProducerPath + "'")
                 .documentedAt(userManual("validation_problems", IMPLICIT_DEPENDENCY.toLowerCase(Locale.ROOT)))
                 .details(String.format("Task '%s' uses this output of task '%s' without declaring an explicit or implicit dependency. "

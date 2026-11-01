@@ -47,7 +47,7 @@ import static org.junit.Assume.assumeTrue
 abstract class AbstractDomainObjectCollectionSpec<T> extends Specification {
 
     TestBuildOperationRunner buildOperationRunner = new TestBuildOperationRunner()
-    UserCodeApplicationContext userCodeApplicationContext = new DefaultUserCodeApplicationContext()
+    UserCodeApplicationContext userCodeApplicationContext = new DefaultUserCodeApplicationContext(System::nanoTime).tap { it.startTrackingApplications() }
     CollectionCallbackActionDecorator callbackActionDecorator = new DefaultCollectionCallbackActionDecorator(buildOperationRunner, userCodeApplicationContext)
 
     abstract boolean isSupportsBuildOperations()
@@ -163,6 +163,7 @@ abstract class AbstractDomainObjectCollectionSpec<T> extends Specification {
         containerAllowsExternalProviders()
         def provider = Mock(CollectionProviderInternal)
         _ * provider.size() >> 2
+        _ * provider.calculateValue(_) >> ValueSupplier.Value.of([a, b])
 
         when:
         container.addAllLater(provider)
@@ -176,11 +177,60 @@ abstract class AbstractDomainObjectCollectionSpec<T> extends Specification {
         !container.empty
     }
 
+    def "size uses realized values of provider of iterable without querying it again"() {
+        containerAllowsExternalProviders()
+        def provider = Mock(CollectionProviderInternal)
+        _ * provider.elementType >> type
+        _ * provider.size() >> 2
+
+        given:
+        container.addAllLater(provider)
+
+        when:
+        def result = toList(container)
+
+        then:
+        result == iterationOrder(a, b)
+        1 * provider.calculateValue(_) >> ValueSupplier.Value.of([a, b])
+
+        when:
+        def size = container.size()
+        def empty = container.empty
+
+        then:
+        size == 2
+        !empty
+        0 * provider.calculateValue(_)
+        0 * provider.size()
+    }
+
+    def "isEmpty of filtered collection does not realize providers of iterable of other types in the source collection"() {
+        containerAllowsExternalProviders()
+        def action = Mock(Action)
+        def provider = Mock(CollectionProviderInternal)
+        _ * provider.elementType >> otherType
+        _ * provider.size() >> 1
+
+        given:
+        container.addAllLater(provider)
+        container.configureEach(action)
+        def filtered = container.withType(type)
+
+        when:
+        def empty = filtered.empty
+
+        then:
+        empty
+        0 * provider.calculateValue(_)
+        0 * action._
+    }
+
     def "provider of elements are not queried when another element added"() {
         containerAllowsExternalProviders()
         def provider = Mock(ProviderInternal)
         def providerOfIterable = Mock(CollectionProviderInternal)
         _ * providerOfIterable.size() >> 2
+        _ * providerOfIterable.calculateValue(_) >> ValueSupplier.Value.of([c, d])
 
         given:
         addToContainer(a)
@@ -1775,7 +1825,7 @@ abstract class AbstractDomainObjectCollectionSpec<T> extends Specification {
         containerSupportsBuildOperations()
 
         UserCodeApplicationId id1 = null
-        userCodeApplicationContext.apply(Stub(UserCodeSource)) {
+        userCodeApplicationContext.apply(Stub(UserCodeSource), UserCodeApplicationContext.Target.Other.INSTANCE) {
             id1 = it
             container.whenObjectAdded {
                 assert userCodeApplicationContext.current().id == id1
@@ -1792,7 +1842,7 @@ abstract class AbstractDomainObjectCollectionSpec<T> extends Specification {
 
         when:
         UserCodeApplicationId id2 = null
-        userCodeApplicationContext.apply(Stub(UserCodeSource)) {
+        userCodeApplicationContext.apply(Stub(UserCodeSource), UserCodeApplicationContext.Target.Other.INSTANCE) {
             id2 = it
             container.whenObjectAdded {
                 assert userCodeApplicationContext.current().id == id2
@@ -1812,8 +1862,7 @@ abstract class AbstractDomainObjectCollectionSpec<T> extends Specification {
     def "does not fire build operation if callback is filtered out by type"() {
         given:
         containerSupportsBuildOperations()
-
-        userCodeApplicationContext.apply(Stub(UserCodeSource)) {
+        userCodeApplicationContext.apply(Stub(UserCodeSource), UserCodeApplicationContext.Target.Other.INSTANCE) {
             container.withType(otherType).whenObjectAdded {
                 throw new IllegalStateException()
             }
@@ -1830,7 +1879,7 @@ abstract class AbstractDomainObjectCollectionSpec<T> extends Specification {
         given:
         containerSupportsBuildOperations()
 
-        userCodeApplicationContext.apply(Stub(UserCodeSource)) {
+        userCodeApplicationContext.apply(Stub(UserCodeSource), UserCodeApplicationContext.Target.Other.INSTANCE) {
             container.matching { !it.is(a) }.whenObjectAdded {
                 throw new IllegalStateException()
             }
@@ -1853,7 +1902,7 @@ abstract class AbstractDomainObjectCollectionSpec<T> extends Specification {
         when:
         UserCodeApplicationId id = null
         List<UserCodeApplicationId> ids = []
-        userCodeApplicationContext.apply(Stub(UserCodeSource)) {
+        userCodeApplicationContext.apply(Stub(UserCodeSource), UserCodeApplicationContext.Target.Other.INSTANCE) {
             id = it
             container.matching { !it.is(a) }.all {
                 ids << userCodeApplicationContext.current().id
@@ -1893,12 +1942,12 @@ abstract class AbstractDomainObjectCollectionSpec<T> extends Specification {
         UserCodeApplicationId id1 = null
         UserCodeApplicationId id2 = null
         List<UserCodeApplicationId> ids = []
-        userCodeApplicationContext.apply(Stub(UserCodeSource)) {
+        userCodeApplicationContext.apply(Stub(UserCodeSource), UserCodeApplicationContext.Target.Other.INSTANCE) {
             id1 = it
             container.all {
                 ids << userCodeApplicationContext.current()
                 if (it.is(a)) {
-                    userCodeApplicationContext.apply(Stub(UserCodeSource)) {
+                    userCodeApplicationContext.apply(Stub(UserCodeSource), UserCodeApplicationContext.Target.Other.INSTANCE) {
                         id2 = it
                         container.all {
                             ids << userCodeApplicationContext.current()

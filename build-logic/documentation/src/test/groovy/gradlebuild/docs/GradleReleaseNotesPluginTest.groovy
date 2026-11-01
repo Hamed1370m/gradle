@@ -44,7 +44,6 @@ class GradleReleaseNotesPluginTest extends Specification {
                 versionCatalogs {
                     create('buildLibs') {
                         version('asciidoctor', '3.0.1')
-                        version('asciidoctorPdf', '2.3.23')
                     }
                 }
             }
@@ -73,8 +72,6 @@ class GradleReleaseNotesPluginTest extends Specification {
                     groovyPackageListSrc = "org.apache.groovy:groovy-all:4.0.28:groovydoc"
                 }
             }
-
-            tasks.register('assembleSamples')
 
             javadocAll {
                 enabled = false

@@ -42,13 +42,11 @@ import org.gradle.api.internal.project.CrossBuildModelAccess;
 import org.gradle.api.internal.project.CrossProjectConfigurator;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.internal.project.ProjectState;
-import org.gradle.api.internal.services.PublicServiceLookups;
 import org.gradle.api.invocation.Gradle;
 import org.gradle.api.invocation.GradleLifecycle;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.ProviderFactory;
 import org.gradle.api.services.BuildServiceRegistry;
-import org.gradle.api.services.GradleService;
 import org.gradle.configuration.ScriptPluginFactory;
 import org.gradle.configuration.internal.ListenerBuildOperationDecorator;
 import org.gradle.execution.taskgraph.TaskExecutionGraphInternal;
@@ -151,15 +149,6 @@ public abstract class DefaultGradle extends AbstractPluginAware implements Gradl
     @Override
     public Path getIdentityPath() {
         return buildState.getIdentityPath();
-    }
-
-    @Override
-    public String contextualize(String description) {
-        if (isRootBuild()) {
-            return description;
-        } else {
-            return description + " (" + getIdentityPath().asString() + ")";
-        }
     }
 
     @Override
@@ -327,11 +316,6 @@ public abstract class DefaultGradle extends AbstractPluginAware implements Gradl
     @Inject
     @Override
     public abstract ProviderFactory getProviders();
-
-    @Override
-    public <T extends GradleService> T service(Class<T> serviceType) {
-        return PublicServiceLookups.lookup(serviceType, PublicServiceLookups.EntryPoint.GRADLE, getServices());
-    }
 
     @Override
     public ProjectEvaluationListener addProjectEvaluationListener(ProjectEvaluationListener listener) {

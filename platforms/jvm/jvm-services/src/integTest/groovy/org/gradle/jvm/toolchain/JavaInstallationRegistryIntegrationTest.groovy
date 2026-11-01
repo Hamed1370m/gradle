@@ -23,7 +23,9 @@ import org.gradle.internal.jvm.Jvm
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.precondition.Requires
 import org.gradle.test.preconditions.InstalledJdkTestPreconditions
+import org.gradle.test.preconditions.TestExecutionPreconditions
 import org.gradle.integtests.fixtures.modes.ToBeFixedForIsolatedProjects
+import spock.lang.Issue
 
 class JavaInstallationRegistryIntegrationTest extends AbstractIntegrationSpec {
 
@@ -206,12 +208,12 @@ class JavaInstallationRegistryIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         verifyAll(receivedProblem(0)) {
-            fqid == 'jvm-toolchain:invalid-jvm-installation'
+            fqid == 'Provisioning:Tools and Toolchains:Invalid JVM installation'
             severity == Severity.WARNING
             contextualLabel == "Directory '${missing1}' (Gradle property 'org.gradle.java.installations.paths') used for java installations does not exist"
         }
         verifyAll(receivedProblem(1)) {
-            fqid == 'jvm-toolchain:invalid-jvm-installation'
+            fqid == 'Provisioning:Tools and Toolchains:Invalid JVM installation'
             severity == Severity.WARNING
             contextualLabel == "Directory '${missing2}' (Gradle property 'org.gradle.java.installations.paths') used for java installations does not exist"
         }
@@ -249,7 +251,7 @@ class JavaInstallationRegistryIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         verifyAll(receivedProblem) {
-            fqid == 'jvm-toolchain:invalid-jvm-installation'
+            fqid == 'Provisioning:Tools and Toolchains:Invalid JVM installation'
             severity == Severity.WARNING
             contextualLabel == "Path for java installation '${notADirectory.absolutePath}' (Gradle property 'org.gradle.java.installations.paths') points to a file, not a directory"
         }
@@ -286,10 +288,48 @@ class JavaInstallationRegistryIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         verifyAll(receivedProblem) {
-            fqid == 'jvm-toolchain:invalid-jvm-installation'
+            fqid == 'Provisioning:Tools and Toolchains:Invalid JVM installation'
             severity == Severity.WARNING
             contextualLabel == "Path for java installation '${emptyDir.absolutePath}' (Gradle property 'org.gradle.java.installations.paths') does not contain a java executable"
         }
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/39358")
+    @Requires(value = TestExecutionPreconditions.NotEmbeddedExecutor, reason = "SDKMAN_CANDIDATES_DIR must reach the daemon")
+    def "auto-detected installation missing java executable is not reported as a problem"() {
+        enableProblemsApiCheck()
+
+        def sdkmanCandidates = file("sdkman-candidates")
+        def brokenJdk = sdkmanCandidates.file("java/broken-jdk").createDir()
+
+        buildFile << """
+            import org.gradle.internal.jvm.inspection.JavaInstallationRegistry;
+
+            abstract class ShowPlugin implements Plugin<Project> {
+                @Inject
+                abstract JavaInstallationRegistry getRegistry()
+
+                void apply(Project project) {
+                    project.tasks.register("show") {
+                       registry.listInstallations().each { println it.location }
+                    }
+                }
+            }
+
+            apply plugin: ShowPlugin
+        """
+
+        when:
+        result = executer
+            .withEnvironmentVars([SDKMAN_CANDIDATES_DIR: sdkmanCandidates.absolutePath])
+            .withArgument("-Dorg.gradle.java.installations.auto-detect=true")
+            .withArgument("--info")
+            .withTasks("show")
+            .run()
+
+        then:
+        outputContains("Path for java installation '${brokenJdk.absolutePath}' (SDKMAN!) auto-detected does not contain a java executable")
+        receivedProblems.empty
     }
 
     @Requires(InstalledJdkTestPreconditions.JavaHomeWithDifferentVersionAvailable)
@@ -325,7 +365,7 @@ class JavaInstallationRegistryIntegrationTest extends AbstractIntegrationSpec {
         then:
         outputContains(validJavaHome)
         verifyAll(receivedProblem) {
-            fqid == 'jvm-toolchain:invalid-jvm-installation'
+            fqid == 'Provisioning:Tools and Toolchains:Invalid JVM installation'
             severity == Severity.WARNING
             contextualLabel == "Directory '${missing}' (Gradle property 'org.gradle.java.installations.paths') used for java installations does not exist"
         }
@@ -393,7 +433,7 @@ class JavaInstallationRegistryIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         verifyAll(receivedProblem) {
-            fqid == 'jvm-toolchain:invalid-jvm-installation'
+            fqid == 'Provisioning:Tools and Toolchains:Invalid JVM installation'
             severity == Severity.WARNING
             contextualLabel == "Directory '${resolvedAbsolutePath}' (Gradle property 'org.gradle.java.installations.paths') used for java installations does not exist"
         }
@@ -452,7 +492,7 @@ class JavaInstallationRegistryIntegrationTest extends AbstractIntegrationSpec {
         then:
         receivedProblems.size() == 1
         verifyAll(receivedProblem) {
-            fqid == 'jvm-toolchain:invalid-jvm-installation'
+            fqid == 'Provisioning:Tools and Toolchains:Invalid JVM installation'
             severity == Severity.WARNING
             contextualLabel == "Directory '${outerResolvedAbsolutePath}' (Gradle property 'org.gradle.java.installations.paths') used for java installations does not exist"
             // Confirm the included build's own root directory is NOT what the path resolved to.

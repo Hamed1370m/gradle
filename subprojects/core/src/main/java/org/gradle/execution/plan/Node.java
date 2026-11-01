@@ -608,16 +608,16 @@ public abstract class Node {
     }
 
     /**
-     * Returns the project state that this node requires mutable access to, if any.
+     * Returns the resource that this node requires to be acquired before executing, if any.
      */
     @Nullable
-    public ResourceLock getProjectToLock() {
+    public ResourceLock getResourceToLock() {
         return null;
     }
 
     /**
      * Returns the project which this node belongs to, and requires access to the execution services of.
-     * Returning non-null does not imply that the project must be locked when this node executes. Use {@link #getProjectToLock()} instead for that.
+     * Returning non-null does not imply that the project must be locked when this node executes. Use {@link #getResourceToLock()} instead for that.
      *
      * TODO - this should return some kind of abstract 'action context' instead of a mutable project.
      */
@@ -637,7 +637,14 @@ public abstract class Node {
         return Collections.emptyList();
     }
 
+    /**
+     * The display name of this node for use in user-facing messages.
+     */
+    public abstract String getDisplayName();
+
     @Override
-    public abstract String toString();
+    public String toString() {
+        return getDisplayName();
+    }
 
 }

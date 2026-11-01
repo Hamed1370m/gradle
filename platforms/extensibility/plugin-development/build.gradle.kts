@@ -11,6 +11,7 @@ dependencies {
     api(projects.coreApi)
     api(projects.daemonServerWorker)
     api(projects.files)
+    api(projects.groovyDsl)
     api(projects.logging)
     api(projects.modelReflect)
     api(projects.platformJvm)
@@ -95,6 +96,7 @@ dependencies {
     testFixturesImplementation(projects.logging)
     testFixturesImplementation(libs.gson)
     testFixturesImplementation(projects.baseServices)
+    testFixturesImplementation(testFixtures(projects.core))
 }
 
 gradleModule {

@@ -18,13 +18,12 @@ package org.gradle.internal.cc.impl.problems
 
 import com.google.common.annotations.VisibleForTesting
 import com.google.common.collect.Sets.newConcurrentHashSet
+import org.gradle.api.InvalidUserCodeException
 import org.gradle.api.Task
 import org.gradle.api.internal.TaskInternal
 import org.gradle.api.internal.project.taskfactory.TaskIdentity
 import org.gradle.api.logging.Logging
-import org.gradle.api.problems.ProblemGroup
 import org.gradle.api.problems.ProblemSpec
-import org.gradle.api.problems.internal.GradleCoreProblemGroup
 import org.gradle.api.problems.internal.ProblemsInternal
 import org.gradle.api.problems.internal.PropertyTraceDataSpec
 import org.gradle.initialization.RootBuildLifecycleListener
@@ -47,13 +46,12 @@ import org.gradle.internal.configuration.problems.DocumentationSection
 import org.gradle.internal.configuration.problems.IsolatedProjectsProblemsListener
 import org.gradle.internal.configuration.problems.ProblemFactory
 import org.gradle.internal.configuration.problems.ProblemReportDetails
-import org.gradle.internal.configuration.problems.ProblemReportDetailsJsonSource
+import org.gradle.internal.configuration.problems.toJsSummary
 import org.gradle.internal.configuration.problems.ProblemsListener
 import org.gradle.internal.configuration.problems.PropertyProblem
 import org.gradle.internal.configuration.problems.PropertyTrace
 import org.gradle.internal.configuration.problems.StructuredMessage
 import org.gradle.internal.configuration.problems.StructuredMessageBuilder
-import org.gradle.internal.deprecation.DeprecationMessageBuilder
 import org.gradle.internal.deprecation.Documentation
 import org.gradle.internal.event.ListenerManager
 import org.gradle.internal.extensions.stdlib.maybeUnwrapInvocationTargetException
@@ -134,7 +132,7 @@ class ConfigurationCacheProblems(
 
     private
     val degradationController: DefaultConfigurationCacheDegradationController
-) : AbstractProblemsListener(), IsolatedProjectsProblemsListener, ProblemReporter, AutoCloseable {
+) : AbstractProblemsListener(), IsolatedProjectsProblemsListener, ProblemReporter {
 
     private
     val summarizer = ConfigurationCacheProblemsSummary()
@@ -191,10 +189,6 @@ class ConfigurationCacheProblems(
         listenerManager.addListener(postBuildHandler)
     }
 
-    override fun close() {
-        listenerManager.removeListener(postBuildHandler)
-    }
-
     fun action(action: ConfigurationCacheAction, actionDescription: StructuredMessage) {
         cacheAction = action
         cacheActionDescription = actionDescription
@@ -209,7 +203,7 @@ class ConfigurationCacheProblems(
         this.updatedProjects = updatedProjects
     }
 
-    override fun onError(trace: PropertyTrace, error: Exception, message: StructuredMessageBuilder) {
+    override fun onError(trace: PropertyTrace, name: String, error: Exception, message: StructuredMessageBuilder) {
         // Let IO and configuration cache exceptions surface to the top.
         if (error is IOException || error is ConfigurationCacheThrowable) {
             throw error
@@ -222,7 +216,7 @@ class ConfigurationCacheProblems(
             "Configuration cache state could not be cached: $trace: ${wrappedMessage.render()}",
             originalError
         )
-        val problem = PropertyProblem(trace, wrappedMessage, wrappedError, failureFactory.create(originalError))
+        val problem = PropertyProblem(trace, name, wrappedMessage, wrappedError, failureFactory.create(originalError))
         onProblem(problem, ProblemSeverity.Interrupting)
     }
 
@@ -270,13 +264,14 @@ class ConfigurationCacheProblems(
     private
     fun reportIncompatibleTask(trace: PropertyTrace, reason: String) {
         val problem = problemFactory
-            .problem {
+            .problem("Task incompatible with the configuration cache") {
                 message(trace.containingUserCodeMessage)
                 text(" is incompatible with the configuration cache. Reason: $reason.")
             }
             .mapLocation {
                 trace
             }
+            .informational()
             .documentationSection(DocumentationSection.TaskOptOut).build()
         report.onIncompatibleTask(problem)
         summarizer.onIncompatibleTask()
@@ -308,24 +303,19 @@ class ConfigurationCacheProblems(
         }
 
         if (severity == ProblemSeverity.Interrupting) {
-            val exception = problem.exception ?: error("Interrupting problems must have an associated exception. Got: $problem")
+            // The exception is missing once the full stack-capture budget is spent, which is unlikely
+            // for an interrupting problem, since the build stops at the first one.
+            val exception = problem.exception ?: InvalidUserCodeException(problem.message.renderCapitalized())
             throw exception
         }
     }
 
     private
-    val configCacheValidation: ProblemGroup = ProblemGroup.create("configuration-cache", "configuration cache validation", GradleCoreProblemGroup.validation().thisGroup())
-
-    private
     fun ProblemsInternal.onProblem(problem: PropertyProblem, severity: ProblemSeverity, forIsolatedProjects: Boolean) {
-        val message = problem.message.render()
+        val group = if (forIsolatedProjects) groups.gradle.isolatedProjects else groups.gradle.configurationCache
         internalReporter.internalCreate {
-            id(
-                DeprecationMessageBuilder.createDefaultDeprecationId(message),
-                message,
-                configCacheValidation
-            )
-            contextualLabel(message)
+            id(group.problemId(problem.name))
+            contextualLabel(problem.message.renderCapitalized())
             documentOfProblem(problem)
             locationOfProblem(problem)
             additionalDataInternal(PropertyTraceDataSpec::class.java) {
@@ -346,11 +336,7 @@ class ConfigurationCacheProblems(
     fun reportDangerouslyIgnoringProblems() {
         val message = isolatedProjectsDangerouslyIgnoreProblemsSentences.joinToString(" ")
         problemsService.internalReporter.internalCreate {
-            id(
-                "isolated-projects-dangerously-ignoring-problems",
-                "Isolated Projects problems are dangerously ignored",
-                configCacheValidation
-            )
+            id(problemsService.groups.gradle.isolatedProjects.problemId("Isolated Projects problems are dangerously ignored"))
             contextualLabel(message)
             documentedAt(isolatedProjectsDangerouslyIgnoreProblemsDocumentation.url)
         }.also {
@@ -362,11 +348,7 @@ class ConfigurationCacheProblems(
     fun reportConfigurationCacheWarnMode() {
         val message = configurationCacheWarnModeSentences.joinToString(" ")
         problemsService.internalReporter.internalCreate {
-            id(
-                "configuration-cache-warn-mode",
-                "Configuration Cache warn mode is enabled",
-                configCacheValidation
-            )
+            id(problemsService.groups.gradle.configurationCache.problemId("Configuration Cache warn mode is enabled"))
             contextualLabel(message)
         }.also {
             problemsService.internalReporter.report(it)
@@ -424,7 +406,7 @@ class ConfigurationCacheProblems(
         val hasNoProblemsForConsole = summary.consoleProblemCount == 0
         val outputDirectory = outputDirectoryFor(reportDir)
         val details = detailsFor(summary)
-        val htmlReportFile = report.writeReportFileTo(outputDirectory, ProblemReportDetailsJsonSource(details))
+        val htmlReportFile = report.writeReportFileTo(outputDirectory, details.toJsSummary())
         val areTaskDegradationReasonsPresent = degradationDecision.degradedTaskCount > 0
         if (htmlReportFile == null) {
             // there was nothing to report (no problems, no build configuration inputs)
@@ -609,9 +591,9 @@ class ConfigurationCacheProblems(
             onProblem(problem, problemSeverity)
         }
 
-        override fun onError(trace: PropertyTrace, error: Exception, message: StructuredMessageBuilder) {
+        override fun onError(trace: PropertyTrace, name: String, error: Exception, message: StructuredMessageBuilder) {
             val failure = failureFactory.create(error)
-            onProblem(PropertyProblem(trace, StructuredMessage.build(message), error, failure))
+            onProblem(PropertyProblem(trace, name, StructuredMessage.build(message), error, failure))
         }
 
         override fun onExecutionTimeProblem(problem: PropertyProblem) {
